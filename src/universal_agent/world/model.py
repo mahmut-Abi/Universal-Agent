@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from universal_agent.core import SessionId
 from universal_agent.evidence import Evidence
-from universal_agent.world.models import WorldFact, WorldModel, WorldSnapshot
+from universal_agent.world.models import WorldFact, WorldModel, WorldSnapshot, WorldUpdater
 
 
 class FactWorldUpdater:
@@ -23,6 +25,26 @@ class InMemoryWorldModel:
             return False
         values.append(evidence)
         return True
+
+    def forget(self, session_id: SessionId) -> None:
+        self._facts = {key: value for key, value in self._facts.items() if key[0] != session_id}
+
+    def rebuild(
+        self,
+        session_id: SessionId,
+        evidence: Iterable[Evidence],
+        updaters: tuple[WorldUpdater, ...],
+    ) -> None:
+        if not updaters:
+            raise ValueError("world rebuild requires at least one updater")
+        self.forget(session_id)
+        ordered = sorted(
+            (item for item in evidence if item.session_id == session_id),
+            key=lambda item: (item.observed_at, str(item.id)),
+        )
+        for item in ordered:
+            for updater in updaters:
+                updater.apply(self, item)
 
     def snapshot(
         self,

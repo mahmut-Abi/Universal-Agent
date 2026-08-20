@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from universal_agent.core import SessionId
 from universal_agent.evidence.models import Evidence, EvidenceId, EvidenceQuery
 
 

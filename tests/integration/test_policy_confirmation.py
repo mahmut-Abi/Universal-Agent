@@ -16,6 +16,7 @@ from universal_agent import (
     Task,
     immutable_json,
 )
+from universal_agent.context import DomainContextProvider
 from universal_agent.core import (
     AgentState,
     CapabilityCategory,
@@ -28,12 +29,17 @@ from universal_agent.core import (
     EvaluationResult,
     EvaluationStatus,
     ExecutionStatus,
+    JsonMapping,
     PolicyEffect,
     SideEffect,
     ToolDefinition,
 )
 from universal_agent.evaluation import Evaluator
+from universal_agent.evidence import EvidenceExtractor
 from universal_agent.policy import Policy, PolicyRule
+from universal_agent.recovery import RecoveryRule
+from universal_agent.tasks import TaskExpander
+from universal_agent.world import WorldUpdater
 
 
 class MutationTool:
@@ -47,7 +53,7 @@ class MutationTool:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def execute(self, arguments):  # type: ignore[no-untyped-def]
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
         self.calls += 1
         return immutable_json({"changed": True})
 
@@ -115,19 +121,19 @@ class MutationDomain:
     def evaluators(self) -> tuple[Evaluator, ...]:
         return (MutationEvaluator(),)
 
-    def context_providers(self):  # type: ignore[no-untyped-def]
+    def context_providers(self) -> tuple[DomainContextProvider, ...]:
         return (MutationContext(),)
 
-    def evidence_extractors(self):  # type: ignore[no-untyped-def]
+    def evidence_extractors(self) -> tuple[EvidenceExtractor, ...]:
         return ()
 
-    def world_updaters(self):  # type: ignore[no-untyped-def]
+    def world_updaters(self) -> tuple[WorldUpdater, ...]:
         return ()
 
-    def task_expanders(self):  # type: ignore[no-untyped-def]
+    def task_expanders(self) -> tuple[TaskExpander, ...]:
         return ()
 
-    def recovery_rules(self):  # type: ignore[no-untyped-def]
+    def recovery_rules(self) -> tuple[RecoveryRule, ...]:
         return ()
 
 
@@ -141,7 +147,9 @@ def mutation_decision() -> Decision:
     )
 
 
-def build(effect: PolicyEffect):  # type: ignore[no-untyped-def]
+def build(
+    effect: PolicyEffect,
+) -> tuple[AgentRuntime, InMemoryStateStore, InMemoryEventSink, MutationTool]:
     tool = MutationTool()
     active = DomainLoader().load(MutationDomain(tool, effect))
     store = InMemoryStateStore()

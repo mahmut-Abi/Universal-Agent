@@ -6,6 +6,7 @@ import pytest
 
 from universal_agent.core import (
     ErrorCode,
+    JsonMapping,
     ObservationStatus,
     ToolCall,
     ToolDefinition,
@@ -24,26 +25,26 @@ class EchoTool:
         timeout_seconds=0.1,
     )
 
-    async def execute(self, arguments):  # type: ignore[no-untyped-def]
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
         return immutable_json({"value": arguments["value"]})
 
 
 class BrokenTool:
     definition = ToolDefinition("broken", "Fail", ("break",))
 
-    async def execute(self, arguments):  # type: ignore[no-untyped-def]
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
         raise RuntimeError("boom")
 
 
 class SlowTool:
     definition = ToolDefinition("slow", "Timeout", ("wait",), timeout_seconds=0.001)
 
-    async def execute(self, arguments):  # type: ignore[no-untyped-def]
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
         await asyncio.sleep(0.02)
         return immutable_json()
 
 
-def call(tool: str, capability: str, arguments=None):  # type: ignore[no-untyped-def]
+def call(tool: str, capability: str, arguments: JsonMapping | None = None) -> ToolCall:
     return ToolCall(new_action_id(), tool, capability, immutable_json(arguments))
 
 

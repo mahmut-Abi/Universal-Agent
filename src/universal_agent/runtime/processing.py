@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from universal_agent.core import (
-    AgentState,
     EvaluationContext,
     EvaluationResult,
     Observation,
@@ -14,10 +13,14 @@ from universal_agent.domain import RuntimeComponents
 from universal_agent.evidence import (
     Evidence,
     EvidenceContext,
-    EvidenceQuery,
     StructuredEvidenceExtractor,
 )
-from universal_agent.tasks import TaskExpansionContext, TaskManager
+from universal_agent.runtime.session import (
+    SessionRuntimeState,
+    complete_current_task,
+    start_next_task,
+)
+from universal_agent.tasks import TaskExpansionContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,10 +37,10 @@ class ObservationProcessor:
 
     def process(
         self,
-        state: AgentState,
+        session: SessionRuntimeState,
         observation: Observation,
-        tasks: TaskManager,
     ) -> ProcessingResult:
+        state = session.state
         extractors = self._components.active_domain.evidence_extractors or (
             StructuredEvidenceExtractor(),
         )
@@ -49,21 +52,20 @@ class ObservationProcessor:
             )
         )
         for evidence in extracted:
-            if not self._components.evidence_store.add(evidence):
+            if not session.record(evidence):
                 continue
-            for updater in self._components.world_updaters:
-                updater.apply(self._components.world_model, evidence)
+            session.apply(evidence, self._components)
 
-        evidence = self._components.evidence_store.query(
-            EvidenceQuery(state.session_id, task_id=state.current_task.id)
-        )
-        world = self._components.world_model.snapshot(state.session_id)
-        created = tasks.expand(
+        # Task-scoped, so this is the evidence the current task has accumulated,
+        # not just what this one observation produced.
+        accumulated = session.query()
+        world = session.world()
+        created = session.tasks.expand(
             tuple(
                 spec
                 for expander in self._components.active_domain.task_expanders
                 for spec in expander.expand(
-                    TaskExpansionContext(state.current_task, evidence, world)
+                    TaskExpansionContext(state.current_task, accumulated, world)
                 )
             )
         )
@@ -82,7 +84,7 @@ class ObservationProcessor:
                 state.current_task,
                 observation,
                 immutable_json(criteria),
-                evidence,
+                accumulated,
                 world,
             )
         )
@@ -90,7 +92,10 @@ class ObservationProcessor:
         state.satisfied_criteria.update(evaluation.matched_criteria)
         next_task = None
         if evaluation.task_completed:
-            tasks.complete_current()
-            next_task = tasks.start_next()
-            state.current_task = next_task or tasks.current
+            previous_id = session.tasks.current.id
+            complete_current_task(session)
+            start_next_task(session)
+            current = session.tasks.current
+            next_task = current if current.id != previous_id else None
+        session.sync_current_task()
         return ProcessingResult(extracted, evaluation, created, next_task)

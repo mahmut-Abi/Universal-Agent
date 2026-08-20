@@ -1,32 +1,61 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from universal_agent.capability import CapabilityRegistry, CapabilityResolver
 from universal_agent.domain.runtime import ActiveDomain
 from universal_agent.evaluation import CriteriaEvaluator, EvaluatorRegistry
-from universal_agent.evidence import InMemoryEvidenceStore
+from universal_agent.evidence import EvidenceStore, InMemoryEvidenceStore
 from universal_agent.policy import PolicyEngine
 from universal_agent.recovery import RecoveryManager
 from universal_agent.tools import ToolRegistry
-from universal_agent.world import FactWorldUpdater, InMemoryWorldModel, WorldUpdater
+from universal_agent.world import (
+    FactWorldUpdater,
+    InMemoryWorldModel,
+    WorldModel,
+    WorldUpdater,
+)
 
 
 @dataclass(frozen=True, slots=True)
 class RuntimeComponents:
+    """Domain-derived collaborators shared by every session of one runtime.
+
+    Stores are typed as protocols so a persistent backend can replace the
+    in-memory default without touching the runtime.
+    """
+
     capabilities: CapabilityRegistry
     tools: ToolRegistry
     resolver: CapabilityResolver
     policy_engine: PolicyEngine
     evaluators: EvaluatorRegistry
-    evidence_store: InMemoryEvidenceStore
-    world_model: InMemoryWorldModel
+    evidence_store: EvidenceStore
+    world_model: WorldModel
     world_updaters: tuple[WorldUpdater, ...]
     recovery_manager: RecoveryManager
     active_domain: ActiveDomain
 
 
 class RuntimeBuilder:
+    """Assemble RuntimeComponents from an activated domain.
+
+    The store factories exist so two runtimes can share one evidence store and
+    world model; by default each build gets its own in-memory pair, which is
+    what makes cross-runtime tests exercise the snapshot instead of shared
+    object identity.
+    """
+
+    def __init__(
+        self,
+        *,
+        evidence_store_factory: Callable[[], EvidenceStore] = InMemoryEvidenceStore,
+        world_model_factory: Callable[[], WorldModel] = InMemoryWorldModel,
+    ) -> None:
+        self._evidence_store_factory = evidence_store_factory
+        self._world_model_factory = world_model_factory
+
     def build(self, domain: ActiveDomain) -> RuntimeComponents:
         capabilities = CapabilityRegistry()
         for capability in domain.capabilities:
@@ -45,8 +74,8 @@ class RuntimeBuilder:
             resolver=CapabilityResolver(capabilities, tools),
             policy_engine=PolicyEngine(domain.policies),
             evaluators=evaluators,
-            evidence_store=InMemoryEvidenceStore(),
-            world_model=InMemoryWorldModel(),
+            evidence_store=self._evidence_store_factory(),
+            world_model=self._world_model_factory(),
             world_updaters=domain.world_updaters or (FactWorldUpdater(),),
             recovery_manager=RecoveryManager(domain.recovery_rules),
             active_domain=domain,

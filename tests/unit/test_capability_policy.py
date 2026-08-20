@@ -12,6 +12,7 @@ from universal_agent.core import (
     CapabilityCategory,
     CapabilityDefinition,
     GoalId,
+    JsonMapping,
     PolicyContext,
     PolicyEffect,
     RiskLevel,
@@ -26,7 +27,12 @@ from universal_agent.tools import ToolRegistry
 
 
 class NoopTool:
-    def __init__(self, name: str, priority: int, side_effect=SideEffect.NONE):  # type: ignore[no-untyped-def]
+    def __init__(
+        self,
+        name: str,
+        priority: int,
+        side_effect: SideEffect = SideEffect.NONE,
+    ) -> None:
         self.definition = ToolDefinition(
             name,
             name,
@@ -35,11 +41,16 @@ class NoopTool:
             priority=priority,
         )
 
-    async def execute(self, arguments):  # type: ignore[no-untyped-def]
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
         return immutable_json()
 
 
-def policy_context(capability, tool, *, confirmed=False):  # type: ignore[no-untyped-def]
+def policy_context(
+    capability: CapabilityDefinition,
+    tool: NoopTool,
+    *,
+    confirmed: bool = False,
+) -> PolicyContext:
     return PolicyContext(
         SessionId("s"),
         GoalId("g"),

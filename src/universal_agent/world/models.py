@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import NewType, Protocol
@@ -59,6 +60,15 @@ class WorldUpdater(Protocol):
 
 class WorldModel(Protocol):
     def apply_fact(self, evidence: Evidence) -> bool: ...
+
+    def forget(self, session_id: SessionId) -> None: ...
+
+    def rebuild(
+        self,
+        session_id: SessionId,
+        evidence: Iterable[Evidence],
+        updaters: tuple[WorldUpdater, ...],
+    ) -> None: ...
 
     def snapshot(
         self,

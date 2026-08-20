@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from universal_agent.context import DomainContextProvider
 from universal_agent.core import (
     CapabilityCategory,
     CapabilityDefinition,
@@ -9,6 +10,7 @@ from universal_agent.core import (
     DomainMetadata,
     EvaluationContext,
     Goal,
+    JsonMapping,
     ObservationStatus,
     SuccessCriterion,
     Task,
@@ -18,15 +20,21 @@ from universal_agent.core import (
     immutable_json,
     new_action_id,
 )
-from universal_agent.domain import DomainLoader, DomainValidationError
-from universal_agent.evaluation import CriteriaEvaluator
+from universal_agent.domain import DomainLoader, DomainValidationError, RuntimeBuilder
+from universal_agent.evaluation import CriteriaEvaluator, Evaluator
+from universal_agent.evidence import EvidenceExtractor, InMemoryEvidenceStore
 from universal_agent.observation import ObservationFactory
+from universal_agent.policy import Policy
+from universal_agent.recovery import RecoveryRule
+from universal_agent.tasks import TaskExpander
+from universal_agent.tools import Tool
+from universal_agent.world import InMemoryWorldModel, WorldUpdater
 
 
 class TestTool:
     definition = ToolDefinition("inspect", "Inspect", ("inspect",))
 
-    async def execute(self, arguments):  # type: ignore[no-untyped-def]
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
         return immutable_json()
 
 
@@ -40,31 +48,31 @@ class TestDomain:
         ("criteria",),
     )
 
-    def capabilities(self):  # type: ignore[no-untyped-def]
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
         return (CapabilityDefinition("inspect", "Inspect", CapabilityCategory.OBSERVATION),)
 
-    def tools(self):  # type: ignore[no-untyped-def]
+    def tools(self) -> tuple[Tool, ...]:
         return (TestTool(),)
 
-    def policies(self):  # type: ignore[no-untyped-def]
+    def policies(self) -> tuple[Policy, ...]:
         return ()
 
-    def evaluators(self):  # type: ignore[no-untyped-def]
+    def evaluators(self) -> tuple[Evaluator, ...]:
         return (CriteriaEvaluator(),)
 
-    def context_providers(self):  # type: ignore[no-untyped-def]
+    def context_providers(self) -> tuple[DomainContextProvider, ...]:
         return ()
 
-    def evidence_extractors(self):  # type: ignore[no-untyped-def]
+    def evidence_extractors(self) -> tuple[EvidenceExtractor, ...]:
         return ()
 
-    def world_updaters(self):  # type: ignore[no-untyped-def]
+    def world_updaters(self) -> tuple[WorldUpdater, ...]:
         return ()
 
-    def task_expanders(self):  # type: ignore[no-untyped-def]
+    def task_expanders(self) -> tuple[TaskExpander, ...]:
         return ()
 
-    def recovery_rules(self):  # type: ignore[no-untyped-def]
+    def recovery_rules(self) -> tuple[RecoveryRule, ...]:
         return ()
 
 
@@ -100,3 +108,29 @@ def test_criteria_evaluator_requires_matching_observation_state() -> None:
         EvaluationContext(goal, task, observation, immutable_json({"healthy": False}))
     )
     assert result.status.value == "incomplete"
+
+
+def test_runtime_builder_isolates_stores_unless_they_are_injected() -> None:
+    """Two runtimes may share one store, but must not do so by accident.
+
+    The default is isolation: that is what forces a cross-runtime test to
+    recover through the session snapshot rather than through a store both
+    runtimes happen to hold a reference to.
+    """
+    domain = DomainLoader().load(TestDomain())
+
+    default_first = RuntimeBuilder().build(domain)
+    default_second = RuntimeBuilder().build(domain)
+    assert default_first.evidence_store is not default_second.evidence_store
+    assert default_first.world_model is not default_second.world_model
+
+    evidence = InMemoryEvidenceStore()
+    world = InMemoryWorldModel()
+    builder = RuntimeBuilder(
+        evidence_store_factory=lambda: evidence,
+        world_model_factory=lambda: world,
+    )
+    shared_first = builder.build(domain)
+    shared_second = builder.build(domain)
+    assert shared_first.evidence_store is shared_second.evidence_store is evidence
+    assert shared_first.world_model is shared_second.world_model is world

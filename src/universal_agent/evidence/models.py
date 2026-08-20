@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import NewType
+from typing import NewType, Protocol
 from uuid import uuid4
 
 from universal_agent.core import (
@@ -60,7 +60,13 @@ class EvidenceContext:
     observation: Observation
 
 
-class EvidenceExtractor:
+class EvidenceExtractor(Protocol):
+    """Turns one Observation into typed Evidence.
+
+    A Protocol rather than a base class: a Domain declares extractors by shape,
+    so it never has to import the Kernel to be recognised by it.
+    """
+
     @property
     def name(self) -> str: ...
 

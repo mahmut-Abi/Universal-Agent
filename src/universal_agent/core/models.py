@@ -5,8 +5,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any, NewType
+from typing import TYPE_CHECKING, Any, NewType
 from uuid import uuid4
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard
+    from universal_agent.evidence import Evidence
+    from universal_agent.world import WorldSnapshot
 
 SessionId = NewType("SessionId", str)
 GoalId = NewType("GoalId", str)
@@ -291,12 +295,19 @@ class PolicyResult:
 
 @dataclass(frozen=True, slots=True)
 class EvaluationContext:
+    """What an evaluator is allowed to judge a task on.
+
+    Evidence and world are forward references: they live in packages that
+    depend on core, so the annotations stay strings and only resolve for type
+    checkers.
+    """
+
     goal: Goal
     task: Task
     observation: Observation
     satisfied_criteria: JsonMapping
-    evidence: tuple[Any, ...] = ()
-    world: Any | None = None
+    evidence: tuple[Evidence, ...] = ()
+    world: WorldSnapshot | None = None
 
 
 @dataclass(frozen=True, slots=True)

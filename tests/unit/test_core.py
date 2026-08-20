@@ -69,7 +69,11 @@ async def test_state_store_controls_session_lifecycle() -> None:
         current_task=Task("Inspect", ()),
     )
     await store.create(state)
-    assert await store.load(state.session_id) is state
+    loaded = await store.load(state.session_id)
+    assert loaded is not state
+    assert loaded.session_id == state.session_id
+    assert loaded.goal.id == state.goal.id
+    assert loaded.current_task.id == state.current_task.id
     with pytest.raises(ValueError, match="already exists"):
         await store.create(state)
     with pytest.raises(StateNotFoundError):

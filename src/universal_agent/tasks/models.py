@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from universal_agent.core import Task, TaskId
 from universal_agent.evidence import Evidence
@@ -35,7 +36,13 @@ class TaskExpansionContext:
     world: WorldSnapshot
 
 
-class TaskExpander:
+class TaskExpander(Protocol):
+    """Proposes new Tasks from Evidence a Domain considers significant.
+
+    A Protocol rather than a base class, matching the other Domain extension
+    points: expansion is recognised by shape, not by inheritance.
+    """
+
     @property
     def name(self) -> str: ...
 

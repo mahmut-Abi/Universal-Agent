@@ -16,11 +16,12 @@ from universal_agent import (
     Task,
     immutable_json,
 )
+from universal_agent.core import JsonMapping
 from universal_agent.domains.kubernetes import KubernetesDomain
 
 
 class FakeKubernetesBackend:
-    async def inspect(self, capability, arguments):  # type: ignore[no-untyped-def]
+    async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         return immutable_json(
             {
                 "healthy": True,

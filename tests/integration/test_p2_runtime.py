@@ -16,15 +16,16 @@ from universal_agent import (
     Task,
     immutable_json,
 )
-from universal_agent.core import ErrorCode, ExecutionStatus
-from universal_agent.domains.kubernetes import KubernetesDomain
+from universal_agent.core import ErrorCode, ExecutionStatus, JsonMapping
+from universal_agent.domain import RuntimeComponents
+from universal_agent.domains.kubernetes import KubernetesBackend, KubernetesDomain
 
 
 class DiagnosticBackend:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    async def inspect(self, capability, arguments):  # type: ignore[no-untyped-def]
+    async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.calls.append(capability)
         if capability == "inspect_workload":
             return immutable_json({"resource": "deployment/example", "healthy": False})
@@ -35,7 +36,7 @@ class TimeoutThenHealthyBackend:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def inspect(self, capability, arguments):  # type: ignore[no-untyped-def]
+    async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.calls += 1
         if self.calls == 1:
             raise TimeoutError("simulated timeout")
@@ -53,7 +54,10 @@ def decision(capability: str, criterion: str) -> Decision:
     )
 
 
-def build_runtime(backend, decisions):  # type: ignore[no-untyped-def]
+def build_runtime(
+    backend: KubernetesBackend,
+    decisions: list[Decision],
+) -> tuple[AgentRuntime, InMemoryStateStore, InMemoryEventSink, RuntimeComponents]:
     components = RuntimeBuilder().build(DomainLoader().load(KubernetesDomain(backend)))
     events = InMemoryEventSink()
     store = InMemoryStateStore()
@@ -74,6 +78,7 @@ async def test_observation_builds_evidence_world_and_dynamic_task() -> None:
         [
             decision("inspect_workload", "healthy"),
             decision("inspect_pod", "root_cause"),
+            Decision(DecisionType.FINISH, "Root cause identified"),
         ],
     )
     result = await runtime.run(
@@ -84,9 +89,10 @@ async def test_observation_builds_evidence_world_and_dynamic_task() -> None:
     world = components.world_model.snapshot(result.session_id)
     event_types = [event.type for event in events.events]
 
-    assert result.status is ExecutionStatus.FAILED
+    assert result.status is ExecutionStatus.COMPLETED
     assert backend.calls == ["inspect_workload", "inspect_pod"]
     assert len(state.tasks) == 2
+    assert event_types[-1] == "GoalCompleted"
     assert world.value_for("healthy") is False
     assert world.value_for("root_cause") == "crash_loop"
     assert "EvidenceRecorded" in event_types
@@ -121,7 +127,7 @@ class AlwaysTimeoutBackend:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def inspect(self, capability, arguments):  # type: ignore[no-untyped-def]
+    async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.calls += 1
         raise TimeoutError("always times out")
 

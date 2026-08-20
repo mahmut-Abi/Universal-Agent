@@ -16,7 +16,13 @@ from universal_agent import (
     Task,
     immutable_json,
 )
-from universal_agent.core import ErrorCode, ExecutionStatus, GoalStatus, TaskStatus
+from universal_agent.core import (
+    ErrorCode,
+    ExecutionStatus,
+    GoalStatus,
+    JsonMapping,
+    TaskStatus,
+)
 from universal_agent.domains.kubernetes import KubernetesDomain
 
 
@@ -25,7 +31,7 @@ class FakeKubernetesBackend:
         self._observations = iter(observations)
         self.calls = 0
 
-    async def inspect(self, capability, arguments):  # type: ignore[no-untyped-def]
+    async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.calls += 1
         return immutable_json({"healthy": next(self._observations)})
 
@@ -45,7 +51,18 @@ def finish() -> Decision:
     return Decision(type=DecisionType.FINISH, reason="Required health evidence is present")
 
 
-def build_runtime(decisions, observations, *, max_iterations=10):  # type: ignore[no-untyped-def]
+def build_runtime(
+    decisions: list[Decision],
+    observations: list[bool],
+    *,
+    max_iterations: int = 10,
+) -> tuple[
+    AgentRuntime,
+    ScriptedModelAdapter,
+    InMemoryStateStore,
+    InMemoryEventSink,
+    FakeKubernetesBackend,
+]:
     backend = FakeKubernetesBackend(observations)
     active = DomainLoader().load(KubernetesDomain(backend))
     components = RuntimeBuilder().build(active)
@@ -137,7 +154,7 @@ async def test_unknown_capability_fails_before_action() -> None:
         ),
     ],
 )
-async def test_wait_and_ask_user_pause_runtime(decision, message):  # type: ignore[no-untyped-def]
+async def test_wait_and_ask_user_pause_runtime(decision: Decision, message: str | None) -> None:
     runtime, _, store, _, _ = build_runtime([decision], [])
     goal, task = health_goal_and_task()
     result = await runtime.run(goal, task)
