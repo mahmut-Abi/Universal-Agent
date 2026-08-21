@@ -43,7 +43,12 @@ class RecoveryManager:
         attempts: Mapping[str, int],
     ) -> tuple[RecoveryDecision, str]:
         rule = next(
-            (item for item in self._rules if failure.category in item.categories),
+            (
+                item
+                for item in self._rules
+                if failure.category in item.categories
+                and (not item.match_capabilities or failure.capability in item.match_capabilities)
+            ),
             None,
         )
         if rule is None:

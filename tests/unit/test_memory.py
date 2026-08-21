@@ -9,6 +9,8 @@ from universal_agent.core import (
     CapabilityDefinition,
     DomainManifest,
     DomainMetadata,
+    JsonMapping,
+    immutable_json,
 )
 from universal_agent.domain import DomainLoader, DomainValidationError, RuntimeBuilder
 from universal_agent.domains.kubernetes import KubernetesDomain
@@ -144,8 +146,8 @@ def test_query_limit_returns_most_recent_records() -> None:
 
 def test_runtime_builder_seeds_domain_memories_once() -> None:
     class Backend:
-        async def inspect(self, capability: str, arguments):
-            return {}
+        async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
+            return immutable_json({})
 
     store = InMemoryMemoryStore()
     builder = RuntimeBuilder(memory_store_factory=lambda: store)

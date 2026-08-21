@@ -46,6 +46,7 @@ class RecoveryRule:
     max_attempts: int = 0
     capability: str | None = None
     priority: int = 100
+    match_capabilities: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.max_attempts < 0:

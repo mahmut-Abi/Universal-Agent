@@ -66,7 +66,42 @@ def test_recovery_manager_enforces_attempt_budget() -> None:
     assert second.exhausted
 
 
-def test_unknown_failure_defaults_to_stop() -> None:
+def test_recovery_rules_can_match_specific_capabilities() -> None:
+    task = Task("Execute", ())
+    manager = RecoveryManager(
+        (
+            RecoveryRule(
+                "inspection-timeout",
+                (FailureCategory.TIMEOUT,),
+                RecoveryStrategy.RETRY_ACTION,
+                max_attempts=1,
+                match_capabilities=("inspect_workload",),
+            ),
+        )
+    )
+
+    inspection_failure = Failure(
+        task.id,
+        ErrorCode.TIMEOUT,
+        FailureCategory.TIMEOUT,
+        "inspection timed out",
+        "inspect_workload",
+    )
+    retry, key = manager.decide(inspection_failure, {})
+    assert retry.strategy is RecoveryStrategy.RETRY_ACTION
+    assert key
+
+    mutation_failure = Failure(
+        task.id,
+        ErrorCode.TIMEOUT,
+        FailureCategory.TIMEOUT,
+        "mutation timed out",
+        "scale_workload",
+    )
+    stop, stop_key = manager.decide(mutation_failure, {})
+    assert stop.strategy is RecoveryStrategy.STOP
+    assert stop_key == ""
+
     task = Task("Inspect", ())
     failure = Failure(
         task.id,

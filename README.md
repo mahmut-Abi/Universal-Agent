@@ -1,6 +1,6 @@
 # Universal Agent Runtime
 
-A typed Universal Agent Kernel with a pluggable P2 Domain Runtime.
+A typed Universal Agent Kernel with a pluggable P3.2 Domain Runtime.
 
 ## Architectural boundaries
 
@@ -65,13 +65,16 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
   transitions, and a dedicated context budget. Memory is advisory only: it never becomes Evidence,
   never updates the World Model, never enters the evaluator, and never alone completes a Task or
   Goal. It is excluded from `SessionSnapshot` so the World stays replayable from Evidence alone.
+- P3.2: fake-backed Kubernetes remediation — policy-gated `scale_workload`, deterministic
+  confirmation, capability-scoped timeout recovery, dynamic remediation tasks, and fresh health
+  verification. Mutation receipts never substitute for verification evidence.
 
-The Kubernetes Domain uses an injected backend. Tests and examples use fake backends; no real cluster
-is accessed, no `kubectl` command is executed, and no mutation capability is exposed. Multi-domain
-operation, cross-domain World Model, Agent Profile, persistent databases, packaging, marketplace
-behavior, and real Kubernetes remediation remain intentionally outside P3.1. State persistence stops
-at an in-memory store with snapshot isolation; no file or database backend, event sourcing, or schema
-migration is included.
+The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
+is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
+while `KubernetesRemediationDomain` adds the fake-backed mutation path. Multi-domain operation,
+cross-domain World Model, Agent Profile, persistent databases, packaging, marketplace behavior, and
+real Kubernetes API remediation remain outside P3.2. State persistence stops at an in-memory store
+with snapshot isolation; no file or database backend, event sourcing, or schema migration is included.
 
 ## Development
 
@@ -87,6 +90,7 @@ python examples/p0_agent_loop.py
 python examples/p1_kubernetes_domain.py
 python examples/p2_evidence_recovery.py
 python examples/p3_memory.py
+python examples/p3_2_kubernetes_remediation.py
 ```
 
 `mypy` runs in strict mode over `src`, `tests` and `examples`, and passes with no `type: ignore`

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Protocol
-
 from universal_agent.context import DomainContextProvider
 from universal_agent.core import (
     AgentState,
@@ -20,6 +18,10 @@ from universal_agent.core import (
     ToolDefinition,
     immutable_json,
 )
+from universal_agent.domains.kubernetes.backend import KubernetesBackend, KubernetesMutationBackend
+from universal_agent.domains.kubernetes.policy import KubernetesScalePolicy
+from universal_agent.domains.kubernetes.tools import KubernetesScaleTool
+from universal_agent.domains.kubernetes.workflow import KubernetesRemediationExpander
 from universal_agent.evaluation import Evaluator
 from universal_agent.evidence import Evidence, EvidenceContext, EvidenceExtractor
 from universal_agent.memory import MemoryKind, MemoryRecord
@@ -30,11 +32,8 @@ from universal_agent.recovery import (
     RecoveryStrategy,
 )
 from universal_agent.tasks import TaskExpander, TaskExpansionContext, TaskSpec
+from universal_agent.tools import Tool
 from universal_agent.world import FactWorldUpdater, WorldUpdater
-
-
-class KubernetesBackend(Protocol):
-    async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping: ...
 
 
 class KubernetesInspectTool:
@@ -136,7 +135,7 @@ class WorkloadHealthEvaluator:
 
 
 class KubernetesDomain:
-    _capability_names = (
+    _inspection_capability_names = (
         "inspect_cluster",
         "inspect_workload",
         "inspect_pod",
@@ -158,7 +157,7 @@ class KubernetesDomain:
                 "Read-only Kubernetes domain skeleton",
             ),
             ontology=("Cluster", "Node", "Namespace", "Pod", "Deployment", "Service"),
-            capability_names=self._capability_names,
+            capability_names=self._inspection_capability_names,
             evaluator_names=(WorkloadHealthEvaluator.name,),
         )
 
@@ -170,13 +169,13 @@ class KubernetesDomain:
                 CapabilityCategory.OBSERVATION,
                 RiskLevel.LOW,
             )
-            for name in self._capability_names
+            for name in self._inspection_capability_names
         )
 
-    def tools(self) -> tuple[KubernetesInspectTool, ...]:
+    def tools(self) -> tuple[Tool, ...]:
         return tuple(
             KubernetesInspectTool(capability, self._backend)
-            for capability in self._capability_names
+            for capability in self._inspection_capability_names
         )
 
     def policies(self) -> tuple[Policy, ...]:
@@ -212,6 +211,7 @@ class KubernetesDomain:
                 RecoveryStrategy.RETRY_ACTION,
                 max_attempts=2,
                 priority=10,
+                match_capabilities=self._inspection_capability_names,
             ),
         )
 
@@ -234,3 +234,67 @@ class KubernetesDomain:
                 confidence=0.95,
             ),
         )
+
+
+class KubernetesRemediationContextProvider:
+    name = "kubernetes-remediation-context"
+
+    def provide(self, state: AgentState) -> tuple[ContextFragment, ...]:
+        return (
+            ContextFragment(
+                "kubernetes.scope",
+                "Operate on Kubernetes resources using inspection and policy-gated "
+                "workload scaling.",
+                10,
+            ),
+        )
+
+
+class KubernetesRemediationDomain(KubernetesDomain):
+    _capability_names = (*KubernetesDomain._inspection_capability_names, "scale_workload")
+
+    def __init__(
+        self,
+        inspection_backend: KubernetesBackend,
+        mutation_backend: KubernetesMutationBackend,
+    ) -> None:
+        super().__init__(inspection_backend)
+        self._mutation_backend = mutation_backend
+
+    @property
+    def manifest(self) -> DomainManifest:
+        return DomainManifest(
+            api_version="agent.nantian.dev/v1alpha1",
+            kind="Domain",
+            metadata=DomainMetadata(
+                "kubernetes",
+                "0.2.0",
+                "Kubernetes inspection with policy-gated workload remediation",
+            ),
+            ontology=("Cluster", "Node", "Namespace", "Pod", "Deployment", "Service"),
+            capability_names=self._capability_names,
+            evaluator_names=(WorkloadHealthEvaluator.name,),
+        )
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        return (
+            *super().capabilities(),
+            CapabilityDefinition(
+                "scale_workload",
+                "Scale workload replicas",
+                CapabilityCategory.MUTATION,
+                RiskLevel.MEDIUM,
+            ),
+        )
+
+    def tools(self) -> tuple[Tool, ...]:
+        return (*super().tools(), KubernetesScaleTool(self._mutation_backend))
+
+    def policies(self) -> tuple[Policy, ...]:
+        return (*super().policies(), KubernetesScalePolicy())
+
+    def context_providers(self) -> tuple[DomainContextProvider, ...]:
+        return (KubernetesRemediationContextProvider(),)
+
+    def task_expanders(self) -> tuple[TaskExpander, ...]:
+        return (KubernetesRemediationExpander(),)
