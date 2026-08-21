@@ -19,7 +19,7 @@ from universal_agent import (
     Task,
     immutable_json,
 )
-from universal_agent.core import ExecutionStatus, GoalStatus, JsonMapping, TaskStatus
+from universal_agent.core import ErrorCode, ExecutionStatus, GoalStatus, JsonMapping, TaskStatus
 from universal_agent.domains.kubernetes import KubernetesDomain, KubernetesRemediationDomain
 from universal_agent.runtime import RuntimeEventView
 
@@ -229,3 +229,49 @@ async def test_runtime_api_resumes_confirmation_and_reads_combined_events() -> N
     assert [event.type for event in combined_events].count("PolicyChecked") == 5
     assert [event.type for event in combined_events][-1] == "GoalCompleted"
     assert all(isinstance(event, RuntimeEventView) for event in combined_events)
+
+
+@pytest.mark.asyncio
+async def test_runtime_api_cancels_waiting_confirmation_without_executing_action() -> None:
+    backend = RemediationBackend()
+    store = InMemoryStateStore()
+    events = InMemoryEventSink()
+    api = build_remediation_api(
+        backend,
+        [inspect_workload("healthy"), inspect_pod(), scale_workload()],
+        store,
+        events,
+    )
+    waiting = await api.run_goal(*remediation_goal_task())
+
+    cancelled = await api.cancel_session(
+        waiting.result.session_id,
+        reason="operator cancelled the session",
+    )
+    combined_events = await api.list_events(waiting.result.session_id)
+
+    assert waiting.result.status is ExecutionStatus.WAITING
+    assert cancelled.result.status is ExecutionStatus.CANCELLED
+    assert cancelled.result.error_code is None
+    assert cancelled.result.reason == "operator cancelled the session"
+    assert cancelled.session.goal_status is GoalStatus.CANCELLED
+    assert cancelled.session.current_task_status is TaskStatus.CANCELLED
+    assert cancelled.session.pending_action is None
+    assert backend.mutation_calls == 0
+    assert [event.type for event in combined_events][-1] == "GoalCancelled"
+
+
+@pytest.mark.asyncio
+async def test_runtime_api_rejects_cancel_for_terminal_session_without_mutating_it() -> None:
+    api, _, _, _ = build_health_api([inspect_workload("healthy"), finish()])
+    completed = await api.run_goal(*health_goal_task())
+
+    rejected = await api.cancel_session(completed.result.session_id)
+    events = await api.list_events(completed.result.session_id)
+
+    assert completed.result.status is ExecutionStatus.COMPLETED
+    assert rejected.result.status is ExecutionStatus.FAILED
+    assert rejected.result.error_code is ErrorCode.INVALID_STATE
+    assert rejected.session.goal_status is GoalStatus.COMPLETED
+    assert rejected.session.current_task_status is TaskStatus.COMPLETED
+    assert [event.type for event in events][-1] == "GoalCompleted"

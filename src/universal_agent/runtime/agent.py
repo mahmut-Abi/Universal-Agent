@@ -49,6 +49,9 @@ from universal_agent.runtime.transitions import (
     finish,
     pause,
 )
+from universal_agent.runtime.transitions import (
+    cancel as cancel_transition,
+)
 from universal_agent.state import SessionStore
 
 
@@ -136,6 +139,31 @@ class AgentRuntime:
         if result is not None:
             return result
         return await self._loop(session)
+
+    async def cancel(
+        self,
+        session_id: SessionId,
+        *,
+        reason: str = "session cancelled",
+    ) -> ExecutionResult:
+        snapshot = await self._state_store.load_session(session_id)
+        try:
+            session = hydrate_session(snapshot, self._components)
+        except DomainMismatchError as exc:
+            return await self._reject_session(snapshot.state, str(exc))
+        state = session.state
+        if state.goal.status in {
+            GoalStatus.COMPLETED,
+            GoalStatus.FAILED,
+            GoalStatus.CANCELLED,
+        }:
+            return build_result(
+                state,
+                ExecutionStatus.FAILED,
+                "cannot cancel a terminal session",
+                error_code=ErrorCode.INVALID_STATE,
+            )
+        return await self._settle(session, cancel_transition(session, reason))
 
     async def _loop(self, session: SessionRuntimeState) -> ExecutionResult:
         state = session.state

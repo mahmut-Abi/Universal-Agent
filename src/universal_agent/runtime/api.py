@@ -100,7 +100,8 @@ class RuntimeAPI:
     """Stable in-process interface for applications and future service adapters.
 
     The runtime remains authoritative for execution. This interface only runs
-    goals, resumes waiting sessions, and returns immutable read models.
+    goals, resumes waiting sessions, cancels non-terminal sessions, and returns
+    immutable read models.
     """
 
     def __init__(
@@ -120,6 +121,15 @@ class RuntimeAPI:
 
     async def resume_session(self, session_id: SessionId, *, confirmed: bool) -> RuntimeRun:
         result = await self._runtime.resume(session_id, confirmed=confirmed)
+        return RuntimeRun(result, await self.get_session(result.session_id))
+
+    async def cancel_session(
+        self,
+        session_id: SessionId,
+        *,
+        reason: str = "session cancelled",
+    ) -> RuntimeRun:
+        result = await self._runtime.cancel(session_id, reason=reason)
         return RuntimeRun(result, await self.get_session(result.session_id))
 
     async def get_session(self, session_id: SessionId) -> SessionView:

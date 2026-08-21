@@ -93,6 +93,7 @@ class ObservationStatus(StrEnum):
 class ExecutionStatus(StrEnum):
     COMPLETED = "completed"
     WAITING = "waiting"
+    CANCELLED = "cancelled"
     FAILED = "failed"
 
 

@@ -85,6 +85,23 @@ def fail(
     )
 
 
+def cancel(session: SessionRuntimeState, reason: str) -> Transition:
+    state = session.state
+    state.goal.status = GoalStatus.CANCELLED
+    state.pending_action = None
+    state.error_code = None
+    state.termination_reason = reason
+    for task in session.tasks.all():
+        if task.status not in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}:
+            task.status = TaskStatus.CANCELLED
+    session.sync_current_task()
+    return Transition(
+        build_result(state, ExecutionStatus.CANCELLED, reason),
+        "GoalCancelled",
+        {"reason": reason},
+    )
+
+
 def finish(session: SessionRuntimeState) -> Transition:
     """Complete the goal, or fail when the evaluator has not authorised it.
 

@@ -72,11 +72,13 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
 - `run_goal(goal, task)` executes a goal and returns both the `ExecutionResult` and a `SessionView`.
 - `resume_session(session_id, confirmed=...)` resumes a waiting confirmation through the same
   policy-checked runtime path as `AgentRuntime.resume`.
+- `cancel_session(session_id, reason=...)` cancels a non-terminal session, clears any pending action,
+  and returns a cancelled run plus the latest session projection.
 - `get_session(session_id)` loads an immutable projection of the latest `SessionSnapshot`.
 - `list_events(session_id)` returns immutable event projections filtered to one session.
 
-This is intentionally still in-process. HTTP `agentd`, durable persistence, SSE delivery, CLI, and
-explicit pause/cancel endpoints are later P3.5 work built on this interface, not replacements for it.
+This is intentionally still in-process. Real HTTP `agentd`, durable persistence, SSE delivery, CLI,
+and explicit pause endpoints are later P3.5 work built on this interface, not replacements for it.
 
 `RuntimeService` is the first framework-free `agentd` foundation. It delegates execution, session and
 event reads to `RuntimeAPI`, and adds service-level health, readiness, Domain, Capability and Tool
@@ -86,8 +88,9 @@ Kernel internals directly. See `examples/p3_5_runtime_api.py` and
 
 `AgentdApp` is the framework-free route adapter foundation for `agentd`. It accepts small
 `HttpRequest` objects and returns JSON-safe `HttpResponse` objects for `GET /health`, `GET /ready`,
-catalog routes, and session/event reads. It still does not open sockets; a real HTTP server can wrap
-this adapter later without touching Runtime internals.
+catalog routes, session/event reads, and confirmation resume via
+`POST /v1/sessions/{id}/resume` plus cancellation via `POST /v1/sessions/{id}/cancel`. It still does
+not open sockets; a real HTTP server can wrap this adapter later without touching Runtime internals.
 
 ## Current scope
 
@@ -108,10 +111,10 @@ this adapter later without touching Runtime internals.
   confirmation, capability-scoped timeout recovery, dynamic remediation tasks, and fresh health
   verification. Mutation receipts never substitute for verification evidence.
 - P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
-  projections, `EventReader`, and integration tests covering run/get/events plus confirmation
-  resume across rebuilt runtimes. `RuntimeService` now adds framework-free `agentd` foundation
-  metadata: health, readiness, domains, capabilities, tools, delegated execution, runnable examples,
-  and an `AgentdApp` route adapter for read-only HTTP-shaped routes.
+  projections, `EventReader`, and integration tests covering run/get/events plus confirmation resume
+  and cancellation. `RuntimeService` now adds framework-free `agentd` foundation metadata: health,
+  readiness, domains, capabilities, tools, delegated execution, runnable examples, and an `AgentdApp`
+  route adapter for HTTP-shaped reads plus confirmation resume and cancellation.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,

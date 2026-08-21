@@ -68,8 +68,8 @@ class ToolView:
 class RuntimeService:
     """Application-facing service module for future agentd adapters.
 
-    Execution flows through RuntimeAPI. This service only adds product-level
-    health, readiness and catalog metadata over already-built RuntimeComponents.
+    Execution and lifecycle control flow through RuntimeAPI. This service adds
+    product-level health, readiness and catalog metadata over RuntimeComponents.
     """
 
     def __init__(self, *, runtime_api: RuntimeAPI, components: RuntimeComponents) -> None:
@@ -164,6 +164,14 @@ class RuntimeService:
 
     async def resume_session(self, session_id: SessionId, *, confirmed: bool) -> RuntimeRun:
         return await self._runtime_api.resume_session(session_id, confirmed=confirmed)
+
+    async def cancel_session(
+        self,
+        session_id: SessionId,
+        *,
+        reason: str = "session cancelled",
+    ) -> RuntimeRun:
+        return await self._runtime_api.cancel_session(session_id, reason=reason)
 
     async def get_session(self, session_id: SessionId) -> SessionView:
         return await self._runtime_api.get_session(session_id)

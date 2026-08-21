@@ -7,11 +7,12 @@ from enum import Enum
 from types import MappingProxyType
 from urllib.parse import urlsplit
 
-from universal_agent.core import JsonMapping, JsonValue, SessionId, immutable_json
+from universal_agent.core import ExecutionResult, JsonMapping, JsonValue, SessionId, immutable_json
 from universal_agent.runtime import (
     EvaluationView,
     PendingActionView,
     RuntimeEventView,
+    RuntimeRun,
     SessionView,
     TaskView,
 )
@@ -110,6 +111,28 @@ class AgentdApp:
                 )
             except StateNotFoundError as exc:
                 return not_found(str(exc))
+        if session_id is not None and suffix == "resume":
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            confirmed = request.body.get("confirmed")
+            if not isinstance(confirmed, bool):
+                return bad_request("resume requires boolean confirmed")
+            try:
+                run = await self._service.resume_session(session_id, confirmed=confirmed)
+                return json_response(runtime_run_body(run))
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
+        if session_id is not None and suffix == "cancel":
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            reason = request.body.get("reason", "session cancelled")
+            if not isinstance(reason, str):
+                return bad_request("cancel reason must be a string")
+            try:
+                run = await self._service.cancel_session(session_id, reason=reason)
+                return json_response(runtime_run_body(run))
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
 
         return not_found(f"unknown route: {path}")
 
@@ -125,6 +148,10 @@ def json_response(body: JsonMapping, *, status_code: int = 200) -> HttpResponse:
 
 def not_found(message: str) -> HttpResponse:
     return json_response(error_body("not_found", message), status_code=404)
+
+
+def bad_request(message: str) -> HttpResponse:
+    return json_response(error_body("bad_request", message), status_code=400)
 
 
 def method_not_allowed(allowed: tuple[str, ...]) -> HttpResponse:
@@ -143,6 +170,28 @@ def method_not_allowed(allowed: tuple[str, ...]) -> HttpResponse:
 
 def error_body(code: str, message: str) -> JsonMapping:
     return immutable_json({"error": {"code": code, "message": message}})
+
+
+def runtime_run_body(run: RuntimeRun) -> JsonMapping:
+    return immutable_json(
+        {
+            "result": execution_result_body(run.result),
+            "session": dict(session_body(run.session)),
+        }
+    )
+
+
+def execution_result_body(result: ExecutionResult) -> dict[str, JsonValue]:
+    return {
+        "status": result.status.value,
+        "session_id": str(result.session_id),
+        "goal_id": str(result.goal_id),
+        "task_id": str(result.task_id),
+        "iterations": result.iterations,
+        "reason": result.reason,
+        "error_code": result.error_code.value if result.error_code is not None else None,
+        "user_message": result.user_message,
+    }
 
 
 def health_body(view: HealthView) -> JsonMapping:
