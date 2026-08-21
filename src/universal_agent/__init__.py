@@ -10,6 +10,14 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.domain import DomainLoader, RuntimeBuilder
+from universal_agent.host import (
+    DomainConfig,
+    RuntimeConfig,
+    RuntimeHost,
+    RuntimeLimitsConfig,
+    StoreBackend,
+    StoreConfig,
+)
 from universal_agent.model import ModelAdapter, ScriptedModelAdapter
 from universal_agent.persistence import FileEventStore, FileSessionStore
 from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI
@@ -21,6 +29,7 @@ __all__ = [
     "AgentRuntime",
     "Decision",
     "DecisionType",
+    "DomainConfig",
     "DomainLoader",
     "ExecutionResult",
     "ExecutionStatus",
@@ -32,9 +41,14 @@ __all__ = [
     "ModelAdapter",
     "RuntimeAPI",
     "RuntimeBuilder",
+    "RuntimeConfig",
+    "RuntimeHost",
+    "RuntimeLimitsConfig",
     "RuntimeService",
     "ScriptedModelAdapter",
     "StateStore",
+    "StoreBackend",
+    "StoreConfig",
     "SuccessCriterion",
     "Task",
     "Tool",
