@@ -162,6 +162,8 @@ def _copy_pending_action(action: PendingAction | None) -> PendingAction | None:
         action.tool_name,
         action.target,
         _copy_mapping(action.arguments),
+        action.domain_name,
+        action.domain_version,
     )
 
 

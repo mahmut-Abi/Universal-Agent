@@ -1,6 +1,7 @@
 from universal_agent.tools.runtime import (
     DuplicateToolError,
     Tool,
+    ToolRegistration,
     ToolRegistry,
     ToolRuntime,
     UnknownToolError,
@@ -9,6 +10,7 @@ from universal_agent.tools.runtime import (
 __all__ = [
     "DuplicateToolError",
     "Tool",
+    "ToolRegistration",
     "ToolRegistry",
     "ToolRuntime",
     "UnknownToolError",

@@ -95,11 +95,13 @@ class RuntimeBuilder:
             domain if isinstance(domain, DomainComposition) else DomainComposition.single(domain)
         )
         capabilities = CapabilityRegistry()
-        for capability in composition.capabilities():
-            capabilities.register(capability)
+        for active_domain in composition.domains:
+            for capability in active_domain.capabilities:
+                capabilities.register(capability, active_domain.identity)
         tools = ToolRegistry()
-        for tool in composition.tools():
-            tools.register(tool)
+        for active_domain in composition.domains:
+            for tool in active_domain.tools:
+                tools.register(tool, active_domain.identity)
         evaluators = EvaluatorRegistry()
         evaluators.register(CriteriaEvaluator())
         for evaluator in composition.evaluators():

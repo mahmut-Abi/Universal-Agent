@@ -1,5 +1,7 @@
 from universal_agent.capability.registry import (
+    CapabilityRegistration,
     CapabilityRegistry,
+    CapabilityResolution,
     CapabilityResolver,
     CapabilityUnavailableError,
     DuplicateCapabilityError,
@@ -7,7 +9,9 @@ from universal_agent.capability.registry import (
 )
 
 __all__ = [
+    "CapabilityRegistration",
     "CapabilityRegistry",
+    "CapabilityResolution",
     "CapabilityResolver",
     "CapabilityUnavailableError",
     "DuplicateCapabilityError",

@@ -75,22 +75,37 @@ class ActionExecutor:
         emit: EmitFn,
     ) -> ActionOutcome:
         try:
-            capability, tool = self.components.resolver.resolve(decision.capability or "")
+            resolution = self.components.resolver.resolve_registration(
+                decision.capability or ""
+            )
         except UnknownCapabilityError as exc:
             return ActionRejected(ErrorCode.UNKNOWN_CAPABILITY, str(exc))
         except CapabilityUnavailableError as exc:
             return ActionRejected(ErrorCode.NO_CAPABILITY_TOOL, str(exc))
+        capability = resolution.capability
+        tool = resolution.tool
+        domain_name = resolution.capability_domain.name if resolution.capability_domain else ""
+        domain_version = (
+            resolution.capability_domain.version if resolution.capability_domain else ""
+        )
         pending = PendingAction(
             action_id=new_action_id(),
             capability=capability.name,
             tool_name=tool.definition.name,
             target=decision.target,
             arguments=decision.arguments,
+            domain_name=domain_name,
+            domain_version=domain_version,
         )
         await emit(
             "CapabilityResolved",
             pending.action_id,
-            {"capability": capability.name, "tool_name": tool.definition.name},
+            {
+                "capability": capability.name,
+                "tool_name": tool.definition.name,
+                "domain": domain_name,
+                "domain_version": domain_version,
+            },
         )
         return await self.execute(session, pending, emit, confirmed=False)
 
@@ -103,11 +118,24 @@ class ActionExecutor:
         confirmed: bool,
     ) -> ActionOutcome:
         state = session.state
-        capability, tool = self.components.resolver.resolve(pending.capability)
+        try:
+            resolution = self.components.resolver.resolve_registration(pending.capability)
+        except (UnknownCapabilityError, CapabilityUnavailableError) as exc:
+            return ActionRejected(ErrorCode.INVALID_STATE, str(exc))
+        capability = resolution.capability
+        tool = resolution.tool
         if tool.definition.name != pending.tool_name:
             return ActionRejected(
                 ErrorCode.INVALID_STATE,
                 "pending action tool resolution changed",
+            )
+        domain = resolution.capability_domain
+        if domain is not None and (
+            pending.domain_name != domain.name or pending.domain_version != domain.version
+        ):
+            return ActionRejected(
+                ErrorCode.INVALID_STATE,
+                "pending action domain resolution changed",
             )
         policy_result = self.components.policy_engine.check(
             PolicyContext(
@@ -149,11 +177,18 @@ class ActionExecutor:
             capability=pending.capability,
             arguments=pending.arguments,
             target=pending.target,
+            domain_name=pending.domain_name,
+            domain_version=pending.domain_version,
         )
         await emit(
             "ActionStarted",
             call.action_id,
-            {"tool_name": call.tool_name, "capability": call.capability},
+            {
+                "tool_name": call.tool_name,
+                "capability": call.capability,
+                "domain": call.domain_name,
+                "domain_version": call.domain_version,
+            },
         )
         tool_result = await self._tool_runtime.execute(call)
         await emit("ActionCompleted", call.action_id, {"status": tool_result.status.value})

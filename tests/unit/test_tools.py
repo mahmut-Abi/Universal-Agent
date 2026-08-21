@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from universal_agent.core import (
+    DomainIdentity,
     ErrorCode,
     JsonMapping,
     ObservationStatus,
@@ -62,6 +63,39 @@ async def test_tool_runtime_validates_required_arguments() -> None:
     result = await ToolRuntime(registry).execute(call("echo", "echo_value"))
     assert result.status is ObservationStatus.FAILED
     assert result.error_code is ErrorCode.VALIDATION_ERROR
+
+
+@pytest.mark.asyncio
+async def test_tool_runtime_rejects_domain_mismatch() -> None:
+    registry = ToolRegistry()
+    registry.register(EchoTool(), DomainIdentity("alpha", "1.0.0"))
+    runtime = ToolRuntime(registry)
+    result = await runtime.execute(
+        ToolCall(
+            new_action_id(),
+            "echo",
+            "echo_value",
+            immutable_json({"value": "ok"}),
+            domain_name="beta",
+            domain_version="1.0.0",
+        )
+    )
+
+    assert result.status is ObservationStatus.FAILED
+    assert result.error_code is ErrorCode.VALIDATION_ERROR
+    assert result.error is not None
+    assert "domain mismatch" in result.error
+
+    partial = await runtime.execute(
+        ToolCall(
+            new_action_id(),
+            "echo",
+            "echo_value",
+            immutable_json({"value": "ok"}),
+            domain_name="alpha",
+        )
+    )
+    assert partial.error_code is ErrorCode.VALIDATION_ERROR
 
 
 @pytest.mark.asyncio

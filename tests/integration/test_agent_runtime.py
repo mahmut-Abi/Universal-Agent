@@ -107,6 +107,12 @@ async def test_normal_loop_requires_evaluator_before_finish() -> None:
     assert event_types.count("EvaluationCompleted") == 2
     assert event_types[-1] == "GoalCompleted"
     assert all(event.session_id == result.session_id for event in events.events)
+    resolved = next(event for event in events.events if event.type == "CapabilityResolved")
+    started = next(event for event in events.events if event.type == "ActionStarted")
+    assert resolved.data["domain"] == "kubernetes"
+    assert resolved.data["domain_version"] == "0.1.0"
+    assert started.data["domain"] == "kubernetes"
+    assert started.data["domain_version"] == "0.1.0"
 
 
 @pytest.mark.asyncio

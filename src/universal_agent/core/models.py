@@ -142,6 +142,12 @@ class ErrorCode(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class DomainIdentity:
+    name: str
+    version: str
+
+
+@dataclass(frozen=True, slots=True)
 class SuccessCriterion:
     key: str
     expected: JsonValue
@@ -216,6 +222,8 @@ class ToolCall:
     capability: str
     arguments: JsonMapping
     target: str | None = None
+    domain_name: str = ""
+    domain_version: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,6 +336,8 @@ class PendingAction:
     tool_name: str
     target: str | None
     arguments: JsonMapping
+    domain_name: str = ""
+    domain_version: str = ""
 
 
 @dataclass(frozen=True, slots=True)

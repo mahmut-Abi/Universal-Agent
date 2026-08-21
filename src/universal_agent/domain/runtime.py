@@ -10,6 +10,7 @@ from universal_agent.core import (
     AgentState,
     CapabilityDefinition,
     ContextFragment,
+    DomainIdentity,
     DomainManifest,
     DomainMetadata,
     JsonValue,
@@ -67,12 +68,6 @@ class ActiveDomain:
     def identity(self) -> DomainIdentity:
         metadata = self.manifest.metadata
         return DomainIdentity(metadata.name, metadata.version)
-
-
-@dataclass(frozen=True, slots=True)
-class DomainIdentity:
-    name: str
-    version: str
 
 
 @dataclass(frozen=True, slots=True)

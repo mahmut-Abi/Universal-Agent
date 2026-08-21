@@ -11,6 +11,7 @@ from universal_agent.core import (
     ActionId,
     CapabilityCategory,
     CapabilityDefinition,
+    DomainIdentity,
     GoalId,
     JsonMapping,
     PolicyContext,
@@ -79,6 +80,39 @@ def test_capability_resolver_selects_lowest_priority_tool() -> None:
     resolved, tool = CapabilityResolver(capabilities, tools).resolve("inspect")
     assert resolved is capability
     assert tool.definition.name == "preferred"
+
+
+def test_capability_resolver_preserves_domain_ownership() -> None:
+    identity = DomainIdentity("test", "1.0.0")
+    capabilities = CapabilityRegistry()
+    capability = CapabilityDefinition(
+        "inspect",
+        "Inspect",
+        CapabilityCategory.OBSERVATION,
+    )
+    capabilities.register(capability, identity)
+    tools = ToolRegistry()
+    tools.register(NoopTool("preferred", 10), identity)
+
+    resolution = CapabilityResolver(capabilities, tools).resolve_registration("inspect")
+
+    assert resolution.capability is capability
+    assert resolution.tool.definition.name == "preferred"
+    assert resolution.capability_domain == identity
+    assert resolution.tool_domain == identity
+
+
+def test_capability_resolver_rejects_cross_domain_tool_match() -> None:
+    capabilities = CapabilityRegistry()
+    capabilities.register(
+        CapabilityDefinition("inspect", "Inspect", CapabilityCategory.OBSERVATION),
+        DomainIdentity("alpha", "1.0.0"),
+    )
+    tools = ToolRegistry()
+    tools.register(NoopTool("preferred", 10), DomainIdentity("beta", "1.0.0"))
+
+    with pytest.raises(CapabilityUnavailableError, match="domain mismatch"):
+        CapabilityResolver(capabilities, tools).resolve_registration("inspect")
 
 
 def test_capability_without_tool_is_unavailable() -> None:
