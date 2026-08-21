@@ -3,12 +3,12 @@
 A typed Universal Agent Kernel and Runtime with pluggable Domain Runtimes.
 
 The long-term architecture is defined in
-`universal-agent-runtime-domain-runtime-design.md`. The current implementation is an in-memory
-runtime with fake-backed Kubernetes remediation plus the first P3.5 productization foundation:
-a stable in-process Runtime API, immutable Session read models, and readable Events. The v3.0 design
-document also defines later productization layers such as `agentd`, CLI, persistence, streaming event
-delivery, operations, evaluation, optional Multi-Agent, UI, distributed runtime, and ecosystem
-packaging.
+`universal-agent-runtime-domain-runtime-design.md`. The current implementation is a typed runtime
+with fake-backed Kubernetes remediation plus the first P3.5 productization foundation: a stable
+in-process Runtime API, immutable Session read models, readable Events, and local file-backed
+session/event persistence. The v3.0 design document also defines later productization layers such as
+real `agentd`, CLI, database persistence, streaming event delivery, operations, evaluation, optional
+Multi-Agent, UI, distributed runtime, and ecosystem packaging.
 
 ## Architectural boundaries
 
@@ -77,7 +77,7 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
 - `get_session(session_id)` loads an immutable projection of the latest `SessionSnapshot`.
 - `list_events(session_id)` returns immutable event projections filtered to one session.
 
-This is intentionally still in-process. Real HTTP `agentd`, durable persistence, SSE delivery, CLI,
+This is intentionally still in-process. Real HTTP `agentd`, database persistence, SSE delivery, CLI,
 and explicit pause endpoints are later P3.5 work built on this interface, not replacements for it.
 
 `RuntimeService` is the first framework-free `agentd` foundation. It delegates execution, session and
@@ -91,6 +91,11 @@ Kernel internals directly. See `examples/p3_5_runtime_api.py` and
 catalog routes, session/event reads, and confirmation resume via
 `POST /v1/sessions/{id}/resume` plus cancellation via `POST /v1/sessions/{id}/cancel`. It still does
 not open sockets; a real HTTP server can wrap this adapter later without touching Runtime internals.
+
+`FileSessionStore` and `FileEventStore` are local persistence adapters for P3.5 recovery tests and
+embedded demos. They persist `SessionSnapshot` JSON documents and JSONL runtime events behind the
+same `SessionStore` and `EventSink/EventReader` seams used by in-memory stores. They are not a
+database layer, event-sourcing model, or production migration system.
 
 ## Current scope
 
@@ -113,16 +118,17 @@ not open sockets; a real HTTP server can wrap this adapter later without touchin
 - P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
   projections, `EventReader`, and integration tests covering run/get/events plus confirmation resume
   and cancellation. `RuntimeService` now adds framework-free `agentd` foundation metadata: health,
-  readiness, domains, capabilities, tools, delegated execution, runnable examples, and an `AgentdApp`
-  route adapter for HTTP-shaped reads plus confirmation resume and cancellation.
+  readiness, domains, capabilities, tools, delegated execution, runnable examples, an `AgentdApp`
+  route adapter for HTTP-shaped reads plus confirmation resume and cancellation, and file-backed
+  session/event stores for local recovery.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
 while `KubernetesRemediationDomain` adds the fake-backed mutation path. Multi-domain operation,
 Domain Composition, cross-domain World Model, Agent Profile, persistent databases, packaging,
 marketplace behavior, optional Multi-Agent Runtime, and real Kubernetes API remediation remain outside
-P3.2. State persistence stops at an in-memory store with snapshot isolation; no file or database
-backend, event sourcing, or schema migration is included.
+P3.2. Persistence includes in-memory stores plus local file-backed session/event adapters with
+snapshot isolation; no database backend, event sourcing, or schema migration is included.
 
 ## Roadmap alignment
 
@@ -158,6 +164,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_runtime_api.py
 .venv/bin/python examples/p3_5_runtime_service.py
 .venv/bin/python examples/p3_5_agentd_routes.py
+.venv/bin/python examples/p3_5_persistence.py
 ```
 
 `mypy` runs in strict mode over `src`, `tests` and `examples`, and passes with no `type: ignore`

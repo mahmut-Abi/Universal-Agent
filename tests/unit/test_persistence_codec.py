@@ -1,0 +1,166 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from universal_agent.core import (
+    ActionId,
+    AgentState,
+    ErrorCode,
+    EvaluationResult,
+    EvaluationStatus,
+    EventId,
+    Goal,
+    GoalId,
+    GoalStatus,
+    Observation,
+    ObservationId,
+    ObservationStatus,
+    PendingAction,
+    RuntimeEvent,
+    SessionId,
+    SuccessCriterion,
+    Task,
+    TaskId,
+    TaskStatus,
+    immutable_json,
+)
+from universal_agent.evidence import Evidence, EvidenceId
+from universal_agent.persistence import (
+    decode_runtime_event,
+    decode_session_snapshot,
+    encode_runtime_event,
+    encode_session_snapshot,
+)
+from universal_agent.state import SessionSnapshot
+from universal_agent.tasks import TaskGraphSnapshot, TaskNodeSnapshot
+
+
+def test_session_snapshot_codec_preserves_rebuildable_runtime_state() -> None:
+    observed_at = datetime(2026, 8, 22, 10, 30, tzinfo=UTC)
+    session_id = SessionId("session-persist")
+    root = Task(
+        "Inspect workload",
+        ("healthy",),
+        TaskId("task-root"),
+        TaskStatus.WAITING,
+        observed_at,
+    )
+    diagnose = Task(
+        "Diagnose workload",
+        ("root_cause",),
+        TaskId("task-diagnose"),
+        TaskStatus.PENDING,
+        observed_at,
+    )
+    goal = Goal(
+        "Restore workload",
+        (SuccessCriterion("healthy", True),),
+        GoalId("goal-persist"),
+        GoalStatus.WAITING,
+        observed_at,
+    )
+    observation = Observation(
+        ObservationId("observation-1"),
+        ActionId("action-1"),
+        root.id,
+        "kubernetes_inspect_workload",
+        ObservationStatus.SUCCEEDED,
+        immutable_json({"healthy": False, "resource": "deployment/example"}),
+        observed_at,
+    )
+    state = AgentState(
+        session_id=session_id,
+        goal=goal,
+        current_task=root,
+        iteration=3,
+        satisfied_criteria={"healthy": False},
+        observations=[observation],
+        latest_evaluation=EvaluationResult(
+            EvaluationStatus.INCOMPLETE,
+            "workload remains unverified",
+            "workload-health",
+            immutable_json({"healthy": False}),
+            task_completed=True,
+            goal_completed=False,
+        ),
+        pending_action=PendingAction(
+            ActionId("action-2"),
+            "scale_workload",
+            "kubernetes_scale_workload",
+            "deployment/example",
+            immutable_json({"name": "example", "namespace": "default", "replicas": 3}),
+            "kubernetes",
+            "0.2.0",
+        ),
+        tasks=[root, diagnose],
+        recovery_attempts={"task-root:timeout:kubernetes-timeout-retry": 1},
+        termination_reason="production workload scaling requires confirmation",
+        error_code=ErrorCode.TIMEOUT,
+    )
+    evidence = Evidence(
+        session_id,
+        root.id,
+        ActionId("action-1"),
+        ObservationId("observation-1"),
+        "deployment/example",
+        "healthy",
+        False,
+        "kubernetes_inspect_workload",
+        0.99,
+        EvidenceId("evidence-1"),
+        observed_at,
+    )
+    snapshot = SessionSnapshot(
+        state,
+        TaskGraphSnapshot(
+            (
+                TaskNodeSnapshot("root", root, ()),
+                TaskNodeSnapshot("diagnose", diagnose, (root.id,)),
+            ),
+            root.id,
+        ),
+        (evidence,),
+        "kubernetes",
+        "0.2.0",
+    )
+
+    restored = decode_session_snapshot(encode_session_snapshot(snapshot))
+
+    assert restored.domain_name == "kubernetes"
+    assert restored.domain_version == "0.2.0"
+    assert restored.state.session_id == session_id
+    assert restored.state.current_task.id == root.id
+    assert restored.state.current_task is restored.task_graph.nodes[0].task
+    assert restored.state.pending_action is not None
+    assert restored.state.pending_action.capability == "scale_workload"
+    assert restored.state.latest_evaluation is not None
+    assert restored.state.latest_evaluation.evaluator_name == "workload-health"
+    assert restored.state.recovery_attempts == {"task-root:timeout:kubernetes-timeout-retry": 1}
+    assert restored.task_graph.nodes[1].depends_on == (root.id,)
+    assert restored.evidence[0].id == evidence.id
+    assert restored.evidence[0].value is False
+
+
+def test_runtime_event_codec_preserves_json_safe_event_data() -> None:
+    event = RuntimeEvent(
+        type="DomainActivated",
+        session_id=SessionId("session-events"),
+        goal_id=GoalId("goal-events"),
+        task_id=TaskId("task-events"),
+        id=EventId("event-1"),
+        action_id=None,
+        data={
+            "domains": ("kubernetes@0.2.0", "observability@0.1.0"),
+            "emitted_at": datetime(2026, 8, 22, 10, 31, tzinfo=UTC),
+        },
+        occurred_at=datetime(2026, 8, 22, 10, 32, tzinfo=UTC),
+    )
+
+    restored = decode_runtime_event(encode_runtime_event(event))
+
+    assert restored.id == event.id
+    assert restored.session_id == event.session_id
+    assert restored.action_id is None
+    assert restored.data["domains"] == ["kubernetes@0.2.0", "observability@0.1.0"]
+    assert restored.data["emitted_at"] == "2026-08-22T10:31:00+00:00"
+    assert restored.occurred_at == event.occurred_at
