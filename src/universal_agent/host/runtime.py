@@ -8,6 +8,7 @@ from universal_agent.domain import DomainLoader, DomainRuntime, RuntimeBuilder, 
 from universal_agent.host.config import RuntimeConfig, StoreBackend
 from universal_agent.model import ModelAdapter
 from universal_agent.persistence import FileEventStore, FileSessionStore
+from universal_agent.profile import AgentProfile
 from universal_agent.runtime import (
     AgentRuntime,
     EventReader,
@@ -37,6 +38,7 @@ class RuntimeHost:
     service: RuntimeService
     components: RuntimeComponents
     domain_identity: DomainIdentity
+    profile: AgentProfile | None = None
 
     @classmethod
     def build(
@@ -45,11 +47,13 @@ class RuntimeHost:
         config: RuntimeConfig,
         model: ModelAdapter,
         domain: DomainRuntime,
+        profile: AgentProfile | None = None,
     ) -> RuntimeHost:
         config.validate()
         active_domain = DomainLoader().load(domain)
         identity = active_domain.identity
         _validate_domain_config(config, identity)
+        _validate_profile(profile, identity)
         components = RuntimeBuilder().build(active_domain)
         session_store, event_store = _build_stores(config)
         runtime = AgentRuntime(
@@ -69,9 +73,29 @@ class RuntimeHost:
         return cls(
             config=config,
             runtime_api=api,
-            service=RuntimeService(runtime_api=api, components=components),
+            service=RuntimeService(
+                runtime_api=api,
+                components=components,
+                profiles=() if profile is None else (profile,),
+            ),
             components=components,
             domain_identity=identity,
+            profile=profile,
+        )
+
+    @classmethod
+    def from_profile(
+        cls,
+        *,
+        profile: AgentProfile,
+        model: ModelAdapter,
+        domain: DomainRuntime,
+    ) -> RuntimeHost:
+        return cls.build(
+            config=profile.runtime,
+            model=model,
+            domain=domain,
+            profile=profile,
         )
 
 
@@ -82,6 +106,17 @@ def _validate_domain_config(config: RuntimeConfig, identity: DomainIdentity) -> 
     if expected.version is not None and expected.version != identity.version:
         raise ValueError(
             f"configured domain version {expected.version} does not match {identity.version}"
+        )
+
+
+def _validate_profile(profile: AgentProfile | None, identity: DomainIdentity) -> None:
+    if profile is None:
+        return
+    if profile.domain.name != identity.name:
+        raise ValueError(f"profile domain {profile.domain.name} does not match {identity.name}")
+    if profile.domain.version != identity.version:
+        raise ValueError(
+            f"profile domain version {profile.domain.version} does not match {identity.version}"
         )
 
 

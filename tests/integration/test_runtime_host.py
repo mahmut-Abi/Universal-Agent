@@ -9,6 +9,7 @@ from universal_agent import (
     DecisionType,
     DomainConfig,
     Goal,
+    ProfileConfig,
     RuntimeConfig,
     RuntimeHost,
     ScriptedModelAdapter,
@@ -123,6 +124,22 @@ def configured_host(
     )
 
 
+def production_profile(path: Path) -> ProfileConfig:
+    return ProfileConfig.from_mapping(
+        {
+            "name": "production-operator",
+            "version": "1.0.0",
+            "description": "Production Kubernetes operator",
+            "domain": {"name": "kubernetes", "version": "0.2.0"},
+            "runtime": {
+                "environment": {"environment": "production"},
+                "store": {"backend": "file", "path": str(path)},
+                "domain": {"name": "kubernetes", "version": "0.2.0"},
+            },
+        }
+    )
+
+
 @pytest.mark.asyncio
 async def test_runtime_host_assembles_configured_file_backed_service(tmp_path: Path) -> None:
     backend = HostRemediationBackend()
@@ -167,6 +184,46 @@ def test_runtime_host_rejects_configured_domain_mismatch(tmp_path: Path) -> None
                 store=StoreConfig.file(str(tmp_path)),
                 domain=DomainConfig("coding", "0.2.0"),
             ),
+            model=ScriptedModelAdapter([]),
+            domain=KubernetesRemediationDomain(backend, backend),
+        )
+
+
+def test_runtime_host_from_profile_exposes_profile_catalog(tmp_path: Path) -> None:
+    backend = HostRemediationBackend()
+    profile = production_profile(tmp_path).to_profile()
+
+    host = RuntimeHost.from_profile(
+        profile=profile,
+        model=ScriptedModelAdapter([]),
+        domain=KubernetesRemediationDomain(backend, backend),
+    )
+
+    profiles = host.service.profiles()
+
+    assert host.profile == profile
+    assert host.config == profile.runtime
+    assert profiles[0].name == "production-operator"
+    assert profiles[0].domain_name == "kubernetes"
+
+
+def test_runtime_host_rejects_profile_domain_mismatch(tmp_path: Path) -> None:
+    backend = HostRemediationBackend()
+    profile = ProfileConfig.from_mapping(
+        {
+            "name": "production-operator",
+            "version": "1.0.0",
+            "domain": {"name": "coding", "version": "0.2.0"},
+            "runtime": {
+                "store": {"backend": "file", "path": str(tmp_path)},
+                "domain": {"name": "kubernetes", "version": "0.2.0"},
+            },
+        }
+    ).to_profile()
+
+    with pytest.raises(ValueError, match="profile domain coding does not match kubernetes"):
+        RuntimeHost.from_profile(
+            profile=profile,
             model=ScriptedModelAdapter([]),
             domain=KubernetesRemediationDomain(backend, backend),
         )

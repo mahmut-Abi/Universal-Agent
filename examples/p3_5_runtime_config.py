@@ -8,16 +8,13 @@ from tempfile import TemporaryDirectory
 from universal_agent import (
     Decision,
     DecisionType,
-    Goal,
-    RuntimeConfig,
+    ProfileConfig,
     RuntimeHost,
     ScriptedModelAdapter,
-    SuccessCriterion,
-    Task,
     immutable_json,
 )
 from universal_agent.agentd import AgentdApp, HttpRequest
-from universal_agent.core import JsonMapping
+from universal_agent.core import JsonMapping, JsonValue, SessionId
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 
 
@@ -86,13 +83,26 @@ def execute(capability: str, *observations: str) -> Decision:
     )
 
 
+def session_request_body(*, profile: str) -> JsonMapping:
+    success_criterion: dict[str, JsonValue] = {"key": "healthy", "expected": True}
+    goal_payload: dict[str, JsonValue] = {
+        "description": "Restore workload through configured RuntimeHost",
+        "success_criteria": [success_criterion],
+    }
+    task_payload: dict[str, JsonValue] = {
+        "description": "Inspect workload",
+        "required_criteria": [],
+    }
+    return immutable_json({"profile": profile, "goal": goal_payload, "task": task_payload})
+
+
 def build_host(
-    config: RuntimeConfig,
+    profile: ProfileConfig,
     backend: FakeConfiguredBackend,
     decisions: list[Decision],
 ) -> RuntimeHost:
-    return RuntimeHost.build(
-        config=config,
+    return RuntimeHost.from_profile(
+        profile=profile.to_profile(),
         model=ScriptedModelAdapter(decisions),
         domain=KubernetesRemediationDomain(backend, backend),
     )
@@ -101,24 +111,30 @@ def build_host(
 async def main() -> None:
     with TemporaryDirectory(prefix="universal-agent-config-") as directory:
         root = Path(directory)
-        config_path = root / "runtime-config.json"
-        config_path.write_text(
+        profile_path = root / "profile.json"
+        profile_path.write_text(
             json.dumps(
                 {
-                    "environment": {"environment": "production"},
-                    "store": {"backend": "file", "path": str(root / "store")},
-                    "limits": {"max_iterations": 8, "max_recovery_steps": 4},
+                    "name": "production-operator",
+                    "version": "1.0.0",
+                    "description": "Production Kubernetes operator",
                     "domain": {"name": "kubernetes", "version": "0.2.0"},
+                    "runtime": {
+                        "environment": {"environment": "production"},
+                        "store": {"backend": "file", "path": str(root / "store")},
+                        "limits": {"max_iterations": 8, "max_recovery_steps": 4},
+                        "domain": {"name": "kubernetes", "version": "0.2.0"},
+                    },
                 },
                 indent=2,
                 sort_keys=True,
             ),
             encoding="utf-8",
         )
-        config = RuntimeConfig.from_json_file(config_path)
+        profile = ProfileConfig.from_json_file(profile_path)
         backend = FakeConfiguredBackend()
         first = build_host(
-            config,
+            profile,
             backend,
             [
                 execute("inspect_workload", "healthy"),
@@ -129,34 +145,47 @@ async def main() -> None:
         app = AgentdApp(first.service)
 
         ready = await app.handle(HttpRequest("GET", "/ready"))
-        waiting = await first.service.run_goal(
-            Goal(
-                "Restore workload through configured RuntimeHost",
-                (SuccessCriterion("healthy", True),),
-            ),
-            Task("Inspect workload", ()),
+        profiles = await app.handle(HttpRequest("GET", "/v1/profiles"))
+        created = await app.handle(
+            HttpRequest(
+                "POST",
+                "/v1/sessions",
+                session_request_body(profile="production-operator"),
+            )
         )
+        created_result = created.body["result"]
+        assert isinstance(created_result, dict)
+        session_id = created_result["session_id"]
+        assert isinstance(session_id, str)
 
         second = build_host(
-            config,
+            profile,
             backend,
             [
                 execute("inspect_workload", "verification_observed", "healthy"),
                 Decision(DecisionType.FINISH, "Health verified after configured resume"),
             ],
         )
-        completed = await second.runtime_api.resume_session(
-            waiting.result.session_id, confirmed=True
+        completed = await AgentdApp(second.service).handle(
+            HttpRequest(
+                "POST",
+                f"/v1/sessions/{session_id}/resume",
+                immutable_json({"confirmed": True}),
+            )
         )
-        events = await second.service.list_events(waiting.result.session_id)
+        completed_result = completed.body["result"]
+        assert isinstance(completed_result, dict)
+        events = await second.service.list_events(SessionId(session_id))
+        profile_items = profiles.body["profiles"]
+        assert isinstance(profile_items, list)
 
-        print(f"config={config_path}")
-        print(f"store_backend={config.store.backend.value}")
+        print(f"profile={profile_path}")
+        print(f"store_backend={profile.runtime.store.backend.value}")
         print(f"domain={second.domain_identity.name}@{second.domain_identity.version}")
+        print(f"profile_count={len(profile_items)}")
         print(f"ready={ready.body['ready']}")
-        print(f"initial_status={waiting.result.status.value}")
-        print(f"pending_action={waiting.session.pending_action is not None}")
-        print(f"completed_status={completed.result.status.value}")
+        print(f"initial_status={created_result['status']}")
+        print(f"completed_status={completed_result['status']}")
         print(f"mutation_calls={backend.mutation_calls}")
         print(f"event_count={len(events)}")
 

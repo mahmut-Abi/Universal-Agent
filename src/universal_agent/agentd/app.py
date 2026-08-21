@@ -29,6 +29,7 @@ from universal_agent.service import (
     CapabilityView,
     DomainView,
     HealthView,
+    ProfileView,
     ReadyView,
     RuntimeService,
     ToolView,
@@ -63,6 +64,7 @@ class HttpResponse:
 class GoalSubmission:
     goal: Goal
     task: Task
+    profile_name: str | None = None
 
 
 class AgentdApp:
@@ -107,6 +109,13 @@ class AgentdApp:
                 method,
                 immutable_json({"tools": [tool_body(item) for item in self._service.tools()]}),
             )
+        if path == "/v1/profiles":
+            return self._get(
+                method,
+                immutable_json(
+                    {"profiles": [profile_body(item) for item in self._service.profiles()]}
+                ),
+            )
         if path == "/v1/sessions":
             if method != "POST":
                 return method_not_allowed(("POST",))
@@ -114,6 +123,10 @@ class AgentdApp:
                 submission = parse_goal_submission(request.body)
             except ValueError as exc:
                 return bad_request(str(exc))
+            if submission.profile_name is not None and not self._service.accepts_profile(
+                submission.profile_name
+            ):
+                return bad_request(f"unknown profile: {submission.profile_name}")
             run = await self._service.run_goal(submission.goal, submission.task)
             return json_response(runtime_run_body(run), status_code=201)
 
@@ -197,6 +210,7 @@ def error_body(code: str, message: str) -> JsonMapping:
 
 
 def parse_goal_submission(body: JsonMapping) -> GoalSubmission:
+    profile_name = _optional_non_empty_string_field(body, "profile", "profile")
     goal_payload = _object_field(body, "goal", "goal")
     task_payload = _object_field(body, "task", "task")
     goal = Goal(
@@ -207,7 +221,7 @@ def parse_goal_submission(body: JsonMapping) -> GoalSubmission:
         _non_empty_string_field(task_payload, "description", "task.description"),
         _string_tuple_field(task_payload, "required_criteria", "task.required_criteria"),
     )
-    return GoalSubmission(goal, task)
+    return GoalSubmission(goal, task, profile_name)
 
 
 def _success_criteria(payload: Mapping[str, JsonValue]) -> tuple[SuccessCriterion, ...]:
@@ -262,6 +276,21 @@ def _list_field(payload: Mapping[str, JsonValue], key: str, field: str) -> list[
 
 def _non_empty_string_field(payload: Mapping[str, JsonValue], key: str, field: str) -> str:
     value = _required_field(payload, key, field)
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    if not value.strip():
+        raise ValueError(f"{field} must not be empty")
+    return value
+
+
+def _optional_non_empty_string_field(
+    payload: Mapping[str, JsonValue],
+    key: str,
+    field: str,
+) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
     if not isinstance(value, str):
         raise ValueError(f"{field} must be a string")
     if not value.strip():
@@ -348,6 +377,16 @@ def tool_body(view: ToolView) -> dict[str, JsonValue]:
         "risk": view.risk.value,
         "timeout_seconds": view.timeout_seconds,
         "priority": view.priority,
+        "domain_name": view.domain_name,
+        "domain_version": view.domain_version,
+    }
+
+
+def profile_body(view: ProfileView) -> dict[str, JsonValue]:
+    return {
+        "name": view.name,
+        "version": view.version,
+        "description": view.description,
         "domain_name": view.domain_name,
         "domain_version": view.domain_version,
     }

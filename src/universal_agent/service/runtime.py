@@ -11,6 +11,7 @@ from universal_agent.core import (
     Task,
 )
 from universal_agent.domain import ActiveDomain, RuntimeComponents
+from universal_agent.profile import AgentProfile, ProfileRegistry
 from universal_agent.runtime import RuntimeAPI, RuntimeEventView, RuntimeRun, SessionView
 
 
@@ -65,6 +66,15 @@ class ToolView:
     domain_version: str
 
 
+@dataclass(frozen=True, slots=True)
+class ProfileView:
+    name: str
+    version: str
+    description: str
+    domain_name: str
+    domain_version: str
+
+
 class RuntimeService:
     """Application-facing service module for future agentd adapters.
 
@@ -72,9 +82,16 @@ class RuntimeService:
     product-level health, readiness and catalog metadata over RuntimeComponents.
     """
 
-    def __init__(self, *, runtime_api: RuntimeAPI, components: RuntimeComponents) -> None:
+    def __init__(
+        self,
+        *,
+        runtime_api: RuntimeAPI,
+        components: RuntimeComponents,
+        profiles: tuple[AgentProfile, ...] = (),
+    ) -> None:
         self._runtime_api = runtime_api
         self._components = components
+        self._profiles = ProfileRegistry(profiles)
 
     def health(self) -> HealthView:
         return HealthView(status="ok", service="universal-agent-runtime")
@@ -159,6 +176,12 @@ class RuntimeService:
                 )
         return tuple(sorted(views, key=lambda item: item.name))
 
+    def profiles(self) -> tuple[ProfileView, ...]:
+        return tuple(profile_view(profile) for profile in self._profiles.all())
+
+    def accepts_profile(self, name: str) -> bool:
+        return self._profiles.has(name)
+
     async def run_goal(self, goal: Goal, task: Task) -> RuntimeRun:
         return await self._runtime_api.run_goal(goal, task)
 
@@ -190,6 +213,18 @@ def domain_view(domain: ActiveDomain, *, primary: bool) -> DomainView:
         ontology=domain.manifest.ontology,
         capability_names=domain.manifest.capability_names,
         evaluator_names=domain.manifest.evaluator_names,
+    )
+
+
+def profile_view(profile: AgentProfile) -> ProfileView:
+    assert profile.domain.name is not None
+    assert profile.domain.version is not None
+    return ProfileView(
+        name=profile.name,
+        version=profile.version,
+        description=profile.description,
+        domain_name=profile.domain.name,
+        domain_version=profile.domain.version,
     )
 
 

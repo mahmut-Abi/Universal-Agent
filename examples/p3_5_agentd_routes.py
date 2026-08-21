@@ -88,6 +88,7 @@ def session_request_body(
     goal_description: str,
     task_description: str,
     required_criteria: tuple[str, ...] = (),
+    profile: str | None = None,
 ) -> JsonMapping:
     success_criterion: dict[str, JsonValue] = {"key": "healthy", "expected": True}
     criteria: list[JsonValue] = [success_criterion]
@@ -100,7 +101,10 @@ def session_request_body(
         "description": task_description,
         "required_criteria": required,
     }
-    return immutable_json({"goal": goal_payload, "task": task_payload})
+    body: dict[str, JsonValue] = {"goal": goal_payload, "task": task_payload}
+    if profile is not None:
+        body["profile"] = profile
+    return immutable_json(body)
 
 
 def build_app(

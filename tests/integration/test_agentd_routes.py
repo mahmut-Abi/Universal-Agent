@@ -10,6 +10,7 @@ from universal_agent import (
     Goal,
     InMemoryEventSink,
     InMemoryStateStore,
+    ProfileConfig,
     RuntimeAPI,
     RuntimeBuilder,
     RuntimeService,
@@ -129,6 +130,7 @@ def goal_submission_body(
     goal_description: str = "Verify workload health",
     task_description: str = "Inspect workload",
     required_criteria: tuple[str, ...] = ("healthy",),
+    profile: str | None = None,
 ) -> JsonMapping:
     success_criterion: dict[str, JsonValue] = {"key": "healthy", "expected": True}
     criteria: list[JsonValue] = [success_criterion]
@@ -141,7 +143,10 @@ def goal_submission_body(
         "description": task_description,
         "required_criteria": required,
     }
-    return immutable_json({"goal": goal_payload, "task": task_payload})
+    body: dict[str, JsonValue] = {"goal": goal_payload, "task": task_payload}
+    if profile is not None:
+        body["profile"] = profile
+    return immutable_json(body)
 
 
 def build_service(decisions: list[Decision]) -> tuple[RuntimeService, AgentdBackend]:
@@ -160,6 +165,39 @@ def build_service(decisions: list[Decision]) -> tuple[RuntimeService, AgentdBack
     )
     api = RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
     return RuntimeService(runtime_api=api, components=components), backend
+
+
+def build_profile_service(decisions: list[Decision]) -> tuple[RuntimeService, AgentdBackend]:
+    backend = AgentdBackend()
+    store = InMemoryStateStore()
+    events = InMemoryEventSink()
+    components = RuntimeBuilder().build(
+        DomainLoader().load(KubernetesRemediationDomain(backend, backend))
+    )
+    runtime = AgentRuntime(
+        model=ScriptedModelAdapter(decisions),
+        state_store=store,
+        components=components,
+        event_sink=events,
+        environment=immutable_json({"environment": "production"}),
+    )
+    api = RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
+    profile = ProfileConfig.from_mapping(
+        {
+            "name": "production-operator",
+            "version": "1.0.0",
+            "description": "Production Kubernetes operator",
+            "domain": {"name": "kubernetes", "version": "0.2.0"},
+        }
+    ).to_profile()
+    return (
+        RuntimeService(
+            runtime_api=api,
+            components=components,
+            profiles=(profile,),
+        ),
+        backend,
+    )
 
 
 def remediation_goal_task() -> tuple[Goal, Task]:
@@ -240,6 +278,65 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     scale_tool = find_named(tools.body["tools"], "kubernetes_scale_workload")
     assert scale_tool["side_effect"] == "reversible"
     assert scale_tool["required_arguments"] == ["name", "namespace", "replicas"]
+
+
+@pytest.mark.asyncio
+async def test_agentd_profile_route_exposes_profile_catalog() -> None:
+    service, _ = build_profile_service([])
+    app = AgentdApp(service)
+
+    response = await app.handle(HttpRequest("GET", "/v1/profiles"))
+
+    assert response.status_code == 200
+    assert response.body["profiles"] == [
+        {
+            "name": "production-operator",
+            "version": "1.0.0",
+            "description": "Production Kubernetes operator",
+            "domain_name": "kubernetes",
+            "domain_version": "0.2.0",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_agentd_create_session_route_accepts_configured_profile() -> None:
+    service, backend = build_profile_service([inspect_workload(), finish()])
+    app = AgentdApp(service)
+
+    created = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/sessions",
+            goal_submission_body(profile="production-operator"),
+        )
+    )
+
+    assert created.status_code == 201
+    result = created.body["result"]
+    assert isinstance(result, dict)
+    assert result["status"] == "completed"
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_agentd_create_session_route_rejects_unknown_profile() -> None:
+    service, _ = build_profile_service([])
+    app = AgentdApp(service)
+
+    response = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/sessions",
+            goal_submission_body(profile="missing-profile"),
+        )
+    )
+
+    assert response.status_code == 400
+    assert response.body["error"] == {
+        "code": "bad_request",
+        "message": "unknown profile: missing-profile",
+    }
 
 
 @pytest.mark.asyncio

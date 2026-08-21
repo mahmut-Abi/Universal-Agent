@@ -85,17 +85,22 @@ event reads to `RuntimeAPI`, and adds service-level health, readiness, Domain, C
 catalog views for future HTTP and CLI adapters. It does not start a daemon, open sockets, or access
 Kernel internals directly. `RuntimeHost` is the typed application assembly boundary for Runtime
 Configuration: it validates the configured Domain identity, builds memory or file-backed stores,
-applies runtime limits/environment, and exposes both `RuntimeAPI` and `RuntimeService` without
-teaching applications Kernel internals. See `examples/p3_5_runtime_api.py`,
-`examples/p3_5_runtime_service.py`, and `examples/p3_5_runtime_config.py` for minimal
-application-facing usage.
+applies runtime limits/environment, optionally binds an application-level Agent Profile, and exposes
+both `RuntimeAPI` and `RuntimeService` without teaching applications Kernel internals. See
+`examples/p3_5_runtime_api.py`, `examples/p3_5_runtime_service.py`, and
+`examples/p3_5_runtime_config.py` for minimal application-facing usage.
 
 `AgentdApp` is the framework-free route adapter foundation for `agentd`. It accepts small
 `HttpRequest` objects and returns JSON-safe `HttpResponse` objects for `GET /health`, `GET /ready`,
 catalog routes, route-level goal submission via `POST /v1/sessions`, session/event reads, and
-confirmation resume via `POST /v1/sessions/{id}/resume` plus cancellation via
+Profile catalog reads via `GET /v1/profiles`, confirmation resume via
+`POST /v1/sessions/{id}/resume` plus cancellation via
 `POST /v1/sessions/{id}/cancel`. It still does not open sockets; a real HTTP server can wrap this
 adapter later without touching Runtime internals.
+
+`AgentProfile` is the first application-level Profile foundation. A Profile declares a selectable
+runtime identity — name, version, Domain identity and Runtime Configuration — for future CLI/agentd
+entry points. It is not a new Kernel, not a Domain implementation, and not a routing Agent.
 
 `FileSessionStore` and `FileEventStore` are local persistence adapters for P3.5 recovery tests and
 embedded demos. They persist `SessionSnapshot` JSON documents and JSONL runtime events behind the
@@ -125,8 +130,9 @@ database layer, event-sourcing model, or production migration system.
   and cancellation. `RuntimeService` now adds framework-free `agentd` foundation metadata: health,
   readiness, domains, capabilities, tools, delegated execution, runnable examples, an `AgentdApp`
   route adapter for HTTP-shaped goal submission, session/event reads, confirmation resume and
-  cancellation, file-backed session/event stores for local recovery, and typed `RuntimeConfig` /
-  `RuntimeHost` assembly for environment, limits, store backend and Domain identity validation.
+  cancellation, Profile catalog reads, file-backed session/event stores for local recovery, and typed
+  `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, store backend
+  and Domain identity validation.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
