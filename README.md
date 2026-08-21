@@ -66,8 +66,8 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
 
 ## Runtime API
 
-`RuntimeAPI` is the current application-facing interface. It wraps the Kernel-facing `AgentRuntime`
-with stable read models:
+`RuntimeAPI` is the current application-facing execution interface. It wraps the Kernel-facing
+`AgentRuntime` with stable read models:
 
 - `run_goal(goal, task)` executes a goal and returns both the `ExecutionResult` and a `SessionView`.
 - `resume_session(session_id, confirmed=...)` resumes a waiting confirmation through the same
@@ -77,6 +77,11 @@ with stable read models:
 
 This is intentionally still in-process. HTTP `agentd`, durable persistence, SSE delivery, CLI, and
 explicit pause/cancel endpoints are later P3.5 work built on this interface, not replacements for it.
+
+`RuntimeService` is the first framework-free `agentd` foundation. It delegates execution, session and
+event reads to `RuntimeAPI`, and adds service-level health, readiness, Domain, Capability and Tool
+catalog views for future HTTP and CLI adapters. It does not start a daemon, open sockets, or access
+Kernel internals directly.
 
 ## Current scope
 
@@ -98,7 +103,8 @@ explicit pause/cancel endpoints are later P3.5 work built on this interface, not
   verification. Mutation receipts never substitute for verification evidence.
 - P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
   projections, `EventReader`, and integration tests covering run/get/events plus confirmation
-  resume across rebuilt runtimes.
+  resume across rebuilt runtimes. `RuntimeService` now adds framework-free `agentd` foundation
+  metadata: health, readiness, domains, capabilities, tools, and delegated execution.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
