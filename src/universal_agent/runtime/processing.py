@@ -41,7 +41,7 @@ class ObservationProcessor:
         observation: Observation,
     ) -> ProcessingResult:
         state = session.state
-        extractors = self._components.active_domain.evidence_extractors or (
+        extractors = self._components.evidence_extractors or (
             StructuredEvidenceExtractor(),
         )
         extracted = tuple(
@@ -63,15 +63,13 @@ class ObservationProcessor:
         created = session.tasks.expand(
             tuple(
                 spec
-                for expander in self._components.active_domain.task_expanders
+                for expander in self._components.task_expanders
                 for spec in expander.expand(
                     TaskExpansionContext(state.current_task, accumulated, world)
                 )
             )
         )
-        evaluator = self._components.evaluators.resolve(
-            self._components.active_domain.manifest.evaluator_names[0]
-        )
+        evaluator = self._components.evaluators.resolve(self._components.evaluator_names[0])
         criteria = {
             fact.claim: fact.value
             for fact in world.facts

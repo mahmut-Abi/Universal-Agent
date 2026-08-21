@@ -95,7 +95,13 @@ class AgentRuntime:
         await self._emit(
             state,
             "DomainActivated",
-            data={"domain": self._components.active_domain.manifest.metadata.name},
+            data={
+                "domain": self._components.active_domain.manifest.metadata.name,
+                "domains": tuple(
+                    f"{identity.name}@{identity.version}"
+                    for identity in self._components.domain_composition.identities
+                ),
+            },
         )
         await self._emit(state, "GoalCreated")
         await self._emit(state, "TaskCreated")
@@ -140,7 +146,7 @@ class AgentRuntime:
                 state,
                 self._components.capabilities.all(),
                 self._components.policy_engine.summary,
-                self._components.active_domain.context_providers,
+                self._components.context_providers,
                 session.world(),
                 session.query(limit=8),
                 session.tasks,
@@ -402,7 +408,7 @@ class AgentRuntime:
             goal_description=state.goal.description,
             task_description=state.current_task.description,
             subjects=tuple(fact.subject for fact in session.world().facts),
-            scope=self._components.active_domain.manifest.metadata.name,
+            scope=self._components.memory_scope,
         )
         candidates = self._components.memory_retriever.retrieve(request)
         return self._components.memory_filter.filter(candidates, request)
@@ -428,7 +434,7 @@ class AgentRuntime:
             kind=kind,
             subject=f"session {state.session_id}",
             content=content,
-            scope=self._components.active_domain.manifest.metadata.name,
+            scope=self._components.memory_scope or "",
             confidence=1.0,
             source_session_id=state.session_id,
         )

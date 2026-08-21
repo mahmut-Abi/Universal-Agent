@@ -7,7 +7,9 @@ from typing import Protocol, cast
 
 from universal_agent.context import DomainContextProvider
 from universal_agent.core import (
+    AgentState,
     CapabilityDefinition,
+    ContextFragment,
     DomainManifest,
     DomainMetadata,
     JsonValue,
@@ -60,6 +62,162 @@ class ActiveDomain:
     task_expanders: tuple[TaskExpander, ...]
     recovery_rules: tuple[RecoveryRule, ...]
     memories: tuple[MemoryRecord, ...]
+
+    @property
+    def identity(self) -> DomainIdentity:
+        metadata = self.manifest.metadata
+        return DomainIdentity(metadata.name, metadata.version)
+
+
+@dataclass(frozen=True, slots=True)
+class DomainIdentity:
+    name: str
+    version: str
+
+
+@dataclass(frozen=True, slots=True)
+class DomainComposition:
+    """A validated set of active domains for one runtime.
+
+    This is deliberately conservative: capability and tool names must be unique
+    across domains until the kernel has first-class namespaced decisions.
+    """
+
+    domains: tuple[ActiveDomain, ...]
+
+    def __post_init__(self) -> None:
+        if not self.domains:
+            raise DomainValidationError("domain composition requires at least one domain")
+        self._validate_unique_identities()
+        self._validate_unique_capabilities()
+        self._validate_unique_tools()
+
+    @classmethod
+    def single(cls, domain: ActiveDomain) -> DomainComposition:
+        return cls((domain,))
+
+    @property
+    def primary(self) -> ActiveDomain:
+        return self.domains[0]
+
+    @property
+    def identities(self) -> tuple[DomainIdentity, ...]:
+        return tuple(domain.identity for domain in self.domains)
+
+    @property
+    def scope(self) -> str | None:
+        if len(self.domains) == 1:
+            return self.primary.manifest.metadata.name
+        return None
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        return tuple(item for domain in self.domains for item in domain.capabilities)
+
+    def tools(self) -> tuple[Tool, ...]:
+        return tuple(item for domain in self.domains for item in domain.tools)
+
+    def policies(self) -> tuple[Policy, ...]:
+        return tuple(item for domain in self.domains for item in domain.policies)
+
+    def evaluators(self) -> tuple[Evaluator, ...]:
+        return tuple(item for domain in self.domains for item in domain.evaluators)
+
+    def context_providers(self) -> tuple[DomainContextProvider, ...]:
+        return tuple(
+            _NamespacedContextProvider(domain.identity, provider)
+            for domain in self.domains
+            for provider in domain.context_providers
+        )
+
+    def evidence_extractors(self) -> tuple[EvidenceExtractor, ...]:
+        return tuple(item for domain in self.domains for item in domain.evidence_extractors)
+
+    def world_updaters(self) -> tuple[WorldUpdater, ...]:
+        return tuple(item for domain in self.domains for item in domain.world_updaters)
+
+    def task_expanders(self) -> tuple[TaskExpander, ...]:
+        return tuple(item for domain in self.domains for item in domain.task_expanders)
+
+    def recovery_rules(self) -> tuple[RecoveryRule, ...]:
+        return tuple(item for domain in self.domains for item in domain.recovery_rules)
+
+    def memories(self) -> tuple[MemoryRecord, ...]:
+        return tuple(item for domain in self.domains for item in domain.memories)
+
+    def evaluator_names(self) -> tuple[str, ...]:
+        return tuple(
+            name for domain in self.domains for name in domain.manifest.evaluator_names
+        )
+
+    def _validate_unique_identities(self) -> None:
+        seen: set[DomainIdentity] = set()
+        duplicates: set[DomainIdentity] = set()
+        for identity in self.identities:
+            if identity in seen:
+                duplicates.add(identity)
+            seen.add(identity)
+        if duplicates:
+            names = ", ".join(
+                f"{item.name}@{item.version}" for item in sorted(duplicates, key=str)
+            )
+            raise DomainValidationError(f"duplicate domain identities: {names}")
+
+    def _validate_unique_capabilities(self) -> None:
+        owners: dict[str, DomainIdentity] = {}
+        conflicts: list[str] = []
+        for domain in self.domains:
+            for capability in domain.capabilities:
+                owner = owners.get(capability.name)
+                if owner is not None:
+                    conflicts.append(
+                        f"{capability.name} ({owner.name}@{owner.version}, "
+                        f"{domain.identity.name}@{domain.identity.version})"
+                    )
+                owners[capability.name] = domain.identity
+        if conflicts:
+            raise DomainValidationError(
+                "domain composition contains duplicate capabilities: "
+                + ", ".join(sorted(conflicts))
+            )
+
+    def _validate_unique_tools(self) -> None:
+        owners: dict[str, DomainIdentity] = {}
+        conflicts: list[str] = []
+        for domain in self.domains:
+            for tool in domain.tools:
+                name = tool.definition.name
+                owner = owners.get(name)
+                if owner is not None:
+                    conflicts.append(
+                        f"{name} ({owner.name}@{owner.version}, "
+                        f"{domain.identity.name}@{domain.identity.version})"
+                    )
+                owners[name] = domain.identity
+        if conflicts:
+            raise DomainValidationError(
+                "domain composition contains duplicate tools: "
+                + ", ".join(sorted(conflicts))
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class _NamespacedContextProvider:
+    identity: DomainIdentity
+    provider: DomainContextProvider
+
+    @property
+    def name(self) -> str:
+        return f"{self.identity.name}.{self.provider.name}"
+
+    def provide(self, state: AgentState) -> tuple[ContextFragment, ...]:
+        return tuple(
+            ContextFragment(
+                f"{self.identity.name}.{fragment.key}",
+                fragment.content,
+                fragment.priority,
+            )
+            for fragment in self.provider.provide(state)
+        )
 
 
 class DomainValidationError(ValueError):

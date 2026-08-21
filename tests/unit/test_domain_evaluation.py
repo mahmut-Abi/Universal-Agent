@@ -4,8 +4,10 @@ import pytest
 
 from universal_agent.context import DomainContextProvider
 from universal_agent.core import (
+    AgentState,
     CapabilityCategory,
     CapabilityDefinition,
+    ContextFragment,
     DomainManifest,
     DomainMetadata,
     EvaluationContext,
@@ -19,8 +21,14 @@ from universal_agent.core import (
     ToolResult,
     immutable_json,
     new_action_id,
+    new_session_id,
 )
-from universal_agent.domain import DomainLoader, DomainValidationError, RuntimeBuilder
+from universal_agent.domain import (
+    DomainComposition,
+    DomainLoader,
+    DomainValidationError,
+    RuntimeBuilder,
+)
 from universal_agent.evaluation import CriteriaEvaluator, Evaluator
 from universal_agent.evidence import EvidenceExtractor, InMemoryEvidenceStore
 from universal_agent.memory import MemoryRecord
@@ -63,6 +71,76 @@ class TestDomain:
 
     def context_providers(self) -> tuple[DomainContextProvider, ...]:
         return ()
+
+    def evidence_extractors(self) -> tuple[EvidenceExtractor, ...]:
+        return ()
+
+    def world_updaters(self) -> tuple[WorldUpdater, ...]:
+        return ()
+
+    def task_expanders(self) -> tuple[TaskExpander, ...]:
+        return ()
+
+    def recovery_rules(self) -> tuple[RecoveryRule, ...]:
+        return ()
+
+    def memories(self) -> tuple[MemoryRecord, ...]:
+        return ()
+
+
+class NamedTool:
+    def __init__(self, name: str, capability: str) -> None:
+        self.definition = ToolDefinition(name, name, (capability,))
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        return immutable_json()
+
+
+class NamedContextProvider:
+    name = "context"
+
+    def provide(self, state: AgentState) -> tuple[ContextFragment, ...]:
+        return (ContextFragment("scope", "shared key", 10),)
+
+
+class NamedDomain:
+    def __init__(
+        self,
+        name: str,
+        capability: str,
+        tool_name: str,
+    ) -> None:
+        self.manifest = DomainManifest(
+            "agent.nantian.dev/v1alpha1",
+            "Domain",
+            DomainMetadata(name, "1.0.0", name),
+            ("Thing",),
+            (capability,),
+            ("criteria",),
+        )
+        self._capability = capability
+        self._tool_name = tool_name
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        return (
+            CapabilityDefinition(
+                self._capability,
+                self._capability,
+                CapabilityCategory.OBSERVATION,
+            ),
+        )
+
+    def tools(self) -> tuple[Tool, ...]:
+        return (NamedTool(self._tool_name, self._capability),)
+
+    def policies(self) -> tuple[Policy, ...]:
+        return ()
+
+    def evaluators(self) -> tuple[Evaluator, ...]:
+        return (CriteriaEvaluator(),)
+
+    def context_providers(self) -> tuple[DomainContextProvider, ...]:
+        return (NamedContextProvider(),)
 
     def evidence_extractors(self) -> tuple[EvidenceExtractor, ...]:
         return ()
@@ -138,3 +216,50 @@ def test_runtime_builder_isolates_stores_unless_they_are_injected() -> None:
     shared_second = builder.build(domain)
     assert shared_first.evidence_store is shared_second.evidence_store is evidence
     assert shared_first.world_model is shared_second.world_model is world
+
+
+def test_runtime_builder_composes_multiple_domains() -> None:
+    loader = DomainLoader()
+    alpha = loader.load(NamedDomain("alpha", "inspect_alpha", "alpha_inspect"))
+    beta = loader.load(NamedDomain("beta", "inspect_beta", "beta_inspect"))
+
+    components = RuntimeBuilder().build(DomainComposition((alpha, beta)))
+
+    assert components.active_domain is alpha
+    assert components.domain_composition.identities[0].name == "alpha"
+    assert [item.name for item in components.capabilities.all()] == [
+        "inspect_alpha",
+        "inspect_beta",
+    ]
+    assert components.resolver.resolve("inspect_beta")[1].definition.name == "beta_inspect"
+    assert components.memory_scope is None
+
+    state = AgentState(
+        session_id=new_session_id(),
+        goal=Goal("g", ()),
+        current_task=Task("t", ()),
+    )
+    fragments = tuple(
+        fragment
+        for provider in components.context_providers
+        for fragment in provider.provide(state)
+    )
+    assert [fragment.key for fragment in fragments] == ["alpha.scope", "beta.scope"]
+
+
+def test_domain_composition_rejects_duplicate_capabilities() -> None:
+    loader = DomainLoader()
+    alpha = loader.load(NamedDomain("alpha", "inspect", "alpha_inspect"))
+    beta = loader.load(NamedDomain("beta", "inspect", "beta_inspect"))
+
+    with pytest.raises(DomainValidationError, match="duplicate capabilities"):
+        DomainComposition((alpha, beta))
+
+
+def test_domain_composition_rejects_duplicate_tools() -> None:
+    loader = DomainLoader()
+    alpha = loader.load(NamedDomain("alpha", "inspect_alpha", "inspect"))
+    beta = loader.load(NamedDomain("beta", "inspect_beta", "inspect"))
+
+    with pytest.raises(DomainValidationError, match="duplicate tools"):
+        DomainComposition((alpha, beta))

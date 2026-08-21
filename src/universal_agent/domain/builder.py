@@ -4,9 +4,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from universal_agent.capability import CapabilityRegistry, CapabilityResolver
-from universal_agent.domain.runtime import ActiveDomain
+from universal_agent.context import DomainContextProvider
+from universal_agent.domain.runtime import ActiveDomain, DomainComposition
 from universal_agent.evaluation import CriteriaEvaluator, EvaluatorRegistry
-from universal_agent.evidence import EvidenceStore, InMemoryEvidenceStore
+from universal_agent.evidence import EvidenceExtractor, EvidenceStore, InMemoryEvidenceStore
 from universal_agent.memory import (
     InMemoryMemoryStore,
     KeywordRelevanceFilter,
@@ -17,6 +18,7 @@ from universal_agent.memory import (
 )
 from universal_agent.policy import PolicyEngine
 from universal_agent.recovery import RecoveryManager
+from universal_agent.tasks import TaskExpander
 from universal_agent.tools import ToolRegistry
 from universal_agent.world import (
     FactWorldUpdater,
@@ -55,6 +57,12 @@ class RuntimeComponents:
     world_updaters: tuple[WorldUpdater, ...]
     recovery_manager: RecoveryManager
     active_domain: ActiveDomain
+    domain_composition: DomainComposition
+    context_providers: tuple[DomainContextProvider, ...]
+    evidence_extractors: tuple[EvidenceExtractor, ...]
+    task_expanders: tuple[TaskExpander, ...]
+    evaluator_names: tuple[str, ...]
+    memory_scope: str | None
     memory_store: MemoryStore
     memory_retriever: StoreMemoryRetriever
     memory_filter: RelevanceFilter
@@ -82,21 +90,24 @@ class RuntimeBuilder:
         self._memory_store_factory = memory_store_factory
         self._memory_filter = memory_filter
 
-    def build(self, domain: ActiveDomain) -> RuntimeComponents:
+    def build(self, domain: ActiveDomain | DomainComposition) -> RuntimeComponents:
+        composition = (
+            domain if isinstance(domain, DomainComposition) else DomainComposition.single(domain)
+        )
         capabilities = CapabilityRegistry()
-        for capability in domain.capabilities:
+        for capability in composition.capabilities():
             capabilities.register(capability)
         tools = ToolRegistry()
-        for tool in domain.tools:
+        for tool in composition.tools():
             tools.register(tool)
         evaluators = EvaluatorRegistry()
         evaluators.register(CriteriaEvaluator())
-        for evaluator in domain.evaluators:
+        for evaluator in composition.evaluators():
             if evaluator.name != CriteriaEvaluator.name:
                 evaluators.register(evaluator)
         memory_store = self._memory_store_factory()
         existing = {_memory_key(record) for record in memory_store.export()}
-        for record in domain.memories:
+        for record in composition.memories():
             key = _memory_key(record)
             if key in existing:
                 continue
@@ -107,13 +118,19 @@ class RuntimeBuilder:
             capabilities=capabilities,
             tools=tools,
             resolver=CapabilityResolver(capabilities, tools),
-            policy_engine=PolicyEngine(domain.policies),
+            policy_engine=PolicyEngine(composition.policies()),
             evaluators=evaluators,
             evidence_store=self._evidence_store_factory(),
             world_model=self._world_model_factory(),
-            world_updaters=domain.world_updaters or (FactWorldUpdater(),),
-            recovery_manager=RecoveryManager(domain.recovery_rules),
-            active_domain=domain,
+            world_updaters=composition.world_updaters() or (FactWorldUpdater(),),
+            recovery_manager=RecoveryManager(composition.recovery_rules()),
+            active_domain=composition.primary,
+            domain_composition=composition,
+            context_providers=composition.context_providers(),
+            evidence_extractors=composition.evidence_extractors(),
+            task_expanders=composition.task_expanders(),
+            evaluator_names=composition.evaluator_names(),
+            memory_scope=composition.scope,
             memory_store=memory_store,
             memory_retriever=StoreMemoryRetriever(memory_store),
             memory_filter=memory_filter,
