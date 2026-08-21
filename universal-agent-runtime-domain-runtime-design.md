@@ -1115,7 +1115,13 @@ Agent Profile 是：
 
 ---
 
-# 24. 多 Domain
+# 24. 多 Domain 与 Domain Composition
+
+多领域协作是基础能力，多 Agent 编排是高级能力。两者必须分开设计。
+
+核心原则：
+
+> Agent 是执行主体，Domain 是能力/知识边界，World Model 是共享现实，Task Contract 是 Agent 协作协议。
 
 一个 Agent 可以同时激活多个 Domain。
 
@@ -1145,6 +1151,55 @@ Session
 ```
 
 而不是互相创建 Agent。
+
+也就是说，默认架构应该是：
+
+```text
+Universal Agent
+      |
+      v
+Domain Composition
+      |
+      +-- Kubernetes Domain
+      +-- Dify Domain
+      +-- PostgreSQL Domain
+      +-- Observability Domain
+      |
+      v
+Shared World Model
+```
+
+Domain Composition 负责：
+
+1. Domain Discovery：根据 Goal、当前 Task、World Model 和 Evidence 判断需要哪些 Domain。
+2. Domain Activation：只激活当前任务需要的 Domain，避免把所有能力一次性塞进上下文。
+3. Capability Merge：把多个 Domain 的 Capability 合并成统一候选能力集合。
+4. Policy Merge：聚合 Runtime Policy、Profile Policy 和 Domain Policy，并按最保守规则处理冲突。
+5. Context Contribution：让每个 Active Domain 只贡献与当前任务相关的 ontology、procedure、knowledge、policy 和 evidence 摘要。
+
+最终 Decision Engine 看到的是：
+
+```text
+Relevant World Model
++
+Relevant Evidence
++
+Available Capabilities
++
+Applicable Policies
+```
+
+而不是：
+
+```text
+Kubernetes Agent
++
+Observability Agent
++
+Database Agent
+```
+
+不要把 Domain 问题实现成 Agent Routing 问题。
 
 ---
 
@@ -1190,6 +1245,161 @@ Application performance
 ```
 
 这是真正的通用 Agent 能力。
+
+跨领域 World Model 不应该拆成多个互相同步的局部 World Model。
+
+错误：
+
+```text
+Kubernetes World Model
+Dify World Model
+Prometheus World Model
+```
+
+正确：
+
+```text
+Shared World Model
+    |
+    +-- Kubernetes Entity
+    +-- Dify Entity
+    +-- Observability Entity
+    +-- Database Entity
+```
+
+例如：
+
+```text
+Dify API
+    |
+    +-- runs_on -> Deployment/dify-api
+    +-- depends_on -> Redis
+    +-- depends_on -> PostgreSQL
+
+Deployment/dify-api
+    |
+    +-- has_pod -> Pod/dify-api-123
+
+Pod/dify-api-123
+    |
+    +-- emits -> Log/xxx
+    +-- measured_by -> Metric/xxx
+```
+
+这样 Agent 才能把：
+
+```text
+Pod CrashLoopBackOff
+    -> Exit Code 137
+    -> Memory metric spike
+    -> OOM hypothesis
+    -> Increase memory limit
+    -> Rollout
+    -> Verify
+```
+
+表示为同一个现实中的证据链，而不是跨 Agent 的聊天记录。
+
+## 25.1 Optional Multi-Agent Runtime
+
+Multi-Agent 不应该作为核心执行模型，也不应该用来替代 Domain Composition。
+
+判断标准：
+
+> Domain 是知识/能力边界，Agent 是自主执行边界。
+
+如果只是以下差异，不需要多 Agent：
+
+```text
+不同知识
+不同工具
+不同 Ontology
+不同 Procedure
+不同 Policy
+不同 Evaluator
+```
+
+这些都属于 Domain Runtime。
+
+只有出现以下差异，才考虑 Multi-Agent：
+
+```text
+不同 Goal
+不同 State
+不同权限
+不同生命周期
+不同执行环境
+不同自主循环
+不同隔离要求
+```
+
+例如：
+
+```text
+Main Agent
+    |
+    +-- Coding Domain
+    +-- Kubernetes Domain
+    +-- GitHub Domain
+```
+
+适合单 Agent 多 Domain。
+
+而：
+
+```text
+Orchestrator
+    |
+    +-- Coding Agent
+    +-- Security Audit Agent
+```
+
+只有在 Coding Agent 与 Security Audit Agent 有独立目标、独立上下文、独立权限和独立评估标准时才合理。
+
+未来 Multi-Agent 应作为 Runtime Primitive 预留接口，但不要在早期实现完整编排框架。
+
+Agent 之间通信必须使用结构化 Task Contract，而不是互相传聊天记录：
+
+```json
+{
+  "task_id": "task-123",
+  "goal": "audit deployment security",
+  "input": {
+    "resource": "deployment/foo"
+  },
+  "constraints": {
+    "read_only": true
+  },
+  "expected_output": {
+    "type": "security_report"
+  }
+}
+```
+
+返回：
+
+```json
+{
+  "task_id": "task-123",
+  "status": "completed",
+  "result": {
+    "risk_level": "medium",
+    "findings": []
+  },
+  "evidence": [
+    "evidence-123",
+    "evidence-456"
+  ]
+}
+```
+
+核心要求：
+
+- Agent 协作传递 Task、Result、Evidence，不传自由聊天上下文。
+- 被调用 Agent 的完成状态必须由它自己的 Evaluator 产生。
+- 调用方只能把返回内容作为 Evidence / Result 输入，不能把被调用 Agent 的 prose 当作事实。
+- Policy 必须分别在调用方和被调用方执行，不能由 Orchestrator 的 prompt 替代。
+- Multi-Agent 层不得向 Kernel 引入具体 Domain 分支。
 
 ---
 
@@ -1514,6 +1724,7 @@ Ontology
 Capability
 Policy
 Evaluator
+Domain Composition interface
 ```
 
 首先只做一个 Domain：
@@ -1539,6 +1750,8 @@ deploy workload
 verify workload
 ```
 
+这一阶段只需要预留 Domain Composition 的接口边界，不需要实现多 Domain 调度。
+
 ---
 
 # 34. Phase 3：World Model
@@ -1552,9 +1765,12 @@ Fact
 Evidence
 Artifact
 Event
+Cross-domain entity/relation schema
 ```
 
 并让 Decision Engine 开始依赖 World Model。
+
+World Model 从一开始就应该允许不同 Domain 贡献 Entity、Relation 和 Evidence，但早期实现可以只激活 Kubernetes Domain。
 
 ---
 
@@ -1593,6 +1809,17 @@ Compression
 
 # 37. Phase 6：Multi-Domain
 
+加入 Domain Composition 的完整实现：
+
+```text
+Domain Discovery
+Domain Activation
+Capability Merge
+Policy Merge
+Context Contribution
+Shared World Model updates
+```
+
 测试：
 
 ```text
@@ -1614,6 +1841,8 @@ Browser
 ```
 
 重点测试 Cross-Domain World Model。
+
+这一阶段仍然是一个 Agent 加载多个 Domain，不引入 Agent Router、Supervisor Agent 或多 Agent 通信协议。
 
 ---
 
@@ -1640,6 +1869,48 @@ devops-engineer
 software-engineer
 research-agent
 database-operator
+```
+
+Multi-Agent Runtime 不属于 Domain Marketplace / SDK 的必要前置条件。
+
+---
+
+# 38.1 Phase 8：Optional Multi-Agent Runtime
+
+只有当单 Agent 多 Domain 无法满足独立自治、权限隔离、生命周期隔离或并行评估要求时，才实现 Multi-Agent Runtime。
+
+这一阶段设计：
+
+```text
+Agent Runtime
+    |
+    +-- Agent A
+    +-- Agent B
+    +-- Agent C
+    |
+    v
+Task Contract
+```
+
+必须提供：
+
+```text
+Agent Task Contract
+Result Contract
+Evidence references
+Policy boundary
+Evaluator boundary
+Session isolation
+Permission isolation
+```
+
+禁止：
+
+```text
+Supervisor prompt routes everything
+Agent handoff by chat transcript
+Domain equals Agent
+Agent prose equals Evidence
 ```
 
 ---
@@ -1685,43 +1956,64 @@ Goal Completion Rate
 最终目标：
 
 ```text
-                         Universal Agent
-                               |
-                     +---------+---------+
-                     |                   |
-                 Agent Kernel       Agent Profile
-                     |                   |
-       +-------------+-------------+     |
-       |             |             |     |
-     State        Decision       Context  |
-       |             |             |     |
-       +-------------+-------------+     |
-                     |                   |
-                 World Model             |
-                     |                   |
-               +-----+------+            |
-               |            |            |
-           Ontology     Evidence        |
-               |            |            |
-               +-----+------+            |
-                     |                   |
-                Domain Runtime <----------+
-                     |
-       +-------------+-------------+
-       |             |             |
-     Tools       Knowledge       Policy
-       |             |             |
-       +-------------+-------------+
-                     |
-                  Action
-                     |
-                Observation
-                     |
-                  Update
-                     |
-                  Evaluate
-                     |
-              Continue/Recover
+                         User Goal
+                            |
+                            v
+                   Universal Agent Runtime
+                            |
+                  +---------+---------+
+                  |                   |
+              Agent Kernel       Agent Profile
+                  |
+        +---------+---------+
+        |         |         |
+      State    Context   Decision
+        |         |         |
+        +---------+---------+
+                  |
+                  v
+           Domain Composition
+                  |
+    +-------------+-------------+
+    |             |             |
+Kubernetes      Dify      Observability
+  Domain       Domain        Domain
+    |             |             |
+    +-------------+-------------+
+                  |
+                  v
+           Shared World Model
+                  |
+           +------+------+
+           |             |
+       Evidence       Ontology
+           |             |
+           +------+------+
+                  |
+                  v
+              Capability
+                  |
+                Policy
+                  |
+                Action
+                  |
+             Observation
+                  |
+               Evaluate
+                  |
+        Continue / Recover / Finish
+
+        Optional Multi-Agent Layer
+
+              Agent Runtime
+                  |
+    +-------------+-------------+
+    |             |             |
+ Agent A       Agent B       Agent C
+    |             |             |
+    +-------------+-------------+
+                  |
+            Task Contract
 ```
 
 ---
@@ -1805,13 +2097,15 @@ P1
 ├── Capability
 ├── Policy
 ├── Evaluator
-└── Context Compiler
+├── Context Compiler
+└── Domain Composition interface
 
 P2
 ├── World Model
 ├── Evidence
 ├── Dynamic Task Expansion
-└── Recovery
+├── Recovery
+└── Cross-domain entity/relation schema
 
 P3
 ├── Memory
@@ -1824,6 +2118,13 @@ P4
 ├── Domain Package
 ├── Domain Marketplace
 └── Evaluation Platform
+
+P5
+├── Optional Multi-Agent Runtime
+├── Agent Task Contract
+├── Agent Result Contract
+├── Agent Evidence handoff
+└── Agent isolation model
 ```
 
 最重要的是：
@@ -1841,5 +2142,21 @@ Kubernetes Domain
 能够稳定完成一个真实的复杂任务。
 
 如果这个 Loop 能跑通，再逐步加入 World Model、Evidence、Recovery 和 Multi-Domain。
+
+实施顺序应该是：
+
+```text
+Single Agent
+    ↓
+Single Domain
+    ↓
+Domain Composition interface
+    ↓
+Multi-Domain
+    ↓
+Cross-Domain Reasoning
+    ↓
+Optional Multi-Agent Runtime
+```
 
 这样可以避免一开始就陷入“Agent Framework 大而全”的陷阱。

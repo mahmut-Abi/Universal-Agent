@@ -16,6 +16,10 @@ A typed Universal Agent Kernel with a pluggable P3.2 Domain Runtime.
 - Domain code supplies manifests, capabilities, tools, policies, evaluators, context providers,
   Evidence extractors, World updaters, Task expanders, and Recovery rules. The Kernel contains no
   domain-name branches.
+- Multi-domain collaboration is intended to be handled by Domain Composition inside one Runtime and
+  one Shared World Model. Multi-Agent orchestration is a later, optional execution boundary for
+  independent goals, state, permissions, lifecycles, or isolation requirements; it is not the default
+  way to route between Domains.
 - A session lives in its store, not in a Runtime instance. Everything needed to continue — task graph,
   Evidence, recovery budget, pending confirmation, activated Domain identity — is saved as a
   `SessionSnapshot`, so a rebuilt Runtime resumes from the snapshot instead of from shared objects.
@@ -72,9 +76,10 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
 while `KubernetesRemediationDomain` adds the fake-backed mutation path. Multi-domain operation,
-cross-domain World Model, Agent Profile, persistent databases, packaging, marketplace behavior, and
-real Kubernetes API remediation remain outside P3.2. State persistence stops at an in-memory store
-with snapshot isolation; no file or database backend, event sourcing, or schema migration is included.
+Domain Composition, cross-domain World Model, Agent Profile, persistent databases, packaging,
+marketplace behavior, optional Multi-Agent Runtime, and real Kubernetes API remediation remain outside
+P3.2. State persistence stops at an in-memory store with snapshot isolation; no file or database
+backend, event sourcing, or schema migration is included.
 
 ## Development
 

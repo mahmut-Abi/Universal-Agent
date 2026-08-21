@@ -320,7 +320,71 @@ Prompt fragments may exist, but they are only one part of the Domain.
 
 ---
 
-## 4.9 Avoid Static Mega-Planners
+## 4.9 Multi-Domain Is Not Multi-Agent
+
+Multi-domain collaboration is a core capability.
+
+Multi-agent orchestration is an optional advanced capability.
+
+Default architecture:
+
+```text
+Universal Agent
+        |
+        v
+Domain Composition
+        |
+        +-- Kubernetes Domain
+        +-- Dify Domain
+        +-- PostgreSQL Domain
+        +-- Observability Domain
+        |
+        v
+Shared World Model
+```
+
+Do not turn domain selection into agent routing.
+
+Bad:
+
+```text
+Supervisor Agent
+        |
+        +-- Kubernetes Agent
+        +-- Database Agent
+        +-- Observability Agent
+```
+
+Good:
+
+```text
+One Agent
+        |
+        +-- Multiple Active Domains
+        |
+        v
+Shared World Model
+```
+
+Domain is a knowledge/capability boundary.
+
+Agent is an autonomous execution boundary.
+
+Use multiple Agents only when there are genuinely separate:
+
+- goals
+- state
+- permissions
+- lifecycles
+- execution environments
+- autonomous loops
+- isolation requirements
+
+When Multi-Agent is eventually implemented, Agents must communicate through structured Task / Result / Evidence contracts, not chat transcripts.
+
+---
+
+## 4.10 Avoid Static Mega-Planners
 
 Do not build a planner that attempts to generate the entire task tree before execution.
 
@@ -759,8 +823,11 @@ Add:
 - Policy
 - Evaluator
 - Context Compiler
+- Domain Composition interface
 
 At the end of P1, the runtime should be able to load one Domain without modifying Kernel code.
+
+The Domain Composition interface may exist at P1, but it should not force multi-domain execution yet.
 
 ---
 
@@ -772,8 +839,11 @@ Add:
 - Evidence
 - Dynamic Task Expansion
 - Recovery
+- Cross-domain entity/relation schema
 
 This is where the system becomes a real Agent Runtime rather than a tool-calling loop.
+
+The World Model should be shaped so future Domains can contribute entities, relations, and evidence into one shared model.
 
 ---
 
@@ -797,6 +867,18 @@ Add:
 - CLI
 - Registry / Marketplace
 - Evaluation Platform
+
+Optional Multi-Agent Runtime belongs after the single-Agent multi-Domain architecture is proven.
+
+When added, it must be built around:
+
+- Agent Task Contract
+- Agent Result Contract
+- Evidence handoff
+- Session isolation
+- Permission isolation
+
+It must not replace Domain Composition.
 
 ---
 
@@ -1012,6 +1094,8 @@ Never log secrets, credentials, API keys, tokens, or sensitive tool payloads.
 Do not implement these merely because they appear in Agent frameworks:
 
 - multi-agent orchestration
+- supervisor-agent domain routing
+- agent handoff through chat transcripts
 - autonomous subagents
 - infinite planning
 - reflection loops
