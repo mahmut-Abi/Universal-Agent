@@ -1,0 +1,231 @@
+from __future__ import annotations
+
+from typing import cast
+
+import pytest
+
+from universal_agent import (
+    AgentRuntime,
+    Decision,
+    DecisionType,
+    DomainLoader,
+    Goal,
+    InMemoryEventSink,
+    InMemoryStateStore,
+    RuntimeAPI,
+    RuntimeBuilder,
+    ScriptedModelAdapter,
+    SuccessCriterion,
+    Task,
+    immutable_json,
+)
+from universal_agent.core import ExecutionStatus, GoalStatus, JsonMapping, TaskStatus
+from universal_agent.domains.kubernetes import KubernetesDomain, KubernetesRemediationDomain
+from universal_agent.runtime import RuntimeEventView
+
+
+class HealthBackend:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
+        self.calls += 1
+        assert capability == "inspect_workload"
+        return immutable_json({"resource": "deployment/example", "healthy": True})
+
+
+class RemediationBackend:
+    def __init__(self) -> None:
+        self.inspect_calls: list[str] = []
+        self.mutation_calls = 0
+        self._scaled = False
+
+    async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
+        self.inspect_calls.append(capability)
+        if capability == "inspect_workload":
+            return immutable_json(
+                {
+                    "resource": "deployment/example",
+                    "healthy": self._scaled,
+                    "desired_replicas": 3,
+                    "ready_replicas": 3 if self._scaled else 1,
+                    "verification_observed": self._scaled,
+                }
+            )
+        if capability == "inspect_pod":
+            return immutable_json(
+                {
+                    "resource": "pod/example-123",
+                    "root_cause": "under_replicated",
+                }
+            )
+        raise AssertionError(f"unexpected capability: {capability}")
+
+    async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
+        assert capability == "scale_workload"
+        self.mutation_calls += 1
+        self._scaled = True
+        return immutable_json(
+            {
+                "resource": "deployment/example",
+                "mutation_applied": True,
+                "replicas": 3,
+            }
+        )
+
+
+def inspect_workload(*expected: str) -> Decision:
+    return Decision(
+        DecisionType.EXECUTE,
+        "Inspect workload",
+        capability="inspect_workload",
+        target="deployment/example",
+        arguments=immutable_json({"name": "example"}),
+        expected_observations=expected,
+    )
+
+
+def inspect_pod() -> Decision:
+    return Decision(
+        DecisionType.EXECUTE,
+        "Inspect pod",
+        capability="inspect_pod",
+        target="pod/example-123",
+        arguments=immutable_json({"name": "example-123"}),
+        expected_observations=("root_cause",),
+    )
+
+
+def scale_workload() -> Decision:
+    return Decision(
+        DecisionType.EXECUTE,
+        "Scale workload",
+        capability="scale_workload",
+        target="deployment/example",
+        arguments=immutable_json({"name": "example", "namespace": "default", "replicas": 3}),
+        expected_observations=("mutation_applied",),
+    )
+
+
+def finish() -> Decision:
+    return Decision(DecisionType.FINISH, "Required evidence is present")
+
+
+def health_goal_task() -> tuple[Goal, Task]:
+    return (
+        Goal("Verify workload health", (SuccessCriterion("healthy", True),)),
+        Task("Inspect workload", ("healthy",)),
+    )
+
+
+def remediation_goal_task() -> tuple[Goal, Task]:
+    return (
+        Goal("Restore workload health", (SuccessCriterion("healthy", True),)),
+        Task("Inspect workload", ()),
+    )
+
+
+def build_health_api(
+    decisions: list[Decision],
+) -> tuple[RuntimeAPI, InMemoryStateStore, InMemoryEventSink, HealthBackend]:
+    backend = HealthBackend()
+    store = InMemoryStateStore()
+    events = InMemoryEventSink()
+    runtime = AgentRuntime(
+        model=ScriptedModelAdapter(decisions),
+        state_store=store,
+        components=RuntimeBuilder().build(DomainLoader().load(KubernetesDomain(backend))),
+        event_sink=events,
+    )
+    return (
+        RuntimeAPI(runtime=runtime, session_store=store, event_reader=events),
+        store,
+        events,
+        backend,
+    )
+
+
+def build_remediation_api(
+    backend: RemediationBackend,
+    decisions: list[Decision],
+    store: InMemoryStateStore,
+    events: InMemoryEventSink,
+) -> RuntimeAPI:
+    runtime = AgentRuntime(
+        model=ScriptedModelAdapter(decisions),
+        state_store=store,
+        components=RuntimeBuilder().build(
+            DomainLoader().load(KubernetesRemediationDomain(backend, backend))
+        ),
+        event_sink=events,
+        environment=immutable_json({"environment": "production"}),
+    )
+    return RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
+
+
+@pytest.mark.asyncio
+async def test_runtime_api_runs_goal_and_returns_immutable_session_projection() -> None:
+    api, store, _, backend = build_health_api([inspect_workload("healthy"), finish()])
+
+    run = await api.run_goal(*health_goal_task())
+    loaded = await api.get_session(run.result.session_id)
+    events = await api.list_events(run.result.session_id)
+
+    assert run.result.status is ExecutionStatus.COMPLETED
+    assert loaded.session_id == run.session.session_id
+    assert loaded.goal_status is GoalStatus.COMPLETED
+    assert loaded.current_task_status is TaskStatus.COMPLETED
+    assert loaded.latest_evaluation is not None
+    assert loaded.latest_evaluation.goal_completed
+    assert loaded.domain_name == "kubernetes"
+    assert loaded.domain_version == "0.1.0"
+    assert [event.type for event in events][-1] == "GoalCompleted"
+    assert all(event.session_id == run.result.session_id for event in events)
+    assert backend.calls == 1
+
+    snapshot = await store.load_session(run.result.session_id)
+    snapshot.state.goal.status = GoalStatus.FAILED
+    reloaded = await api.get_session(run.result.session_id)
+    assert reloaded.goal_status is GoalStatus.COMPLETED
+
+    with pytest.raises(TypeError):
+        cast(dict[str, object], loaded.satisfied_criteria)["healthy"] = False
+    with pytest.raises(TypeError):
+        cast(dict[str, object], events[0].data)["changed"] = True
+
+
+@pytest.mark.asyncio
+async def test_runtime_api_resumes_confirmation_and_reads_combined_events() -> None:
+    backend = RemediationBackend()
+    store = InMemoryStateStore()
+    events = InMemoryEventSink()
+    first = build_remediation_api(
+        backend,
+        [inspect_workload("healthy"), inspect_pod(), scale_workload()],
+        store,
+        events,
+    )
+
+    waiting = await first.run_goal(*remediation_goal_task())
+
+    assert waiting.result.status is ExecutionStatus.WAITING
+    assert waiting.session.pending_action is not None
+    assert waiting.session.pending_action.capability == "scale_workload"
+    assert backend.mutation_calls == 0
+
+    second = build_remediation_api(
+        backend,
+        [inspect_workload("verification_observed", "healthy"), finish()],
+        store,
+        events,
+    )
+    completed = await second.resume_session(waiting.result.session_id, confirmed=True)
+    combined_events = await second.list_events(waiting.result.session_id)
+
+    assert completed.result.status is ExecutionStatus.COMPLETED
+    assert completed.session.goal_status is GoalStatus.COMPLETED
+    assert completed.session.pending_action is None
+    assert backend.mutation_calls == 1
+    assert [event.type for event in combined_events].count("PolicyChecked") == 5
+    assert [event.type for event in combined_events][-1] == "GoalCompleted"
+    assert all(isinstance(event, RuntimeEventView) for event in combined_events)

@@ -65,9 +65,7 @@ class ToolRegistry:
 
     def registrations_for_capability(self, capability: str) -> tuple[ToolRegistration, ...]:
         return tuple(
-            item
-            for item in self._tools.values()
-            if capability in item.tool.definition.capabilities
+            item for item in self._tools.values() if capability in item.tool.definition.capabilities
         )
 
     def all(self) -> tuple[Tool, ...]:
@@ -95,8 +93,10 @@ class ToolRuntime:
             )
         tool = registration.tool
         identity = registration.domain_identity
-        if identity is not None and (call.domain_name or call.domain_version) and (
-            call.domain_name != identity.name or call.domain_version != identity.version
+        if (
+            identity is not None
+            and (call.domain_name or call.domain_version)
+            and (call.domain_name != identity.name or call.domain_version != identity.version)
         ):
             return ToolResult(
                 status=ObservationStatus.FAILED,

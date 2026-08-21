@@ -140,9 +140,7 @@ class DomainComposition:
         return tuple(item for domain in self.domains for item in domain.memories)
 
     def evaluator_names(self) -> tuple[str, ...]:
-        return tuple(
-            name for domain in self.domains for name in domain.manifest.evaluator_names
-        )
+        return tuple(name for domain in self.domains for name in domain.manifest.evaluator_names)
 
     def _validate_unique_identities(self) -> None:
         seen: set[DomainIdentity] = set()
@@ -152,9 +150,7 @@ class DomainComposition:
                 duplicates.add(identity)
             seen.add(identity)
         if duplicates:
-            names = ", ".join(
-                f"{item.name}@{item.version}" for item in sorted(duplicates, key=str)
-            )
+            names = ", ".join(f"{item.name}@{item.version}" for item in sorted(duplicates, key=str))
             raise DomainValidationError(f"duplicate domain identities: {names}")
 
     def _validate_unique_capabilities(self) -> None:
@@ -190,8 +186,7 @@ class DomainComposition:
                 owners[name] = domain.identity
         if conflicts:
             raise DomainValidationError(
-                "domain composition contains duplicate tools: "
-                + ", ".join(sorted(conflicts))
+                "domain composition contains duplicate tools: " + ", ".join(sorted(conflicts))
             )
 
 

@@ -75,9 +75,7 @@ class ActionExecutor:
         emit: EmitFn,
     ) -> ActionOutcome:
         try:
-            resolution = self.components.resolver.resolve_registration(
-                decision.capability or ""
-            )
+            resolution = self.components.resolver.resolve_registration(decision.capability or "")
         except UnknownCapabilityError as exc:
             return ActionRejected(ErrorCode.UNKNOWN_CAPABILITY, str(exc))
         except CapabilityUnavailableError as exc:

@@ -41,9 +41,7 @@ class ObservationProcessor:
         observation: Observation,
     ) -> ProcessingResult:
         state = session.state
-        extractors = self._components.evidence_extractors or (
-            StructuredEvidenceExtractor(),
-        )
+        extractors = self._components.evidence_extractors or (StructuredEvidenceExtractor(),)
         extracted = tuple(
             evidence
             for extractor in extractors

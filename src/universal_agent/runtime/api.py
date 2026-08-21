@@ -1,0 +1,202 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from types import MappingProxyType
+from typing import Any
+
+from universal_agent.core import (
+    ActionId,
+    ErrorCode,
+    EvaluationResult,
+    EvaluationStatus,
+    ExecutionResult,
+    Goal,
+    GoalId,
+    GoalStatus,
+    JsonMapping,
+    PendingAction,
+    RuntimeEvent,
+    SessionId,
+    Task,
+    TaskId,
+    TaskStatus,
+    immutable_json,
+)
+from universal_agent.runtime.agent import AgentRuntime
+from universal_agent.runtime.events import EventReader
+from universal_agent.state import SessionSnapshot, SessionStore
+
+
+@dataclass(frozen=True, slots=True)
+class PendingActionView:
+    action_id: ActionId
+    capability: str
+    tool_name: str
+    target: str | None
+    arguments: JsonMapping
+    domain_name: str
+    domain_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationView:
+    status: EvaluationStatus
+    reason: str
+    evaluator_name: str
+    matched_criteria: JsonMapping
+    task_completed: bool
+    goal_completed: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TaskView:
+    task_id: TaskId
+    description: str
+    status: TaskStatus
+    required_criteria: tuple[str, ...]
+    depends_on: tuple[TaskId, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SessionView:
+    session_id: SessionId
+    goal_id: GoalId
+    goal_description: str
+    goal_status: GoalStatus
+    current_task_id: TaskId
+    current_task_description: str
+    current_task_status: TaskStatus
+    iteration: int
+    tasks: tuple[TaskView, ...]
+    satisfied_criteria: JsonMapping
+    pending_action: PendingActionView | None
+    latest_evaluation: EvaluationView | None
+    termination_reason: str | None
+    error_code: ErrorCode | None
+    domain_name: str
+    domain_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeEventView:
+    event_id: str
+    type: str
+    session_id: SessionId
+    goal_id: GoalId
+    task_id: TaskId
+    action_id: ActionId | None
+    data: MappingProxyType[str, Any]
+    occurred_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeRun:
+    result: ExecutionResult
+    session: SessionView
+
+
+class RuntimeAPI:
+    """Stable in-process interface for applications and future service adapters.
+
+    The runtime remains authoritative for execution. This interface only runs
+    goals, resumes waiting sessions, and returns immutable read models.
+    """
+
+    def __init__(
+        self,
+        *,
+        runtime: AgentRuntime,
+        session_store: SessionStore,
+        event_reader: EventReader,
+    ) -> None:
+        self._runtime = runtime
+        self._session_store = session_store
+        self._event_reader = event_reader
+
+    async def run_goal(self, goal: Goal, task: Task) -> RuntimeRun:
+        result = await self._runtime.run(goal, task)
+        return RuntimeRun(result, await self.get_session(result.session_id))
+
+    async def resume_session(self, session_id: SessionId, *, confirmed: bool) -> RuntimeRun:
+        result = await self._runtime.resume(session_id, confirmed=confirmed)
+        return RuntimeRun(result, await self.get_session(result.session_id))
+
+    async def get_session(self, session_id: SessionId) -> SessionView:
+        return session_view(await self._session_store.load_session(session_id))
+
+    async def list_events(self, session_id: SessionId) -> tuple[RuntimeEventView, ...]:
+        events = await self._event_reader.list_events(session_id)
+        return tuple(event_view(event) for event in events)
+
+
+def session_view(snapshot: SessionSnapshot) -> SessionView:
+    state = snapshot.state
+    current = state.current_task
+    return SessionView(
+        session_id=state.session_id,
+        goal_id=state.goal.id,
+        goal_description=state.goal.description,
+        goal_status=state.goal.status,
+        current_task_id=current.id,
+        current_task_description=current.description,
+        current_task_status=current.status,
+        iteration=state.iteration,
+        tasks=tuple(
+            TaskView(
+                task_id=node.task.id,
+                description=node.task.description,
+                status=node.task.status,
+                required_criteria=node.task.required_criteria,
+                depends_on=node.depends_on,
+            )
+            for node in snapshot.task_graph.nodes
+        ),
+        satisfied_criteria=immutable_json(state.satisfied_criteria),
+        pending_action=pending_action_view(state.pending_action),
+        latest_evaluation=evaluation_view(state.latest_evaluation),
+        termination_reason=state.termination_reason,
+        error_code=state.error_code,
+        domain_name=snapshot.domain_name,
+        domain_version=snapshot.domain_version,
+    )
+
+
+def pending_action_view(pending: PendingAction | None) -> PendingActionView | None:
+    if pending is None:
+        return None
+    return PendingActionView(
+        pending.action_id,
+        pending.capability,
+        pending.tool_name,
+        pending.target,
+        immutable_json(pending.arguments),
+        pending.domain_name,
+        pending.domain_version,
+    )
+
+
+def evaluation_view(evaluation: EvaluationResult | None) -> EvaluationView | None:
+    if evaluation is None:
+        return None
+    return EvaluationView(
+        evaluation.status,
+        evaluation.reason,
+        evaluation.evaluator_name,
+        immutable_json(evaluation.matched_criteria),
+        evaluation.task_completed,
+        evaluation.goal_completed,
+    )
+
+
+def event_view(event: RuntimeEvent) -> RuntimeEventView:
+    return RuntimeEventView(
+        event_id=str(event.id),
+        type=event.type,
+        session_id=event.session_id,
+        goal_id=event.goal_id,
+        task_id=event.task_id,
+        action_id=event.action_id,
+        data=MappingProxyType(dict(event.data)),
+        occurred_at=event.occurred_at,
+    )

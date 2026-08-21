@@ -3,10 +3,12 @@
 A typed Universal Agent Kernel and Runtime with pluggable Domain Runtimes.
 
 The long-term architecture is defined in
-`universal-agent-runtime-domain-runtime-design.md`. The current implementation remains a P3.2
-in-memory runtime with fake-backed Kubernetes remediation; the v3.0 design document also defines the
-next productization layers such as Runtime API, `agentd`, CLI, persistence, event streams, operations,
-evaluation, optional Multi-Agent, UI, distributed runtime, and ecosystem packaging.
+`universal-agent-runtime-domain-runtime-design.md`. The current implementation is an in-memory
+runtime with fake-backed Kubernetes remediation plus the first P3.5 productization foundation:
+a stable in-process Runtime API, immutable Session read models, and readable Events. The v3.0 design
+document also defines later productization layers such as `agentd`, CLI, persistence, streaming event
+delivery, operations, evaluation, optional Multi-Agent, UI, distributed runtime, and ecosystem
+packaging.
 
 ## Architectural boundaries
 
@@ -62,6 +64,20 @@ budget instead of handing the session a fresh set of retries.
 factories can be injected when two runtimes should genuinely share one backend. The default isolation
 is what makes cross-runtime tests exercise the snapshot rather than object identity.
 
+## Runtime API
+
+`RuntimeAPI` is the current application-facing interface. It wraps the Kernel-facing `AgentRuntime`
+with stable read models:
+
+- `run_goal(goal, task)` executes a goal and returns both the `ExecutionResult` and a `SessionView`.
+- `resume_session(session_id, confirmed=...)` resumes a waiting confirmation through the same
+  policy-checked runtime path as `AgentRuntime.resume`.
+- `get_session(session_id)` loads an immutable projection of the latest `SessionSnapshot`.
+- `list_events(session_id)` returns immutable event projections filtered to one session.
+
+This is intentionally still in-process. HTTP `agentd`, durable persistence, SSE delivery, CLI, and
+explicit pause/cancel endpoints are later P3.5 work built on this interface, not replacements for it.
+
 ## Current scope
 
 - P0: typed state, model/tool boundaries, observations, events, and the asynchronous loop.
@@ -80,6 +96,9 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
 - P3.2: fake-backed Kubernetes remediation — policy-gated `scale_workload`, deterministic
   confirmation, capability-scoped timeout recovery, dynamic remediation tasks, and fresh health
   verification. Mutation receipts never substitute for verification evidence.
+- P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
+  projections, `EventReader`, and integration tests covering run/get/events plus confirmation
+  resume across rebuilt runtimes.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
@@ -110,16 +129,16 @@ usage stays in this README.
 Python 3.12 or newer is required.
 
 ```bash
-python -m pip install -e '.[dev]'
-ruff format --check src tests examples
-ruff check .
-mypy
-pytest
-python examples/p0_agent_loop.py
-python examples/p1_kubernetes_domain.py
-python examples/p2_evidence_recovery.py
-python examples/p3_memory.py
-python examples/p3_2_kubernetes_remediation.py
+.venv/bin/python -m pip install -e '.[dev]'
+.venv/bin/python -m ruff format --check src tests examples
+.venv/bin/python -m ruff check .
+.venv/bin/python -m mypy
+.venv/bin/python -m pytest -q
+.venv/bin/python examples/p0_agent_loop.py
+.venv/bin/python examples/p1_kubernetes_domain.py
+.venv/bin/python examples/p2_evidence_recovery.py
+.venv/bin/python examples/p3_memory.py
+.venv/bin/python examples/p3_2_kubernetes_remediation.py
 ```
 
 `mypy` runs in strict mode over `src`, `tests` and `examples`, and passes with no `type: ignore`
