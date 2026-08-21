@@ -92,9 +92,10 @@ application-facing usage.
 
 `AgentdApp` is the framework-free route adapter foundation for `agentd`. It accepts small
 `HttpRequest` objects and returns JSON-safe `HttpResponse` objects for `GET /health`, `GET /ready`,
-catalog routes, session/event reads, and confirmation resume via
-`POST /v1/sessions/{id}/resume` plus cancellation via `POST /v1/sessions/{id}/cancel`. It still does
-not open sockets; a real HTTP server can wrap this adapter later without touching Runtime internals.
+catalog routes, route-level goal submission via `POST /v1/sessions`, session/event reads, and
+confirmation resume via `POST /v1/sessions/{id}/resume` plus cancellation via
+`POST /v1/sessions/{id}/cancel`. It still does not open sockets; a real HTTP server can wrap this
+adapter later without touching Runtime internals.
 
 `FileSessionStore` and `FileEventStore` are local persistence adapters for P3.5 recovery tests and
 embedded demos. They persist `SessionSnapshot` JSON documents and JSONL runtime events behind the
@@ -123,9 +124,9 @@ database layer, event-sourcing model, or production migration system.
   projections, `EventReader`, and integration tests covering run/get/events plus confirmation resume
   and cancellation. `RuntimeService` now adds framework-free `agentd` foundation metadata: health,
   readiness, domains, capabilities, tools, delegated execution, runnable examples, an `AgentdApp`
-  route adapter for HTTP-shaped reads plus confirmation resume and cancellation, file-backed
-  session/event stores for local recovery, and typed `RuntimeConfig` / `RuntimeHost` assembly for
-  environment, limits, store backend and Domain identity validation.
+  route adapter for HTTP-shaped goal submission, session/event reads, confirmation resume and
+  cancellation, file-backed session/event stores for local recovery, and typed `RuntimeConfig` /
+  `RuntimeHost` assembly for environment, limits, store backend and Domain identity validation.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,

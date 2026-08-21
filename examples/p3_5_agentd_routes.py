@@ -7,19 +7,16 @@ from universal_agent import (
     Decision,
     DecisionType,
     DomainLoader,
-    Goal,
     InMemoryEventSink,
     InMemoryStateStore,
     RuntimeAPI,
     RuntimeBuilder,
     RuntimeService,
     ScriptedModelAdapter,
-    SuccessCriterion,
-    Task,
     immutable_json,
 )
 from universal_agent.agentd import AgentdApp, HttpRequest
-from universal_agent.core import JsonMapping
+from universal_agent.core import JsonMapping, JsonValue
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 
 
@@ -86,6 +83,26 @@ def execute(capability: str, *observations: str) -> Decision:
     )
 
 
+def session_request_body(
+    *,
+    goal_description: str,
+    task_description: str,
+    required_criteria: tuple[str, ...] = (),
+) -> JsonMapping:
+    success_criterion: dict[str, JsonValue] = {"key": "healthy", "expected": True}
+    criteria: list[JsonValue] = [success_criterion]
+    required: list[JsonValue] = list(required_criteria)
+    goal_payload: dict[str, JsonValue] = {
+        "description": goal_description,
+        "success_criteria": criteria,
+    }
+    task_payload: dict[str, JsonValue] = {
+        "description": task_description,
+        "required_criteria": required,
+    }
+    return immutable_json({"goal": goal_payload, "task": task_payload})
+
+
 def build_app(
     decisions: list[Decision],
     *,
@@ -112,7 +129,7 @@ def build_app(
 
 
 async def main() -> None:
-    app, service, backend = build_app(
+    app, _, backend = build_app(
         [
             execute("inspect_workload", "healthy"),
             execute("inspect_pod", "root_cause"),
@@ -125,23 +142,31 @@ async def main() -> None:
     health = await app.handle(HttpRequest("GET", "/health"))
     ready = await app.handle(HttpRequest("GET", "/ready"))
     capabilities = await app.handle(HttpRequest("GET", "/v1/capabilities"))
-    run = await service.run_goal(
-        Goal("Restore workload behind agentd routes", (SuccessCriterion("healthy", True),)),
-        Task("Inspect workload", ()),
+    created = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/sessions",
+            session_request_body(
+                goal_description="Restore workload behind agentd routes",
+                task_description="Inspect workload",
+            ),
+        )
     )
-    waiting_session = await app.handle(HttpRequest("GET", f"/v1/sessions/{run.result.session_id}"))
+    created_result = created.body["result"]
+    assert isinstance(created_result, dict)
+    session_id = created_result["session_id"]
+    assert isinstance(session_id, str)
+    waiting_session = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}"))
     resumed = await app.handle(
         HttpRequest(
             "POST",
-            f"/v1/sessions/{run.result.session_id}/resume",
+            f"/v1/sessions/{session_id}/resume",
             immutable_json({"confirmed": True}),
         )
     )
     assert isinstance(resumed.body["session"], dict)
-    session = await app.handle(HttpRequest("GET", f"/v1/sessions/{run.result.session_id}"))
-    route_events = await app.handle(
-        HttpRequest("GET", f"/v1/sessions/{run.result.session_id}/events")
-    )
+    session = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}"))
+    route_events = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/events"))
     capability_items = capabilities.body["capabilities"]
     event_items = route_events.body["events"]
     result_body = resumed.body["result"]
@@ -149,7 +174,7 @@ async def main() -> None:
     assert isinstance(event_items, list)
     assert isinstance(result_body, dict)
 
-    cancel_app, cancel_service, _ = build_app(
+    cancel_app, _, _ = build_app(
         [
             Decision(
                 DecisionType.ASK_USER,
@@ -159,14 +184,24 @@ async def main() -> None:
         ],
         environment="staging",
     )
-    cancel_run = await cancel_service.run_goal(
-        Goal("Pause route demo", (SuccessCriterion("healthy", True),)),
-        Task("Wait for operator input", ()),
+    cancel_created = await cancel_app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/sessions",
+            session_request_body(
+                goal_description="Pause route demo",
+                task_description="Wait for operator input",
+            ),
+        )
     )
+    cancel_created_result = cancel_created.body["result"]
+    assert isinstance(cancel_created_result, dict)
+    cancel_session_id = cancel_created_result["session_id"]
+    assert isinstance(cancel_session_id, str)
     cancelled = await cancel_app.handle(
         HttpRequest(
             "POST",
-            f"/v1/sessions/{cancel_run.result.session_id}/cancel",
+            f"/v1/sessions/{cancel_session_id}/cancel",
             immutable_json({"reason": "operator cancelled route demo"}),
         )
     )
@@ -176,13 +211,13 @@ async def main() -> None:
     print(f"health={health.status_code}:{health.body['status']}")
     print(f"ready={ready.body['ready']} reason={ready.body['reason']}")
     print(f"capability_count={len(capability_items)}")
-    print(f"initial_status={run.result.status.value}")
+    print(f"initial_status={created_result['status']}")
     print(f"pending_before_resume={waiting_session.body['pending_action'] is not None}")
     print(f"resumed_status={result_body['status']}")
     print(f"session_status={session.body['goal_status']}")
     print(f"mutation_calls={backend.mutation_calls}")
     print(f"event_count={len(event_items)}")
-    print(f"cancel_initial_status={cancel_run.result.status.value}")
+    print(f"cancel_initial_status={cancel_created_result['status']}")
     print(f"cancelled_status={cancel_result['status']}")
 
 

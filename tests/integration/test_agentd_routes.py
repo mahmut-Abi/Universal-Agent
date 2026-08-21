@@ -124,6 +124,26 @@ def goal_task() -> tuple[Goal, Task]:
     )
 
 
+def goal_submission_body(
+    *,
+    goal_description: str = "Verify workload health",
+    task_description: str = "Inspect workload",
+    required_criteria: tuple[str, ...] = ("healthy",),
+) -> JsonMapping:
+    success_criterion: dict[str, JsonValue] = {"key": "healthy", "expected": True}
+    criteria: list[JsonValue] = [success_criterion]
+    required: list[JsonValue] = list(required_criteria)
+    goal_payload: dict[str, JsonValue] = {
+        "description": goal_description,
+        "success_criteria": criteria,
+    }
+    task_payload: dict[str, JsonValue] = {
+        "description": task_description,
+        "required_criteria": required,
+    }
+    return immutable_json({"goal": goal_payload, "task": task_payload})
+
+
 def build_service(decisions: list[Decision]) -> tuple[RuntimeService, AgentdBackend]:
     backend = AgentdBackend()
     store = InMemoryStateStore()
@@ -220,6 +240,37 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     scale_tool = find_named(tools.body["tools"], "kubernetes_scale_workload")
     assert scale_tool["side_effect"] == "reversible"
     assert scale_tool["required_arguments"] == ["name", "namespace", "replicas"]
+
+
+@pytest.mark.asyncio
+async def test_agentd_create_session_route_runs_goal_and_exposes_session_events() -> None:
+    service, backend = build_service([inspect_workload(), finish()])
+    app = AgentdApp(service)
+
+    created = await app.handle(HttpRequest("POST", "/v1/sessions", goal_submission_body()))
+
+    assert created.status_code == 201
+    result = created.body["result"]
+    session = created.body["session"]
+    assert isinstance(result, dict)
+    assert isinstance(session, dict)
+    assert result["status"] == "completed"
+    assert session["goal_status"] == "completed"
+    session_id = result["session_id"]
+    assert isinstance(session_id, str)
+
+    fetched = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}"))
+    events = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/events"))
+
+    assert fetched.status_code == 200
+    assert fetched.body["session_id"] == session_id
+    assert events.status_code == 200
+    event_items = events.body["events"]
+    assert isinstance(event_items, list)
+    last_event = event_items[-1]
+    assert isinstance(last_event, dict)
+    assert last_event["type"] == "GoalCompleted"
+    assert backend.inspect_calls == 1
 
 
 @pytest.mark.asyncio
@@ -344,6 +395,79 @@ async def test_agentd_cancel_route_cancels_pending_action() -> None:
     assert session["current_task_status"] == "cancelled"
     assert session["pending_action"] is None
     assert backend.mutation_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_agentd_create_session_route_validates_request_body() -> None:
+    service, _ = build_service([])
+    app = AgentdApp(service)
+    invalid_goal: dict[str, JsonValue] = {
+        "description": "",
+        "success_criteria": [{"key": "healthy", "expected": True}],
+    }
+    valid_task: dict[str, JsonValue] = {
+        "description": "Inspect workload",
+        "required_criteria": ["healthy"],
+    }
+    empty_criteria_goal: dict[str, JsonValue] = {
+        "description": "Verify workload health",
+        "success_criteria": [],
+    }
+    invalid_required_task: dict[str, JsonValue] = {
+        "description": "Inspect workload",
+        "required_criteria": [1],
+    }
+    valid_goal: dict[str, JsonValue] = {
+        "description": "Verify workload health",
+        "success_criteria": [{"key": "healthy", "expected": True}],
+    }
+
+    wrong_method = await app.handle(HttpRequest("GET", "/v1/sessions"))
+    missing_goal = await app.handle(HttpRequest("POST", "/v1/sessions"))
+    empty_goal_description = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/sessions",
+            immutable_json({"goal": invalid_goal, "task": valid_task}),
+        )
+    )
+    empty_success_criteria = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/sessions",
+            immutable_json({"goal": empty_criteria_goal, "task": valid_task}),
+        )
+    )
+    invalid_required_criteria = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/sessions",
+            immutable_json({"goal": valid_goal, "task": invalid_required_task}),
+        )
+    )
+
+    assert wrong_method.status_code == 405
+    assert wrong_method.headers["allow"] == "POST"
+    assert missing_goal.status_code == 400
+    assert missing_goal.body["error"] == {
+        "code": "bad_request",
+        "message": "goal is required",
+    }
+    assert empty_goal_description.status_code == 400
+    assert empty_goal_description.body["error"] == {
+        "code": "bad_request",
+        "message": "goal.description must not be empty",
+    }
+    assert empty_success_criteria.status_code == 400
+    assert empty_success_criteria.body["error"] == {
+        "code": "bad_request",
+        "message": "goal.success_criteria must not be empty",
+    }
+    assert invalid_required_criteria.status_code == 400
+    assert invalid_required_criteria.body["error"] == {
+        "code": "bad_request",
+        "message": "task.required_criteria[0] must be a string",
+    }
 
 
 @pytest.mark.asyncio
