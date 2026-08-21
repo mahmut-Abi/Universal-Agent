@@ -39,7 +39,10 @@ class InMemoryMemoryStore:
             if not query.subjects or record.subject in query.subjects
             if query.scope is None or record.scope == query.scope or record.scope == ""
         ]
-        matches.sort(key=lambda item: (item.created_at, str(item.id)))
+        matches.sort(
+            key=lambda item: (item.created_at, str(item.id)),
+            reverse=query.limit is not None,
+        )
         if query.limit is not None:
             matches = matches[: query.limit]
         return tuple(matches)

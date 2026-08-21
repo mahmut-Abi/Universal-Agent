@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from universal_agent.context import DomainContextProvider
@@ -8,7 +10,8 @@ from universal_agent.core import (
     DomainManifest,
     DomainMetadata,
 )
-from universal_agent.domain import DomainLoader, DomainValidationError
+from universal_agent.domain import DomainLoader, DomainValidationError, RuntimeBuilder
+from universal_agent.domains.kubernetes import KubernetesDomain
 from universal_agent.evaluation import Evaluator
 from universal_agent.evidence import EvidenceExtractor
 from universal_agent.memory import (
@@ -111,6 +114,50 @@ def test_relevance_filter_scores_thresholds_and_truncates() -> None:
         )
         == ()
     )
+
+
+def test_query_limit_returns_most_recent_records() -> None:
+    store = InMemoryMemoryStore()
+    oldest = MemoryRecord(
+        MemoryKind.SEMANTIC,
+        "oldest",
+        "content",
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    middle = MemoryRecord(
+        MemoryKind.SEMANTIC,
+        "middle",
+        "content",
+        created_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    newest = MemoryRecord(
+        MemoryKind.SEMANTIC,
+        "newest",
+        "content",
+        created_at=datetime(2026, 1, 3, tzinfo=UTC),
+    )
+    for record in (oldest, middle, newest):
+        store.add(record)
+
+    assert store.query(MemoryQuery(limit=2)) == (newest, middle)
+
+
+def test_runtime_builder_seeds_domain_memories_once() -> None:
+    class Backend:
+        async def inspect(self, capability: str, arguments):
+            return {}
+
+    store = InMemoryMemoryStore()
+    builder = RuntimeBuilder(memory_store_factory=lambda: store)
+    domain = DomainLoader().load(KubernetesDomain(Backend()))
+
+    builder.build(domain)
+    builder.build(domain)
+
+    assert [record.subject for record in store.export()] == [
+        "unhealthy workload triage",
+        "kubernetes readiness",
+    ]
 
 
 def test_domain_loader_rejects_episodic_memory() -> None:

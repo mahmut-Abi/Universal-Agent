@@ -10,6 +10,7 @@ from universal_agent.evidence import EvidenceStore, InMemoryEvidenceStore
 from universal_agent.memory import (
     InMemoryMemoryStore,
     KeywordRelevanceFilter,
+    MemoryRecord,
     MemoryStore,
     RelevanceFilter,
     StoreMemoryRetriever,
@@ -23,6 +24,17 @@ from universal_agent.world import (
     WorldModel,
     WorldUpdater,
 )
+
+
+def _memory_key(record: MemoryRecord) -> tuple[object, ...]:
+    return (
+        record.kind,
+        record.subject,
+        record.content,
+        record.scope,
+        record.confidence,
+        record.source_session_id,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,8 +95,13 @@ class RuntimeBuilder:
             if evaluator.name != CriteriaEvaluator.name:
                 evaluators.register(evaluator)
         memory_store = self._memory_store_factory()
+        existing = {_memory_key(record) for record in memory_store.export()}
         for record in domain.memories:
+            key = _memory_key(record)
+            if key in existing:
+                continue
             memory_store.add(record)
+            existing.add(key)
         memory_filter = self._memory_filter or KeywordRelevanceFilter()
         return RuntimeComponents(
             capabilities=capabilities,
