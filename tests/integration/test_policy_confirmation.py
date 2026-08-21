@@ -36,6 +36,7 @@ from universal_agent.core import (
 )
 from universal_agent.evaluation import Evaluator
 from universal_agent.evidence import EvidenceExtractor
+from universal_agent.memory import MemoryRecord
 from universal_agent.policy import Policy, PolicyRule
 from universal_agent.recovery import RecoveryRule
 from universal_agent.tasks import TaskExpander
@@ -134,6 +135,9 @@ class MutationDomain:
         return ()
 
     def recovery_rules(self) -> tuple[RecoveryRule, ...]:
+        return ()
+
+    def memories(self) -> tuple[MemoryRecord, ...]:
         return ()
 
 

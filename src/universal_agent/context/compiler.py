@@ -12,6 +12,7 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.evidence import Evidence
+from universal_agent.memory import MemoryRecord
 from universal_agent.tasks import TaskManager
 from universal_agent.world import WorldSnapshot
 
@@ -33,13 +34,23 @@ class ContextCompiler(Protocol):
         world: WorldSnapshot | None = None,
         evidence: tuple[Evidence, ...] = (),
         tasks: TaskManager | None = None,
+        memories: tuple[MemoryRecord, ...] = (),
     ) -> DecisionContext: ...
 
 
 class BasicContextCompiler:
-    def __init__(self, *, max_fragments: int = 8, max_characters: int = 4_000) -> None:
+    def __init__(
+        self,
+        *,
+        max_fragments: int = 8,
+        max_characters: int = 4_000,
+        max_memory_fragments: int = 4,
+        max_memory_characters: int = 1_200,
+    ) -> None:
         self._max_fragments = max_fragments
         self._max_characters = max_characters
+        self._max_memory_fragments = max_memory_fragments
+        self._max_memory_characters = max_memory_characters
 
     def compile(
         self,
@@ -50,6 +61,7 @@ class BasicContextCompiler:
         world: WorldSnapshot | None = None,
         evidence: tuple[Evidence, ...] = (),
         tasks: TaskManager | None = None,
+        memories: tuple[MemoryRecord, ...] = (),
     ) -> DecisionContext:
         fragments = self._select_fragments(state, providers)
         return DecisionContext(
@@ -69,6 +81,7 @@ class BasicContextCompiler:
             world_context=self._world_fragments(world),
             evidence_context=self._evidence_fragments(evidence),
             task_context=self._task_fragments(tasks),
+            memory_context=self._memory_fragments(memories),
             policy_summary=policy_summary,
         )
 
@@ -139,16 +152,45 @@ class BasicContextCompiler:
             for task in tasks.all()
         )
 
+    def _memory_fragments(
+        self,
+        memories: tuple[MemoryRecord, ...],
+    ) -> tuple[ContextFragment, ...]:
+        # Priority 40 sits below evidence (30), world (20) and task (10):
+        # memory is advisory, so it is the first to be dropped under pressure.
+        fragments = (
+            ContextFragment(
+                f"memory.{record.id}",
+                f"{record.kind.value} {record.subject}: {record.content}",
+                40,
+            )
+            for record in sorted(
+                memories,
+                key=lambda item: (item.confidence, item.created_at, str(item.id)),
+                reverse=True,
+            )
+        )
+        return self._budget_fragments(
+            fragments,
+            max_fragments=self._max_memory_fragments,
+            max_characters=self._max_memory_characters,
+        )
+
     def _budget_fragments(
         self,
         fragments: Iterable[ContextFragment],
+        *,
+        max_fragments: int | None = None,
+        max_characters: int | None = None,
     ) -> tuple[ContextFragment, ...]:
+        limit_count = max_fragments if max_fragments is not None else self._max_fragments
+        limit_chars = max_characters if max_characters is not None else self._max_characters
         selected: list[ContextFragment] = []
         used = 0
         for fragment in fragments:
-            if len(selected) >= self._max_fragments:
+            if len(selected) >= limit_count:
                 break
-            remaining = self._max_characters - used
+            remaining = limit_chars - used
             if remaining <= 0:
                 break
             content = fragment.content[:remaining]

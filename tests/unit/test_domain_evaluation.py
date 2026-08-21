@@ -23,6 +23,7 @@ from universal_agent.core import (
 from universal_agent.domain import DomainLoader, DomainValidationError, RuntimeBuilder
 from universal_agent.evaluation import CriteriaEvaluator, Evaluator
 from universal_agent.evidence import EvidenceExtractor, InMemoryEvidenceStore
+from universal_agent.memory import MemoryRecord
 from universal_agent.observation import ObservationFactory
 from universal_agent.policy import Policy
 from universal_agent.recovery import RecoveryRule
@@ -73,6 +74,9 @@ class TestDomain:
         return ()
 
     def recovery_rules(self) -> tuple[RecoveryRule, ...]:
+        return ()
+
+    def memories(self) -> tuple[MemoryRecord, ...]:
         return ()
 
 

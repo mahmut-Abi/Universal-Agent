@@ -15,6 +15,7 @@ from universal_agent.core import (
     immutable_json,
     new_session_id,
 )
+from universal_agent.memory import MemoryKind, MemoryRecord
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
 
 
@@ -58,6 +59,39 @@ def test_basic_context_exposes_capabilities_not_tools() -> None:
     assert context.satisfied_criteria == immutable_json({"healthy": False})
     assert context.capabilities[0].name == "inspect_service"
     assert context.policy_summary == ("read-only",)
+
+
+def test_memory_context_uses_advisory_priority_and_independent_budget() -> None:
+    state = AgentState(
+        session_id=new_session_id(),
+        goal=Goal("Verify service", (SuccessCriterion("healthy", True),)),
+        current_task=Task("Probe service", ("healthy",)),
+    )
+    memories = tuple(
+        MemoryRecord(MemoryKind.SEMANTIC, f"note-{index}", "content " * 30, confidence=0.9)
+        for index in range(20)
+    )
+    compiler = BasicContextCompiler(max_memory_fragments=4, max_memory_characters=1_200)
+    context = compiler.compile(
+        state,
+        (
+            CapabilityDefinition(
+                "inspect_service",
+                "Inspect service",
+                CapabilityCategory.OBSERVATION,
+            ),
+        ),
+        ("read-only",),
+        (),
+        memories=memories,
+    )
+    assert len(context.memory_context) <= 4
+    assert sum(len(fragment.content) for fragment in context.memory_context) <= 1_200
+    # Priority 40: below task (10), world (20), evidence (30); advisory, dropped first.
+    assert all(fragment.priority == 40 for fragment in context.memory_context)
+    # Default-compiled context without memories carries no memory fragments.
+    plain = BasicContextCompiler().compile(state, (), (), ())
+    assert plain.memory_context == ()
 
 
 @pytest.mark.asyncio

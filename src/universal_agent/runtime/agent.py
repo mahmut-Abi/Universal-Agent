@@ -25,6 +25,7 @@ from universal_agent.core import (
     new_session_id,
 )
 from universal_agent.domain import RuntimeComponents
+from universal_agent.memory import MemoryKind, MemoryRecord, RetrievalRequest
 from universal_agent.model import ModelAdapter
 from universal_agent.recovery import Failure, RecoveryStrategy, classify_failure
 from universal_agent.runtime.actions import (
@@ -143,6 +144,7 @@ class AgentRuntime:
                 session.world(),
                 session.query(limit=8),
                 session.tasks,
+                self._recall(session),
             )
             try:
                 decision = await self._model.decide(context)
@@ -379,6 +381,7 @@ class AgentRuntime:
         session: SessionRuntimeState,
         transition: Transition,
     ) -> ExecutionResult:
+        self._record_episodic(session, transition)
         await self._save(session)
         await self._emit(
             session.state,
@@ -387,6 +390,49 @@ class AgentRuntime:
             data=transition.event_data,
         )
         return transition.result
+
+    def _recall(self, session: SessionRuntimeState) -> tuple[MemoryRecord, ...]:
+        """Run the three-stage pipeline: retrieve, filter.
+
+        Memory enters the context only through this path, so it stays advisory
+        and never reaches evidence, the world model, or the evaluator.
+        """
+        state = session.state
+        request = RetrievalRequest(
+            goal_description=state.goal.description,
+            task_description=state.current_task.description,
+            subjects=tuple(fact.subject for fact in session.world().facts),
+            scope=self._components.active_domain.manifest.metadata.name,
+        )
+        candidates = self._components.memory_retriever.retrieve(request)
+        return self._components.memory_filter.filter(candidates, request)
+
+    def _record_episodic(
+        self,
+        session: SessionRuntimeState,
+        transition: Transition,
+    ) -> None:
+        """Write a single episodic record at a terminal transition.
+
+        WAITING is not a terminal state: the session may resume, so there is no
+        settled experience to record yet. Only COMPLETED / FAILED produce an
+        episodic memory, which future sessions of the same runtime may recall.
+        """
+        result = transition.result
+        if result.status is ExecutionStatus.WAITING:
+            return
+        state = session.state
+        kind = MemoryKind.EPISODIC
+        content = f"Goal '{state.goal.description}' ended as {result.status.value}: {result.reason}"
+        record = MemoryRecord(
+            kind=kind,
+            subject=f"session {state.session_id}",
+            content=content,
+            scope=self._components.active_domain.manifest.metadata.name,
+            confidence=1.0,
+            source_session_id=state.session_id,
+        )
+        self._components.memory_store.add(record)
 
     async def _reject_session(self, state: AgentState, reason: str) -> ExecutionResult:
         """Fail a session that could not be hydrated into a runtime state."""

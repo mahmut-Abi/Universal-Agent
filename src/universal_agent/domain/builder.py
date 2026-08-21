@@ -7,6 +7,13 @@ from universal_agent.capability import CapabilityRegistry, CapabilityResolver
 from universal_agent.domain.runtime import ActiveDomain
 from universal_agent.evaluation import CriteriaEvaluator, EvaluatorRegistry
 from universal_agent.evidence import EvidenceStore, InMemoryEvidenceStore
+from universal_agent.memory import (
+    InMemoryMemoryStore,
+    KeywordRelevanceFilter,
+    MemoryStore,
+    RelevanceFilter,
+    StoreMemoryRetriever,
+)
 from universal_agent.policy import PolicyEngine
 from universal_agent.recovery import RecoveryManager
 from universal_agent.tools import ToolRegistry
@@ -36,6 +43,9 @@ class RuntimeComponents:
     world_updaters: tuple[WorldUpdater, ...]
     recovery_manager: RecoveryManager
     active_domain: ActiveDomain
+    memory_store: MemoryStore
+    memory_retriever: StoreMemoryRetriever
+    memory_filter: RelevanceFilter
 
 
 class RuntimeBuilder:
@@ -52,9 +62,13 @@ class RuntimeBuilder:
         *,
         evidence_store_factory: Callable[[], EvidenceStore] = InMemoryEvidenceStore,
         world_model_factory: Callable[[], WorldModel] = InMemoryWorldModel,
+        memory_store_factory: Callable[[], MemoryStore] = InMemoryMemoryStore,
+        memory_filter: RelevanceFilter | None = None,
     ) -> None:
         self._evidence_store_factory = evidence_store_factory
         self._world_model_factory = world_model_factory
+        self._memory_store_factory = memory_store_factory
+        self._memory_filter = memory_filter
 
     def build(self, domain: ActiveDomain) -> RuntimeComponents:
         capabilities = CapabilityRegistry()
@@ -68,6 +82,10 @@ class RuntimeBuilder:
         for evaluator in domain.evaluators:
             if evaluator.name != CriteriaEvaluator.name:
                 evaluators.register(evaluator)
+        memory_store = self._memory_store_factory()
+        for record in domain.memories:
+            memory_store.add(record)
+        memory_filter = self._memory_filter or KeywordRelevanceFilter()
         return RuntimeComponents(
             capabilities=capabilities,
             tools=tools,
@@ -79,4 +97,7 @@ class RuntimeBuilder:
             world_updaters=domain.world_updaters or (FactWorldUpdater(),),
             recovery_manager=RecoveryManager(domain.recovery_rules),
             active_domain=domain,
+            memory_store=memory_store,
+            memory_retriever=StoreMemoryRetriever(memory_store),
+            memory_filter=memory_filter,
         )

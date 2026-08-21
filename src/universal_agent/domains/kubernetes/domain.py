@@ -22,6 +22,7 @@ from universal_agent.core import (
 )
 from universal_agent.evaluation import Evaluator
 from universal_agent.evidence import Evidence, EvidenceContext, EvidenceExtractor
+from universal_agent.memory import MemoryKind, MemoryRecord
 from universal_agent.policy import Policy, PolicyRule
 from universal_agent.recovery import (
     FailureCategory,
@@ -211,5 +212,25 @@ class KubernetesDomain:
                 RecoveryStrategy.RETRY_ACTION,
                 max_attempts=2,
                 priority=10,
+            ),
+        )
+
+    def memories(self) -> tuple[MemoryRecord, ...]:
+        return (
+            MemoryRecord(
+                MemoryKind.PROCEDURAL,
+                "unhealthy workload triage",
+                "When a workload is unhealthy, inspect pods before reading logs so "
+                "the failing container is identified before its output is searched.",
+                scope="kubernetes",
+                confidence=0.9,
+            ),
+            MemoryRecord(
+                MemoryKind.SEMANTIC,
+                "kubernetes readiness",
+                "A Kubernetes workload is considered healthy when its ready replicas "
+                "match the desired replicas and no pods are in a crash loop.",
+                scope="kubernetes",
+                confidence=0.95,
             ),
         )

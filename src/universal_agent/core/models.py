@@ -269,6 +269,7 @@ class DecisionContext:
     world_context: tuple[ContextFragment, ...] = ()
     evidence_context: tuple[ContextFragment, ...] = ()
     task_context: tuple[ContextFragment, ...] = ()
+    memory_context: tuple[ContextFragment, ...] = ()
     policy_summary: tuple[str, ...] = ()
 
 

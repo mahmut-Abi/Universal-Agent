@@ -14,6 +14,7 @@ from universal_agent.core import (
 )
 from universal_agent.evaluation import Evaluator
 from universal_agent.evidence import EvidenceExtractor
+from universal_agent.memory import MemoryKind, MemoryRecord
 from universal_agent.policy import Policy
 from universal_agent.recovery import RecoveryRule, RecoveryStrategy
 from universal_agent.tasks import TaskExpander
@@ -43,6 +44,8 @@ class DomainRuntime(Protocol):
 
     def recovery_rules(self) -> tuple[RecoveryRule, ...]: ...
 
+    def memories(self) -> tuple[MemoryRecord, ...]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class ActiveDomain:
@@ -56,6 +59,7 @@ class ActiveDomain:
     world_updaters: tuple[WorldUpdater, ...]
     task_expanders: tuple[TaskExpander, ...]
     recovery_rules: tuple[RecoveryRule, ...]
+    memories: tuple[MemoryRecord, ...]
 
 
 class DomainValidationError(ValueError):
@@ -74,6 +78,7 @@ class DomainLoader:
         updaters = domain.world_updaters()
         expanders = domain.task_expanders()
         recovery_rules = domain.recovery_rules()
+        memories = domain.memories()
         self._validate(
             manifest,
             capabilities,
@@ -81,6 +86,7 @@ class DomainLoader:
             evaluators,
             expanders,
             recovery_rules,
+            memories,
         )
         return ActiveDomain(
             manifest,
@@ -93,6 +99,7 @@ class DomainLoader:
             updaters,
             expanders,
             recovery_rules,
+            memories,
         )
 
     def _validate(
@@ -103,6 +110,7 @@ class DomainLoader:
         evaluators: tuple[Evaluator, ...],
         expanders: tuple[TaskExpander, ...],
         recovery_rules: tuple[RecoveryRule, ...],
+        memories: tuple[MemoryRecord, ...],
     ) -> None:
         if manifest.api_version != "agent.nantian.dev/v1alpha1" or manifest.kind != "Domain":
             raise DomainValidationError("unsupported domain apiVersion or kind")
@@ -137,6 +145,12 @@ class DomainLoader:
             ):
                 raise DomainValidationError(
                     f"recovery rule {rule.name} references unknown capability: {rule.capability}"
+                )
+        for record in memories:
+            if record.kind is MemoryKind.EPISODIC:
+                raise DomainValidationError(
+                    "domain may not declare episodic memory; episodic records are "
+                    "written only by the runtime at a terminal transition"
                 )
 
     def manifest_from_json(self, path: Path) -> DomainManifest:
