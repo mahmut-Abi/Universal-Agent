@@ -84,6 +84,11 @@ catalog views for future HTTP and CLI adapters. It does not start a daemon, open
 Kernel internals directly. See `examples/p3_5_runtime_api.py` and
 `examples/p3_5_runtime_service.py` for the minimal application-facing usage.
 
+`AgentdApp` is the framework-free route adapter foundation for `agentd`. It accepts small
+`HttpRequest` objects and returns JSON-safe `HttpResponse` objects for `GET /health`, `GET /ready`,
+catalog routes, and session/event reads. It still does not open sockets; a real HTTP server can wrap
+this adapter later without touching Runtime internals.
+
 ## Current scope
 
 - P0: typed state, model/tool boundaries, observations, events, and the asynchronous loop.
@@ -105,8 +110,8 @@ Kernel internals directly. See `examples/p3_5_runtime_api.py` and
 - P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
   projections, `EventReader`, and integration tests covering run/get/events plus confirmation
   resume across rebuilt runtimes. `RuntimeService` now adds framework-free `agentd` foundation
-  metadata: health, readiness, domains, capabilities, tools, delegated execution, and runnable
-  examples.
+  metadata: health, readiness, domains, capabilities, tools, delegated execution, runnable examples,
+  and an `AgentdApp` route adapter for read-only HTTP-shaped routes.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
@@ -149,6 +154,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_2_kubernetes_remediation.py
 .venv/bin/python examples/p3_5_runtime_api.py
 .venv/bin/python examples/p3_5_runtime_service.py
+.venv/bin/python examples/p3_5_agentd_routes.py
 ```
 
 `mypy` runs in strict mode over `src`, `tests` and `examples`, and passes with no `type: ignore`
