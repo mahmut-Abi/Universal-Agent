@@ -751,6 +751,8 @@ Core interfaces should conceptually include:
 
 ```python
 AgentRuntime
+RuntimeAPI
+SessionAPI
 GoalManager
 TaskManager
 StateStore
@@ -766,7 +768,12 @@ PolicyEngine
 RecoveryManager
 Evaluator
 MemoryStore
+EventStore
+EventStream
+DomainManager
 DomainRuntime
+AgentProfile
+RuntimeService
 ```
 
 Do not prematurely over-abstract.
@@ -858,15 +865,61 @@ Add:
 
 ---
 
+## P3.5
+
+Add Runtime Productization:
+
+- Runtime API
+- Session API
+- `agentd`
+- CLI
+- Event Stream
+- Persistence
+- Resume / Pause / Cancel
+- Runtime Configuration
+
+This is the preferred next implementation gap once the P3 semantic architecture is stable.
+
+---
+
+## P3.6
+
+Add Operations:
+
+- OpenTelemetry
+- Metrics
+- Structured Logs
+- Audit
+- Cost Tracking
+- Runtime Doctor
+
+---
+
+## P3.7
+
+Add Evaluation Platform foundations:
+
+- Evaluation Harness
+- Scenario Tests
+- Regression Tests
+- Policy Tests
+- Recovery Tests
+- Replay
+- Deterministic Test Mode
+
+---
+
 ## P4
 
-Add:
+Add Optional Multi-Agent Runtime:
 
-- Domain SDK
-- Domain Packaging
-- CLI
-- Registry / Marketplace
-- Evaluation Platform
+- Agent Registry
+- Agent Task Contract
+- Delegation
+- Parallel Agents
+- Result / Evidence Merge
+- Conflict Resolution
+- Multi-Agent Evaluation
 
 Optional Multi-Agent Runtime belongs after the single-Agent multi-Domain architecture is proven.
 
@@ -879,6 +932,49 @@ When added, it must be built around:
 - Permission isolation
 
 It must not replace Domain Composition.
+
+---
+
+## P5
+
+Add User Interfaces:
+
+- TUI
+- Web Console
+- Session Explorer
+- Domain Manager UI
+- Evaluation Console
+- World Model Explorer
+
+The Web UI must not become a prerequisite for validating the Runtime.
+
+---
+
+## P6
+
+Add Distributed Runtime only when operational requirements justify it:
+
+- Scheduler
+- Worker
+- Queue
+- Lease
+- Heartbeat
+- Distributed State
+- Distributed Lock
+- High Availability
+
+---
+
+## P7
+
+Add Ecosystem capabilities:
+
+- Domain SDK
+- Domain Registry
+- Package Registry
+- Agent Profile Ecosystem
+- Evaluation Dataset
+- Community / Enterprise Domains
 
 ---
 
@@ -1096,6 +1192,8 @@ Do not implement these merely because they appear in Agent frameworks:
 - multi-agent orchestration
 - supervisor-agent domain routing
 - agent handoff through chat transcripts
+- web UI before Runtime API / Event Stream
+- distributed runtime before local runtime productization
 - autonomous subagents
 - infinite planning
 - reflection loops
@@ -1281,4 +1379,4 @@ not by continuously adding more prompt text.
 
 The ultimate goal is:
 
-> **A stable Universal Agent Kernel that can become a strong domain-specific Agent by loading a Domain Runtime, without changing the Kernel.**
+> **A stable Universal Agent Runtime Platform where one universal Agent can acquire new domains, capabilities, tools, knowledge, policies, profiles, and execution environments without changing the Kernel.**

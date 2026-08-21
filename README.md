@@ -1,6 +1,12 @@
-# Universal Agent Runtime
+# Universal Agent Runtime Platform
 
-A typed Universal Agent Kernel with a pluggable P3.2 Domain Runtime.
+A typed Universal Agent Kernel and Runtime with pluggable Domain Runtimes.
+
+The long-term architecture is defined in
+`universal-agent-runtime-domain-runtime-design.md`. The current implementation remains a P3.2
+in-memory runtime with fake-backed Kubernetes remediation; the v3.0 design document also defines the
+next productization layers such as Runtime API, `agentd`, CLI, persistence, event streams, operations,
+evaluation, optional Multi-Agent, UI, distributed runtime, and ecosystem packaging.
 
 ## Architectural boundaries
 
@@ -20,6 +26,8 @@ A typed Universal Agent Kernel with a pluggable P3.2 Domain Runtime.
   one Shared World Model. Multi-Agent orchestration is a later, optional execution boundary for
   independent goals, state, permissions, lifecycles, or isolation requirements; it is not the default
   way to route between Domains.
+- Applications should consume a stable Runtime API or SDK boundary. Future `agentd`, CLI, TUI, and
+  Web clients must not manipulate Kernel internals directly.
 - A session lives in its store, not in a Runtime instance. Everything needed to continue — task graph,
   Evidence, recovery budget, pending confirmation, activated Domain identity — is saved as a
   `SessionSnapshot`, so a rebuilt Runtime resumes from the snapshot instead of from shared objects.
@@ -80,6 +88,22 @@ Domain Composition, cross-domain World Model, Agent Profile, persistent database
 marketplace behavior, optional Multi-Agent Runtime, and real Kubernetes API remediation remain outside
 P3.2. State persistence stops at an in-memory store with snapshot isolation; no file or database
 backend, event sourcing, or schema migration is included.
+
+## Roadmap alignment
+
+The design roadmap now separates semantic runtime maturity from productization:
+
+- P0-P3: core Agent semantics, Domain Runtime, World/Evidence/Recovery, Memory, Multi-Domain, and
+  Agent Profiles.
+- P3.5: Runtime Productization — Runtime API, Session API, `agentd`, CLI, Event Stream, Persistence,
+  Resume / Pause / Cancel, and Runtime Configuration.
+- P3.6-P3.7: Operations and Evaluation — OpenTelemetry, metrics, audit, cost tracking, runtime
+  doctor, evaluation harness, replay, and deterministic test mode.
+- P4+: Optional Multi-Agent, user interfaces, distributed runtime, and ecosystem packaging.
+
+`PROMPT.md` is intentionally not kept as a project authority. Development instructions live in
+`AGENTS.md`; architecture lives in `universal-agent-runtime-domain-runtime-design.md`; operational
+usage stays in this README.
 
 ## Development
 
