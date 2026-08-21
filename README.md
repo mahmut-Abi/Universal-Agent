@@ -81,7 +81,8 @@ explicit pause/cancel endpoints are later P3.5 work built on this interface, not
 `RuntimeService` is the first framework-free `agentd` foundation. It delegates execution, session and
 event reads to `RuntimeAPI`, and adds service-level health, readiness, Domain, Capability and Tool
 catalog views for future HTTP and CLI adapters. It does not start a daemon, open sockets, or access
-Kernel internals directly.
+Kernel internals directly. See `examples/p3_5_runtime_api.py` and
+`examples/p3_5_runtime_service.py` for the minimal application-facing usage.
 
 ## Current scope
 
@@ -104,7 +105,8 @@ Kernel internals directly.
 - P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
   projections, `EventReader`, and integration tests covering run/get/events plus confirmation
   resume across rebuilt runtimes. `RuntimeService` now adds framework-free `agentd` foundation
-  metadata: health, readiness, domains, capabilities, tools, and delegated execution.
+  metadata: health, readiness, domains, capabilities, tools, delegated execution, and runnable
+  examples.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
@@ -145,6 +147,8 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p2_evidence_recovery.py
 .venv/bin/python examples/p3_memory.py
 .venv/bin/python examples/p3_2_kubernetes_remediation.py
+.venv/bin/python examples/p3_5_runtime_api.py
+.venv/bin/python examples/p3_5_runtime_service.py
 ```
 
 `mypy` runs in strict mode over `src`, `tests` and `examples`, and passes with no `type: ignore`
