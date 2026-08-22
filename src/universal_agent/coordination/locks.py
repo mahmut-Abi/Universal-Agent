@@ -38,11 +38,26 @@ class ResourceLockRegistry:
         if existing is None:
             self._locks[resource_key] = requested
             return requested
-        if existing.action_id == action_id:
+        if existing == requested:
             return existing
         raise ResourceConflictError(
             "resource is locked: "
             f"{resource_key} by action {existing.action_id} in session {existing.session_id}"
+        )
+
+    def is_owned_by(
+        self,
+        *,
+        resource_key: str,
+        action_id: ActionId,
+        session_id: SessionId,
+        task_id: TaskId,
+    ) -> bool:
+        return self._locks.get(resource_key) == ResourceLock(
+            resource_key,
+            action_id,
+            session_id,
+            task_id,
         )
 
     def release(self, lock: ResourceLock) -> None:

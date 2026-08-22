@@ -304,6 +304,12 @@ class ActionExecutor:
     ) -> ResourceLock | None | ActionRejected:
         if not pending.resource_key:
             return None
+        already_owned = self.components.resource_locks.is_owned_by(
+            resource_key=pending.resource_key,
+            action_id=pending.action_id,
+            session_id=session.state.session_id,
+            task_id=session.state.current_task.id,
+        )
         try:
             lock = self.components.resource_locks.acquire(
                 resource_key=pending.resource_key,
@@ -322,14 +328,15 @@ class ActionExecutor:
                 },
             )
             return ActionRejected(ErrorCode.RESOURCE_CONFLICT, str(exc))
-        await emit(
-            "ResourceLockAcquired",
-            pending.action_id,
-            {
-                "resource_key": lock.resource_key,
-                "resource_version": pending.resource_version,
-            },
-        )
+        if not already_owned:
+            await emit(
+                "ResourceLockAcquired",
+                pending.action_id,
+                {
+                    "resource_key": lock.resource_key,
+                    "resource_version": pending.resource_version,
+                },
+            )
         return lock
 
     async def _release_resource_lock(

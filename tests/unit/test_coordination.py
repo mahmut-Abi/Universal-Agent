@@ -47,6 +47,24 @@ def test_resource_lock_registry_rejects_conflicting_action() -> None:
         )
 
 
+def test_resource_lock_registry_rejects_same_action_from_different_session() -> None:
+    registry = ResourceLockRegistry()
+    registry.acquire(
+        resource_key="deployment/example",
+        action_id=ActionId("action-1"),
+        session_id=SessionId("session-1"),
+        task_id=TaskId("task-1"),
+    )
+
+    with pytest.raises(ResourceConflictError):
+        registry.acquire(
+            resource_key="deployment/example",
+            action_id=ActionId("action-1"),
+            session_id=SessionId("session-2"),
+            task_id=TaskId("task-2"),
+        )
+
+
 def test_resource_lock_registry_rejects_empty_resource_key() -> None:
     registry = ResourceLockRegistry()
 

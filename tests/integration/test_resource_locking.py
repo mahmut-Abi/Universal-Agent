@@ -234,9 +234,12 @@ async def test_confirmed_mutation_reuses_and_releases_resource_lock() -> None:
 
     completed = await runtime.resume(waiting.session_id, confirmed=True)
     action_started = next(event for event in events.events if event.type == "ActionStarted")
+    event_types = [event.type for event in events.events]
 
     assert completed.status is ExecutionStatus.COMPLETED
     assert tool.calls == 1
     assert components.resource_locks.active() == ()
+    assert event_types.count("ResourceLockAcquired") == 1
+    assert event_types.count("ResourceLockReleased") == 1
     assert action_started.data["resource_key"] == "setting/example"
     assert action_started.data["resource_version"] == "rv-1"
