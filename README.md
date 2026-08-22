@@ -121,7 +121,8 @@ not touch Runtime internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
 Capability/Tool catalogs, `config show`, and session list/show/events/pause/resume/cancel commands
-through `RuntimeService`, with cursor flags for session and event reads. It can also load an
+through `RuntimeService`, with cursor flags and optional SSE text output for session event reads. It
+can also load an
 `agent init` Profile JSON through `--profile-config` and assemble the service through
 `RuntimeHost`, so generated memory/file/SQLite store settings are used by subsequent CLI commands.
 It also exposes operations commands for metrics, cost, logs, traces, doctor and audit

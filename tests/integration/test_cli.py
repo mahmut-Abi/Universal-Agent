@@ -463,6 +463,7 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
     list_output = StringIO()
     pause_output = StringIO()
     events_output = StringIO()
+    sse_events_output = StringIO()
     resume_output = StringIO()
 
     list_status = await run_cli(
@@ -480,6 +481,11 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
         service=service,
         stdout=events_output,
     )
+    sse_events_status = await run_cli(
+        ["session", "events", session_id, "--limit", "2", "--format", "sse"],
+        service=service,
+        stdout=sse_events_output,
+    )
     resume_status = await run_cli(
         ["session", "resume", session_id], service=service, stdout=resume_output
     )
@@ -487,10 +493,12 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
     list_payload = read_json(list_output)
     pause_payload = read_json(pause_output)
     events_payload = read_json(events_output)
+    sse_events = sse_events_output.getvalue()
     resume_payload = read_json(resume_output)
     assert list_status == 0
     assert pause_status == 0
     assert events_status == 0
+    assert sse_events_status == 0
     assert resume_status == 0
     session_items = list_payload["sessions"]
     assert isinstance(session_items, list)
@@ -503,6 +511,9 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
     assert pause_payload["result"]["status"] == "waiting"
     assert len(events_payload["events"]) == 2
     assert events_payload["next_cursor"] == events_payload["events"][-1]["event_id"]
+    assert "event: GoalCreated\n" in sse_events
+    assert "data: " in sse_events
+    assert ": next_cursor=" in sse_events
     assert resume_payload["result"]["status"] == "completed"
     assert backend.inspect_calls == 1
 

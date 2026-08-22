@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from io import StringIO
 
 from universal_agent import (
     AgentRuntime,
@@ -91,23 +92,36 @@ def build_service() -> tuple[RuntimeService, FakeCliBackend]:
     )
 
 
+async def run_agent_command(args: list[str], service: RuntimeService) -> StringIO:
+    output = StringIO()
+    status = await run_cli(args, service=service, stdout=output)
+    assert status == 0
+    return output
+
+
 async def main() -> None:
     service, backend = build_service()
-    await run_cli(["ready"], service=service)
+    await run_agent_command(["ready"], service)
 
     waiting = await service.run_goal(
         Goal("Verify workload through CLI", (SuccessCriterion("healthy", True),)),
         Task("Inspect workload", ("healthy",)),
     )
     session_id = str(waiting.result.session_id)
-    await run_cli(["session", "list"], service=service)
-    await run_cli(
+    await run_agent_command(["session", "list"], service)
+    await run_agent_command(
         ["session", "pause", session_id, "--reason", "operator paused from example"],
-        service=service,
+        service,
     )
-    await run_cli(["session", "events", session_id, "--limit", "3"], service=service)
-    await run_cli(["session", "resume", session_id], service=service)
+    await run_agent_command(["session", "events", session_id, "--limit", "3"], service)
+    sse_output = await run_agent_command(
+        ["session", "events", session_id, "--limit", "3", "--format", "sse"],
+        service,
+    )
+    assert "event: GoalCreated\n" in sse_output.getvalue()
+    await run_agent_command(["session", "resume", session_id], service)
     print(f"inspections={backend.inspect_calls}")
+    print("sse_stream=ok")
 
 
 if __name__ == "__main__":

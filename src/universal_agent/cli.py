@@ -26,6 +26,7 @@ from universal_agent.agentd.app import (
     runtime_run_body,
     session_batch_body,
     session_body,
+    sse_event_batch_text,
     tool_body,
     trace_spans_body,
 )
@@ -319,6 +320,7 @@ def build_parser() -> argparse.ArgumentParser:
     events.add_argument("session_id")
     events.add_argument("--after")
     events.add_argument("--limit", type=int)
+    events.add_argument("--format", choices=("json", "sse"), default="json")
 
     audit = session_commands.add_parser("audit")
     audit.add_argument("session_id")
@@ -745,16 +747,15 @@ async def _dispatch_session(
         session_id = SessionId(cast(str, args.session_id))
         after = cast(str | None, args.after)
         limit = cast(int | None, args.limit)
-        _write_json(
-            out,
-            event_batch_body(
-                await service.stream_events(
-                    session_id,
-                    after_event_id=None if after is None else EventId(after),
-                    limit=limit,
-                )
-            ),
+        batch = await service.stream_events(
+            session_id,
+            after_event_id=None if after is None else EventId(after),
+            limit=limit,
         )
+        if cast(str, args.format) == "sse":
+            _write_text(out, sse_event_batch_text(batch))
+            return
+        _write_json(out, event_batch_body(batch))
         return
     if command == "audit":
         session_id = SessionId(cast(str, args.session_id))
