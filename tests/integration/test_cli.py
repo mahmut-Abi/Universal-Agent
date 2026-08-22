@@ -1046,6 +1046,7 @@ async def test_cli_eval_reports_lists_persisted_reports(tmp_path: Path) -> None:
     report_dir = tmp_path / "reports"
     run_output = StringIO()
     reports_output = StringIO()
+    console_output = StringIO()
 
     run_status = await run_cli(
         [
@@ -1067,7 +1068,13 @@ async def test_cli_eval_reports_lists_persisted_reports(tmp_path: Path) -> None:
         service=service,
         stdout=reports_output,
     )
+    console_status = await run_cli(
+        ["eval", "console", "--report-dir", str(report_dir)],
+        service=service,
+        stdout=console_output,
+    )
     payload = read_json(reports_output)
+    console = console_output.getvalue()
     reports = payload["reports"]
     assert isinstance(reports, list)
     report = reports[0]
@@ -1075,6 +1082,7 @@ async def test_cli_eval_reports_lists_persisted_reports(tmp_path: Path) -> None:
 
     assert run_status == 0
     assert reports_status == 0
+    assert console_status == 0
     assert payload["report_dir"] == str(report_dir)
     assert payload["report_count"] == 1
     assert report["suite_name"] == "daily regression suite"
@@ -1085,6 +1093,10 @@ async def test_cli_eval_reports_lists_persisted_reports(tmp_path: Path) -> None:
     assert report["gate_passed"] is True
     assert report["failed_scenarios"] == []
     assert report["model_total_token_count"] == 0
+    assert "Evaluation Console" in console
+    assert "daily regression suite" in console
+    assert "healthy workload" in console
+    assert "Quality Gate Checks" in console
     assert backend.inspect_calls == 1
 
 

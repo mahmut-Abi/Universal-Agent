@@ -47,6 +47,10 @@ from universal_agent.core import (
 )
 from universal_agent.domain import DomainLoader, RuntimeBuilder
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.evaluation.console import (
+    build_evaluation_console_snapshot,
+    render_evaluation_console,
+)
 from universal_agent.evaluation.harness import (
     EvaluationQualityGate,
     EvaluationScenario,
@@ -324,6 +328,9 @@ def build_parser() -> argparse.ArgumentParser:
     eval_reports = eval_commands.add_parser("reports")
     eval_reports.add_argument("--report-dir", required=True)
 
+    eval_console = eval_commands.add_parser("console")
+    eval_console.add_argument("--report-dir", required=True)
+
     domain = commands.add_parser("domain")
     domain_commands = domain.add_subparsers(dest="domain_command", required=True)
     domain_commands.add_parser("list")
@@ -578,6 +585,13 @@ async def _dispatch_eval(
         report_dir = cast(str, args.report_dir)
         reports = FileEvaluationReportStore(report_dir).list_reports()
         _write_json(out, _evaluation_reports_body(report_dir, reports))
+        return
+    if command == "console":
+        report_dir = cast(str, args.report_dir)
+        _write_text(
+            out,
+            render_evaluation_console(build_evaluation_console_snapshot(report_dir)),
+        )
         return
     raise ValueError(f"unknown eval command: {command}")
 

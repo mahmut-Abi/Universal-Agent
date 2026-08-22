@@ -140,9 +140,10 @@ persisted golden reports for CLI/CI regression checks. `agent eval replay` recor
 deterministic golden replay recordings through the same suite selector. `agent eval list`,
 `agent eval run` and `agent eval replay` support `--suite-file` plus kind/tag subset filters, and
 all eval gate commands support `--fail-on-fail` to preserve JSON output while returning a non-zero
-process status. `agent tui` renders a read-only RuntimeService snapshot covering health, readiness,
-metrics, domains, sessions, selected session details, recent events and audit records. The CLI does
-not access Kernel internals directly.
+process status. `agent eval console` renders a deterministic read-only HTML Evaluation Console from
+persisted reports. `agent tui` renders a read-only RuntimeService snapshot covering health,
+readiness, metrics, domains, sessions, selected session details, recent events and audit records.
+The CLI does not access Kernel internals directly.
 
 `EvaluationHarness` is the first P3.7 behavior evaluation foundation. It runs explicit
 `EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
@@ -238,6 +239,9 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   golden fixtures.
   Replay recordings can be encoded as versioned JSON and saved through `FileReplayRecordingStore`
   for golden regression fixtures.
+- Evaluation Console foundation: `build_evaluation_console_snapshot` loads persisted evaluation
+  reports and `render_evaluation_console` produces deterministic read-only HTML for CLI/CI review
+  without coupling report visualization to Kernel or RuntimeService internals.
 - Session Explorer foundation: `RuntimeService.session_explorer` rebuilds read-only world facts from
   persisted Evidence through Domain world updaters and exposes session diagnostics through agentd/CLI.
 - TUI foundation: `build_tui_snapshot` consumes RuntimeService projections and `render_tui_snapshot`
@@ -311,6 +315,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_7_cli_quality_gates.py
 .venv/bin/python examples/p3_7_suite_file.py
 .venv/bin/python examples/p3_7_deterministic_mode.py
+.venv/bin/python examples/p5_evaluation_console.py
 .venv/bin/python examples/p5_tui.py
 .venv/bin/python examples/p5_web_console.py
 .venv/bin/python examples/p5_session_diagnostics.py
