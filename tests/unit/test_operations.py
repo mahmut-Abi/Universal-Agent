@@ -372,11 +372,14 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
         "session_store",
         "event_stream",
         "structured_logs",
+        "traces",
+        "audit",
         "policy_denials",
         "recovery",
         "cost_tracking",
     ]
     assert next(check for check in report.checks if check.name == "event_stream").status == "warn"
+    assert next(check for check in report.checks if check.name == "traces").status == "warn"
 
 
 def test_audit_records_include_only_side_effecting_policy_checks() -> None:

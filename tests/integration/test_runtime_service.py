@@ -206,6 +206,8 @@ async def test_runtime_service_derives_metrics_doctor_and_audit_from_events() ->
         "readiness",
         "event_stream",
         "structured_logs",
+        "traces",
+        "audit",
         "cost_tracking",
     }
     assert logs[-1].event_type == "GoalCompleted"

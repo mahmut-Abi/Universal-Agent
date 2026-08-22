@@ -228,6 +228,8 @@ def build_doctor_report(
     metrics = build_runtime_metrics(sessions, events)
     cost = build_runtime_cost(events)
     logs = build_runtime_logs(events)
+    trace_spans = build_runtime_trace_spans(events)
+    audit_records = build_audit_records(events)
     checks = (
         _check(
             "service_health",
@@ -243,6 +245,8 @@ def build_doctor_report(
         DoctorCheckView("session_store", "ok", f"sessions listed: {len(sessions)}"),
         _event_stream_check(sessions, events),
         DoctorCheckView("structured_logs", "ok", f"log records projected: {len(logs)}"),
+        _trace_projection_check(sessions, events, trace_spans),
+        _audit_projection_check(events, audit_records),
         _policy_denial_check(metrics.policy_denial_count),
         _recovery_check(metrics.recovery_exhausted_count),
         DoctorCheckView(
@@ -601,6 +605,38 @@ def _event_stream_check(
     if events:
         return DoctorCheckView("event_stream", "ok", f"events listed: {len(events)}")
     return DoctorCheckView("event_stream", "warn", "sessions exist but no events were listed")
+
+
+def _trace_projection_check(
+    sessions: tuple[SessionSummaryView, ...],
+    events: tuple[RuntimeEventView, ...],
+    spans: tuple[RuntimeTraceSpanView, ...],
+) -> DoctorCheckView:
+    if not sessions:
+        return DoctorCheckView("traces", "ok", "no sessions recorded")
+    if events and spans:
+        return DoctorCheckView("traces", "ok", f"trace spans projected: {len(spans)}")
+    if not events:
+        return DoctorCheckView("traces", "warn", "sessions exist but no trace events were listed")
+    return DoctorCheckView("traces", "warn", "events exist but no trace spans were projected")
+
+
+def _audit_projection_check(
+    events: tuple[RuntimeEventView, ...],
+    audit_records: tuple[AuditRecordView, ...],
+) -> DoctorCheckView:
+    expected = sum(
+        1
+        for event in events
+        if event.type == "PolicyChecked" and _string(event.data.get("side_effect")) != "none"
+    )
+    if expected == len(audit_records):
+        return DoctorCheckView("audit", "ok", f"audit records projected: {len(audit_records)}")
+    return DoctorCheckView(
+        "audit",
+        "error",
+        f"expected {expected} audit records, projected {len(audit_records)}",
+    )
 
 
 def _policy_denial_check(count: int) -> DoctorCheckView:
