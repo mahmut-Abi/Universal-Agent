@@ -191,6 +191,51 @@ async def test_cli_init_writes_parseable_profile_config(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_init_can_write_sqlite_profile_config(tmp_path: Path) -> None:
+    output = StringIO()
+    profile_path = tmp_path / "sqlite-profile.json"
+    store_path = tmp_path / "runtime.sqlite3"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--store-backend",
+            "sqlite",
+            "--store-path",
+            str(store_path),
+        ],
+        stdout=output,
+    )
+    profile = ProfileConfig.from_json_file(profile_path).to_profile()
+
+    assert status == 0
+    assert profile.runtime.store == StoreConfig.sqlite(str(store_path))
+
+
+@pytest.mark.asyncio
+async def test_cli_init_can_write_memory_profile_config(tmp_path: Path) -> None:
+    output = StringIO()
+    profile_path = tmp_path / "memory-profile.json"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--store-backend",
+            "memory",
+        ],
+        stdout=output,
+    )
+    profile = ProfileConfig.from_json_file(profile_path).to_profile()
+
+    assert status == 0
+    assert profile.runtime.store == StoreConfig.memory()
+
+
+@pytest.mark.asyncio
 async def test_cli_init_rejects_existing_profile_without_force(tmp_path: Path) -> None:
     output = StringIO()
     error = StringIO()

@@ -221,6 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--output", default="profile.json")
     init.add_argument("--profile", default=LOCAL_PROFILE_NAME)
     init.add_argument("--environment", default="local")
+    init.add_argument("--store-backend", choices=("memory", "file", "sqlite"), default="file")
     init.add_argument("--store-path", default=".universal-agent/store")
     init.add_argument("--force", action="store_true")
 
@@ -626,6 +627,7 @@ def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
     payload = _profile_config_payload(
         profile_name=profile_name,
         environment=cast(str, args.environment),
+        store_backend=cast(str, args.store_backend),
         store_path=cast(str, args.store_path),
     )
     tmp_path = output.with_name(output.name + ".tmp")
@@ -640,9 +642,13 @@ def _profile_config_payload(
     *,
     profile_name: str,
     environment: str,
+    store_backend: str,
     store_path: str,
 ) -> dict[str, object]:
     domain = {"name": "kubernetes", "version": "0.2.0"}
+    store: dict[str, str] = {"backend": store_backend}
+    if store_backend != "memory":
+        store["path"] = store_path
     return {
         "name": profile_name,
         "version": "0.1.0",
@@ -650,7 +656,7 @@ def _profile_config_payload(
         "domain": domain,
         "runtime": {
             "environment": {"environment": environment},
-            "store": {"backend": "file", "path": store_path},
+            "store": store,
             "limits": {"max_iterations": 20, "max_recovery_steps": 8},
             "domain": domain,
         },
