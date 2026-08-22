@@ -26,6 +26,7 @@ from universal_agent import (
     Task,
     immutable_json,
 )
+from universal_agent.agentd import AgentdHttpServer
 from universal_agent.cli import run_cli
 from universal_agent.core import JsonMapping
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
@@ -383,3 +384,29 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     assert record["capability"] == "scale_workload"
     assert record["status"] == "succeeded"
     assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cli_serve_starts_agentd_http_server_with_injected_runner() -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+    observed_urls: list[str] = []
+
+    def runner(server: AgentdHttpServer) -> None:
+        observed_urls.append(server.base_url)
+
+    try:
+        status = await run_cli(
+            ["serve", "--port", "0"],
+            service=service,
+            server_runner=runner,
+            stdout=output,
+        )
+    except PermissionError as exc:
+        pytest.skip(f"local socket bind unavailable: {exc}")
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["status"] == "serving"
+    assert payload["base_url"] == observed_urls[0]
+    assert payload["base_url"].startswith("http://127.0.0.1:")

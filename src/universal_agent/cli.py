@@ -4,11 +4,12 @@ import argparse
 import asyncio
 import json
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from importlib.metadata import PackageNotFoundError, version
 from typing import TextIO, cast
 
 from universal_agent.agentd.app import (
+    AgentdApp,
     audit_records_body,
     capability_body,
     cost_body,
@@ -26,6 +27,7 @@ from universal_agent.agentd.app import (
     tool_body,
     trace_spans_body,
 )
+from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
 from universal_agent.core import (
     Decision,
     DecisionType,
@@ -47,6 +49,7 @@ from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
 
 LOCAL_PROFILE_NAME = "local-kubernetes"
+ServerRunner = Callable[[AgentdHttpServer], None]
 
 
 def _local_domain() -> DomainConfig:
@@ -126,6 +129,7 @@ async def run_cli(
     argv: Sequence[str] | None = None,
     *,
     service: RuntimeService | None = None,
+    server_runner: ServerRunner | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
 ) -> int:
@@ -136,7 +140,7 @@ async def run_cli(
     runtime_service = service or build_default_service()
 
     try:
-        await _dispatch(args, runtime_service, out)
+        await _dispatch(args, runtime_service, out, server_runner=server_runner)
     except StateNotFoundError as exc:
         err.write(f"{exc}\n")
         return 1
@@ -163,6 +167,10 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("traces")
     commands.add_parser("doctor")
     commands.add_parser("audit")
+
+    serve = commands.add_parser("serve")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8765)
 
     run = commands.add_parser("run")
     run.add_argument("profile")
@@ -234,6 +242,8 @@ async def _dispatch(
     args: argparse.Namespace,
     service: RuntimeService,
     out: TextIO,
+    *,
+    server_runner: ServerRunner | None = None,
 ) -> None:
     command = cast(str, args.command)
     if command == "version":
@@ -262,6 +272,9 @@ async def _dispatch(
         return
     if command == "audit":
         _write_json(out, audit_records_body(await service.audit_records()))
+        return
+    if command == "serve":
+        _dispatch_serve(args, service, out, server_runner=server_runner)
         return
     if command == "run":
         await _dispatch_run(args, service, out)
@@ -317,6 +330,39 @@ def _dispatch_profile(
         _write_json(out, profile_body(service.profile(profile)))
         return
     raise ValueError(f"unknown profile command: {command}")
+
+
+def _dispatch_serve(
+    args: argparse.Namespace,
+    service: RuntimeService,
+    out: TextIO,
+    *,
+    server_runner: ServerRunner | None = None,
+) -> None:
+    host = cast(str, args.host)
+    port = cast(int, args.port)
+    server = AgentdHttpServer(
+        AgentdApp(service),
+        AgentdServerConfig(host=host, port=port),
+    )
+    try:
+        _write_json(
+            out,
+            {
+                "status": "serving",
+                "base_url": server.base_url,
+                "host": host,
+                "port": server.server_address[1],
+            },
+        )
+        out.flush()
+        (server_runner or _serve_forever)(server)
+    finally:
+        server.server_close()
+
+
+def _serve_forever(server: AgentdHttpServer) -> None:
+    server.serve_forever()
 
 
 async def _dispatch_session(

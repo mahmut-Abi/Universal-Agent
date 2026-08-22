@@ -115,7 +115,8 @@ for this adapter: it owns socket/body/header translation only and does not touch
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
 Capability/Tool catalogs, and session list/show/events/pause/resume/cancel commands through
 `RuntimeService`, plus operations commands for metrics, cost, logs, traces, doctor and audit
-projections; it does not access Kernel internals directly and does not require a daemon process.
+projections. `agent serve` starts the standard-library `AgentdHttpServer` around the same service;
+the CLI does not access Kernel internals directly.
 
 `EvaluationHarness` is the first P3.7 behavior evaluation foundation. It runs explicit
 `EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
