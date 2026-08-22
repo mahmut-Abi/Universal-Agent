@@ -279,6 +279,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_run.add_argument("--max-human-intervention-rate", type=float)
     eval_run.add_argument("--max-average-actions", type=float)
     eval_run.add_argument("--max-average-active-resource-locks", type=float)
+    eval_run.add_argument("--max-average-duration-ms", type=float)
     eval_run.add_argument("--max-average-model-calls", type=float)
     eval_run.add_argument("--max-average-model-tokens", type=float)
     eval_run.add_argument("--max-resource-conflict-rate", type=float)
@@ -520,6 +521,10 @@ async def _dispatch_eval(
                 max_average_active_resource_locks_per_scenario=cast(
                     float | None,
                     args.max_average_active_resource_locks,
+                ),
+                max_average_execution_duration_ms_per_scenario=cast(
+                    float | None,
+                    args.max_average_duration_ms,
                 ),
                 max_average_model_calls_per_scenario=cast(
                     float | None,
@@ -922,6 +927,7 @@ def _evaluation_summary_body(summary: EvaluationSummaryRecording) -> dict[str, o
         "human_intervention_count": summary.human_intervention_count,
         "resource_conflict_count": summary.resource_conflict_count,
         "active_resource_lock_count": summary.active_resource_lock_count,
+        "execution_duration_ms": summary.execution_duration_ms,
         "model_call_count": summary.model_call_count,
         "model_total_token_count": summary.model_total_token_count,
         "model_estimated_cost_micros": summary.model_estimated_cost_micros,

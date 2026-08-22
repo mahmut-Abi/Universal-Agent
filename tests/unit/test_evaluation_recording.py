@@ -50,6 +50,7 @@ def sample_report_recording(name: str = "nightly behavior suite") -> EvaluationR
             resource_lock_released_count=1,
             resource_conflict_count=1,
             active_resource_lock_count=0,
+            execution_duration_ms=1200,
             model_call_count=3,
             model_total_token_count=215,
             model_estimated_cost_micros=35,
@@ -138,6 +139,7 @@ def test_evaluation_report_codec_round_trips_stable_report() -> None:
     assert restored.summary.scenario_count == 2
     assert restored.summary.model_total_token_count == 215
     assert restored.summary.resource_conflict_count == 1
+    assert restored.summary.execution_duration_ms == 1200
     assert restored.scenarios[0].passed
     assert restored.scenarios[0].kind is EvaluationScenarioKind.REGRESSION
     assert restored.scenarios[0].tags == ("smoke", "kubernetes")

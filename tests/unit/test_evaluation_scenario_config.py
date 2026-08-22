@@ -39,6 +39,7 @@ def test_evaluation_suite_config_parses_typed_scenarios() -> None:
                         "allowed_capabilities": ["inspect_workload"],
                         "max_actions": 1,
                         "max_iterations": 3,
+                        "max_execution_duration_ms": 1000,
                         "max_model_total_tokens": 100,
                         "max_model_estimated_cost_micros": 10,
                     },
@@ -81,6 +82,7 @@ def test_evaluation_suite_config_parses_typed_scenarios() -> None:
     assert healthy.expectations.expected_status is ExecutionStatus.COMPLETED
     assert healthy.expectations.expected_criteria["healthy"] is True
     assert healthy.expectations.allowed_capabilities == ("inspect_workload",)
+    assert healthy.expectations.max_execution_duration_ms == 1000
     assert healthy.expectations.max_model_total_tokens == 100
     assert policy.kind is EvaluationScenarioKind.POLICY
     assert policy.expectations.expected_status is ExecutionStatus.FAILED

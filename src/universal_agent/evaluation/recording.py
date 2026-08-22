@@ -46,6 +46,7 @@ class EvaluationSummaryRecording:
     resource_lock_released_count: int = 0
     resource_conflict_count: int = 0
     active_resource_lock_count: int = 0
+    execution_duration_ms: int = 0
     model_call_count: int = 0
     model_total_token_count: int = 0
     model_estimated_cost_micros: int = 0
@@ -237,6 +238,7 @@ def record_evaluation_suite(
             resource_lock_released_count=summary.resource_lock_released_count,
             resource_conflict_count=summary.resource_conflict_count,
             active_resource_lock_count=summary.active_resource_lock_count,
+            execution_duration_ms=summary.execution_duration_ms,
             model_call_count=summary.model_call_count,
             model_total_token_count=summary.model_total_token_count,
             model_estimated_cost_micros=summary.model_estimated_cost_micros,
@@ -507,6 +509,7 @@ def _encode_evaluation_summary(summary: EvaluationSummaryRecording) -> JsonObjec
         "resource_lock_released_count": summary.resource_lock_released_count,
         "resource_conflict_count": summary.resource_conflict_count,
         "active_resource_lock_count": summary.active_resource_lock_count,
+        "execution_duration_ms": summary.execution_duration_ms,
         "model_call_count": summary.model_call_count,
         "model_total_token_count": summary.model_total_token_count,
         "model_estimated_cost_micros": summary.model_estimated_cost_micros,
@@ -569,6 +572,11 @@ def _decode_evaluation_summary(payload: JsonObject) -> EvaluationSummaryRecordin
             payload,
             "active_resource_lock_count",
             "summary.active_resource_lock_count",
+        ),
+        execution_duration_ms=_optional_int(
+            payload,
+            "execution_duration_ms",
+            "summary.execution_duration_ms",
         ),
         model_call_count=_optional_int(payload, "model_call_count", "summary.model_call_count"),
         model_total_token_count=_optional_int(

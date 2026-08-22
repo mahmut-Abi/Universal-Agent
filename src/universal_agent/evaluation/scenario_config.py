@@ -127,6 +127,10 @@ def _expectations_from_mapping(values: Mapping[str, JsonValue]) -> ScenarioExpec
         ),
         max_actions=_optional_int(values.get("max_actions"), "expectations.max_actions"),
         max_iterations=_optional_int(values.get("max_iterations"), "expectations.max_iterations"),
+        max_execution_duration_ms=_optional_int(
+            values.get("max_execution_duration_ms"),
+            "expectations.max_execution_duration_ms",
+        ),
         max_model_total_tokens=_optional_int(
             values.get("max_model_total_tokens"),
             "expectations.max_model_total_tokens",

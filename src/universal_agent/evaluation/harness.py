@@ -49,6 +49,7 @@ class ScenarioExpectations:
     active_resource_lock_count: int | None = None
     max_actions: int | None = None
     max_iterations: int | None = None
+    max_execution_duration_ms: int | None = None
     max_model_total_tokens: int | None = None
     max_model_estimated_cost_micros: int | None = None
 
@@ -157,6 +158,7 @@ class EvaluationSuiteSummary:
     resource_lock_released_count: int = 0
     resource_conflict_count: int = 0
     active_resource_lock_count: int = 0
+    execution_duration_ms: int = 0
     model_call_count: int = 0
     model_total_token_count: int = 0
     model_estimated_cost_micros: int = 0
@@ -211,6 +213,10 @@ class EvaluationSuiteSummary:
         return _rate(self.action_started_count, self.scenario_count)
 
     @property
+    def average_execution_duration_ms_per_scenario(self) -> float:
+        return _rate(self.execution_duration_ms, self.scenario_count)
+
+    @property
     def average_model_calls_per_scenario(self) -> float:
         return _rate(self.model_call_count, self.scenario_count)
 
@@ -254,6 +260,7 @@ class EvaluationQualityGate:
     max_resource_conflict_rate: float | None = None
     max_average_active_resource_locks_per_scenario: float | None = None
     max_average_actions_per_scenario: float | None = None
+    max_average_execution_duration_ms_per_scenario: float | None = None
     max_average_model_calls_per_scenario: float | None = None
     max_average_model_tokens_per_scenario: float | None = None
     max_total_model_estimated_cost_micros: int | None = None
@@ -278,6 +285,10 @@ class EvaluationQualityGate:
         _validate_optional_non_negative(
             "max_average_actions_per_scenario",
             self.max_average_actions_per_scenario,
+        )
+        _validate_optional_non_negative(
+            "max_average_execution_duration_ms_per_scenario",
+            self.max_average_execution_duration_ms_per_scenario,
         )
         _validate_optional_non_negative(
             "max_average_model_calls_per_scenario",
@@ -403,6 +414,7 @@ def summarize_suite(reports: tuple[ScenarioReport, ...]) -> EvaluationSuiteSumma
         active_resource_lock_count=sum(
             report.metrics.active_resource_lock_count for report in reports
         ),
+        execution_duration_ms=sum(_scenario_duration_ms(report) for report in reports),
         model_call_count=sum(report.metrics.model_call_count for report in reports),
         model_total_token_count=sum(report.metrics.model_total_token_count for report in reports),
         model_estimated_cost_micros=sum(
@@ -507,6 +519,14 @@ def evaluate_quality_gate(
                 "average_actions_per_scenario",
                 summary.average_actions_per_scenario,
                 active_gate.max_average_actions_per_scenario,
+            )
+        )
+    if active_gate.max_average_execution_duration_ms_per_scenario is not None:
+        checks.append(
+            _gate_maximum(
+                "average_execution_duration_ms_per_scenario",
+                summary.average_execution_duration_ms_per_scenario,
+                active_gate.max_average_execution_duration_ms_per_scenario,
             )
         )
     if active_gate.max_average_model_calls_per_scenario is not None:
@@ -722,6 +742,17 @@ def _evaluate_expectations(
             )
         )
 
+    if expectations.max_execution_duration_ms is not None:
+        duration_ms = _duration_ms(events)
+        checks.append(
+            _check(
+                "max_execution_duration_ms",
+                duration_ms <= expectations.max_execution_duration_ms,
+                f"execution_duration_ms={duration_ms}",
+                f"expected <= {expectations.max_execution_duration_ms}, got {duration_ms}",
+            )
+        )
+
     if expectations.max_model_total_tokens is not None:
         checks.append(
             _check(
@@ -858,6 +889,18 @@ def _evaluation_flag(report: ScenarioReport, flag: str) -> bool:
     if flag == "task":
         return evaluation.task_completed
     raise ValueError(f"unknown evaluation flag: {flag}")
+
+
+def _scenario_duration_ms(report: ScenarioReport) -> int:
+    return _duration_ms(report.events)
+
+
+def _duration_ms(events: tuple[RuntimeEventView, ...]) -> int:
+    if not events:
+        return 0
+    start = min(event.occurred_at for event in events)
+    end = max(event.occurred_at for event in events)
+    return round((end - start).total_seconds() * 1000)
 
 
 def _rate(numerator: int, denominator: int) -> float:

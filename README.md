@@ -142,8 +142,8 @@ process status. The CLI does not access Kernel internals directly.
 Session, Event, Metrics and Audit projections. `EvaluationSuite` and
 `EvaluationScenarioSelector` make scenario, regression, policy and recovery subsets first-class
 contracts for local CI-style runs. `EvaluationQualityGate` evaluates suite-level pass rates,
-completion rates, action success and tool failure rates, recovery budgets, intervention rates,
-resource lock safety, action efficiency and model budget thresholds after execution.
+completion rates, action success and tool failure rates, recovery budgets, execution duration
+budgets, intervention rates, resource lock safety, action efficiency and model budget thresholds after execution.
 `EvaluationRunner` composes suite execution, quality gates and optional
 `EvaluationReportStore` persistence into one reusable application-facing module.
 `compare_evaluation_reports` compares stable suite recordings for golden report regression checks.
@@ -212,8 +212,8 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   agentd-shaped routes and CLI commands, plus optional
   `ModelUsageRecorded` events from model adapters. Structured log projections preserve runtime identifiers, event types, severity and redacted event data for CLI/agentd consumers. Trace span projections derive session/action trees plus decision, model usage, policy, observation, resource lock, resource conflict and evaluation phase spans from the same event stream with redacted attributes for OpenTelemetry-shaped consumers, and the OTLP adapter projects those spans into dependency-free collector payloads. Resource lock metrics and doctor checks report acquired/released locks, conflicts and active locks derived from runtime events. The Evaluation Harness can assert status, error
   codes, events, Evidence claims, executed capabilities, audit coverage, policy denials, recovery plans, criteria,
-  resource lock conflicts, active resource locks, action counts, iteration budgets and model
-  token/cost budgets for behavior scenarios.
+  resource lock conflicts, active resource locks, action counts, iteration budgets, execution duration
+  budgets and model token/cost budgets for behavior scenarios.
   Evaluation suites classify scenarios by kind and tags so regression, policy and recovery subsets
   can be selected without changing Kernel code. File-backed suite configs load those same typed
   scenario contracts from JSON for local CI runs, and quality gates turn suite metrics into CI-ready

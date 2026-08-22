@@ -322,6 +322,12 @@ def test_evaluation_quality_gate_validates_thresholds() -> None:
 
     with pytest.raises(
         ValueError,
+        match="max_average_execution_duration_ms_per_scenario must be non-negative",
+    ):
+        EvaluationQualityGate(max_average_execution_duration_ms_per_scenario=-1.0)
+
+    with pytest.raises(
+        ValueError,
         match="max_average_model_calls_per_scenario must be non-negative",
     ):
         EvaluationQualityGate(max_average_model_calls_per_scenario=-1.0)
