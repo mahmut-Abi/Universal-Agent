@@ -106,6 +106,7 @@ class RuntimeHost:
                 runtime_api=api,
                 components=components,
                 profiles=() if profile is None else (profile,),
+                config=config,
             ),
             components=components,
             domain_identity=identity,

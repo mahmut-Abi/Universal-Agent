@@ -93,20 +93,21 @@ P3.5 work built on this interface, not replacements for it.
 
 `RuntimeService` is the first framework-free `agentd` foundation. It delegates execution, session and
 event reads to `RuntimeAPI`, and adds service-level health, readiness, Domain, Capability and Tool
-catalog views for HTTP and CLI adapters. It does not access Kernel internals directly. `RuntimeHost`
-is the typed application assembly boundary for Runtime
+catalog views, plus a typed runtime configuration projection for HTTP and CLI adapters. It does not
+access Kernel internals directly. `RuntimeHost` is the typed application assembly boundary for Runtime
 Configuration: it validates the configured Domain identity, builds memory or file-backed stores,
 applies runtime limits/environment, optionally binds an application-level Agent Profile, and exposes
 both `RuntimeAPI` and `RuntimeService` without teaching applications Kernel internals. See
 `examples/p3_5_runtime_api.py`, `examples/p3_5_runtime_service.py`,
-`examples/p3_5_runtime_config.py`, and `examples/p3_5_cli_event_stream.py` for minimal
+`examples/p3_5_runtime_config.py`, `examples/p3_5_cli_config.py`, and
+`examples/p3_5_cli_event_stream.py` for minimal
 application-facing usage.
 
 `AgentdApp` is the framework-free route adapter foundation for `agentd`. It accepts small
 `HttpRequest` objects and returns JSON-safe `HttpResponse` objects for `GET /health`, `GET /ready`,
 catalog routes, session listing via `GET /v1/sessions`, route-level goal submission via
 `POST /v1/sessions`, session/event reads, and Profile catalog/detail reads via `GET /v1/profiles`,
-confirmation resume via
+configuration reads via `GET /v1/config`, confirmation resume via
 `POST /v1/sessions/{id}/resume`, explicit pause via `POST /v1/sessions/{id}/pause`, cancellation via
 `POST /v1/sessions/{id}/cancel`, operations reads via `/v1/metrics`, `/v1/cost`, `/v1/logs`,
 `/v1/traces`, `/v1/doctor` and `/v1/audit`, per-session audit/cost/log/trace reads, and cursor event
@@ -116,7 +117,7 @@ HTTP bridge for this adapter: it owns socket/body/header translation only and do
 internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
-Capability/Tool catalogs, and session list/show/events/pause/resume/cancel commands through
+Capability/Tool catalogs, `config show`, and session list/show/events/pause/resume/cancel commands through
 `RuntimeService`, plus operations commands for metrics, cost, logs, traces, doctor and audit
 projections. `agent serve` starts the standard-library `AgentdHttpServer` around the same service;
 the CLI does not access Kernel internals directly.
@@ -166,7 +167,7 @@ not a database layer, event-sourcing model, or production migration system.
   `RuntimeService` now adds framework-free `agentd` foundation metadata: health, readiness, domains,
   capabilities, tools, delegated execution, runnable examples, an `AgentdApp` route adapter for
   HTTP-shaped goal submission, session listing, JSON and SSE-formatted session/event reads,
-  pause/resume/cancel routes,
+  pause/resume/cancel routes, runtime configuration reads,
   Profile catalog reads, a standard-library `AgentdHttpServer` bridge, file-backed session/event
   stores for local recovery, a local CLI adapter, and typed
   `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, store backend,
@@ -227,6 +228,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_agentd_routes.py
 .venv/bin/python examples/p3_5_persistence.py
 .venv/bin/python examples/p3_5_runtime_config.py
+.venv/bin/python examples/p3_5_cli_config.py
 .venv/bin/python examples/p3_5_cli_event_stream.py
 .venv/bin/python examples/p3_5_cli_run.py
 .venv/bin/python examples/p3_6_cost_tracking.py

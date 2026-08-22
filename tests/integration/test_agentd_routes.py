@@ -6,6 +6,7 @@ from universal_agent import (
     AgentRuntime,
     Decision,
     DecisionType,
+    DomainConfig,
     DomainLoader,
     Goal,
     InMemoryEventSink,
@@ -14,8 +15,11 @@ from universal_agent import (
     ProfileConfig,
     RuntimeAPI,
     RuntimeBuilder,
+    RuntimeConfig,
+    RuntimeLimitsConfig,
     RuntimeService,
     ScriptedModelAdapter,
+    StoreConfig,
     SuccessCriterion,
     Task,
     immutable_json,
@@ -173,7 +177,13 @@ def build_service(
         environment=immutable_json({"environment": "staging"}),
     )
     api = RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
-    return RuntimeService(runtime_api=api, components=components), backend
+    config = RuntimeConfig(
+        environment=immutable_json({"environment": "staging"}),
+        store=StoreConfig.memory(),
+        limits=RuntimeLimitsConfig(max_iterations=12, max_recovery_steps=4),
+        domain=DomainConfig("kubernetes", "0.2.0"),
+    )
+    return RuntimeService(runtime_api=api, components=components, config=config), backend
 
 
 def build_profile_service(decisions: list[Decision]) -> tuple[RuntimeService, AgentdBackend]:
@@ -255,6 +265,7 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     domains = await app.handle(HttpRequest("GET", "/v1/domains"))
     capabilities = await app.handle(HttpRequest("GET", "/v1/capabilities"))
     tools = await app.handle(HttpRequest("GET", "/v1/tools"))
+    config = await app.handle(HttpRequest("GET", "/v1/config"))
 
     assert health.status_code == 200
     assert health.body["status"] == "ok"
@@ -287,6 +298,13 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     scale_tool = find_named(tools.body["tools"], "kubernetes_scale_workload")
     assert scale_tool["side_effect"] == "reversible"
     assert scale_tool["required_arguments"] == ["name", "namespace", "replicas"]
+    assert config.status_code == 200
+    assert config.body == {
+        "environment": {"environment": "staging"},
+        "store": {"backend": "memory", "path": None},
+        "limits": {"max_iterations": 12, "max_recovery_steps": 4},
+        "domains": [{"name": "kubernetes", "version": "0.2.0", "primary": True}],
+    }
 
 
 @pytest.mark.asyncio

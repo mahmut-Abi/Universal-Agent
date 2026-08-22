@@ -20,8 +20,10 @@ from universal_agent import (
     RuntimeAPI,
     RuntimeBuilder,
     RuntimeConfig,
+    RuntimeLimitsConfig,
     RuntimeService,
     ScriptedModelAdapter,
+    StoreConfig,
     SuccessCriterion,
     Task,
     immutable_json,
@@ -114,8 +116,17 @@ def build_cli_service(
         environment=immutable_json({"environment": "staging"}),
     )
     api = RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
+    config = RuntimeConfig(
+        environment=immutable_json({"environment": "staging"}),
+        store=StoreConfig.memory(),
+        limits=RuntimeLimitsConfig(max_iterations=12, max_recovery_steps=4),
+        domain=DomainConfig("kubernetes", "0.2.0"),
+    )
     return RuntimeService(
-        runtime_api=api, components=components, profiles=(cli_profile(),)
+        runtime_api=api,
+        components=components,
+        profiles=(cli_profile(),),
+        config=config,
     ), backend
 
 
@@ -216,6 +227,23 @@ async def test_cli_exposes_service_catalog_commands() -> None:
     assert {item["name"] for item in capabilities if isinstance(item, dict)} >= {
         "inspect_workload",
         "scale_workload",
+    }
+
+
+@pytest.mark.asyncio
+async def test_cli_config_show_exposes_runtime_configuration() -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+
+    status = await run_cli(["config", "show"], service=service, stdout=output)
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload == {
+        "environment": {"environment": "staging"},
+        "store": {"backend": "memory", "path": None},
+        "limits": {"max_iterations": 12, "max_recovery_steps": 4},
+        "domains": [{"name": "kubernetes", "version": "0.2.0", "primary": True}],
     }
 
 

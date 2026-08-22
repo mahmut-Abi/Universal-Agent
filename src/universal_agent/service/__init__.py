@@ -12,6 +12,8 @@ from universal_agent.service.runtime import (
     HealthView,
     ProfileView,
     ReadyView,
+    RuntimeConfigDomainView,
+    RuntimeConfigView,
     RuntimeService,
     ToolView,
 )
@@ -24,6 +26,8 @@ __all__ = [
     "HealthView",
     "ProfileView",
     "ReadyView",
+    "RuntimeConfigDomainView",
+    "RuntimeConfigView",
     "RuntimeCostView",
     "RuntimeLogRecordView",
     "RuntimeMetricsView",

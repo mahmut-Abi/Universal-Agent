@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from universal_agent.core import (
     CapabilityCategory,
     DomainIdentity,
     EventId,
     Goal,
+    JsonMapping,
     RiskLevel,
     SessionId,
     SideEffect,
     Task,
+    immutable_json,
 )
 from universal_agent.domain import ActiveDomain, RuntimeComponents
 from universal_agent.operations import (
@@ -36,6 +39,9 @@ from universal_agent.runtime import (
     SessionSummaryView,
     SessionView,
 )
+
+if TYPE_CHECKING:
+    from universal_agent.host.config import RuntimeConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +105,23 @@ class ProfileView:
     domains: tuple[DomainIdentity, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class RuntimeConfigDomainView:
+    name: str
+    version: str
+    primary: bool
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeConfigView:
+    environment: JsonMapping
+    store_backend: str
+    store_path: str | None
+    max_iterations: int
+    max_recovery_steps: int
+    domains: tuple[RuntimeConfigDomainView, ...]
+
+
 class RuntimeService:
     """Application-facing service module for future agentd adapters.
 
@@ -112,10 +135,12 @@ class RuntimeService:
         runtime_api: RuntimeAPI,
         components: RuntimeComponents,
         profiles: tuple[AgentProfile, ...] = (),
+        config: RuntimeConfig | None = None,
     ) -> None:
         self._runtime_api = runtime_api
         self._components = components
         self._profiles = ProfileRegistry(profiles)
+        self._config = config
 
     def health(self) -> HealthView:
         return HealthView(status="ok", service="universal-agent-runtime")
@@ -208,6 +233,31 @@ class RuntimeService:
 
     def accepts_profile(self, name: str) -> bool:
         return self._profiles.has(name)
+
+    def config(self) -> RuntimeConfigView:
+        identities = self._components.domain_composition.identities
+        if self._config is None:
+            return RuntimeConfigView(
+                environment=immutable_json(),
+                store_backend="memory",
+                store_path=None,
+                max_iterations=20,
+                max_recovery_steps=8,
+                domains=runtime_config_domain_views(identities),
+            )
+        configured = tuple(
+            DomainIdentity(domain.name, domain.version)
+            for domain in self._config.configured_domains()
+            if domain.name is not None and domain.version is not None
+        )
+        return RuntimeConfigView(
+            environment=immutable_json(self._config.environment),
+            store_backend=self._config.store.backend.value,
+            store_path=self._config.store.path,
+            max_iterations=self._config.limits.max_iterations,
+            max_recovery_steps=self._config.limits.max_recovery_steps,
+            domains=runtime_config_domain_views(configured or identities),
+        )
 
     async def run_goal(self, goal: Goal, task: Task) -> RuntimeRun:
         return await self._runtime_api.run_goal(goal, task)
@@ -350,6 +400,15 @@ def profile_view(profile: AgentProfile) -> ProfileView:
         domain_name=profile.domain.name,
         domain_version=profile.domain.version,
         domains=tuple(domain.identity() for domain in profile.configured_domains()),
+    )
+
+
+def runtime_config_domain_views(
+    identities: tuple[DomainIdentity, ...],
+) -> tuple[RuntimeConfigDomainView, ...]:
+    return tuple(
+        RuntimeConfigDomainView(identity.name, identity.version, index == 0)
+        for index, identity in enumerate(identities)
     )
 
 

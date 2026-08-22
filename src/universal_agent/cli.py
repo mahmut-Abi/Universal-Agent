@@ -12,6 +12,7 @@ from universal_agent.agentd.app import (
     AgentdApp,
     audit_records_body,
     capability_body,
+    config_body,
     cost_body,
     doctor_body,
     domain_body,
@@ -106,6 +107,7 @@ class _DefaultCliBackend:
 
 def build_default_service() -> RuntimeService:
     backend = _DefaultCliBackend()
+    profile = _default_profile()
     components = RuntimeBuilder().build(
         DomainLoader().load(KubernetesRemediationDomain(backend, backend))
     )
@@ -121,7 +123,8 @@ def build_default_service() -> RuntimeService:
     return RuntimeService(
         runtime_api=RuntimeAPI(runtime=runtime, session_store=store, event_reader=events),
         components=components,
-        profiles=(_default_profile(),),
+        profiles=(profile,),
+        config=profile.runtime,
     )
 
 
@@ -167,6 +170,10 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("traces")
     commands.add_parser("doctor")
     commands.add_parser("audit")
+
+    config = commands.add_parser("config")
+    config_commands = config.add_subparsers(dest="config_command", required=True)
+    config_commands.add_parser("show")
 
     serve = commands.add_parser("serve")
     serve.add_argument("--host", default="127.0.0.1")
@@ -273,6 +280,9 @@ async def _dispatch(
     if command == "audit":
         _write_json(out, audit_records_body(await service.audit_records()))
         return
+    if command == "config":
+        _dispatch_config(args, service, out)
+        return
     if command == "serve":
         _dispatch_serve(args, service, out, server_runner=server_runner)
         return
@@ -330,6 +340,18 @@ def _dispatch_profile(
         _write_json(out, profile_body(service.profile(profile)))
         return
     raise ValueError(f"unknown profile command: {command}")
+
+
+def _dispatch_config(
+    args: argparse.Namespace,
+    service: RuntimeService,
+    out: TextIO,
+) -> None:
+    command = cast(str, args.config_command)
+    if command == "show":
+        _write_json(out, config_body(service.config()))
+        return
+    raise ValueError(f"unknown config command: {command}")
 
 
 def _dispatch_serve(

@@ -38,6 +38,7 @@ from universal_agent.service import (
     HealthView,
     ProfileView,
     ReadyView,
+    RuntimeConfigView,
     RuntimeCostView,
     RuntimeLogRecordView,
     RuntimeMetricsView,
@@ -128,6 +129,8 @@ class AgentdApp:
                     {"profiles": [profile_body(item) for item in self._service.profiles()]}
                 ),
             )
+        if path == "/v1/config":
+            return self._get(method, config_body(self._service.config()))
         profile_name = _profile_route(path)
         if profile_name is not None:
             if method != "GET":
@@ -492,6 +495,30 @@ def ready_body(view: ReadyView) -> JsonMapping:
             "domain_count": view.domain_count,
             "capability_count": view.capability_count,
             "tool_count": view.tool_count,
+        }
+    )
+
+
+def config_body(view: RuntimeConfigView) -> JsonMapping:
+    return immutable_json(
+        {
+            "environment": _json_value(view.environment),
+            "store": {
+                "backend": view.store_backend,
+                "path": view.store_path,
+            },
+            "limits": {
+                "max_iterations": view.max_iterations,
+                "max_recovery_steps": view.max_recovery_steps,
+            },
+            "domains": [
+                {
+                    "name": domain.name,
+                    "version": domain.version,
+                    "primary": domain.primary,
+                }
+                for domain in view.domains
+            ],
         }
     )
 
