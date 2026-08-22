@@ -4,7 +4,8 @@ A typed Universal Agent Kernel and Runtime with pluggable Domain Runtimes.
 
 The long-term architecture is defined in
 `universal-agent-runtime-domain-runtime-design.md`. The current implementation is a typed runtime
-with fake-backed Kubernetes remediation plus the first P3.5 productization foundation: a stable
+with fake-backed Kubernetes remediation, a P3 Multi-Domain composition foundation,
+and the first P3.5 productization foundation: a stable
 in-process Runtime API, immutable Session read models, cursor-readable Events, explicit
 pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter, a local CLI adapter,
 local file-backed session/event persistence, the first P3.6 operations surface with cost tracking,
@@ -33,7 +34,7 @@ optional Multi-Agent, UI, distributed runtime, and ecosystem packaging.
 - Applications should consume a stable Runtime API or SDK boundary. Future `agentd`, CLI, TUI, and
   Web clients must not manipulate Kernel internals directly.
 - A session lives in its store, not in a Runtime instance. Everything needed to continue — task graph,
-  Evidence, recovery budget, pending confirmation, activated Domain identity — is saved as a
+  Evidence, recovery budget, pending confirmation, activated Domain composition — is saved as a
   `SessionSnapshot`, so a rebuilt Runtime resumes from the snapshot instead of from shared objects.
 - The World Model is never a second source of truth. It is replayed from Evidence through the Domain's
   World updaters, which is why recovery cannot silently invent facts.
@@ -161,8 +162,8 @@ not a database layer, event-sourcing model, or production migration system.
   HTTP-shaped goal submission, session listing, session/event reads, pause/resume/cancel routes,
   Profile catalog reads, file-backed session/event stores for local recovery, a local CLI adapter,
   and typed
-  `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, store backend
-  and Domain identity validation.
+  `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, store backend,
+  Domain identity validation, and multi-Domain composition activation.
 - P3.6/P3.7 foundation: event-derived `metrics`, `cost`, `logs`, `doctor` and `audit` projections exposed
   through RuntimeService, agentd-shaped routes and CLI commands, plus optional
   `ModelUsageRecorded` events from model adapters. Structured log projections preserve runtime identifiers, event types, severity and redacted event data for CLI/agentd consumers. The Evaluation Harness can assert status, error
@@ -175,10 +176,12 @@ not a database layer, event-sourcing model, or production migration system.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
-while `KubernetesRemediationDomain` adds the fake-backed mutation path. Multi-domain operation,
-Domain Composition, cross-domain World Model, Agent Profile, persistent databases, packaging,
-marketplace behavior, optional Multi-Agent Runtime, and real Kubernetes API remediation remain outside
-P3.2. Persistence includes in-memory stores plus local file-backed session/event adapters with
+while `KubernetesRemediationDomain` adds the fake-backed mutation path. Multi-domain operation now
+has a conservative `DomainManager` / `DomainComposition` foundation: Domain identities,
+capabilities and tools are validated before activation, Profiles may declare ordered Domain sets,
+and snapshots persist the activated composition for safe resume. Cross-domain World Model reasoning,
+persistent databases, packaging, marketplace behavior, optional Multi-Agent Runtime, and real
+Kubernetes API remediation remain outside P3.2. Persistence includes in-memory stores plus local file-backed session/event adapters with
 snapshot isolation; no database backend, event sourcing, or schema migration is included.
 
 ## Roadmap alignment

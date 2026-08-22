@@ -8,6 +8,7 @@ from typing import cast
 from universal_agent.core import (
     ActionId,
     AgentState,
+    DomainIdentity,
     ErrorCode,
     EvaluationResult,
     EvaluationStatus,
@@ -44,6 +45,9 @@ def encode_session_snapshot(snapshot: SessionSnapshot) -> JsonObject:
             "name": snapshot.domain_name,
             "version": snapshot.domain_version,
         },
+        "domains": [
+            {"name": identity.name, "version": identity.version} for identity in snapshot.domains
+        ],
         "task_graph": _encode_task_graph(snapshot.task_graph),
         "state": _encode_agent_state(snapshot.state),
         "evidence": [_encode_evidence(item) for item in snapshot.evidence],
@@ -61,12 +65,15 @@ def decode_session_snapshot(payload: Mapping[str, JsonValue]) -> SessionSnapshot
         for item in _list(_required(payload, "evidence"), "evidence")
     )
     domain = _object(_required(payload, "domain"), "domain")
+    domain_name = _string(_required(domain, "name"), "domain.name")
+    domain_version = _string(_required(domain, "version"), "domain.version")
     return SessionSnapshot(
         state,
         graph,
         evidence,
-        _string(_required(domain, "name"), "domain.name"),
-        _string(_required(domain, "version"), "domain.version"),
+        domain_name,
+        domain_version,
+        _decode_domain_identities(payload.get("domains"), domain_name, domain_version),
     )
 
 
@@ -361,6 +368,30 @@ def _decode_evidence(payload: JsonObject) -> Evidence:
         _float(_required(payload, "confidence"), "evidence.confidence"),
         EvidenceId(_string(_required(payload, "id"), "evidence.id")),
         _datetime(_required(payload, "observed_at"), "evidence.observed_at"),
+    )
+
+
+def _decode_domain_identities(
+    value: JsonValue,
+    fallback_name: str,
+    fallback_version: str,
+) -> tuple[DomainIdentity, ...]:
+    if value is None:
+        if fallback_name and fallback_version:
+            return (DomainIdentity(fallback_name, fallback_version),)
+        return ()
+    identities = tuple(
+        _decode_domain_identity(_object(item, "domains[]")) for item in _list(value, "domains")
+    )
+    if not identities and fallback_name and fallback_version:
+        return (DomainIdentity(fallback_name, fallback_version),)
+    return identities
+
+
+def _decode_domain_identity(payload: JsonObject) -> DomainIdentity:
+    return DomainIdentity(
+        _string(_required(payload, "name"), "domain_identity.name"),
+        _string(_required(payload, "version"), "domain_identity.version"),
     )
 
 

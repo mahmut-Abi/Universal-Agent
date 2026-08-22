@@ -4,6 +4,7 @@ import pytest
 
 from universal_agent.core import (
     AgentState,
+    DomainIdentity,
     Goal,
     ObservationStatus,
     SessionId,
@@ -79,12 +80,26 @@ async def test_session_snapshot_round_trip_preserves_graph_and_evidence() -> Non
     state.tasks.extend(created)
     evidence = make_evidence(claim="healthy", value=False, confidence=0.99, seconds=1)
 
-    snapshot = SessionSnapshot(state, manager.snapshot(), (evidence,), "kubernetes", "0.1.0")
+    snapshot = SessionSnapshot(
+        state,
+        manager.snapshot(),
+        (evidence,),
+        "kubernetes",
+        "0.1.0",
+        (
+            DomainIdentity("kubernetes", "0.1.0"),
+            DomainIdentity("observability", "0.1.0"),
+        ),
+    )
     await store.create_session(snapshot)
     loaded = await store.load_session(state.session_id)
 
     assert loaded.domain_name == "kubernetes"
     assert loaded.domain_version == "0.1.0"
+    assert loaded.domains == (
+        DomainIdentity("kubernetes", "0.1.0"),
+        DomainIdentity("observability", "0.1.0"),
+    )
     assert tuple(node.key for node in loaded.task_graph.nodes) == ("root", "diagnose")
     assert loaded.task_graph.nodes[1].depends_on == (state.current_task.id,)
     assert loaded.task_graph.current_task_id == state.current_task.id
@@ -197,6 +212,7 @@ def test_session_from_state_builds_single_node_graph() -> None:
     assert snapshot.task_graph.current_task_id == state.current_task.id
     assert snapshot.evidence == ()
     assert snapshot.domain_name == "kubernetes"
+    assert snapshot.domains == (DomainIdentity("kubernetes", "0.1.0"),)
 
 
 def test_observation_status_enum_is_unchanged() -> None:

@@ -590,6 +590,9 @@ def profile_body(view: ProfileView) -> dict[str, JsonValue]:
         "description": view.description,
         "domain_name": view.domain_name,
         "domain_version": view.domain_version,
+        "domains": [
+            {"name": identity.name, "version": identity.version} for identity in view.domains
+        ],
     }
 
 

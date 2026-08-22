@@ -26,6 +26,10 @@ class AgentProfile:
     description: str
     domain: DomainConfig
     runtime: RuntimeConfig
+    domains: tuple[DomainConfig, ...] = ()
+
+    def configured_domains(self) -> tuple[DomainConfig, ...]:
+        return self.domains or (self.domain,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +39,7 @@ class ProfileConfig:
     description: str = ""
     domain: DomainConfig = field(default_factory=lambda: _domain_config_type()())
     runtime: RuntimeConfig = field(default_factory=lambda: _runtime_config_type()())
+    domains: tuple[DomainConfig, ...] = ()
 
     @classmethod
     def from_json_file(cls, path: str | Path) -> ProfileConfig:
@@ -47,12 +52,19 @@ class ProfileConfig:
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> ProfileConfig:
         domain_config = _domain_config_type()
         runtime_config = _runtime_config_type()
+        domains = _domain_configs(values.get("domains"), domain_config)
+        domain = (
+            domains[0]
+            if domains
+            else domain_config.from_mapping(_object(values.get("domain", {}), "domain"))
+        )
         config = cls(
             name=_string(values.get("name"), "name"),
             version=_string(values.get("version"), "version"),
             description=_string(values.get("description", ""), "description"),
-            domain=domain_config.from_mapping(_object(values.get("domain", {}), "domain")),
+            domain=domain,
             runtime=runtime_config.from_mapping(_object(values.get("runtime", {}), "runtime")),
+            domains=domains,
         )
         config.validate()
         return config
@@ -66,7 +78,18 @@ class ProfileConfig:
             raise ValueError("profile domain name must not be empty")
         if self.domain.version is None or not self.domain.version.strip():
             raise ValueError("profile domain version must not be empty")
+        for domain in self.configured_domains():
+            if domain.name is None or not domain.name.strip():
+                raise ValueError("profile domain name must not be empty")
+            if domain.version is None or not domain.version.strip():
+                raise ValueError("profile domain version must not be empty")
+        duplicates = _duplicate_domain_configs(self.configured_domains())
+        if duplicates:
+            raise ValueError("duplicate profile domains: " + ", ".join(duplicates))
         self.runtime.validate()
+        runtime_domains = self.runtime.configured_domains()
+        if runtime_domains and runtime_domains != self.configured_domains():
+            raise ValueError("profile domains must match runtime configured domains")
 
     def to_profile(self) -> AgentProfile:
         self.validate()
@@ -76,7 +99,11 @@ class ProfileConfig:
             self.description,
             self.domain,
             self.runtime,
+            self.configured_domains(),
         )
+
+    def configured_domains(self) -> tuple[DomainConfig, ...]:
+        return self.domains or (self.domain,)
 
 
 class ProfileNotFoundError(LookupError):
@@ -116,6 +143,28 @@ def _object(value: JsonValue, field: str) -> Mapping[str, JsonValue]:
     raise ValueError(f"{field} must be an object")
 
 
+def _domain_configs(
+    value: JsonValue,
+    domain_config: type[DomainConfig],
+) -> tuple[DomainConfig, ...]:
+    if value is None:
+        return ()
+    return tuple(
+        domain_config.from_mapping(_object(item, "domains[]")) for item in _list(value, "domains")
+    )
+
+
+def _duplicate_domain_configs(domains: tuple[DomainConfig, ...]) -> tuple[str, ...]:
+    seen: set[tuple[str | None, str | None]] = set()
+    duplicates: set[tuple[str | None, str | None]] = set()
+    for domain in domains:
+        key = (domain.name, domain.version)
+        if key in seen:
+            duplicates.add(key)
+        seen.add(key)
+    return tuple(f"{name or ''}@{version or ''}" for name, version in sorted(duplicates))
+
+
 def _json_value(value: object, field: str) -> JsonValue:
     if value is None or isinstance(value, bool | int | float | str):
         return value
@@ -135,6 +184,12 @@ def _string(value: JsonValue, field: str) -> str:
     if isinstance(value, str):
         return value
     raise ValueError(f"{field} must be a string")
+
+
+def _list(value: JsonValue, field: str) -> list[JsonValue]:
+    if isinstance(value, list):
+        return value
+    raise ValueError(f"{field} must be a list")
 
 
 def _domain_config_type() -> type[DomainConfig]:

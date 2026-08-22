@@ -4,7 +4,14 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from universal_agent.core import DomainIdentity
-from universal_agent.domain import DomainLoader, DomainRuntime, RuntimeBuilder, RuntimeComponents
+from universal_agent.domain import (
+    DomainComposition,
+    DomainManager,
+    DomainNotFoundError,
+    DomainRuntime,
+    RuntimeBuilder,
+    RuntimeComponents,
+)
 from universal_agent.host.config import RuntimeConfig, StoreBackend
 from universal_agent.model import ModelAdapter
 from universal_agent.persistence import FileEventStore, FileSessionStore
@@ -38,6 +45,8 @@ class RuntimeHost:
     service: RuntimeService
     components: RuntimeComponents
     domain_identity: DomainIdentity
+    domain_identities: tuple[DomainIdentity, ...]
+    domain_composition: DomainComposition
     profile: AgentProfile | None = None
 
     @classmethod
@@ -49,12 +58,32 @@ class RuntimeHost:
         domain: DomainRuntime,
         profile: AgentProfile | None = None,
     ) -> RuntimeHost:
+        return cls.build_composed(
+            config=config,
+            model=model,
+            domains=(domain,),
+            profile=profile,
+        )
+
+    @classmethod
+    def build_composed(
+        cls,
+        *,
+        config: RuntimeConfig,
+        model: ModelAdapter,
+        domains: tuple[DomainRuntime, ...],
+        profile: AgentProfile | None = None,
+    ) -> RuntimeHost:
+        if not domains:
+            raise ValueError("runtime host requires at least one domain")
         config.validate()
-        active_domain = DomainLoader().load(domain)
-        identity = active_domain.identity
-        _validate_domain_config(config, identity)
-        _validate_profile(profile, identity)
-        components = RuntimeBuilder().build(active_domain)
+        manager = DomainManager(domains)
+        requested = tuple(domain.identity() for domain in config.configured_domains())
+        composition = _activate_composition(manager, requested)
+        identity = composition.primary.identity
+        _validate_domain_config(config, composition.identities)
+        _validate_profile(profile, composition.identities)
+        components = RuntimeBuilder().build(composition)
         session_store, event_store = _build_stores(config)
         runtime = AgentRuntime(
             model=model,
@@ -80,6 +109,8 @@ class RuntimeHost:
             ),
             components=components,
             domain_identity=identity,
+            domain_identities=composition.identities,
+            domain_composition=composition,
             profile=profile,
         )
 
@@ -98,25 +129,74 @@ class RuntimeHost:
             profile=profile,
         )
 
-
-def _validate_domain_config(config: RuntimeConfig, identity: DomainIdentity) -> None:
-    expected = config.domain
-    if expected.name is not None and expected.name != identity.name:
-        raise ValueError(f"configured domain {expected.name} does not match {identity.name}")
-    if expected.version is not None and expected.version != identity.version:
-        raise ValueError(
-            f"configured domain version {expected.version} does not match {identity.version}"
+    @classmethod
+    def from_profile_composed(
+        cls,
+        *,
+        profile: AgentProfile,
+        model: ModelAdapter,
+        domains: tuple[DomainRuntime, ...],
+    ) -> RuntimeHost:
+        return cls.build_composed(
+            config=profile.runtime,
+            model=model,
+            domains=domains,
+            profile=profile,
         )
 
 
-def _validate_profile(profile: AgentProfile | None, identity: DomainIdentity) -> None:
+def _validate_domain_config(
+    config: RuntimeConfig,
+    identities: tuple[DomainIdentity, ...],
+) -> None:
+    expected = tuple(domain.identity() for domain in config.configured_domains())
+    if expected and expected != identities:
+        raise ValueError(
+            "configured domains "
+            f"{_format_identities(expected)} do not match {_format_identities(identities)}"
+        )
+
+
+def _activate_composition(
+    manager: DomainManager,
+    requested: tuple[DomainIdentity, ...],
+) -> DomainComposition:
+    try:
+        return manager.activate(requested or None).composition
+    except DomainNotFoundError as exc:
+        registered = manager.identities()
+        if len(requested) == 1 and len(registered) == 1:
+            _raise_single_domain_mismatch(requested[0], registered[0], exc)
+        raise
+
+
+def _raise_single_domain_mismatch(
+    expected: DomainIdentity,
+    actual: DomainIdentity,
+    cause: Exception,
+) -> None:
+    if expected.name != actual.name:
+        raise ValueError(
+            f"configured domain {expected.name} does not match {actual.name}"
+        ) from cause
+    if expected.version != actual.version:
+        raise ValueError(
+            f"configured domain version {expected.version} does not match {actual.version}"
+        ) from cause
+    raise cause
+
+
+def _validate_profile(
+    profile: AgentProfile | None,
+    identities: tuple[DomainIdentity, ...],
+) -> None:
     if profile is None:
         return
-    if profile.domain.name != identity.name:
-        raise ValueError(f"profile domain {profile.domain.name} does not match {identity.name}")
-    if profile.domain.version != identity.version:
+    expected = tuple(domain.identity() for domain in profile.configured_domains())
+    if expected != identities:
         raise ValueError(
-            f"profile domain version {profile.domain.version} does not match {identity.version}"
+            "profile domains "
+            f"{_format_identities(expected)} do not match {_format_identities(identities)}"
         )
 
 
@@ -128,3 +208,7 @@ def _build_stores(config: RuntimeConfig) -> tuple[SessionStore, _EventStore]:
         assert config.store.path is not None
         return FileSessionStore(config.store.path), FileEventStore(config.store.path)
     raise ValueError(f"unsupported store backend: {config.store.backend}")
+
+
+def _format_identities(identities: tuple[DomainIdentity, ...]) -> str:
+    return ", ".join(f"{item.name}@{item.version}" for item in identities)

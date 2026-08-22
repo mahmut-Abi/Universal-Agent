@@ -304,6 +304,7 @@ async def test_agentd_profile_route_exposes_profile_catalog() -> None:
             "description": "Production Kubernetes operator",
             "domain_name": "kubernetes",
             "domain_version": "0.2.0",
+            "domains": [{"name": "kubernetes", "version": "0.2.0"}],
         }
     ]
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from universal_agent.core import (
     CapabilityCategory,
+    DomainIdentity,
     EventId,
     Goal,
     RiskLevel,
@@ -93,6 +94,7 @@ class ProfileView:
     description: str
     domain_name: str
     domain_version: str
+    domains: tuple[DomainIdentity, ...] = ()
 
 
 class RuntimeService:
@@ -330,6 +332,7 @@ def profile_view(profile: AgentProfile) -> ProfileView:
         description=profile.description,
         domain_name=profile.domain.name,
         domain_version=profile.domain.version,
+        domains=tuple(domain.identity() for domain in profile.configured_domains()),
     )
 
 

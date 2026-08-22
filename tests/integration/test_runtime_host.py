@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from universal_agent import (
+    AgentProfile,
     Decision,
     DecisionType,
     DomainConfig,
@@ -209,19 +210,22 @@ def test_runtime_host_from_profile_exposes_profile_catalog(tmp_path: Path) -> No
 
 def test_runtime_host_rejects_profile_domain_mismatch(tmp_path: Path) -> None:
     backend = HostRemediationBackend()
-    profile = ProfileConfig.from_mapping(
-        {
-            "name": "production-operator",
-            "version": "1.0.0",
-            "domain": {"name": "coding", "version": "0.2.0"},
-            "runtime": {
-                "store": {"backend": "file", "path": str(tmp_path)},
-                "domain": {"name": "kubernetes", "version": "0.2.0"},
-            },
-        }
-    ).to_profile()
+    profile = AgentProfile(
+        "production-operator",
+        "1.0.0",
+        "",
+        DomainConfig("coding", "0.2.0"),
+        RuntimeConfig(
+            store=StoreConfig.file(str(tmp_path)),
+            domain=DomainConfig("kubernetes", "0.2.0"),
+        ),
+        (DomainConfig("coding", "0.2.0"),),
+    )
 
-    with pytest.raises(ValueError, match="profile domain coding does not match kubernetes"):
+    with pytest.raises(
+        ValueError,
+        match=r"profile domains coding@0\.2\.0 do not match kubernetes@0\.2\.0",
+    ):
         RuntimeHost.from_profile(
             profile=profile,
             model=ScriptedModelAdapter([]),

@@ -28,6 +28,24 @@ def test_runtime_config_from_mapping_parses_typed_values() -> None:
     assert config.store.backend is StoreBackend.FILE
     assert config.limits == RuntimeLimitsConfig(max_iterations=7, max_recovery_steps=3)
     assert config.domain == DomainConfig("kubernetes", "0.2.0")
+    assert config.configured_domains() == (DomainConfig("kubernetes", "0.2.0"),)
+
+
+def test_runtime_config_from_mapping_parses_multi_domain_values() -> None:
+    config = RuntimeConfig.from_mapping(
+        {
+            "domains": [
+                {"name": "kubernetes", "version": "0.2.0"},
+                {"name": "observability", "version": "0.1.0"},
+            ],
+        }
+    )
+
+    assert config.domain == DomainConfig("kubernetes", "0.2.0")
+    assert config.configured_domains() == (
+        DomainConfig("kubernetes", "0.2.0"),
+        DomainConfig("observability", "0.1.0"),
+    )
 
 
 def test_runtime_config_from_json_file_parses_typed_values(tmp_path: Path) -> None:
@@ -64,6 +82,16 @@ def test_runtime_config_rejects_invalid_store_and_limits() -> None:
 
     with pytest.raises(ValueError, match="environment must be an object"):
         RuntimeConfig.from_mapping({"environment": "production"})
+
+    with pytest.raises(ValueError, match="duplicate configured domains"):
+        RuntimeConfig.from_mapping(
+            {
+                "domains": [
+                    {"name": "kubernetes", "version": "0.2.0"},
+                    {"name": "kubernetes", "version": "0.2.0"},
+                ]
+            }
+        )
 
 
 def test_runtime_config_rejects_non_object_json_file(tmp_path: Path) -> None:

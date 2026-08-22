@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
-from universal_agent.core import JsonMapping, JsonValue, immutable_json
+from universal_agent.core import DomainIdentity, JsonMapping, JsonValue, immutable_json
 
 
 class StoreBackend(StrEnum):
@@ -83,6 +83,11 @@ class DomainConfig:
         if self.version is not None and not self.version:
             raise ValueError("domain version must not be empty")
 
+    def identity(self) -> DomainIdentity:
+        if self.name is None or self.version is None:
+            raise ValueError("domain identity requires name and version")
+        return DomainIdentity(self.name, self.version)
+
 
 @dataclass(frozen=True, slots=True)
 class RuntimeConfig:
@@ -90,6 +95,7 @@ class RuntimeConfig:
     store: StoreConfig = field(default_factory=StoreConfig.memory)
     limits: RuntimeLimitsConfig = field(default_factory=RuntimeLimitsConfig)
     domain: DomainConfig = field(default_factory=DomainConfig)
+    domains: tuple[DomainConfig, ...] = ()
 
     @classmethod
     def from_json_file(cls, path: str | Path) -> RuntimeConfig:
@@ -100,11 +106,18 @@ class RuntimeConfig:
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> RuntimeConfig:
+        domains = _domain_configs(values.get("domains"))
+        domain = (
+            domains[0]
+            if domains
+            else DomainConfig.from_mapping(_object(values.get("domain", {}), "domain"))
+        )
         config = cls(
             environment=immutable_json(_object(values.get("environment", {}), "environment")),
             store=StoreConfig.from_mapping(_object(values.get("store", {}), "store")),
             limits=RuntimeLimitsConfig.from_mapping(_object(values.get("limits", {}), "limits")),
-            domain=DomainConfig.from_mapping(_object(values.get("domain", {}), "domain")),
+            domain=domain,
+            domains=domains,
         )
         config.validate()
         return config
@@ -113,12 +126,47 @@ class RuntimeConfig:
         self.store.validate()
         self.limits.validate()
         self.domain.validate()
+        for domain in self.domains:
+            domain.validate()
+            if domain.name is None or domain.version is None:
+                raise ValueError("configured domains require name and version")
+        if self.domains and self.domain != self.domains[0]:
+            raise ValueError("primary domain must match first configured domain")
+        duplicates = _duplicate_domain_configs(self.configured_domains())
+        if duplicates:
+            raise ValueError("duplicate configured domains: " + ", ".join(duplicates))
+
+    def configured_domains(self) -> tuple[DomainConfig, ...]:
+        if self.domains:
+            return self.domains
+        if self.domain.name is None and self.domain.version is None:
+            return ()
+        return (self.domain,)
 
 
 def _object(value: JsonValue, field: str) -> Mapping[str, JsonValue]:
     if isinstance(value, dict):
         return value
     raise ValueError(f"{field} must be an object")
+
+
+def _domain_configs(value: JsonValue) -> tuple[DomainConfig, ...]:
+    if value is None:
+        return ()
+    return tuple(
+        DomainConfig.from_mapping(_object(item, "domains[]")) for item in _list(value, "domains")
+    )
+
+
+def _duplicate_domain_configs(domains: tuple[DomainConfig, ...]) -> tuple[str, ...]:
+    seen: set[tuple[str | None, str | None]] = set()
+    duplicates: set[tuple[str | None, str | None]] = set()
+    for domain in domains:
+        key = (domain.name, domain.version)
+        if key in seen:
+            duplicates.add(key)
+        seen.add(key)
+    return tuple(f"{name or ''}@{version or ''}" for name, version in sorted(duplicates))
 
 
 def _json_value(value: object, field: str) -> JsonValue:
@@ -152,3 +200,9 @@ def _int(value: JsonValue, field: str) -> int:
     if isinstance(value, int) and not isinstance(value, bool):
         return value
     raise ValueError(f"{field} must be an integer")
+
+
+def _list(value: JsonValue, field: str) -> list[JsonValue]:
+    if isinstance(value, list):
+        return value
+    raise ValueError(f"{field} must be a list")

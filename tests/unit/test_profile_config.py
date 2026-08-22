@@ -28,8 +28,39 @@ def test_profile_config_from_mapping_parses_runtime_and_domain() -> None:
     assert profile.version == "1.0.0"
     assert profile.description == "Production Kubernetes operator"
     assert profile.domain == DomainConfig("kubernetes", "0.2.0")
+    assert profile.configured_domains() == (DomainConfig("kubernetes", "0.2.0"),)
+    assert profile.runtime.configured_domains() == (DomainConfig("kubernetes", "0.2.0"),)
     assert profile.runtime.store == StoreConfig.file("/tmp/universal-agent")
     assert profile.runtime.environment["environment"] == "production"
+
+
+def test_profile_config_from_mapping_parses_multi_domain_profile() -> None:
+    config = ProfileConfig.from_mapping(
+        {
+            "name": "ai-infra-operator",
+            "version": "1.0.0",
+            "domains": [
+                {"name": "kubernetes", "version": "0.2.0"},
+                {"name": "observability", "version": "0.1.0"},
+            ],
+            "runtime": {
+                "domains": [
+                    {"name": "kubernetes", "version": "0.2.0"},
+                    {"name": "observability", "version": "0.1.0"},
+                ]
+            },
+        }
+    )
+
+    profile = config.to_profile()
+
+    assert profile.domain == DomainConfig("kubernetes", "0.2.0")
+    assert profile.configured_domains() == (
+        DomainConfig("kubernetes", "0.2.0"),
+        DomainConfig("observability", "0.1.0"),
+    )
+    assert profile.runtime.domain == DomainConfig("kubernetes", "0.2.0")
+    assert profile.runtime.configured_domains() == profile.configured_domains()
 
 
 def test_profile_config_from_json_file_parses_profile(tmp_path: Path) -> None:
@@ -75,6 +106,23 @@ def test_profile_config_rejects_missing_profile_identity_and_domain() -> None:
                 "name": "production-operator",
                 "version": "1.0.0",
                 "domain": {"version": "0.2.0"},
+            }
+        )
+
+    with pytest.raises(ValueError, match="profile domains must match runtime configured domains"):
+        ProfileConfig.from_mapping(
+            {
+                "name": "ai-infra-operator",
+                "version": "1.0.0",
+                "domains": [
+                    {"name": "kubernetes", "version": "0.2.0"},
+                    {"name": "observability", "version": "0.1.0"},
+                ],
+                "runtime": {
+                    "domains": [
+                        {"name": "kubernetes", "version": "0.2.0"},
+                    ]
+                },
             }
         )
 

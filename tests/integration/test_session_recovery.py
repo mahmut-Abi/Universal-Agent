@@ -42,9 +42,9 @@ from universal_agent.core import (
     SideEffect,
     ToolDefinition,
 )
-from universal_agent.domain import DomainRuntime, RuntimeComponents
+from universal_agent.domain import DomainComposition, DomainRuntime, RuntimeComponents
 from universal_agent.domains.kubernetes import KubernetesBackend, KubernetesDomain
-from universal_agent.evaluation import Evaluator
+from universal_agent.evaluation import CriteriaEvaluator, Evaluator
 from universal_agent.evidence import EvidenceExtractor
 from universal_agent.memory import MemoryRecord
 from universal_agent.policy import Policy, PolicyRule
@@ -169,6 +169,62 @@ class MutationDomain:
         return ()
 
 
+class ObserverTool:
+    definition = ToolDefinition("observe_setting", "Observe a setting", ("observe_setting",))
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        return immutable_json({"observed": True})
+
+
+class ObserverDomain:
+    @property
+    def manifest(self) -> DomainManifest:
+        return DomainManifest(
+            "agent.nantian.dev/v1alpha1",
+            "Domain",
+            DomainMetadata("observer", "1.0.0", "Observer test domain"),
+            ("Observation",),
+            ("observe_setting",),
+            ("criteria",),
+        )
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        return (
+            CapabilityDefinition(
+                "observe_setting",
+                "Observe setting",
+                CapabilityCategory.OBSERVATION,
+            ),
+        )
+
+    def tools(self) -> tuple[ObserverTool, ...]:
+        return (ObserverTool(),)
+
+    def policies(self) -> tuple[Policy, ...]:
+        return ()
+
+    def evaluators(self) -> tuple[Evaluator, ...]:
+        return (CriteriaEvaluator(),)
+
+    def context_providers(self) -> tuple[DomainContextProvider, ...]:
+        return ()
+
+    def evidence_extractors(self) -> tuple[EvidenceExtractor, ...]:
+        return ()
+
+    def world_updaters(self) -> tuple[WorldUpdater, ...]:
+        return ()
+
+    def task_expanders(self) -> tuple[TaskExpander, ...]:
+        return ()
+
+    def recovery_rules(self) -> tuple[RecoveryRule, ...]:
+        return ()
+
+    def memories(self) -> tuple[MemoryRecord, ...]:
+        return ()
+
+
 def mutation_decision() -> Decision:
     return Decision(
         DecisionType.EXECUTE,
@@ -194,6 +250,24 @@ def mutation_runtime(
         model=ScriptedModelAdapter(decisions),
         state_store=store,
         components=RuntimeBuilder().build(DomainLoader().load(domain)),
+        event_sink=events,
+    )
+    return runtime, events
+
+
+def composed_mutation_runtime(
+    domains: tuple[DomainRuntime, ...],
+    store: InMemoryStateStore,
+    decisions: list[Decision],
+) -> tuple[AgentRuntime, InMemoryEventSink]:
+    loader = DomainLoader()
+    events = InMemoryEventSink()
+    runtime = AgentRuntime(
+        model=ScriptedModelAdapter(decisions),
+        state_store=store,
+        components=RuntimeBuilder().build(
+            DomainComposition(tuple(loader.load(domain) for domain in domains))
+        ),
         event_sink=events,
     )
     return runtime, events
@@ -265,6 +339,29 @@ async def test_resume_rejects_a_different_domain_version() -> None:
 
     second, _ = mutation_runtime(
         MutationDomain(MutationTool(), version="2.0.0"),
+        store,
+        [Decision(DecisionType.FINISH, "Change verified")],
+    )
+    rejected = await second.resume(waiting.session_id, confirmed=True)
+
+    assert rejected.status is ExecutionStatus.FAILED
+    assert rejected.error_code is ErrorCode.INVALID_STATE
+    assert tool.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_resume_rejects_missing_secondary_domain_in_composition() -> None:
+    store = InMemoryStateStore()
+    tool = MutationTool()
+    first, _ = composed_mutation_runtime(
+        (MutationDomain(tool), ObserverDomain()),
+        store,
+        [mutation_decision()],
+    )
+    waiting = await first.run(*mutation_goal_task())
+
+    second, _ = mutation_runtime(
+        MutationDomain(MutationTool()),
         store,
         [Decision(DecisionType.FINISH, "Change verified")],
     )

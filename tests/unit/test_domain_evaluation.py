@@ -24,8 +24,11 @@ from universal_agent.core import (
     new_session_id,
 )
 from universal_agent.domain import (
+    AmbiguousDomainError,
     DomainComposition,
     DomainLoader,
+    DomainManager,
+    DomainNotFoundError,
     DomainValidationError,
     RuntimeBuilder,
 )
@@ -109,11 +112,12 @@ class NamedDomain:
         name: str,
         capability: str,
         tool_name: str,
+        version: str = "1.0.0",
     ) -> None:
         self.manifest = DomainManifest(
             "agent.nantian.dev/v1alpha1",
             "Domain",
-            DomainMetadata(name, "1.0.0", name),
+            DomainMetadata(name, version, name),
             ("Thing",),
             (capability,),
             ("criteria",),
@@ -245,6 +249,55 @@ def test_runtime_builder_composes_multiple_domains() -> None:
         for fragment in provider.provide(state)
     )
     assert [fragment.key for fragment in fragments] == ["alpha.scope", "beta.scope"]
+
+
+def test_domain_manager_registers_and_activates_domains_in_order() -> None:
+    manager = DomainManager(
+        (
+            NamedDomain("alpha", "inspect_alpha", "alpha_inspect"),
+            NamedDomain("beta", "inspect_beta", "beta_inspect"),
+        )
+    )
+
+    activation = manager.activate()
+
+    assert [identity.name for identity in manager.identities()] == ["alpha", "beta"]
+    assert [identity.name for identity in activation.identities] == ["alpha", "beta"]
+    assert activation.primary.identity.name == "alpha"
+
+
+def test_domain_manager_activates_explicit_identity_order() -> None:
+    manager = DomainManager(
+        (
+            NamedDomain("alpha", "inspect_alpha", "alpha_inspect"),
+            NamedDomain("beta", "inspect_beta", "beta_inspect"),
+        )
+    )
+
+    activation = manager.activate_by_name(("beta", "alpha"))
+
+    assert [identity.name for identity in activation.identities] == ["beta", "alpha"]
+    assert activation.primary.identity.name == "beta"
+
+
+def test_domain_manager_reports_missing_and_ambiguous_domains() -> None:
+    manager = DomainManager((NamedDomain("alpha", "inspect_alpha", "alpha_inspect"),))
+
+    with pytest.raises(DomainNotFoundError, match="domain not registered: beta"):
+        manager.activate_by_name(("beta",))
+
+    manager.register(NamedDomain("alpha", "inspect_alpha_v2", "alpha_inspect_v2", version="2.0.0"))
+
+    with pytest.raises(AmbiguousDomainError, match="multiple registered versions"):
+        manager.activate_by_name(("alpha",))
+
+
+def test_domain_manager_rejects_duplicate_registration() -> None:
+    domain = NamedDomain("alpha", "inspect_alpha", "alpha_inspect")
+    manager = DomainManager((domain,))
+
+    with pytest.raises(DomainValidationError, match="domain already registered"):
+        manager.register(domain)
 
 
 def test_domain_composition_rejects_duplicate_capabilities() -> None:

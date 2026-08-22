@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from universal_agent.core import (
     AgentState,
+    DomainIdentity,
     EvaluationResult,
     Goal,
     JsonMapping,
@@ -27,6 +28,15 @@ class SessionSnapshot:
     evidence: tuple[Evidence, ...] = ()
     domain_name: str = ""
     domain_version: str = ""
+    domain_identities: tuple[DomainIdentity, ...] = ()
+
+    @property
+    def domains(self) -> tuple[DomainIdentity, ...]:
+        if self.domain_identities:
+            return self.domain_identities
+        if self.domain_name and self.domain_version:
+            return (DomainIdentity(self.domain_name, self.domain_version),)
+        return ()
 
 
 def session_from_state(
@@ -34,12 +44,20 @@ def session_from_state(
     *,
     domain_name: str = "",
     domain_version: str = "",
+    domain_identities: tuple[DomainIdentity, ...] = (),
 ) -> SessionSnapshot:
     graph = TaskGraphSnapshot(
         (TaskNodeSnapshot("root", state.current_task, ()),),
         state.current_task.id,
     )
-    return SessionSnapshot(state, graph, (), domain_name, domain_version)
+    return SessionSnapshot(
+        state,
+        graph,
+        (),
+        domain_name,
+        domain_version,
+        domain_identities or _primary_domain(domain_name, domain_version),
+    )
 
 
 def with_state(snapshot: SessionSnapshot, state: AgentState) -> SessionSnapshot:
@@ -59,6 +77,7 @@ def with_state(snapshot: SessionSnapshot, state: AgentState) -> SessionSnapshot:
         snapshot.evidence,
         snapshot.domain_name,
         snapshot.domain_version,
+        snapshot.domains,
     )
 
 
@@ -77,7 +96,14 @@ def copy_session(snapshot: SessionSnapshot) -> SessionSnapshot:
         tuple(_copy_evidence(item) for item in snapshot.evidence),
         snapshot.domain_name,
         snapshot.domain_version,
+        snapshot.domains,
     )
+
+
+def _primary_domain(domain_name: str, domain_version: str) -> tuple[DomainIdentity, ...]:
+    if domain_name and domain_version:
+        return (DomainIdentity(domain_name, domain_version),)
+    return ()
 
 
 def _copy_state(state: AgentState, tasks: dict[TaskId, Task]) -> AgentState:

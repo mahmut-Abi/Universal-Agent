@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from universal_agent.core import (
     ActionId,
     AgentState,
+    DomainIdentity,
     ErrorCode,
     EvaluationResult,
     EvaluationStatus,
@@ -122,12 +123,25 @@ def test_session_snapshot_codec_preserves_rebuildable_runtime_state() -> None:
         (evidence,),
         "kubernetes",
         "0.2.0",
+        (
+            DomainIdentity("kubernetes", "0.2.0"),
+            DomainIdentity("observability", "0.1.0"),
+        ),
     )
 
-    restored = decode_session_snapshot(encode_session_snapshot(snapshot))
+    encoded = encode_session_snapshot(snapshot)
+    restored = decode_session_snapshot(encoded)
 
     assert restored.domain_name == "kubernetes"
     assert restored.domain_version == "0.2.0"
+    assert encoded["domains"] == [
+        {"name": "kubernetes", "version": "0.2.0"},
+        {"name": "observability", "version": "0.1.0"},
+    ]
+    assert restored.domains == (
+        DomainIdentity("kubernetes", "0.2.0"),
+        DomainIdentity("observability", "0.1.0"),
+    )
     assert restored.state.session_id == session_id
     assert restored.state.current_task.id == root.id
     assert restored.state.current_task is restored.task_graph.nodes[0].task
@@ -139,6 +153,29 @@ def test_session_snapshot_codec_preserves_rebuildable_runtime_state() -> None:
     assert restored.task_graph.nodes[1].depends_on == (root.id,)
     assert restored.evidence[0].id == evidence.id
     assert restored.evidence[0].value is False
+
+
+def test_session_snapshot_codec_accepts_legacy_single_domain_payload() -> None:
+    snapshot = SessionSnapshot(
+        AgentState(
+            session_id=SessionId("session-legacy"),
+            goal=Goal("Legacy", (), GoalId("goal-legacy")),
+            current_task=Task("Inspect", (), TaskId("task-legacy")),
+        ),
+        TaskGraphSnapshot(
+            (TaskNodeSnapshot("root", Task("Inspect", (), TaskId("task-legacy")), ()),),
+            TaskId("task-legacy"),
+        ),
+        (),
+        "kubernetes",
+        "0.2.0",
+    )
+    encoded = encode_session_snapshot(snapshot)
+    encoded.pop("domains")
+
+    restored = decode_session_snapshot(encoded)
+
+    assert restored.domains == (DomainIdentity("kubernetes", "0.2.0"),)
 
 
 def test_runtime_event_codec_preserves_json_safe_event_data() -> None:

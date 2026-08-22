@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from universal_agent.core import AgentState, TaskStatus
+from universal_agent.core import AgentState, DomainIdentity, TaskStatus
 from universal_agent.domain import RuntimeComponents
 from universal_agent.evidence import Evidence, EvidenceQuery, EvidenceStore
 from universal_agent.state import SessionSnapshot
@@ -28,6 +28,7 @@ class SessionRuntimeState:
     world_model: WorldModel
     domain_name: str
     domain_version: str
+    domain_identities: tuple[DomainIdentity, ...]
 
     def record(self, evidence: Evidence) -> bool:
         return self.evidence_store.add(evidence)
@@ -61,6 +62,7 @@ class SessionRuntimeState:
             self.evidence_store.export(self.state.session_id),
             self.domain_name,
             self.domain_version,
+            self.domain_identities,
         )
 
 
@@ -69,6 +71,7 @@ def start_session(
     components: RuntimeComponents,
 ) -> SessionRuntimeState:
     metadata = components.active_domain.manifest.metadata
+    identities = components.domain_composition.identities
     session = SessionRuntimeState(
         state,
         TaskManager(state.current_task),
@@ -76,6 +79,7 @@ def start_session(
         components.world_model,
         metadata.name,
         metadata.version,
+        identities,
     )
     session.evidence_store.replace(state.session_id, ())
     session.world_model.forget(state.session_id)
@@ -87,14 +91,8 @@ def hydrate_session(
     components: RuntimeComponents,
 ) -> SessionRuntimeState:
     metadata = components.active_domain.manifest.metadata
-    if snapshot.domain_name and snapshot.domain_name != metadata.name:
-        raise DomainMismatchError(
-            f"session domain {snapshot.domain_name} does not match {metadata.name}"
-        )
-    if snapshot.domain_version and snapshot.domain_version != metadata.version:
-        raise DomainMismatchError(
-            f"session domain version {snapshot.domain_version} does not match {metadata.version}"
-        )
+    expected = components.domain_composition.identities
+    _validate_snapshot_domains(snapshot, expected, metadata.name, metadata.version)
     tasks = TaskManager.from_snapshot(snapshot.task_graph)
     components.evidence_store.replace(snapshot.state.session_id, snapshot.evidence)
     components.world_model.rebuild(
@@ -109,9 +107,38 @@ def hydrate_session(
         components.world_model,
         metadata.name,
         metadata.version,
+        expected,
     )
     session.sync_current_task()
     return session
+
+
+def _validate_snapshot_domains(
+    snapshot: SessionSnapshot,
+    expected: tuple[DomainIdentity, ...],
+    primary_name: str,
+    primary_version: str,
+) -> None:
+    recorded = snapshot.domains
+    if recorded:
+        if recorded != expected:
+            raise DomainMismatchError(
+                "session domains "
+                f"{_format_domains(recorded)} do not match {_format_domains(expected)}"
+            )
+        return
+    if snapshot.domain_name and snapshot.domain_name != primary_name:
+        raise DomainMismatchError(
+            f"session domain {snapshot.domain_name} does not match {primary_name}"
+        )
+    if snapshot.domain_version and snapshot.domain_version != primary_version:
+        raise DomainMismatchError(
+            f"session domain version {snapshot.domain_version} does not match {primary_version}"
+        )
+
+
+def _format_domains(identities: tuple[DomainIdentity, ...]) -> str:
+    return ", ".join(f"{item.name}@{item.version}" for item in identities) or "<none>"
 
 
 def complete_current_task(session: SessionRuntimeState) -> None:
