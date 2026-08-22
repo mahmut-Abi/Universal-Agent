@@ -11,6 +11,7 @@ from universal_agent.service import (
     ReadyView,
     RuntimeConfigView,
     RuntimeService,
+    SessionExplorerView,
 )
 
 
@@ -24,6 +25,7 @@ class RuntimeConsoleSnapshot:
     cost: RuntimeCostView
     sessions: tuple[SessionSummaryView, ...]
     selected_session: SessionView | None
+    session_explorer: SessionExplorerView | None
     events: tuple[RuntimeEventView, ...]
     audit_records: tuple[AuditRecordView, ...]
 
@@ -43,10 +45,12 @@ async def build_runtime_console_snapshot(
         selected_session_id = session_batch.sessions[0].session_id
 
     selected_session: SessionView | None = None
+    session_explorer: SessionExplorerView | None = None
     events: tuple[RuntimeEventView, ...] = ()
     audit_records: tuple[AuditRecordView, ...] = ()
     if selected_session_id is not None:
-        selected_session = await service.get_session(selected_session_id)
+        session_explorer = await service.session_explorer(selected_session_id)
+        selected_session = session_explorer.session
         events = (
             await service.stream_events(
                 selected_session_id,
@@ -64,6 +68,7 @@ async def build_runtime_console_snapshot(
         cost=await service.cost(),
         sessions=session_batch.sessions,
         selected_session=selected_session,
+        session_explorer=session_explorer,
         events=events,
         audit_records=audit_records,
     )

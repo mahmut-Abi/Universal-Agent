@@ -7,18 +7,28 @@ from universal_agent.core import (
     ActionId,
     GoalId,
     GoalStatus,
+    ObservationId,
     SessionId,
     TaskId,
     TaskStatus,
 )
+from universal_agent.evidence import EvidenceId
 from universal_agent.operations import AuditRecordView, RuntimeCostView, RuntimeMetricsView
-from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView, TaskView
+from universal_agent.runtime import (
+    EvidenceView,
+    RuntimeEventView,
+    SessionSummaryView,
+    SessionView,
+    TaskView,
+)
 from universal_agent.service import (
     DomainView,
     HealthView,
     ReadyView,
     RuntimeConfigDomainView,
     RuntimeConfigView,
+    SessionExplorerView,
+    WorldFactView,
 )
 from universal_agent.web import WebConsoleSnapshot, render_web_console
 
@@ -29,6 +39,24 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     goal_id = GoalId("goal-1")
     task_id = TaskId("task-1")
     goal_description = "Verify <script>alert(1)</script>"
+    selected_session = SessionView(
+        session_id,
+        goal_id,
+        goal_description,
+        GoalStatus.COMPLETED,
+        task_id,
+        "Inspect workload",
+        TaskStatus.COMPLETED,
+        2,
+        (TaskView(task_id, "Inspect workload", TaskStatus.COMPLETED, ("healthy",), ()),),
+        MappingProxyType({"healthy": True}),
+        None,
+        None,
+        "done",
+        None,
+        "kubernetes",
+        "0.2.0",
+    )
     snapshot = WebConsoleSnapshot(
         health=HealthView("ok", "universal-agent-runtime"),
         ready=ReadyView(True, "ready", 1, 1, 1),
@@ -92,23 +120,34 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
                 timestamp,
             ),
         ),
-        selected_session=SessionView(
-            session_id,
-            goal_id,
-            goal_description,
-            GoalStatus.COMPLETED,
-            task_id,
-            "Inspect workload",
-            TaskStatus.COMPLETED,
-            2,
-            (TaskView(task_id, "Inspect workload", TaskStatus.COMPLETED, ("healthy",), ()),),
-            MappingProxyType({"healthy": True}),
-            None,
-            None,
-            "done",
-            None,
-            "kubernetes",
-            "0.2.0",
+        selected_session=selected_session,
+        session_explorer=SessionExplorerView(
+            selected_session,
+            (
+                EvidenceView(
+                    EvidenceId("evidence-1"),
+                    session_id,
+                    task_id,
+                    ActionId("action-1"),
+                    ObservationId("observation-1"),
+                    "deployment/example",
+                    "healthy",
+                    True,
+                    "inspect_workload:kubernetes_inspect_workload",
+                    0.99,
+                    timestamp,
+                ),
+            ),
+            (
+                WorldFactView(
+                    "deployment/example",
+                    "healthy",
+                    True,
+                    0.99,
+                    timestamp,
+                    ("evidence-1",),
+                ),
+            ),
         ),
         events=(
             RuntimeEventView(
@@ -150,6 +189,10 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "kubernetes@0.2.0" in rendered
     assert "Verify &lt;script&gt;alert(1)&lt;/script&gt;" in rendered
     assert "<script>alert(1)</script>" not in rendered
+    assert "World Facts" in rendered
+    assert "Session Evidence" in rendered
+    assert "deployment/example" in rendered
+    assert "evidence-1" in rendered
     assert "ActionStarted" in rendered
     assert "capability=inspect_workload" in rendered
     assert "allow:allow-read" in rendered

@@ -109,6 +109,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
             "kubernetes",
             "0.2.0",
         ),
+        session_explorer=None,
         events=(
             RuntimeEventView(
                 "event-1",

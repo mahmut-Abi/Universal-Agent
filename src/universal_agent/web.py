@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from html import escape
 from typing import Any
@@ -8,7 +9,7 @@ from universal_agent.console import RuntimeConsoleSnapshot, build_runtime_consol
 from universal_agent.core import SessionId
 from universal_agent.operations import AuditRecordView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
-from universal_agent.service import RuntimeService
+from universal_agent.service import RuntimeService, SessionExplorerView
 
 WebConsoleSnapshot = RuntimeConsoleSnapshot
 
@@ -56,6 +57,8 @@ def render_web_console(snapshot: WebConsoleSnapshot) -> str:
             _domains(snapshot),
             _sessions(snapshot.sessions),
             _selected_session(snapshot.selected_session),
+            _world_facts(snapshot.session_explorer),
+            _evidence(snapshot.session_explorer),
             _events(snapshot.events),
             _audit(snapshot.audit_records),
             "</main>",
@@ -184,6 +187,57 @@ def _selected_session(session: SessionView | None) -> str:
     )
 
 
+def _world_facts(explorer: SessionExplorerView | None) -> str:
+    rows = []
+    if explorer is not None:
+        rows = [
+            "\n".join(
+                (
+                    "<tr>",
+                    f"<td>{_html(fact.subject)}</td>",
+                    f"<td>{_html(fact.claim)}</td>",
+                    f"<td>{_html(_value_text(fact.value))}</td>",
+                    f"<td>{fact.confidence:.2f}</td>",
+                    f"<td>{_html(', '.join(fact.evidence_ids))}</td>",
+                    "</tr>",
+                )
+            )
+            for fact in explorer.world_facts
+        ]
+    if not rows:
+        rows.append('<tr><td colspan="5">No world facts</td></tr>')
+    return _section(
+        "World Facts",
+        _table(("Subject", "Claim", "Value", "Confidence", "Evidence"), tuple(rows)),
+    )
+
+
+def _evidence(explorer: SessionExplorerView | None) -> str:
+    rows = []
+    if explorer is not None:
+        rows = [
+            "\n".join(
+                (
+                    "<tr>",
+                    f"<td>{_html(item.evidence_id)}</td>",
+                    f"<td>{_html(item.subject)}</td>",
+                    f"<td>{_html(item.claim)}</td>",
+                    f"<td>{_html(_value_text(item.value))}</td>",
+                    f"<td>{_html(item.source)}</td>",
+                    f"<td>{item.confidence:.2f}</td>",
+                    "</tr>",
+                )
+            )
+            for item in explorer.evidence
+        ]
+    if not rows:
+        rows.append('<tr><td colspan="6">No evidence</td></tr>')
+    return _section(
+        "Session Evidence",
+        _table(("Evidence", "Subject", "Claim", "Value", "Source", "Confidence"), tuple(rows)),
+    )
+
+
 def _events(events: tuple[RuntimeEventView, ...]) -> str:
     rows = [
         "\n".join(
@@ -294,6 +348,12 @@ def _mapping_text(values: Mapping[str, Any]) -> str:
     if not values:
         return "none"
     return ", ".join(f"{key}={values[key]}" for key in sorted(values))
+
+
+def _value_text(value: object) -> str:
+    if isinstance(value, dict | list):
+        return json.dumps(value, sort_keys=True)
+    return str(value)
 
 
 def _html(value: object) -> str:
