@@ -97,7 +97,7 @@ def render_web_session_detail(snapshot: WebConsoleSnapshot) -> str:
             "</head>",
             "<body>",
             '<main class="shell">',
-            _session_detail_hero(snapshot),
+            _session_scoped_hero(snapshot, "Session Detail"),
             '<section class="grid cards" aria-label="Session summary">',
             _metric_card("Iteration", _selected_iteration(snapshot.selected_session)),
             _metric_card("Tasks", _selected_task_count(snapshot.selected_session)),
@@ -112,6 +112,70 @@ def render_web_session_detail(snapshot: WebConsoleSnapshot) -> str:
             _evidence(snapshot.session_explorer),
             _events(snapshot.events),
             _audit(snapshot.audit_records),
+            "</main>",
+            "</body>",
+            "</html>",
+        )
+    )
+
+
+def render_web_evidence_explorer(snapshot: WebConsoleSnapshot) -> str:
+    title = "Universal Agent Runtime Evidence Explorer"
+    return "\n".join(
+        (
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f"<title>{_html(title)}</title>",
+            f"<style>{_stylesheet()}</style>",
+            "</head>",
+            "<body>",
+            '<main class="shell">',
+            _session_scoped_hero(snapshot, "Evidence Explorer"),
+            '<section class="grid cards" aria-label="Evidence summary">',
+            _metric_card("Evidence", _selected_evidence_count(snapshot.session_explorer)),
+            _metric_card("World Facts", _selected_world_fact_count(snapshot.session_explorer)),
+            _metric_card("Events", len(snapshot.events)),
+            _metric_card("Audit", len(snapshot.audit_records)),
+            "</section>",
+            _selected_session(snapshot.selected_session),
+            _evidence(snapshot.session_explorer),
+            _world_facts(snapshot.session_explorer),
+            _events(snapshot.events),
+            "</main>",
+            "</body>",
+            "</html>",
+        )
+    )
+
+
+def render_web_world_model_explorer(snapshot: WebConsoleSnapshot) -> str:
+    title = "Universal Agent Runtime World Model Explorer"
+    return "\n".join(
+        (
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f"<title>{_html(title)}</title>",
+            f"<style>{_stylesheet()}</style>",
+            "</head>",
+            "<body>",
+            '<main class="shell">',
+            _session_scoped_hero(snapshot, "World Model Explorer"),
+            '<section class="grid cards" aria-label="World model summary">',
+            _metric_card("World Facts", _selected_world_fact_count(snapshot.session_explorer)),
+            _metric_card("Evidence", _selected_evidence_count(snapshot.session_explorer)),
+            _metric_card("Events", len(snapshot.events)),
+            _metric_card("Audit", len(snapshot.audit_records)),
+            "</section>",
+            _selected_session(snapshot.selected_session),
+            _world_facts(snapshot.session_explorer),
+            _evidence(snapshot.session_explorer),
+            _events(snapshot.events),
             "</main>",
             "</body>",
             "</html>",
@@ -144,7 +208,7 @@ def _hero(snapshot: WebConsoleSnapshot) -> str:
     )
 
 
-def _session_detail_hero(snapshot: WebConsoleSnapshot) -> str:
+def _session_scoped_hero(snapshot: WebConsoleSnapshot, title: str) -> str:
     ready_class = "ok" if snapshot.ready.ready else "warn"
     selected = snapshot.selected_session
     session_text = "No selected session"
@@ -157,17 +221,31 @@ def _session_detail_hero(snapshot: WebConsoleSnapshot) -> str:
             '<section class="hero">',
             "<div>",
             "<p>Universal Agent Runtime</p>",
-            "<h1>Session Detail</h1>",
+            f"<h1>{_html(title)}</h1>",
             (f"<span>session={_html(session_text)} goal={_html(goal_text)}</span>"),
             "</div>",
             '<div class="status">',
-            '<a class="pill link" href="/console">Console</a>',
+            _session_nav(snapshot.selected_session),
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
             "</div>",
             "</section>",
         )
     )
+
+
+def _session_nav(session: SessionView | None) -> str:
+    links = ['<a class="pill link" href="/console">Console</a>']
+    if session is not None:
+        session_id = _attr(session.session_id)
+        links.extend(
+            (
+                f'<a class="pill link" href="/console/sessions/{session_id}">Detail</a>',
+                f'<a class="pill link" href="/console/sessions/{session_id}/evidence">Evidence</a>',
+                f'<a class="pill link" href="/console/sessions/{session_id}/world">World</a>',
+            )
+        )
+    return "".join(links)
 
 
 def _domains(snapshot: WebConsoleSnapshot) -> str:
@@ -842,5 +920,7 @@ __all__ = [
     "WebConsoleSnapshot",
     "build_web_console_snapshot",
     "render_web_console",
+    "render_web_evidence_explorer",
     "render_web_session_detail",
+    "render_web_world_model_explorer",
 ]

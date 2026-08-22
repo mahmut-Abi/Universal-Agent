@@ -42,7 +42,13 @@ from universal_agent.service import (
     ToolView,
     WorldFactView,
 )
-from universal_agent.web import WebConsoleSnapshot, render_web_console, render_web_session_detail
+from universal_agent.web import (
+    WebConsoleSnapshot,
+    render_web_console,
+    render_web_evidence_explorer,
+    render_web_session_detail,
+    render_web_world_model_explorer,
+)
 
 
 def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
@@ -300,3 +306,29 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "Session Evidence" in session_detail
     assert "ActionStarted" in session_detail
     assert "allow:allow-read" in session_detail
+
+    evidence_explorer = render_web_evidence_explorer(snapshot)
+
+    assert "Universal Agent Runtime Evidence Explorer" in evidence_explorer
+    assert "Evidence Explorer" in evidence_explorer
+    assert "session=session-1" in evidence_explorer
+    assert "Verify &lt;script&gt;alert(1)&lt;/script&gt;" in evidence_explorer
+    assert "<script>alert(1)</script>" not in evidence_explorer
+    assert 'href="/console/sessions/session-1/world"' in evidence_explorer
+    assert "Session Evidence" in evidence_explorer
+    assert "evidence-1" in evidence_explorer
+    assert "deployment/example" in evidence_explorer
+    assert "World Facts" in evidence_explorer
+
+    world_explorer = render_web_world_model_explorer(snapshot)
+
+    assert "Universal Agent Runtime World Model Explorer" in world_explorer
+    assert "World Model Explorer" in world_explorer
+    assert "session=session-1" in world_explorer
+    assert "Verify &lt;script&gt;alert(1)&lt;/script&gt;" in world_explorer
+    assert "<script>alert(1)</script>" not in world_explorer
+    assert 'href="/console/sessions/session-1/evidence"' in world_explorer
+    assert "World Facts" in world_explorer
+    assert "deployment/example" in world_explorer
+    assert "healthy" in world_explorer
+    assert "Session Evidence" in world_explorer

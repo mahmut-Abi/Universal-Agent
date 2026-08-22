@@ -1932,9 +1932,11 @@ Initial local `agentd` implementation may expose this as:
 ```text
 GET /console
 GET /console/sessions/{id}
+GET /console/sessions/{id}/evidence
+GET /console/sessions/{id}/world
 ```
 
-Both views should be read-only application adapters over Runtime API / RuntimeService projections.
+These views should be read-only application adapters over Runtime API / RuntimeService projections.
 
 ---
 
@@ -3458,6 +3460,7 @@ TUI
 Web Console
 Session Detail
 Session Explorer
+Evidence Explorer
 Domain Manager
 Evaluation Console
 World Model Explorer

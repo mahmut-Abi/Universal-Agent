@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -55,9 +55,12 @@ from universal_agent.service import (
 )
 from universal_agent.state import StateNotFoundError
 from universal_agent.web import (
+    WebConsoleSnapshot,
     build_web_console_snapshot,
     render_web_console,
+    render_web_evidence_explorer,
     render_web_session_detail,
+    render_web_world_model_explorer,
 )
 
 
@@ -111,7 +114,7 @@ class AgentdApp:
             return self._get(method, health_body(self._service.health()))
         if path == "/ready":
             return self._get(method, ready_body(self._service.ready()))
-        console_session_id = _console_session_route(path)
+        console_session_id, console_session_suffix = _console_session_route(path)
         if console_session_id is not None:
             if method != "GET":
                 return method_not_allowed(("GET",))
@@ -126,8 +129,11 @@ class AgentdApp:
                 return not_found(str(exc))
             except ValueError as exc:
                 return bad_request(str(exc))
+            renderer = _console_session_renderer(console_session_suffix)
+            if renderer is None:
+                return not_found(f"unknown route: {path}")
             return text_response(
-                render_web_session_detail(snapshot),
+                renderer(snapshot),
                 content_type="text/html; charset=utf-8",
             )
         if path in ("/", "/console"):
@@ -1123,10 +1129,24 @@ def _session_route(path: str) -> tuple[SessionId | None, str]:
     return None, ""
 
 
-def _console_session_route(path: str) -> SessionId | None:
+def _console_session_route(path: str) -> tuple[SessionId | None, str]:
     segments = tuple(segment for segment in path.split("/") if segment)
     if len(segments) == 3 and segments[:2] == ("console", "sessions") and segments[2].strip():
-        return SessionId(segments[2])
+        return SessionId(segments[2]), ""
+    if len(segments) == 4 and segments[:2] == ("console", "sessions") and segments[2].strip():
+        return SessionId(segments[2]), segments[3]
+    return None, ""
+
+
+def _console_session_renderer(
+    suffix: str,
+) -> Callable[[WebConsoleSnapshot], str] | None:
+    if suffix == "":
+        return render_web_session_detail
+    if suffix == "evidence":
+        return render_web_evidence_explorer
+    if suffix == "world":
+        return render_web_world_model_explorer
     return None
 
 

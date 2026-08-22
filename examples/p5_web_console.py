@@ -37,13 +37,19 @@ async def main() -> None:
         HttpRequest("GET", f"/console?session_id={session_id}&event_limit=20")
     )
     detail = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}?event_limit=20"))
+    evidence = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/evidence"))
+    world = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/world"))
     assert response.text_body is not None
     assert detail.text_body is not None
+    assert evidence.text_body is not None
+    assert world.text_body is not None
     print(f"status={response.status_code}")
     print(response.headers["content-type"])
     print("\n".join(response.text_body.splitlines()[:20]))
     print(f"detail_status={detail.status_code}")
     print("\n".join(detail.text_body.splitlines()[:12]))
+    print(f"evidence_status={evidence.status_code}")
+    print(f"world_status={world.status_code}")
 
 
 if __name__ == "__main__":

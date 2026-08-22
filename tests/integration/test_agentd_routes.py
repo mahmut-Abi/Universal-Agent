@@ -494,6 +494,11 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
         HttpRequest("GET", f"/console?session_id={session_id}&event_limit=20")
     )
     detail = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}?event_limit=20"))
+    evidence_page = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/evidence"))
+    world_page = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/world"))
+    unknown_detail_page = await app.handle(
+        HttpRequest("GET", f"/console/sessions/{session_id}/unknown")
+    )
     missing = await app.handle(HttpRequest("GET", "/console?session_id=missing-session"))
     missing_detail = await app.handle(HttpRequest("GET", "/console/sessions/missing-session"))
     invalid_limit = await app.handle(HttpRequest("GET", "/console?event_limit=0"))
@@ -525,6 +530,17 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert "Session Evidence" in detail.text_body
     assert "ActionStarted" in detail.text_body
     assert "capability=inspect_workload" in detail.text_body
+    assert evidence_page.status_code == 200
+    assert evidence_page.text_body is not None
+    assert "Universal Agent Runtime Evidence Explorer" in evidence_page.text_body
+    assert "Session Evidence" in evidence_page.text_body
+    assert "deployment/example" in evidence_page.text_body
+    assert world_page.status_code == 200
+    assert world_page.text_body is not None
+    assert "Universal Agent Runtime World Model Explorer" in world_page.text_body
+    assert "World Facts" in world_page.text_body
+    assert "healthy" in world_page.text_body
+    assert unknown_detail_page.status_code == 404
     assert missing.status_code == 404
     assert missing_detail.status_code == 404
     assert invalid_limit.status_code == 400

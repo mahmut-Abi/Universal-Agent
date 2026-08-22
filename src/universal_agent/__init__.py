@@ -58,7 +58,9 @@ from universal_agent.web import (
     WebConsoleSnapshot,
     build_web_console_snapshot,
     render_web_console,
+    render_web_evidence_explorer,
     render_web_session_detail,
+    render_web_world_model_explorer,
 )
 
 __all__ = [
@@ -121,5 +123,7 @@ __all__ = [
     "immutable_json",
     "render_tui_snapshot",
     "render_web_console",
+    "render_web_evidence_explorer",
     "render_web_session_detail",
+    "render_web_world_model_explorer",
 ]
