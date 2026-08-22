@@ -179,11 +179,19 @@ class EvaluationSuiteSummary:
         return _rate(successful_actions, self.action_completed_count)
 
     @property
+    def tool_failure_rate(self) -> float:
+        return _rate(self.tool_failure_count, self.action_completed_count)
+
+    @property
     def policy_denial_rate(self) -> float:
         return _rate(self.policy_denial_count, self.scenario_count)
 
     @property
     def recovery_rate(self) -> float:
+        return _rate(self.recovery_planned_count, self.scenario_count)
+
+    @property
+    def average_recoveries_per_scenario(self) -> float:
         return _rate(self.recovery_planned_count, self.scenario_count)
 
     @property
@@ -201,6 +209,10 @@ class EvaluationSuiteSummary:
     @property
     def average_actions_per_scenario(self) -> float:
         return _rate(self.action_started_count, self.scenario_count)
+
+    @property
+    def average_model_calls_per_scenario(self) -> float:
+        return _rate(self.model_call_count, self.scenario_count)
 
     @property
     def average_model_tokens_per_scenario(self) -> float:
@@ -234,11 +246,15 @@ class EvaluationQualityGate:
     min_pass_rate: float = 1.0
     min_goal_completion_rate: float | None = None
     min_task_success_rate: float | None = None
+    min_action_success_rate: float | None = None
+    max_tool_failure_rate: float | None = None
     max_policy_denial_rate: float | None = None
+    max_average_recoveries_per_scenario: float | None = None
     max_human_intervention_rate: float | None = None
     max_resource_conflict_rate: float | None = None
     max_average_active_resource_locks_per_scenario: float | None = None
     max_average_actions_per_scenario: float | None = None
+    max_average_model_calls_per_scenario: float | None = None
     max_average_model_tokens_per_scenario: float | None = None
     max_total_model_estimated_cost_micros: int | None = None
 
@@ -246,7 +262,13 @@ class EvaluationQualityGate:
         _validate_rate("min_pass_rate", self.min_pass_rate)
         _validate_optional_rate("min_goal_completion_rate", self.min_goal_completion_rate)
         _validate_optional_rate("min_task_success_rate", self.min_task_success_rate)
+        _validate_optional_rate("min_action_success_rate", self.min_action_success_rate)
+        _validate_optional_rate("max_tool_failure_rate", self.max_tool_failure_rate)
         _validate_optional_rate("max_policy_denial_rate", self.max_policy_denial_rate)
+        _validate_optional_non_negative(
+            "max_average_recoveries_per_scenario",
+            self.max_average_recoveries_per_scenario,
+        )
         _validate_optional_rate("max_human_intervention_rate", self.max_human_intervention_rate)
         _validate_optional_rate("max_resource_conflict_rate", self.max_resource_conflict_rate)
         _validate_optional_non_negative(
@@ -256,6 +278,10 @@ class EvaluationQualityGate:
         _validate_optional_non_negative(
             "max_average_actions_per_scenario",
             self.max_average_actions_per_scenario,
+        )
+        _validate_optional_non_negative(
+            "max_average_model_calls_per_scenario",
+            self.max_average_model_calls_per_scenario,
         )
         _validate_optional_non_negative(
             "max_average_model_tokens_per_scenario",
@@ -419,12 +445,36 @@ def evaluate_quality_gate(
                 active_gate.min_task_success_rate,
             )
         )
+    if active_gate.min_action_success_rate is not None:
+        checks.append(
+            _gate_minimum(
+                "action_success_rate",
+                summary.action_success_rate,
+                active_gate.min_action_success_rate,
+            )
+        )
+    if active_gate.max_tool_failure_rate is not None:
+        checks.append(
+            _gate_maximum(
+                "tool_failure_rate",
+                summary.tool_failure_rate,
+                active_gate.max_tool_failure_rate,
+            )
+        )
     if active_gate.max_policy_denial_rate is not None:
         checks.append(
             _gate_maximum(
                 "policy_denial_rate",
                 summary.policy_denial_rate,
                 active_gate.max_policy_denial_rate,
+            )
+        )
+    if active_gate.max_average_recoveries_per_scenario is not None:
+        checks.append(
+            _gate_maximum(
+                "average_recoveries_per_scenario",
+                summary.average_recoveries_per_scenario,
+                active_gate.max_average_recoveries_per_scenario,
             )
         )
     if active_gate.max_human_intervention_rate is not None:
@@ -457,6 +507,14 @@ def evaluate_quality_gate(
                 "average_actions_per_scenario",
                 summary.average_actions_per_scenario,
                 active_gate.max_average_actions_per_scenario,
+            )
+        )
+    if active_gate.max_average_model_calls_per_scenario is not None:
+        checks.append(
+            _gate_maximum(
+                "average_model_calls_per_scenario",
+                summary.average_model_calls_per_scenario,
+                active_gate.max_average_model_calls_per_scenario,
             )
         )
     if active_gate.max_average_model_tokens_per_scenario is not None:

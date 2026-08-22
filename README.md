@@ -141,8 +141,9 @@ output while returning a non-zero process status. The CLI does not access Kernel
 Session, Event, Metrics and Audit projections. `EvaluationSuite` and
 `EvaluationScenarioSelector` make scenario, regression, policy and recovery subsets first-class
 contracts for local CI-style runs. `EvaluationQualityGate` evaluates suite-level pass rates,
-completion rates, intervention rates, resource lock safety, action efficiency and model budget
-thresholds after execution. `EvaluationRunner` composes suite execution, quality gates and optional
+completion rates, action success and tool failure rates, recovery budgets, intervention rates,
+resource lock safety, action efficiency and model budget thresholds after execution.
+`EvaluationRunner` composes suite execution, quality gates and optional
 `EvaluationReportStore` persistence into one reusable application-facing module.
 `compare_evaluation_reports` compares stable suite recordings for golden report regression checks.
 `replay_execution` reconstructs execution history from recorded runtime events without calling a
@@ -287,6 +288,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_7_execution_replay.py
 .venv/bin/python examples/p3_7_replay.py
 .venv/bin/python examples/p3_7_cli_replay.py
+.venv/bin/python examples/p3_7_cli_quality_gates.py
 .venv/bin/python examples/p3_7_deterministic_mode.py
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-profile.json --store-backend sqlite --store-path .tmp/runtime.sqlite3 --force

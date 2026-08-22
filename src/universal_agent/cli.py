@@ -269,10 +269,14 @@ def build_parser() -> argparse.ArgumentParser:
     eval_run.add_argument("--min-pass-rate", type=float, default=1.0)
     eval_run.add_argument("--min-goal-completion-rate", type=float)
     eval_run.add_argument("--min-task-success-rate", type=float)
+    eval_run.add_argument("--min-action-success-rate", type=float)
+    eval_run.add_argument("--max-tool-failure-rate", type=float)
     eval_run.add_argument("--max-policy-denial-rate", type=float)
+    eval_run.add_argument("--max-average-recoveries", type=float)
     eval_run.add_argument("--max-human-intervention-rate", type=float)
     eval_run.add_argument("--max-average-actions", type=float)
     eval_run.add_argument("--max-average-active-resource-locks", type=float)
+    eval_run.add_argument("--max-average-model-calls", type=float)
     eval_run.add_argument("--max-average-model-tokens", type=float)
     eval_run.add_argument("--max-resource-conflict-rate", type=float)
     eval_run.add_argument("--max-total-model-cost-micros", type=int)
@@ -497,7 +501,13 @@ async def _dispatch_eval(
                     args.min_goal_completion_rate,
                 ),
                 min_task_success_rate=cast(float | None, args.min_task_success_rate),
+                min_action_success_rate=cast(float | None, args.min_action_success_rate),
+                max_tool_failure_rate=cast(float | None, args.max_tool_failure_rate),
                 max_policy_denial_rate=cast(float | None, args.max_policy_denial_rate),
+                max_average_recoveries_per_scenario=cast(
+                    float | None,
+                    args.max_average_recoveries,
+                ),
                 max_human_intervention_rate=cast(
                     float | None,
                     args.max_human_intervention_rate,
@@ -506,6 +516,10 @@ async def _dispatch_eval(
                 max_average_active_resource_locks_per_scenario=cast(
                     float | None,
                     args.max_average_active_resource_locks,
+                ),
+                max_average_model_calls_per_scenario=cast(
+                    float | None,
+                    args.max_average_model_calls,
                 ),
                 max_average_model_tokens_per_scenario=cast(
                     float | None,

@@ -46,14 +46,17 @@ from universal_agent.evaluation.recording import record_evaluation_suite
 
 
 class HarnessBackend:
-    def __init__(self, *, initial_timeout: bool = False) -> None:
+    def __init__(self, *, initial_timeout: bool = False, always_timeout: bool = False) -> None:
         self.initial_timeout = initial_timeout
+        self.always_timeout = always_timeout
         self.inspect_calls: list[str] = []
         self.mutation_calls = 0
         self._timeout_used = False
 
     async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.inspect_calls.append(capability)
+        if self.always_timeout:
+            raise TimeoutError("inspection timed out")
         if self.initial_timeout and not self._timeout_used:
             self._timeout_used = True
             raise TimeoutError("inspection timed out")
@@ -290,14 +293,38 @@ def test_evaluation_quality_gate_validates_thresholds() -> None:
     ):
         EvaluationQualityGate(max_resource_conflict_rate=1.1)
 
+    with pytest.raises(
+        ValueError,
+        match=r"min_action_success_rate must be between 0\.0 and 1\.0",
+    ):
+        EvaluationQualityGate(min_action_success_rate=1.1)
+
+    with pytest.raises(
+        ValueError,
+        match=r"max_tool_failure_rate must be between 0\.0 and 1\.0",
+    ):
+        EvaluationQualityGate(max_tool_failure_rate=-0.1)
+
     with pytest.raises(ValueError, match="max_average_actions_per_scenario must be non-negative"):
         EvaluationQualityGate(max_average_actions_per_scenario=-1.0)
+
+    with pytest.raises(
+        ValueError,
+        match="max_average_recoveries_per_scenario must be non-negative",
+    ):
+        EvaluationQualityGate(max_average_recoveries_per_scenario=-1.0)
 
     with pytest.raises(
         ValueError,
         match="max_average_active_resource_locks_per_scenario must be non-negative",
     ):
         EvaluationQualityGate(max_average_active_resource_locks_per_scenario=-1.0)
+
+    with pytest.raises(
+        ValueError,
+        match="max_average_model_calls_per_scenario must be non-negative",
+    ):
+        EvaluationQualityGate(max_average_model_calls_per_scenario=-1.0)
 
 
 @pytest.mark.asyncio
@@ -420,6 +447,7 @@ async def test_evaluation_harness_summarizes_model_usage_across_scenarios() -> N
     assert report.model_call_count == 4
     assert report.model_total_token_count == 185
     assert report.model_estimated_cost_micros == 8
+    assert report.average_model_calls_per_scenario == 2.0
     assert report.average_model_tokens_per_scenario == 92.5
 
 
@@ -605,3 +633,52 @@ async def test_evaluation_harness_reports_recovery_regression_checks() -> None:
 
     assert report.passed
     assert backend.inspect_calls == ["inspect_workload", "inspect_workload"]
+
+
+@pytest.mark.asyncio
+async def test_evaluation_quality_gate_reports_reliability_thresholds() -> None:
+    backend = HarnessBackend(always_timeout=True)
+    service = build_service(
+        backend,
+        [inspect_workload()],
+        usage=[ModelUsage("scripted", "reliability-test", input_tokens=15, output_tokens=5)],
+    )
+    goal, task = goal_task()
+    scenario = EvaluationScenario(
+        "inspection timeout exhausts recovery",
+        goal,
+        task,
+        ScenarioExpectations(
+            expected_status=ExecutionStatus.FAILED,
+            expected_error_code=ErrorCode.TIMEOUT,
+            required_events=("RecoveryPlanned", "RecoveryExhausted"),
+            recovery_planned_count=2,
+        ),
+    )
+
+    report = await EvaluationHarness(service).run(scenario)
+    suite_report = EvaluationSuiteReport((report,), "reliability gate suite")
+    gate_report = evaluate_quality_gate(
+        suite_report,
+        EvaluationQualityGate(
+            min_pass_rate=1.0,
+            min_action_success_rate=1.0,
+            max_tool_failure_rate=0.0,
+            max_average_recoveries_per_scenario=0.0,
+            max_average_model_calls_per_scenario=0.0,
+        ),
+    )
+
+    assert report.passed
+    assert suite_report.summary.action_success_rate == 0.0
+    assert suite_report.summary.tool_failure_rate == 1.0
+    assert suite_report.summary.average_recoveries_per_scenario == 2.0
+    assert suite_report.summary.average_model_calls_per_scenario == 1.0
+    assert len(backend.inspect_calls) == 3
+    assert not gate_report.passed
+    assert [check.name for check in gate_report.failed_checks] == [
+        "action_success_rate",
+        "tool_failure_rate",
+        "average_recoveries_per_scenario",
+        "average_model_calls_per_scenario",
+    ]
