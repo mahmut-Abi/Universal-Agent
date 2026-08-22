@@ -221,6 +221,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_persistence.py
 .venv/bin/python examples/p3_5_runtime_config.py
 .venv/bin/python examples/p3_5_cli_event_stream.py
+.venv/bin/python examples/p3_5_cli_run.py
 .venv/bin/python examples/p3_6_cost_tracking.py
 .venv/bin/python examples/p3_6_structured_logs.py
 .venv/bin/python examples/p3_7_evaluation_harness.py

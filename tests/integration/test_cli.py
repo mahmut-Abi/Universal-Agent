@@ -7,9 +7,11 @@ from typing import Any
 import pytest
 
 from universal_agent import (
+    AgentProfile,
     AgentRuntime,
     Decision,
     DecisionType,
+    DomainConfig,
     DomainLoader,
     Goal,
     InMemoryEventSink,
@@ -17,6 +19,7 @@ from universal_agent import (
     ModelUsage,
     RuntimeAPI,
     RuntimeBuilder,
+    RuntimeConfig,
     RuntimeService,
     ScriptedModelAdapter,
     SuccessCriterion,
@@ -79,6 +82,18 @@ def goal_task() -> tuple[Goal, Task]:
     )
 
 
+def cli_profile() -> AgentProfile:
+    domain = DomainConfig("kubernetes", "0.2.0")
+    return AgentProfile(
+        "production-operator",
+        "1.0.0",
+        "Production Kubernetes operator",
+        domain,
+        RuntimeConfig(environment=immutable_json({"environment": "staging"}), domain=domain),
+        (domain,),
+    )
+
+
 def build_cli_service(
     decisions: list[Decision],
     *,
@@ -98,13 +113,51 @@ def build_cli_service(
         environment=immutable_json({"environment": "staging"}),
     )
     api = RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
-    return RuntimeService(runtime_api=api, components=components), backend
+    return RuntimeService(
+        runtime_api=api, components=components, profiles=(cli_profile(),)
+    ), backend
 
 
 def read_json(buffer: StringIO) -> dict[str, Any]:
     loaded: object = json.loads(buffer.getvalue())
     assert isinstance(loaded, dict)
     return loaded
+
+
+@pytest.mark.asyncio
+async def test_cli_run_submits_goal_through_service() -> None:
+    service, backend = build_cli_service([inspect_workload(), finish()])
+    output = StringIO()
+
+    status = await run_cli(
+        ["run", "production-operator", "Verify workload health"],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["result"]["status"] == "completed"
+    assert payload["session"]["goal_description"] == "Verify workload health"
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cli_run_rejects_unknown_profile() -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+    error = StringIO()
+
+    status = await run_cli(
+        ["run", "missing-profile", "Verify workload health"],
+        service=service,
+        stdout=output,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert output.getvalue() == ""
+    assert "unknown profile: missing-profile" in error.getvalue()
 
 
 @pytest.mark.asyncio

@@ -25,13 +25,57 @@ from universal_agent.agentd.app import (
     session_summary_body,
     tool_body,
 )
-from universal_agent.core import EventId, JsonMapping, SessionId, immutable_json
+from universal_agent.core import (
+    Decision,
+    DecisionType,
+    EventId,
+    Goal,
+    JsonMapping,
+    SessionId,
+    SuccessCriterion,
+    Task,
+    immutable_json,
+)
 from universal_agent.domain import DomainLoader, RuntimeBuilder
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.host import DomainConfig, RuntimeConfig
 from universal_agent.model import ScriptedModelAdapter
+from universal_agent.profile import AgentProfile
 from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
+
+LOCAL_PROFILE_NAME = "local-kubernetes"
+
+
+def _local_domain() -> DomainConfig:
+    return DomainConfig("kubernetes", "0.2.0")
+
+
+def _default_decisions() -> tuple[Decision, ...]:
+    return (
+        Decision(
+            DecisionType.EXECUTE,
+            "Inspect workload from local CLI profile",
+            capability="inspect_workload",
+            target="deployment/example",
+            arguments=immutable_json({"name": "example"}),
+            expected_observations=("healthy",),
+        ),
+        Decision(DecisionType.FINISH, "Local CLI profile verified workload health"),
+    )
+
+
+def _default_profile() -> AgentProfile:
+    domain = _local_domain()
+    return AgentProfile(
+        LOCAL_PROFILE_NAME,
+        "0.1.0",
+        "Local fake-backed Kubernetes profile",
+        domain,
+        RuntimeConfig(environment=immutable_json({"environment": "local"}), domain=domain),
+        (domain,),
+    )
 
 
 class _DefaultCliBackend:
@@ -64,7 +108,7 @@ def build_default_service() -> RuntimeService:
     store = InMemoryStateStore()
     events = InMemoryEventSink()
     runtime = AgentRuntime(
-        model=ScriptedModelAdapter(()),
+        model=ScriptedModelAdapter(_default_decisions()),
         state_store=store,
         components=components,
         event_sink=events,
@@ -73,6 +117,7 @@ def build_default_service() -> RuntimeService:
     return RuntimeService(
         runtime_api=RuntimeAPI(runtime=runtime, session_store=store, event_reader=events),
         components=components,
+        profiles=(_default_profile(),),
     )
 
 
@@ -116,6 +161,11 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("logs")
     commands.add_parser("doctor")
     commands.add_parser("audit")
+
+    run = commands.add_parser("run")
+    run.add_argument("profile")
+    run.add_argument("goal")
+    run.add_argument("--task", default="Run goal")
 
     domain = commands.add_parser("domain")
     domain_commands = domain.add_subparsers(dest="domain_command", required=True)
@@ -203,6 +253,9 @@ async def _dispatch(
     if command == "audit":
         _write_json(out, audit_records_body(await service.audit_records()))
         return
+    if command == "run":
+        await _dispatch_run(args, service, out)
+        return
     if command == "domain":
         _write_json(out, {"domains": [domain_body(item) for item in service.domains()]})
         return
@@ -222,6 +275,20 @@ async def _dispatch(
         await _dispatch_session(args, service, out)
         return
     raise ValueError(f"unknown command: {command}")
+
+
+async def _dispatch_run(
+    args: argparse.Namespace,
+    service: RuntimeService,
+    out: TextIO,
+) -> None:
+    profile = cast(str, args.profile)
+    if not service.accepts_profile(profile):
+        raise ValueError(f"unknown profile: {profile}")
+    goal = Goal(cast(str, args.goal), (SuccessCriterion("healthy", True),))
+    task = Task(cast(str, args.task), ("healthy",))
+    run = await service.run_goal(goal, task)
+    _write_json(out, runtime_run_body(run))
 
 
 async def _dispatch_session(
