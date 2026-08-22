@@ -72,6 +72,7 @@ from universal_agent.evaluation.recording import (
 )
 from universal_agent.evaluation.replay import DeterministicReplayHarness, ReplayCheck, ReplayReport
 from universal_agent.evaluation.runner import EvaluationRunner, EvaluationRunResult
+from universal_agent.evaluation.scenario_config import load_evaluation_suite
 from universal_agent.host import DomainConfig, RuntimeConfig, RuntimeHost
 from universal_agent.model import ScriptedModelAdapter
 from universal_agent.profile import AgentProfile, ProfileConfig
@@ -260,11 +261,13 @@ def build_parser() -> argparse.ArgumentParser:
     eval_list = eval_commands.add_parser("list")
     eval_list.add_argument("profile")
     eval_list.add_argument("--suite", default="local evaluation suite")
+    eval_list.add_argument("--suite-file")
     _add_evaluation_selector_arguments(eval_list)
 
     eval_run = eval_commands.add_parser("run")
     eval_run.add_argument("profile")
     eval_run.add_argument("--suite", default="local evaluation suite")
+    eval_run.add_argument("--suite-file")
     eval_run.add_argument("--report-dir")
     eval_run.add_argument("--min-pass-rate", type=float, default=1.0)
     eval_run.add_argument("--min-goal-completion-rate", type=float)
@@ -286,6 +289,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_replay = eval_commands.add_parser("replay")
     eval_replay.add_argument("profile")
     eval_replay.add_argument("--suite", default="local evaluation suite")
+    eval_replay.add_argument("--suite-file")
     eval_replay.add_argument("--recording-dir", required=True)
     eval_replay.add_argument("--update", action="store_true")
     eval_replay.add_argument("--fail-on-fail", action="store_true")
@@ -479,7 +483,7 @@ async def _dispatch_eval(
         profile = cast(str, args.profile)
         if not service.accepts_profile(profile):
             raise ValueError(f"unknown profile: {profile}")
-        suite = _local_evaluation_suite(cast(str, args.suite))
+        suite = _evaluation_suite(args)
         scenarios = suite.select(_evaluation_selector(args))
         _write_json(out, _evaluation_list_body(suite, scenarios))
         return
@@ -492,7 +496,7 @@ async def _dispatch_eval(
             service,
             report_store=None if report_dir is None else FileEvaluationReportStore(report_dir),
         ).run_suite(
-            _local_evaluation_suite(cast(str, args.suite)),
+            _evaluation_suite(args),
             selector=_evaluation_selector(args),
             gate=EvaluationQualityGate(
                 min_pass_rate=cast(float, args.min_pass_rate),
@@ -574,7 +578,7 @@ async def _dispatch_eval_replay(
     profile = cast(str, args.profile)
     if not service.accepts_profile(profile):
         raise ValueError(f"unknown profile: {profile}")
-    suite = _local_evaluation_suite(cast(str, args.suite))
+    suite = _evaluation_suite(args)
     scenarios = suite.select(_evaluation_selector(args))
     if not scenarios:
         raise ValueError("evaluation replay selected no scenarios")
@@ -612,6 +616,13 @@ async def _dispatch_eval_replay(
         "scenario_count": len(reports),
         "scenarios": [_replay_report_body(report) for report in reports],
     }
+
+
+def _evaluation_suite(args: argparse.Namespace) -> EvaluationSuite:
+    suite_file = cast(str | None, args.suite_file)
+    if suite_file is not None:
+        return load_evaluation_suite(suite_file)
+    return _local_evaluation_suite(cast(str, args.suite))
 
 
 def _local_evaluation_suite(name: str) -> EvaluationSuite:

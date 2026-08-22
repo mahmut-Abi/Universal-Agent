@@ -155,6 +155,42 @@ def read_json(buffer: StringIO) -> dict[str, Any]:
     return loaded
 
 
+def write_evaluation_suite_file(path: Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "name": "file evaluation suite",
+                "tags": ["file", "kubernetes"],
+                "scenarios": [
+                    {
+                        "name": "file healthy workload",
+                        "kind": "regression",
+                        "tags": ["smoke", "file"],
+                        "goal": {
+                            "description": "Evaluate workload health from file",
+                            "success_criteria": {"healthy": True},
+                        },
+                        "task": {
+                            "description": "Inspect workload from file",
+                            "required_criteria": ["healthy"],
+                        },
+                        "expectations": {
+                            "expected_status": "completed",
+                            "expected_criteria": {"healthy": True},
+                            "required_events": ["GoalCompleted", "EvaluationCompleted"],
+                            "required_evidence_claims": ["healthy"],
+                            "required_capabilities": ["inspect_workload"],
+                            "allowed_capabilities": ["inspect_workload"],
+                            "max_actions": 1,
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 @pytest.mark.asyncio
 async def test_cli_init_writes_parseable_profile_config(tmp_path: Path) -> None:
     output = StringIO()
@@ -804,6 +840,38 @@ async def test_cli_eval_list_applies_kind_and_tag_filters() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_eval_list_loads_suite_file(tmp_path: Path) -> None:
+    service, _ = build_cli_service([])
+    suite_path = tmp_path / "suite.json"
+    write_evaluation_suite_file(suite_path)
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "eval",
+            "list",
+            "production-operator",
+            "--suite-file",
+            str(suite_path),
+            "--kind",
+            "regression",
+            "--tag",
+            "file",
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["suite_name"] == "file evaluation suite"
+    assert payload["suite_tags"] == ["file", "kubernetes"]
+    assert payload["scenario_count"] == 1
+    assert payload["scenarios"][0]["scenario_name"] == "file healthy workload"
+    assert payload["scenarios"][0]["task"]["description"] == "Inspect workload from file"
+
+
+@pytest.mark.asyncio
 async def test_cli_eval_run_rejects_empty_scenario_selection() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -864,6 +932,42 @@ async def test_cli_eval_run_executes_suite_and_persists_report(tmp_path: Path) -
     assert stored.scenarios[0].kind.value == "regression"
     assert stored.scenarios[0].tags == ("smoke", "kubernetes")
     assert stored.scenarios[0].evidence_claims == ("resource", "healthy")
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cli_eval_run_executes_suite_file_and_persists_report(tmp_path: Path) -> None:
+    service, backend = build_cli_service([inspect_workload(), finish()])
+    suite_path = tmp_path / "suite.json"
+    report_dir = tmp_path / "reports"
+    write_evaluation_suite_file(suite_path)
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "eval",
+            "run",
+            "production-operator",
+            "--suite-file",
+            str(suite_path),
+            "--report-dir",
+            str(report_dir),
+            "--min-action-success-rate",
+            "1.0",
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+    stored = FileEvaluationReportStore(report_dir).load("file evaluation suite")
+
+    assert status == 0
+    assert payload["passed"] is True
+    assert payload["suite"]["suite_name"] == "file evaluation suite"
+    assert payload["suite"]["scenarios"][0]["scenario_name"] == "file healthy workload"
+    assert payload["gate"]["passed"] is True
+    assert stored.suite_name == "file evaluation suite"
+    assert stored.scenarios[0].scenario_name == "file healthy workload"
     assert backend.inspect_calls == 1
 
 

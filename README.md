@@ -130,11 +130,12 @@ projections; `agent metrics --format prometheus` emits Prometheus text expositio
 `agent traces --format otlp` and `agent session traces <id> --format otlp` emit OTLP
 JSON-compatible trace payloads from the same event-derived span projection. `agent serve` starts the
 standard-library `AgentdHttpServer` around the same service; `agent eval run` executes the
-local evaluation suite through `EvaluationRunner`, and `agent eval compare` compares persisted golden
-reports for CLI/CI regression checks. `agent eval replay` records and checks deterministic
-golden replay recordings through the same local suite selector. `agent eval run` and `agent eval replay`
-support kind/tag subset filters, and all eval gate commands support `--fail-on-fail` to preserve JSON
-output while returning a non-zero process status. The CLI does not access Kernel internals directly.
+local or file-backed evaluation suite through `EvaluationRunner`, and `agent eval compare` compares
+persisted golden reports for CLI/CI regression checks. `agent eval replay` records and checks
+deterministic golden replay recordings through the same suite selector. `agent eval list`,
+`agent eval run` and `agent eval replay` support `--suite-file` plus kind/tag subset filters, and
+all eval gate commands support `--fail-on-fail` to preserve JSON output while returning a non-zero
+process status. The CLI does not access Kernel internals directly.
 
 `EvaluationHarness` is the first P3.7 behavior evaluation foundation. It runs explicit
 `EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
@@ -213,7 +214,8 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   resource lock conflicts, active resource locks, action counts, iteration budgets and model
   token/cost budgets for behavior scenarios.
   Evaluation suites classify scenarios by kind and tags so regression, policy and recovery subsets
-  can be selected without changing Kernel code, and quality gates turn suite metrics into CI-ready
+  can be selected without changing Kernel code. File-backed suite configs load those same typed
+  scenario contracts from JSON for local CI runs, and quality gates turn suite metrics into CI-ready
   pass/fail checks. `EvaluationRunner` packages suite execution, gate evaluation and optional
   stable report persistence behind one interface for future CLI/CI adapters. Stable evaluation
   report recordings preserve scenario kind/tags and Evidence claim summaries, so comparisons can
@@ -289,6 +291,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_7_replay.py
 .venv/bin/python examples/p3_7_cli_replay.py
 .venv/bin/python examples/p3_7_cli_quality_gates.py
+.venv/bin/python examples/p3_7_suite_file.py
 .venv/bin/python examples/p3_7_deterministic_mode.py
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-profile.json --store-backend sqlite --store-path .tmp/runtime.sqlite3 --force
