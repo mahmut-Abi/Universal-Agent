@@ -35,6 +35,10 @@ class RuntimeMetricsView:
     recovery_planned_count: int
     recovery_exhausted_count: int
     human_intervention_count: int
+    resource_lock_acquired_count: int
+    resource_lock_released_count: int
+    resource_conflict_count: int
+    active_resource_lock_count: int
     model_call_count: int = 0
     model_input_token_count: int = 0
     model_output_token_count: int = 0
@@ -134,6 +138,7 @@ def build_runtime_metrics(
     events: tuple[RuntimeEventView, ...],
 ) -> RuntimeMetricsView:
     cost = build_runtime_cost(events)
+    active_resource_locks = _active_resource_locks(events)
     return RuntimeMetricsView(
         session_count=len(sessions),
         active_session_count=sum(
@@ -172,6 +177,10 @@ def build_runtime_metrics(
         human_intervention_count=sum(
             1 for event in events if event.type in {"ConfirmationRequired", "GoalWaiting"}
         ),
+        resource_lock_acquired_count=_count(events, "ResourceLockAcquired"),
+        resource_lock_released_count=_count(events, "ResourceLockReleased"),
+        resource_conflict_count=_count(events, "ResourceConflictDetected"),
+        active_resource_lock_count=len(active_resource_locks),
         model_call_count=cost.model_call_count,
         model_input_token_count=cost.input_tokens,
         model_output_token_count=cost.output_tokens,
@@ -221,6 +230,26 @@ def build_prometheus_metrics_export(
             "human_interventions",
             "Runtime human interventions required",
             metrics.human_intervention_count,
+        ),
+        (
+            "resource_locks_acquired",
+            "Runtime resource locks acquired",
+            metrics.resource_lock_acquired_count,
+        ),
+        (
+            "resource_locks_released",
+            "Runtime resource locks released",
+            metrics.resource_lock_released_count,
+        ),
+        (
+            "resource_conflicts",
+            "Runtime resource lock conflicts detected",
+            metrics.resource_conflict_count,
+        ),
+        (
+            "active_resource_locks",
+            "Runtime resource locks without a matching release event",
+            metrics.active_resource_lock_count,
         ),
         ("model_calls", "Runtime model calls recorded", metrics.model_call_count),
         (
@@ -337,6 +366,7 @@ def build_doctor_report(
         _audit_projection_check(events, audit_records),
         _policy_denial_check(metrics.policy_denial_count),
         _recovery_check(metrics.recovery_exhausted_count),
+        _resource_lock_check(sessions, metrics),
         DoctorCheckView(
             "cost_tracking",
             "ok",
@@ -361,10 +391,16 @@ def build_audit_records(
         for event in scoped
         if event.type == "ActionCompleted" and event.action_id is not None
     }
+    conflicts = {
+        event.action_id: event
+        for event in scoped
+        if event.type == "ResourceConflictDetected" and event.action_id is not None
+    }
     records = tuple(
         _audit_record(
             event,
             None if event.action_id is None else completed.get(event.action_id),
+            None if event.action_id is None else conflicts.get(event.action_id),
         )
         for event in scoped
         if event.type == "PolicyChecked" and _string(event.data.get("side_effect")) != "none"
@@ -461,10 +497,18 @@ def build_opentelemetry_trace_export(
 def _audit_record(
     event: RuntimeEventView,
     completed: RuntimeEventView | None,
+    conflict: RuntimeEventView | None,
 ) -> AuditRecordView:
     effect = _string(event.data.get("effect"))
     completed_status = _string(completed.data.get("status")) if completed is not None else ""
-    error_code = _error_code(completed.data.get("error_code")) if completed is not None else None
+    error_code: ErrorCode | None
+    if conflict is not None:
+        completed_status = "resource_conflict"
+        error_code = ErrorCode.RESOURCE_CONFLICT
+    else:
+        error_code = (
+            _error_code(completed.data.get("error_code")) if completed is not None else None
+        )
     return AuditRecordView(
         record_id=event.event_id,
         session_id=event.session_id,
@@ -479,12 +523,20 @@ def _audit_record(
         policy_name=_string(event.data.get("policy")),
         status=_audit_status(effect, completed_status),
         occurred_at=event.occurred_at,
-        completed_at=None if completed is None else completed.occurred_at,
+        completed_at=(
+            conflict.occurred_at
+            if conflict is not None
+            else None
+            if completed is None
+            else completed.occurred_at
+        ),
         error_code=error_code,
     )
 
 
 def _audit_status(policy_effect: str, completed_status: str) -> str:
+    if completed_status == "resource_conflict":
+        return "resource_conflict"
     if policy_effect == "deny":
         return "denied"
     if policy_effect == "require_confirmation":
@@ -495,6 +547,8 @@ def _audit_status(policy_effect: str, completed_status: str) -> str:
 
 
 def _log_level(event: RuntimeEventView) -> str:
+    if event.type == "ResourceConflictDetected":
+        return "error"
     if event.type == "PolicyChecked" and _string(event.data.get("effect")) == "deny":
         return "error"
     if (
@@ -535,6 +589,12 @@ def _log_message(event: RuntimeEventView) -> str:
         return f"evidence recorded: {_string(event.data.get('claim')) or 'unknown claim'}"
     if event.type == "EvaluationCompleted":
         return f"evaluation completed: {_string(event.data.get('status')) or 'unknown'}"
+    if event.type == "ResourceLockAcquired":
+        return f"resource lock acquired: {_string(event.data.get('resource_key')) or 'unknown'}"
+    if event.type == "ResourceLockReleased":
+        return f"resource lock released: {_string(event.data.get('resource_key')) or 'unknown'}"
+    if event.type == "ResourceConflictDetected":
+        return f"resource conflict detected: {_string(event.data.get('resource_key')) or 'unknown'}"
     return _event_words(event.type)
 
 
@@ -652,10 +712,16 @@ def _phase_span_name(event_type: str) -> str | None:
         return "runtime.observation"
     if event_type == "EvaluationCompleted":
         return "runtime.evaluation"
+    if event_type in {"ResourceLockAcquired", "ResourceLockReleased"}:
+        return "runtime.resource_lock"
+    if event_type == "ResourceConflictDetected":
+        return "runtime.resource_conflict"
     return None
 
 
 def _phase_span_status(event: RuntimeEventView) -> str:
+    if event.type == "ResourceConflictDetected":
+        return "error"
     if event.type == "PolicyChecked" and _string(event.data.get("effect")) == "deny":
         return "error"
     if event.type == "EvaluationCompleted":
@@ -718,6 +784,8 @@ def _session_span_status(events: tuple[RuntimeEventView, ...]) -> str:
 
 
 def _action_span_status(events: tuple[RuntimeEventView, ...]) -> str:
+    if any(event.type == "ResourceConflictDetected" for event in events):
+        return "error"
     for event in events:
         if event.type == "PolicyChecked" and _string(event.data.get("effect")) == "deny":
             return "error"
@@ -752,7 +820,10 @@ def _action_span_attributes(events: tuple[RuntimeEventView, ...]) -> JsonMapping
             "idempotency_key",
             "parameters_hash",
             "attempt",
+            "resource_key",
+            "resource_version",
             "arguments",
+            "reason",
         ):
             value = event.data.get(key)
             if value is not None and key not in values:
@@ -819,6 +890,32 @@ def _recovery_check(count: int) -> DoctorCheckView:
     return DoctorCheckView("recovery", "ok", "no exhausted recovery paths observed")
 
 
+def _resource_lock_check(
+    sessions: tuple[SessionSummaryView, ...],
+    metrics: RuntimeMetricsView,
+) -> DoctorCheckView:
+    pending_confirmations = sum(1 for session in sessions if session.pending_action)
+    if metrics.active_resource_lock_count > pending_confirmations:
+        return DoctorCheckView(
+            "resource_locks",
+            "warn",
+            "active resource locks exceed pending confirmations: "
+            f"locks={metrics.active_resource_lock_count} pending={pending_confirmations}",
+        )
+    if metrics.resource_conflict_count:
+        return DoctorCheckView(
+            "resource_locks",
+            "warn",
+            f"resource conflicts detected: {metrics.resource_conflict_count}",
+        )
+    return DoctorCheckView(
+        "resource_locks",
+        "ok",
+        "resource locks balanced: "
+        f"active={metrics.active_resource_lock_count} conflicts={metrics.resource_conflict_count}",
+    )
+
+
 def _check(name: str, ok: bool, message: str) -> DoctorCheckView:
     return DoctorCheckView(name, "ok" if ok else "error", message)
 
@@ -833,6 +930,30 @@ def _aggregate_status(checks: tuple[DoctorCheckView, ...]) -> str:
 
 def _count(events: tuple[RuntimeEventView, ...], event_type: str) -> int:
     return sum(1 for event in events if event.type == event_type)
+
+
+def _active_resource_locks(
+    events: tuple[RuntimeEventView, ...],
+) -> dict[tuple[ActionId, str], RuntimeEventView]:
+    active: dict[tuple[ActionId, str], RuntimeEventView] = {}
+    for event in sorted(events, key=lambda item: item.occurred_at):
+        key = _resource_lock_key(event)
+        if key is None:
+            continue
+        if event.type == "ResourceLockAcquired":
+            active[key] = event
+        elif event.type == "ResourceLockReleased":
+            active.pop(key, None)
+    return active
+
+
+def _resource_lock_key(event: RuntimeEventView) -> tuple[ActionId, str] | None:
+    if event.action_id is None:
+        return None
+    resource_key = _string(event.data.get("resource_key"))
+    if not resource_key:
+        return None
+    return event.action_id, resource_key
 
 
 def _string(value: JsonValue | object) -> str:

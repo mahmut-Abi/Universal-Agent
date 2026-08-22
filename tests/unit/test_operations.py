@@ -5,6 +5,7 @@ from types import MappingProxyType
 
 from universal_agent.core import (
     ActionId,
+    ErrorCode,
     GoalId,
     GoalStatus,
     SessionId,
@@ -24,7 +25,11 @@ from universal_agent.operations import (
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView
 
 
-def session(status: GoalStatus = GoalStatus.COMPLETED) -> SessionSummaryView:
+def session(
+    status: GoalStatus = GoalStatus.COMPLETED,
+    *,
+    pending_action: bool = False,
+) -> SessionSummaryView:
     return SessionSummaryView(
         session_id=SessionId("session-1"),
         goal_id=GoalId("goal-1"),
@@ -35,7 +40,7 @@ def session(status: GoalStatus = GoalStatus.COMPLETED) -> SessionSummaryView:
         current_task_status=TaskStatus.COMPLETED,
         iteration=3,
         task_count=1,
-        pending_action=False,
+        pending_action=pending_action,
         termination_reason="done",
         error_code=None,
         domain_name="kubernetes",
@@ -83,6 +88,24 @@ def test_runtime_metrics_are_derived_from_sessions_and_events() -> None:
                 "currency": "USD",
             },
         ),
+        event(
+            "event-7",
+            "ResourceLockAcquired",
+            action_id="action-2",
+            data={"resource_key": "deployment/example"},
+        ),
+        event(
+            "event-8",
+            "ResourceLockReleased",
+            action_id="action-2",
+            data={"resource_key": "deployment/example"},
+        ),
+        event(
+            "event-9",
+            "ResourceConflictDetected",
+            action_id="action-4",
+            data={"resource_key": "deployment/example"},
+        ),
     )
 
     metrics = build_runtime_metrics((session(), session(GoalStatus.WAITING)), events)
@@ -90,13 +113,17 @@ def test_runtime_metrics_are_derived_from_sessions_and_events() -> None:
     assert metrics.session_count == 2
     assert metrics.completed_goal_count == 1
     assert metrics.waiting_session_count == 1
-    assert metrics.event_count == 6
+    assert metrics.event_count == 9
     assert metrics.action_started_count == 1
     assert metrics.action_completed_count == 1
     assert metrics.tool_failure_count == 0
     assert metrics.confirmation_required_count == 1
     assert metrics.human_intervention_count == 1
     assert metrics.recovery_planned_count == 1
+    assert metrics.resource_lock_acquired_count == 1
+    assert metrics.resource_lock_released_count == 1
+    assert metrics.resource_conflict_count == 1
+    assert metrics.active_resource_lock_count == 0
     assert metrics.model_call_count == 1
     assert metrics.model_input_token_count == 100
     assert metrics.model_output_token_count == 25
@@ -110,6 +137,12 @@ def test_prometheus_metrics_export_projects_runtime_metrics_text() -> None:
         (
             event("event-1", "ActionStarted", action_id="action-1"),
             event("event-2", "ActionCompleted", action_id="action-1"),
+            event(
+                "event-4",
+                "ResourceLockAcquired",
+                action_id="action-2",
+                data={"resource_key": "deployment/example"},
+            ),
             event(
                 "event-3",
                 "ModelUsageRecorded",
@@ -131,6 +164,7 @@ def test_prometheus_metrics_export_projects_runtime_metrics_text() -> None:
     assert "universal_agent_runtime_sessions 2\n" in exported
     assert "universal_agent_runtime_waiting_sessions 1\n" in exported
     assert "universal_agent_runtime_actions_completed 1\n" in exported
+    assert "universal_agent_runtime_active_resource_locks 1\n" in exported
     assert "universal_agent_runtime_model_total_tokens 125\n" in exported
     assert "universal_agent_runtime_model_estimated_cost_micros 42\n" in exported
 
@@ -373,6 +407,64 @@ def test_runtime_trace_spans_project_decision_model_and_evaluation_phases() -> N
     assert evaluation.attributes["evaluator"] == "workload-health"
 
 
+def test_runtime_trace_spans_project_resource_lock_phases() -> None:
+    events = (
+        event(
+            "event-1",
+            "GoalCreated",
+            occurred_at=datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
+        ),
+        event(
+            "event-2",
+            "ActionStarted",
+            action_id="action-1",
+            data={
+                "capability": "scale_workload",
+                "tool_name": "kubernetes_scale_workload",
+                "resource_key": "deployment/example",
+            },
+            occurred_at=datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC),
+        ),
+        event(
+            "event-3",
+            "ResourceLockAcquired",
+            action_id="action-1",
+            data={"resource_key": "deployment/example", "resource_version": "rv-1"},
+            occurred_at=datetime(2026, 1, 1, 0, 0, 2, tzinfo=UTC),
+        ),
+        event(
+            "event-4",
+            "ResourceConflictDetected",
+            action_id="action-1",
+            data={"resource_key": "deployment/example", "reason": "already locked"},
+            occurred_at=datetime(2026, 1, 1, 0, 0, 3, tzinfo=UTC),
+        ),
+        event(
+            "event-5",
+            "GoalFailed",
+            occurred_at=datetime(2026, 1, 1, 0, 0, 4, tzinfo=UTC),
+        ),
+    )
+
+    spans = build_runtime_trace_spans(events)
+
+    assert [span.name for span in spans] == [
+        "runtime.session",
+        "runtime.action.scale_workload",
+        "runtime.resource_lock",
+        "runtime.resource_conflict",
+    ]
+    _, action, lock, conflict = spans
+    assert action.status == "error"
+    assert action.attributes["resource_key"] == "deployment/example"
+    assert lock.parent_span_id == action.span_id
+    assert lock.status == "ok"
+    assert lock.attributes["resource_version"] == "rv-1"
+    assert conflict.parent_span_id == action.span_id
+    assert conflict.status == "error"
+    assert conflict.attributes["reason"] == "already locked"
+
+
 def test_opentelemetry_trace_export_projects_otlp_json_payload() -> None:
     events = (
         event(
@@ -480,10 +572,44 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
         "audit",
         "policy_denials",
         "recovery",
+        "resource_locks",
         "cost_tracking",
     ]
     assert next(check for check in report.checks if check.name == "event_stream").status == "warn"
     assert next(check for check in report.checks if check.name == "traces").status == "warn"
+    assert next(check for check in report.checks if check.name == "resource_locks").status == "ok"
+
+
+def test_doctor_report_warns_on_resource_lock_conflicts() -> None:
+    report = build_doctor_report(
+        health_status="ok",
+        ready=True,
+        ready_reason="ready",
+        domain_count=1,
+        capability_count=2,
+        tool_count=2,
+        sessions=(session(GoalStatus.WAITING, pending_action=True),),
+        events=(
+            event(
+                "event-1",
+                "ResourceLockAcquired",
+                action_id="action-1",
+                data={"resource_key": "deployment/example"},
+            ),
+            event(
+                "event-2",
+                "ResourceConflictDetected",
+                action_id="action-2",
+                data={"resource_key": "deployment/example"},
+            ),
+        ),
+    )
+
+    resource_locks = next(check for check in report.checks if check.name == "resource_locks")
+
+    assert report.status == "warn"
+    assert resource_locks.status == "warn"
+    assert resource_locks.message == "resource conflicts detected: 1"
 
 
 def test_audit_records_include_only_side_effecting_policy_checks() -> None:
@@ -515,13 +641,38 @@ def test_audit_records_include_only_side_effecting_policy_checks() -> None:
             action_id="action-2",
             data={"side_effect": "none", "effect": "allow"},
         ),
+        event(
+            "event-4",
+            "PolicyChecked",
+            action_id="action-3",
+            data={
+                "effect": "allow",
+                "policy": "kubernetes-scale-safety",
+                "capability": "scale_workload",
+                "tool_name": "kubernetes_scale_workload",
+                "side_effect": "reversible",
+                "risk": "medium",
+            },
+            occurred_at=datetime(2026, 1, 1, 0, 2, tzinfo=UTC),
+        ),
+        event(
+            "event-5",
+            "ResourceConflictDetected",
+            action_id="action-3",
+            data={"resource_key": "deployment/example"},
+            occurred_at=datetime(2026, 1, 1, 0, 3, tzinfo=UTC),
+        ),
     )
 
     records = build_audit_records(events)
 
-    assert len(records) == 1
-    assert records[0].record_id == "event-1"
-    assert records[0].capability == "scale_workload"
-    assert records[0].policy_effect == "require_confirmation"
-    assert records[0].status == "confirmation_required"
-    assert records[0].completed_at == datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
+    assert len(records) == 2
+    assert records[0].record_id == "event-4"
+    assert records[0].status == "resource_conflict"
+    assert records[0].error_code is ErrorCode.RESOURCE_CONFLICT
+    assert records[0].completed_at == datetime(2026, 1, 1, 0, 3, tzinfo=UTC)
+    assert records[1].record_id == "event-1"
+    assert records[1].capability == "scale_workload"
+    assert records[1].policy_effect == "require_confirmation"
+    assert records[1].status == "confirmation_required"
+    assert records[1].completed_at == datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
