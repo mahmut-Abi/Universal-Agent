@@ -9,10 +9,14 @@ from typing import Protocol
 from urllib.parse import quote
 
 from universal_agent.core import ErrorCode, ExecutionStatus, JsonMapping, JsonValue, immutable_json
-from universal_agent.evaluation.harness import EvaluationSuiteReport, ScenarioReport
+from universal_agent.evaluation.harness import (
+    EvaluationGateReport,
+    EvaluationSuiteReport,
+    ScenarioReport,
+)
 from universal_agent.evaluation.replay import ReplayAuditEntry, ReplayMetrics, ReplayRecording
 
-EVALUATION_REPORT_SCHEMA_VERSION = 1
+EVALUATION_REPORT_SCHEMA_VERSION = 2
 REPLAY_RECORDING_SCHEMA_VERSION = 1
 JsonObject = dict[str, JsonValue]
 
@@ -57,11 +61,18 @@ class EvaluationScenarioRecording:
 
 
 @dataclass(frozen=True, slots=True)
+class EvaluationGateRecording:
+    passed: bool
+    checks: tuple[EvaluationCheckRecording, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class EvaluationReportRecording:
     suite_name: str
     passed: bool
     summary: EvaluationSummaryRecording
     scenarios: tuple[EvaluationScenarioRecording, ...]
+    gate: EvaluationGateRecording | None = None
 
 
 class EvaluationReportNotFoundError(LookupError):
@@ -162,6 +173,7 @@ def record_evaluation_suite(
     report: EvaluationSuiteReport,
     *,
     suite_name: str | None = None,
+    gate_report: EvaluationGateReport | None = None,
 ) -> EvaluationReportRecording:
     summary = report.summary
     return EvaluationReportRecording(
@@ -184,6 +196,17 @@ def record_evaluation_suite(
             model_estimated_cost_micros=summary.model_estimated_cost_micros,
         ),
         scenarios=tuple(record_evaluation_scenario(item) for item in report.reports),
+        gate=None if gate_report is None else record_evaluation_gate(gate_report),
+    )
+
+
+def record_evaluation_gate(report: EvaluationGateReport) -> EvaluationGateRecording:
+    return EvaluationGateRecording(
+        passed=report.passed,
+        checks=tuple(
+            EvaluationCheckRecording(check.name, check.passed, check.message)
+            for check in report.checks
+        ),
     )
 
 
@@ -236,13 +259,15 @@ def encode_evaluation_report(recording: EvaluationReportRecording) -> JsonObject
         "passed": recording.passed,
         "summary": _encode_evaluation_summary(recording.summary),
         "scenarios": [_encode_evaluation_scenario(scenario) for scenario in recording.scenarios],
+        "gate": None if recording.gate is None else _encode_evaluation_gate(recording.gate),
     }
 
 
 def decode_evaluation_report(payload: Mapping[str, JsonValue]) -> EvaluationReportRecording:
     version = _int(_required(payload, "schema_version"), "schema_version")
-    if version != EVALUATION_REPORT_SCHEMA_VERSION:
+    if version not in (1, EVALUATION_REPORT_SCHEMA_VERSION):
         raise ValueError(f"unsupported evaluation report schema version: {version}")
+    gate = payload.get("gate")
     return EvaluationReportRecording(
         suite_name=_string(_required(payload, "suite_name"), "suite_name"),
         passed=_bool(_required(payload, "passed"), "passed"),
@@ -251,6 +276,7 @@ def decode_evaluation_report(payload: Mapping[str, JsonValue]) -> EvaluationRepo
             _decode_evaluation_scenario(_object(item, "scenarios[]"))
             for item in _list(_required(payload, "scenarios"), "scenarios")
         ),
+        gate=None if gate is None else _decode_evaluation_gate(_object(gate, "gate")),
     )
 
 
@@ -423,6 +449,23 @@ def _decode_evaluation_scenario(payload: JsonObject) -> EvaluationScenarioRecord
             "scenario.audit_capabilities",
         ),
         metrics=_decode_metrics(_object(_required(payload, "metrics"), "scenario.metrics")),
+    )
+
+
+def _encode_evaluation_gate(gate: EvaluationGateRecording) -> JsonObject:
+    return {
+        "passed": gate.passed,
+        "checks": [_encode_evaluation_check(check) for check in gate.checks],
+    }
+
+
+def _decode_evaluation_gate(payload: JsonObject) -> EvaluationGateRecording:
+    return EvaluationGateRecording(
+        passed=_bool(_required(payload, "passed"), "gate.passed"),
+        checks=tuple(
+            _decode_evaluation_check(_object(item, "gate.checks[]"))
+            for item in _list(_required(payload, "checks"), "gate.checks")
+        ),
     )
 
 
