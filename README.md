@@ -7,9 +7,10 @@ The long-term architecture is defined in
 with fake-backed Kubernetes remediation plus the first P3.5 productization foundation: a stable
 in-process Runtime API, immutable Session read models, cursor-readable Events, explicit
 pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter, a local CLI adapter,
-and local file-backed session/event persistence. The v3.0 design document also defines later
-productization layers such as real HTTP `agentd`, database persistence, SSE delivery, operations,
-evaluation, optional Multi-Agent, UI, distributed runtime, and ecosystem packaging.
+local file-backed session/event persistence, the first P3.6 operations surface, and a P3.7
+Evaluation Harness foundation. The v3.0 design document also defines later productization layers such
+as real HTTP `agentd`, database persistence, SSE delivery, OpenTelemetry, cost tracking, optional
+Multi-Agent, UI, distributed runtime, and ecosystem packaging.
 
 ## Architectural boundaries
 
@@ -109,7 +110,15 @@ internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
 Capability/Tool catalogs, and session list/show/events/pause/resume/cancel commands through
-`RuntimeService`; it does not access Kernel internals directly and does not require a daemon process.
+`RuntimeService`, plus operations commands for metrics, doctor and audit projections; it does not
+access Kernel internals directly and does not require a daemon process.
+
+`EvaluationHarness` is the first P3.7 behavior evaluation foundation. It runs explicit
+`EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
+Session, Event, Metrics and Audit projections. The harness is intentionally outside the Kernel:
+Domain `Evaluator`s still decide task/goal semantics during execution, while the Harness decides
+whether a completed scenario satisfies regression, policy and recovery expectations. See
+`examples/p3_7_evaluation_harness.py`.
 
 `AgentProfile` is the first application-level Profile foundation. A Profile declares a selectable
 runtime identity — name, version, Domain identity and Runtime Configuration — for future CLI/agentd
@@ -149,6 +158,10 @@ not a database layer, event-sourcing model, or production migration system.
   and typed
   `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, store backend
   and Domain identity validation.
+- P3.6/P3.7 foundation: event-derived `metrics`, `doctor` and `audit` projections exposed through
+  RuntimeService, agentd-shaped routes and CLI commands, plus an Evaluation Harness that can assert
+  status, error codes, events, executed capabilities, audit coverage, policy denials, recovery plans,
+  criteria, action counts and iteration budgets for behavior scenarios.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
@@ -195,6 +208,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_persistence.py
 .venv/bin/python examples/p3_5_runtime_config.py
 .venv/bin/python examples/p3_5_cli_event_stream.py
+.venv/bin/python examples/p3_7_evaluation_harness.py
 .venv/bin/agent ready
 ```
 
