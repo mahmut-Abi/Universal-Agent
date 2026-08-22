@@ -81,8 +81,60 @@ class ScenarioReport:
 
 
 @dataclass(frozen=True, slots=True)
+class EvaluationSuiteSummary:
+    scenario_count: int
+    passed_count: int
+    failed_count: int
+    goal_completed_count: int
+    task_completed_count: int
+    action_started_count: int
+    action_completed_count: int
+    tool_failure_count: int
+    policy_denial_count: int
+    recovery_planned_count: int
+    human_intervention_count: int
+
+    @property
+    def pass_rate(self) -> float:
+        return _rate(self.passed_count, self.scenario_count)
+
+    @property
+    def goal_completion_rate(self) -> float:
+        return _rate(self.goal_completed_count, self.scenario_count)
+
+    @property
+    def task_success_rate(self) -> float:
+        return _rate(self.task_completed_count, self.scenario_count)
+
+    @property
+    def action_success_rate(self) -> float:
+        successful_actions = self.action_completed_count - self.tool_failure_count
+        return _rate(successful_actions, self.action_completed_count)
+
+    @property
+    def policy_denial_rate(self) -> float:
+        return _rate(self.policy_denial_count, self.scenario_count)
+
+    @property
+    def recovery_rate(self) -> float:
+        return _rate(self.recovery_planned_count, self.scenario_count)
+
+    @property
+    def human_intervention_rate(self) -> float:
+        return _rate(self.human_intervention_count, self.scenario_count)
+
+    @property
+    def average_actions_per_scenario(self) -> float:
+        return _rate(self.action_started_count, self.scenario_count)
+
+
+@dataclass(frozen=True, slots=True)
 class EvaluationSuiteReport:
     reports: tuple[ScenarioReport, ...]
+
+    @property
+    def summary(self) -> EvaluationSuiteSummary:
+        return summarize_suite(self.reports)
 
     @property
     def passed(self) -> bool:
@@ -139,6 +191,22 @@ class EvaluationHarness:
             if summary.session_id == session_id:
                 return summary
         raise RuntimeError(f"scenario session was not listed: {session_id}")
+
+
+def summarize_suite(reports: tuple[ScenarioReport, ...]) -> EvaluationSuiteSummary:
+    return EvaluationSuiteSummary(
+        scenario_count=len(reports),
+        passed_count=sum(1 for report in reports if report.passed),
+        failed_count=sum(1 for report in reports if not report.passed),
+        goal_completed_count=sum(1 for report in reports if _evaluation_flag(report, "goal")),
+        task_completed_count=sum(1 for report in reports if _evaluation_flag(report, "task")),
+        action_started_count=sum(report.metrics.action_started_count for report in reports),
+        action_completed_count=sum(report.metrics.action_completed_count for report in reports),
+        tool_failure_count=sum(report.metrics.tool_failure_count for report in reports),
+        policy_denial_count=sum(report.metrics.policy_denial_count for report in reports),
+        recovery_planned_count=sum(report.metrics.recovery_planned_count for report in reports),
+        human_intervention_count=sum(report.metrics.human_intervention_count for report in reports),
+    )
 
 
 def _evaluate_expectations(
@@ -313,3 +381,20 @@ def _check(
     failure_message: str,
 ) -> ScenarioCheck:
     return ScenarioCheck(name, passed, success_message if passed else failure_message)
+
+
+def _evaluation_flag(report: ScenarioReport, flag: str) -> bool:
+    evaluation = report.session.latest_evaluation
+    if evaluation is None:
+        return False
+    if flag == "goal":
+        return evaluation.goal_completed
+    if flag == "task":
+        return evaluation.task_completed
+    raise ValueError(f"unknown evaluation flag: {flag}")
+
+
+def _rate(numerator: int, denominator: int) -> float:
+    if denominator == 0:
+        return 0.0
+    return numerator / denominator
