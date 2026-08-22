@@ -2,20 +2,82 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import quote
 
 from universal_agent.core import ErrorCode, ExecutionStatus, JsonMapping, JsonValue, immutable_json
+from universal_agent.evaluation.harness import EvaluationSuiteReport, ScenarioReport
 from universal_agent.evaluation.replay import ReplayAuditEntry, ReplayMetrics, ReplayRecording
 
+EVALUATION_REPORT_SCHEMA_VERSION = 1
 REPLAY_RECORDING_SCHEMA_VERSION = 1
 JsonObject = dict[str, JsonValue]
 
 
+@dataclass(frozen=True, slots=True)
+class EvaluationCheckRecording:
+    name: str
+    passed: bool
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationSummaryRecording:
+    scenario_count: int
+    passed_count: int
+    failed_count: int
+    goal_completed_count: int
+    task_completed_count: int
+    action_started_count: int
+    action_completed_count: int
+    tool_failure_count: int
+    policy_denial_count: int
+    recovery_planned_count: int
+    human_intervention_count: int
+    model_call_count: int = 0
+    model_total_token_count: int = 0
+    model_estimated_cost_micros: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationScenarioRecording:
+    scenario_name: str
+    passed: bool
+    result_status: ExecutionStatus
+    error_code: ErrorCode | None
+    satisfied_criteria: JsonMapping = field(default_factory=immutable_json)
+    checks: tuple[EvaluationCheckRecording, ...] = ()
+    event_types: tuple[str, ...] = ()
+    action_capabilities: tuple[str, ...] = ()
+    audit_capabilities: tuple[str, ...] = ()
+    metrics: ReplayMetrics = field(default_factory=lambda: ReplayMetrics(0, 0, 0, 0, 0, 0, 0, 0, 0))
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationReportRecording:
+    suite_name: str
+    passed: bool
+    summary: EvaluationSummaryRecording
+    scenarios: tuple[EvaluationScenarioRecording, ...]
+
+
+class EvaluationReportNotFoundError(LookupError):
+    pass
+
+
 class ReplayRecordingNotFoundError(LookupError):
     pass
+
+
+class EvaluationReportStore(Protocol):
+    def save(self, recording: EvaluationReportRecording) -> None: ...
+
+    def load(self, suite_name: str) -> EvaluationReportRecording: ...
+
+    def list_reports(self) -> tuple[EvaluationReportRecording, ...]: ...
 
 
 class ReplayRecordingStore(Protocol):
@@ -24,6 +86,41 @@ class ReplayRecordingStore(Protocol):
     def load(self, scenario_name: str) -> ReplayRecording: ...
 
     def list_recordings(self) -> tuple[ReplayRecording, ...]: ...
+
+
+class FileEvaluationReportStore:
+    """File-backed evaluation report store for local CI and regression reports."""
+
+    def __init__(self, root: str | Path) -> None:
+        self._root = Path(root)
+
+    def save(self, recording: EvaluationReportRecording) -> None:
+        path = self._path(recording.suite_name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(".json.tmp")
+        with tmp_path.open("w", encoding="utf-8") as handle:
+            json.dump(encode_evaluation_report(recording), handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        tmp_path.replace(path)
+
+    def load(self, suite_name: str) -> EvaluationReportRecording:
+        path = self._path(suite_name)
+        if not path.exists():
+            raise EvaluationReportNotFoundError(f"evaluation report not found: {suite_name}")
+        with path.open("r", encoding="utf-8") as handle:
+            return decode_evaluation_report(json_mapping(json.load(handle)))
+
+    def list_reports(self) -> tuple[EvaluationReportRecording, ...]:
+        if not self._root.exists():
+            return ()
+        reports = tuple(
+            decode_evaluation_report(json_mapping(json.loads(path.read_text(encoding="utf-8"))))
+            for path in sorted(self._root.glob("*.json"))
+        )
+        return tuple(sorted(reports, key=lambda item: item.suite_name))
+
+    def _path(self, suite_name: str) -> Path:
+        return self._root / f"{quote(suite_name, safe='')}.json"
 
 
 class FileReplayRecordingStore:
@@ -61,6 +158,102 @@ class FileReplayRecordingStore:
         return self._root / f"{quote(scenario_name, safe='')}.json"
 
 
+def record_evaluation_suite(
+    report: EvaluationSuiteReport,
+    *,
+    suite_name: str = "evaluation suite",
+) -> EvaluationReportRecording:
+    summary = report.summary
+    return EvaluationReportRecording(
+        suite_name=suite_name,
+        passed=report.passed,
+        summary=EvaluationSummaryRecording(
+            scenario_count=summary.scenario_count,
+            passed_count=summary.passed_count,
+            failed_count=summary.failed_count,
+            goal_completed_count=summary.goal_completed_count,
+            task_completed_count=summary.task_completed_count,
+            action_started_count=summary.action_started_count,
+            action_completed_count=summary.action_completed_count,
+            tool_failure_count=summary.tool_failure_count,
+            policy_denial_count=summary.policy_denial_count,
+            recovery_planned_count=summary.recovery_planned_count,
+            human_intervention_count=summary.human_intervention_count,
+            model_call_count=summary.model_call_count,
+            model_total_token_count=summary.model_total_token_count,
+            model_estimated_cost_micros=summary.model_estimated_cost_micros,
+        ),
+        scenarios=tuple(record_evaluation_scenario(item) for item in report.reports),
+    )
+
+
+def record_evaluation_scenario(report: ScenarioReport) -> EvaluationScenarioRecording:
+    return EvaluationScenarioRecording(
+        scenario_name=report.scenario_name,
+        passed=report.passed,
+        result_status=report.result.status,
+        error_code=report.result.error_code,
+        satisfied_criteria=immutable_json(report.session.satisfied_criteria),
+        checks=tuple(
+            EvaluationCheckRecording(check.name, check.passed, check.message)
+            for check in report.checks
+        ),
+        event_types=tuple(event.type for event in report.events),
+        action_capabilities=_event_values(report, "ActionStarted", "capability"),
+        audit_capabilities=tuple(record.capability for record in report.audit_records),
+        metrics=ReplayMetrics(
+            event_count=report.metrics.event_count,
+            action_started_count=report.metrics.action_started_count,
+            action_completed_count=report.metrics.action_completed_count,
+            tool_failure_count=report.metrics.tool_failure_count,
+            policy_denial_count=report.metrics.policy_denial_count,
+            confirmation_required_count=report.metrics.confirmation_required_count,
+            recovery_planned_count=report.metrics.recovery_planned_count,
+            recovery_exhausted_count=report.metrics.recovery_exhausted_count,
+            human_intervention_count=report.metrics.human_intervention_count,
+            model_call_count=report.metrics.model_call_count,
+            model_total_token_count=report.metrics.model_total_token_count,
+            model_estimated_cost_micros=report.metrics.model_estimated_cost_micros,
+        ),
+    )
+
+
+def _event_values(report: ScenarioReport, event_type: str, data_key: str) -> tuple[str, ...]:
+    values: list[str] = []
+    for event in report.events:
+        if event.type != event_type:
+            continue
+        value = event.data.get(data_key)
+        if isinstance(value, str):
+            values.append(value)
+    return tuple(values)
+
+
+def encode_evaluation_report(recording: EvaluationReportRecording) -> JsonObject:
+    return {
+        "schema_version": EVALUATION_REPORT_SCHEMA_VERSION,
+        "suite_name": recording.suite_name,
+        "passed": recording.passed,
+        "summary": _encode_evaluation_summary(recording.summary),
+        "scenarios": [_encode_evaluation_scenario(scenario) for scenario in recording.scenarios],
+    }
+
+
+def decode_evaluation_report(payload: Mapping[str, JsonValue]) -> EvaluationReportRecording:
+    version = _int(_required(payload, "schema_version"), "schema_version")
+    if version != EVALUATION_REPORT_SCHEMA_VERSION:
+        raise ValueError(f"unsupported evaluation report schema version: {version}")
+    return EvaluationReportRecording(
+        suite_name=_string(_required(payload, "suite_name"), "suite_name"),
+        passed=_bool(_required(payload, "passed"), "passed"),
+        summary=_decode_evaluation_summary(_object(_required(payload, "summary"), "summary")),
+        scenarios=tuple(
+            _decode_evaluation_scenario(_object(item, "scenarios[]"))
+            for item in _list(_required(payload, "scenarios"), "scenarios")
+        ),
+    )
+
+
 def encode_replay_recording(recording: ReplayRecording) -> JsonObject:
     return {
         "schema_version": REPLAY_RECORDING_SCHEMA_VERSION,
@@ -82,20 +275,7 @@ def encode_replay_recording(recording: ReplayRecording) -> JsonObject:
             }
             for item in recording.audit_entries
         ],
-        "metrics": {
-            "event_count": recording.metrics.event_count,
-            "action_started_count": recording.metrics.action_started_count,
-            "action_completed_count": recording.metrics.action_completed_count,
-            "tool_failure_count": recording.metrics.tool_failure_count,
-            "policy_denial_count": recording.metrics.policy_denial_count,
-            "confirmation_required_count": recording.metrics.confirmation_required_count,
-            "recovery_planned_count": recording.metrics.recovery_planned_count,
-            "recovery_exhausted_count": recording.metrics.recovery_exhausted_count,
-            "human_intervention_count": recording.metrics.human_intervention_count,
-            "model_call_count": recording.metrics.model_call_count,
-            "model_total_token_count": recording.metrics.model_total_token_count,
-            "model_estimated_cost_micros": recording.metrics.model_estimated_cost_micros,
-        },
+        "metrics": _encode_metrics(recording.metrics),
     }
 
 
@@ -131,6 +311,148 @@ def json_mapping(value: object) -> JsonMapping:
     if isinstance(value, dict) and all(isinstance(key, str) for key in value):
         return value
     raise ValueError("expected a JSON object")
+
+
+def _encode_evaluation_summary(summary: EvaluationSummaryRecording) -> JsonObject:
+    return {
+        "scenario_count": summary.scenario_count,
+        "passed_count": summary.passed_count,
+        "failed_count": summary.failed_count,
+        "goal_completed_count": summary.goal_completed_count,
+        "task_completed_count": summary.task_completed_count,
+        "action_started_count": summary.action_started_count,
+        "action_completed_count": summary.action_completed_count,
+        "tool_failure_count": summary.tool_failure_count,
+        "policy_denial_count": summary.policy_denial_count,
+        "recovery_planned_count": summary.recovery_planned_count,
+        "human_intervention_count": summary.human_intervention_count,
+        "model_call_count": summary.model_call_count,
+        "model_total_token_count": summary.model_total_token_count,
+        "model_estimated_cost_micros": summary.model_estimated_cost_micros,
+    }
+
+
+def _decode_evaluation_summary(payload: JsonObject) -> EvaluationSummaryRecording:
+    return EvaluationSummaryRecording(
+        scenario_count=_int(_required(payload, "scenario_count"), "summary.scenario_count"),
+        passed_count=_int(_required(payload, "passed_count"), "summary.passed_count"),
+        failed_count=_int(_required(payload, "failed_count"), "summary.failed_count"),
+        goal_completed_count=_int(
+            _required(payload, "goal_completed_count"),
+            "summary.goal_completed_count",
+        ),
+        task_completed_count=_int(
+            _required(payload, "task_completed_count"),
+            "summary.task_completed_count",
+        ),
+        action_started_count=_int(
+            _required(payload, "action_started_count"),
+            "summary.action_started_count",
+        ),
+        action_completed_count=_int(
+            _required(payload, "action_completed_count"),
+            "summary.action_completed_count",
+        ),
+        tool_failure_count=_int(
+            _required(payload, "tool_failure_count"),
+            "summary.tool_failure_count",
+        ),
+        policy_denial_count=_int(
+            _required(payload, "policy_denial_count"),
+            "summary.policy_denial_count",
+        ),
+        recovery_planned_count=_int(
+            _required(payload, "recovery_planned_count"),
+            "summary.recovery_planned_count",
+        ),
+        human_intervention_count=_int(
+            _required(payload, "human_intervention_count"),
+            "summary.human_intervention_count",
+        ),
+        model_call_count=_optional_int(payload, "model_call_count", "summary.model_call_count"),
+        model_total_token_count=_optional_int(
+            payload,
+            "model_total_token_count",
+            "summary.model_total_token_count",
+        ),
+        model_estimated_cost_micros=_optional_int(
+            payload,
+            "model_estimated_cost_micros",
+            "summary.model_estimated_cost_micros",
+        ),
+    )
+
+
+def _encode_evaluation_scenario(scenario: EvaluationScenarioRecording) -> JsonObject:
+    return {
+        "scenario_name": scenario.scenario_name,
+        "passed": scenario.passed,
+        "result_status": scenario.result_status.value,
+        "error_code": None if scenario.error_code is None else scenario.error_code.value,
+        "satisfied_criteria": _to_json(scenario.satisfied_criteria),
+        "checks": [_encode_evaluation_check(check) for check in scenario.checks],
+        "event_types": list(scenario.event_types),
+        "action_capabilities": list(scenario.action_capabilities),
+        "audit_capabilities": list(scenario.audit_capabilities),
+        "metrics": _encode_metrics(scenario.metrics),
+    }
+
+
+def _decode_evaluation_scenario(payload: JsonObject) -> EvaluationScenarioRecording:
+    return EvaluationScenarioRecording(
+        scenario_name=_string(_required(payload, "scenario_name"), "scenario.scenario_name"),
+        passed=_bool(_required(payload, "passed"), "scenario.passed"),
+        result_status=ExecutionStatus(
+            _string(_required(payload, "result_status"), "scenario.result_status")
+        ),
+        error_code=_optional_error(_required(payload, "error_code")),
+        satisfied_criteria=immutable_json(
+            _object(_required(payload, "satisfied_criteria"), "scenario.satisfied_criteria")
+        ),
+        checks=tuple(
+            _decode_evaluation_check(_object(item, "checks[]"))
+            for item in _list(_required(payload, "checks"), "checks")
+        ),
+        event_types=_string_tuple(_required(payload, "event_types"), "scenario.event_types"),
+        action_capabilities=_string_tuple(
+            _required(payload, "action_capabilities"),
+            "scenario.action_capabilities",
+        ),
+        audit_capabilities=_string_tuple(
+            _required(payload, "audit_capabilities"),
+            "scenario.audit_capabilities",
+        ),
+        metrics=_decode_metrics(_object(_required(payload, "metrics"), "scenario.metrics")),
+    )
+
+
+def _encode_evaluation_check(check: EvaluationCheckRecording) -> JsonObject:
+    return {"name": check.name, "passed": check.passed, "message": check.message}
+
+
+def _decode_evaluation_check(payload: JsonObject) -> EvaluationCheckRecording:
+    return EvaluationCheckRecording(
+        name=_string(_required(payload, "name"), "check.name"),
+        passed=_bool(_required(payload, "passed"), "check.passed"),
+        message=_string(_required(payload, "message"), "check.message"),
+    )
+
+
+def _encode_metrics(metrics: ReplayMetrics) -> JsonObject:
+    return {
+        "event_count": metrics.event_count,
+        "action_started_count": metrics.action_started_count,
+        "action_completed_count": metrics.action_completed_count,
+        "tool_failure_count": metrics.tool_failure_count,
+        "policy_denial_count": metrics.policy_denial_count,
+        "confirmation_required_count": metrics.confirmation_required_count,
+        "recovery_planned_count": metrics.recovery_planned_count,
+        "recovery_exhausted_count": metrics.recovery_exhausted_count,
+        "human_intervention_count": metrics.human_intervention_count,
+        "model_call_count": metrics.model_call_count,
+        "model_total_token_count": metrics.model_total_token_count,
+        "model_estimated_cost_micros": metrics.model_estimated_cost_micros,
+    }
 
 
 def _decode_audit_entry(payload: JsonObject) -> ReplayAuditEntry:
@@ -241,6 +563,12 @@ def _int(value: JsonValue, field: str) -> int:
     if isinstance(value, int) and not isinstance(value, bool):
         return value
     raise ValueError(f"{field} must be an integer")
+
+
+def _bool(value: JsonValue, field: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"{field} must be a boolean")
 
 
 def _optional_int(payload: Mapping[str, JsonValue], key: str, field: str) -> int:

@@ -24,9 +24,11 @@ from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.harness import (
     EvaluationHarness,
     EvaluationScenario,
+    EvaluationSuiteReport,
     ScenarioExpectations,
     summarize_suite,
 )
+from universal_agent.evaluation.recording import record_evaluation_suite
 
 
 class HarnessBackend:
@@ -199,6 +201,44 @@ async def test_evaluation_harness_summarizes_model_usage_across_scenarios() -> N
     assert report.model_total_token_count == 185
     assert report.model_estimated_cost_micros == 8
     assert report.average_model_tokens_per_scenario == 92.5
+
+
+@pytest.mark.asyncio
+async def test_evaluation_harness_records_stable_suite_report() -> None:
+    healthy = build_service(HarnessBackend(), [inspect_workload(), finish()])
+    policy = build_service(HarnessBackend(), [scale_workload(replicas=0)])
+    goal_one, task_one = goal_task()
+    goal_two, task_two = goal_task()
+
+    suite = await EvaluationHarness(healthy).run_many(
+        (EvaluationScenario("healthy workload", goal_one, task_one),)
+    )
+    policy_report = await EvaluationHarness(policy).run(
+        EvaluationScenario(
+            "invalid scale",
+            goal_two,
+            task_two,
+            ScenarioExpectations(
+                expected_status=ExecutionStatus.FAILED,
+                expected_error_code=ErrorCode.POLICY_DENIED,
+                required_audit_capabilities=("scale_workload",),
+                policy_denial_count=1,
+            ),
+        )
+    )
+    recording = record_evaluation_suite(
+        EvaluationSuiteReport((*suite.reports, policy_report)),
+        suite_name="nightly behavior suite",
+    )
+
+    assert recording.suite_name == "nightly behavior suite"
+    assert recording.summary.scenario_count == 2
+    assert recording.summary.passed_count == 2
+    assert recording.scenarios[0].action_capabilities == ("inspect_workload",)
+    assert recording.scenarios[1].audit_capabilities == ("scale_workload",)
+    assert all(
+        "session-" not in check.message for item in recording.scenarios for check in item.checks
+    )
 
 
 @pytest.mark.asyncio

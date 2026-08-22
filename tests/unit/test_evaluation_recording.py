@@ -6,9 +6,17 @@ import pytest
 
 from universal_agent.core import ErrorCode, ExecutionStatus, immutable_json
 from universal_agent.evaluation.recording import (
+    EvaluationCheckRecording,
+    EvaluationReportNotFoundError,
+    EvaluationReportRecording,
+    EvaluationScenarioRecording,
+    EvaluationSummaryRecording,
+    FileEvaluationReportStore,
     FileReplayRecordingStore,
     ReplayRecordingNotFoundError,
+    decode_evaluation_report,
     decode_replay_recording,
+    encode_evaluation_report,
     encode_replay_recording,
 )
 from universal_agent.evaluation.replay import (
@@ -16,6 +24,127 @@ from universal_agent.evaluation.replay import (
     ReplayMetrics,
     ReplayRecording,
 )
+
+
+def sample_report_recording(name: str = "nightly behavior suite") -> EvaluationReportRecording:
+    return EvaluationReportRecording(
+        suite_name=name,
+        passed=False,
+        summary=EvaluationSummaryRecording(
+            scenario_count=2,
+            passed_count=1,
+            failed_count=1,
+            goal_completed_count=1,
+            task_completed_count=1,
+            action_started_count=1,
+            action_completed_count=1,
+            tool_failure_count=0,
+            policy_denial_count=1,
+            recovery_planned_count=0,
+            human_intervention_count=0,
+            model_call_count=3,
+            model_total_token_count=215,
+            model_estimated_cost_micros=35,
+        ),
+        scenarios=(
+            EvaluationScenarioRecording(
+                scenario_name="healthy workload",
+                passed=True,
+                result_status=ExecutionStatus.COMPLETED,
+                error_code=None,
+                satisfied_criteria=immutable_json({"healthy": True}),
+                checks=(EvaluationCheckRecording("status", True, "status=completed"),),
+                event_types=("GoalCreated", "ActionStarted", "GoalCompleted"),
+                action_capabilities=("inspect_workload",),
+                audit_capabilities=(),
+                metrics=ReplayMetrics(
+                    event_count=3,
+                    action_started_count=1,
+                    action_completed_count=1,
+                    tool_failure_count=0,
+                    policy_denial_count=0,
+                    confirmation_required_count=0,
+                    recovery_planned_count=0,
+                    recovery_exhausted_count=0,
+                    human_intervention_count=0,
+                    model_call_count=2,
+                    model_total_token_count=125,
+                    model_estimated_cost_micros=20,
+                ),
+            ),
+            EvaluationScenarioRecording(
+                scenario_name="invalid scale",
+                passed=False,
+                result_status=ExecutionStatus.FAILED,
+                error_code=ErrorCode.POLICY_DENIED,
+                checks=(EvaluationCheckRecording("status", False, "expected completed"),),
+                event_types=("GoalCreated", "PolicyChecked", "GoalFailed"),
+                action_capabilities=(),
+                audit_capabilities=("scale_workload",),
+                metrics=ReplayMetrics(
+                    event_count=3,
+                    action_started_count=0,
+                    action_completed_count=0,
+                    tool_failure_count=0,
+                    policy_denial_count=1,
+                    confirmation_required_count=0,
+                    recovery_planned_count=0,
+                    recovery_exhausted_count=0,
+                    human_intervention_count=0,
+                    model_call_count=1,
+                    model_total_token_count=90,
+                    model_estimated_cost_micros=15,
+                ),
+            ),
+        ),
+    )
+
+
+def test_evaluation_report_codec_round_trips_stable_report() -> None:
+    recording = sample_report_recording()
+
+    restored = decode_evaluation_report(encode_evaluation_report(recording))
+
+    assert restored.suite_name == recording.suite_name
+    assert not restored.passed
+    assert restored.summary.scenario_count == 2
+    assert restored.summary.model_total_token_count == 215
+    assert restored.scenarios[0].passed
+    assert restored.scenarios[0].satisfied_criteria == {"healthy": True}
+    assert restored.scenarios[1].error_code is ErrorCode.POLICY_DENIED
+    assert restored.scenarios[1].audit_capabilities == ("scale_workload",)
+
+
+def test_evaluation_report_codec_rejects_unknown_schema_version() -> None:
+    payload = encode_evaluation_report(sample_report_recording())
+    payload["schema_version"] = 999
+
+    with pytest.raises(ValueError, match="unsupported evaluation report schema version"):
+        decode_evaluation_report(payload)
+
+
+def test_file_evaluation_report_store_saves_lists_and_loads_reports(tmp_path: Path) -> None:
+    store = FileEvaluationReportStore(tmp_path)
+    first = sample_report_recording("nightly behavior suite")
+    second = sample_report_recording("policy regression suite")
+
+    store.save(first)
+    store.save(second)
+
+    assert [item.suite_name for item in store.list_reports()] == [
+        "nightly behavior suite",
+        "policy regression suite",
+    ]
+    assert store.load("policy regression suite").scenarios[1].audit_capabilities == (
+        "scale_workload",
+    )
+
+
+def test_file_evaluation_report_store_reports_missing_report(tmp_path: Path) -> None:
+    store = FileEvaluationReportStore(tmp_path)
+
+    with pytest.raises(EvaluationReportNotFoundError, match="missing suite"):
+        store.load("missing suite")
 
 
 def sample_recording(name: str = "policy regression") -> ReplayRecording:
