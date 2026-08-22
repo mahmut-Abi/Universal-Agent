@@ -6,6 +6,7 @@ import json
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 from typing import TextIO, cast
 
 from universal_agent.agentd.app import (
@@ -171,6 +172,13 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("doctor")
     commands.add_parser("audit")
 
+    init = commands.add_parser("init")
+    init.add_argument("--output", default="profile.json")
+    init.add_argument("--profile", default=LOCAL_PROFILE_NAME)
+    init.add_argument("--environment", default="local")
+    init.add_argument("--store-path", default=".universal-agent/store")
+    init.add_argument("--force", action="store_true")
+
     config = commands.add_parser("config")
     config_commands = config.add_subparsers(dest="config_command", required=True)
     config_commands.add_parser("show")
@@ -282,6 +290,9 @@ async def _dispatch(
     if command == "audit":
         _write_json(out, audit_records_body(await service.audit_records()))
         return
+    if command == "init":
+        _dispatch_init(args, out)
+        return
     if command == "config":
         _dispatch_config(args, service, out)
         return
@@ -354,6 +365,46 @@ def _dispatch_config(
         _write_json(out, config_body(service.config()))
         return
     raise ValueError(f"unknown config command: {command}")
+
+
+def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
+    output = Path(cast(str, args.output))
+    if output.exists() and not cast(bool, args.force):
+        raise ValueError(f"profile config already exists: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    profile_name = cast(str, args.profile)
+    payload = _profile_config_payload(
+        profile_name=profile_name,
+        environment=cast(str, args.environment),
+        store_path=cast(str, args.store_path),
+    )
+    tmp_path = output.with_name(output.name + ".tmp")
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    tmp_path.replace(output)
+    _write_json(out, {"status": "created", "profile": profile_name, "path": str(output)})
+
+
+def _profile_config_payload(
+    *,
+    profile_name: str,
+    environment: str,
+    store_path: str,
+) -> dict[str, object]:
+    domain = {"name": "kubernetes", "version": "0.2.0"}
+    return {
+        "name": profile_name,
+        "version": "0.1.0",
+        "description": "Local fake-backed Kubernetes profile",
+        "domain": domain,
+        "runtime": {
+            "environment": {"environment": environment},
+            "store": {"backend": "file", "path": store_path},
+            "limits": {"max_iterations": 20, "max_recovery_steps": 8},
+            "domain": domain,
+        },
+    }
 
 
 def _dispatch_serve(

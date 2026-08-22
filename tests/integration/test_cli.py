@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from io import StringIO
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -17,6 +18,7 @@ from universal_agent import (
     InMemoryEventSink,
     InMemoryStateStore,
     ModelUsage,
+    ProfileConfig,
     RuntimeAPI,
     RuntimeBuilder,
     RuntimeConfig,
@@ -134,6 +136,85 @@ def read_json(buffer: StringIO) -> dict[str, Any]:
     loaded: object = json.loads(buffer.getvalue())
     assert isinstance(loaded, dict)
     return loaded
+
+
+@pytest.mark.asyncio
+async def test_cli_init_writes_parseable_profile_config(tmp_path: Path) -> None:
+    output = StringIO()
+    profile_path = tmp_path / "profile.json"
+    store_path = tmp_path / "store"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--profile",
+            "production-operator",
+            "--environment",
+            "production",
+            "--store-path",
+            str(store_path),
+        ],
+        stdout=output,
+    )
+    payload = read_json(output)
+    profile = ProfileConfig.from_json_file(profile_path).to_profile()
+
+    assert status == 0
+    assert payload == {
+        "status": "created",
+        "profile": "production-operator",
+        "path": str(profile_path),
+    }
+    assert profile.name == "production-operator"
+    assert profile.domain == DomainConfig("kubernetes", "0.2.0")
+    assert profile.runtime.store == StoreConfig.file(str(store_path))
+    assert profile.runtime.environment["environment"] == "production"
+
+
+@pytest.mark.asyncio
+async def test_cli_init_rejects_existing_profile_without_force(tmp_path: Path) -> None:
+    output = StringIO()
+    error = StringIO()
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text("{}", encoding="utf-8")
+
+    status = await run_cli(
+        ["init", "--output", str(profile_path)],
+        stdout=output,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert output.getvalue() == ""
+    assert f"profile config already exists: {profile_path}" in error.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_cli_init_force_overwrites_existing_profile(tmp_path: Path) -> None:
+    output = StringIO()
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text("{}", encoding="utf-8")
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--profile",
+            "replacement-profile",
+            "--environment",
+            "staging",
+            "--force",
+        ],
+        stdout=output,
+    )
+    profile = ProfileConfig.from_json_file(profile_path).to_profile()
+
+    assert status == 0
+    assert profile.name == "replacement-profile"
+    assert profile.runtime.environment["environment"] == "staging"
 
 
 @pytest.mark.asyncio
