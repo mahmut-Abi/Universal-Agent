@@ -804,6 +804,24 @@ async def test_cli_eval_list_applies_kind_and_tag_filters() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_eval_run_rejects_empty_scenario_selection() -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+    error = StringIO()
+
+    status = await run_cli(
+        ["eval", "run", "production-operator", "--kind", "recovery"],
+        service=service,
+        stdout=output,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert output.getvalue() == ""
+    assert "evaluation run requires at least one scenario" in error.getvalue()
+
+
+@pytest.mark.asyncio
 async def test_cli_eval_run_executes_suite_and_persists_report(tmp_path: Path) -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     output = StringIO()

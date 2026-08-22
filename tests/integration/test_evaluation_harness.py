@@ -203,6 +203,17 @@ def test_evaluation_scenario_selector_filters_by_kind_and_tags() -> None:
 
 
 @pytest.mark.asyncio
+async def test_evaluation_harness_rejects_empty_runs() -> None:
+    service = build_service(HarnessBackend(), [])
+
+    with pytest.raises(ValueError, match="evaluation run requires at least one scenario"):
+        await EvaluationHarness(service).run_many(())
+
+    with pytest.raises(ValueError, match="evaluation run requires at least one scenario"):
+        await EvaluationHarness(service).run_suite(EvaluationSuite("empty suite", ()))
+
+
+@pytest.mark.asyncio
 async def test_evaluation_harness_runs_selected_named_suite() -> None:
     backend = HarnessBackend()
     service = build_service(backend, [scale_workload(replicas=0)])

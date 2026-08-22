@@ -332,6 +332,8 @@ class EvaluationHarness:
         *,
         suite_name: str = "evaluation suite",
     ) -> EvaluationSuiteReport:
+        if not scenarios:
+            raise ValueError("evaluation run requires at least one scenario")
         reports: list[ScenarioReport] = []
         for scenario in scenarios:
             reports.append(await self.run(scenario))
