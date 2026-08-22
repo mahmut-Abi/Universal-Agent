@@ -497,6 +497,7 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     evidence_page = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/evidence"))
     world_page = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/world"))
     domain_page = await app.handle(HttpRequest("GET", "/console/domains/kubernetes/0.2.0"))
+    settings_page = await app.handle(HttpRequest("GET", "/console/settings"))
     missing_domain_page = await app.handle(HttpRequest("GET", "/console/domains/missing/0.1.0"))
     unknown_detail_page = await app.handle(
         HttpRequest("GET", f"/console/sessions/{session_id}/unknown")
@@ -549,6 +550,12 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert "domain=kubernetes@0.2.0" in domain_page.text_body
     assert "inspect_workload" in domain_page.text_body
     assert "kubernetes_inspect_workload" in domain_page.text_body
+    assert settings_page.status_code == 200
+    assert settings_page.text_body is not None
+    assert "Universal Agent Runtime Settings" in settings_page.text_body
+    assert "Runtime Configuration" in settings_page.text_body
+    assert "Configured Domains" in settings_page.text_body
+    assert "kubernetes" in settings_page.text_body
     assert missing_domain_page.status_code == 404
     assert unknown_detail_page.status_code == 404
     assert missing.status_code == 404

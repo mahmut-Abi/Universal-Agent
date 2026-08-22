@@ -61,6 +61,7 @@ from universal_agent.web import (
     render_web_domain_detail,
     render_web_evidence_explorer,
     render_web_session_detail,
+    render_web_settings,
     render_web_world_model_explorer,
 )
 
@@ -127,5 +128,6 @@ __all__ = [
     "render_web_domain_detail",
     "render_web_evidence_explorer",
     "render_web_session_detail",
+    "render_web_settings",
     "render_web_world_model_explorer",
 ]

@@ -226,6 +226,37 @@ def render_web_domain_detail(
     )
 
 
+def render_web_settings(snapshot: WebConsoleSnapshot) -> str:
+    title = "Universal Agent Runtime Settings"
+    return "\n".join(
+        (
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f"<title>{_html(title)}</title>",
+            f"<style>{_stylesheet()}</style>",
+            "</head>",
+            "<body>",
+            '<main class="shell">',
+            _settings_hero(snapshot),
+            '<section class="grid cards" aria-label="Settings summary">',
+            _metric_card("Store", snapshot.config.store_backend),
+            _metric_card("Domains", len(snapshot.config.domains)),
+            _metric_card("Max Iterations", snapshot.config.max_iterations),
+            _metric_card("Recovery Steps", snapshot.config.max_recovery_steps),
+            "</section>",
+            _runtime_settings(snapshot),
+            _configured_domains(snapshot),
+            _environment(snapshot),
+            "</main>",
+            "</body>",
+            "</html>",
+        )
+    )
+
+
 def _hero(snapshot: WebConsoleSnapshot) -> str:
     ready_class = "ok" if snapshot.ready.ready else "warn"
     return "\n".join(
@@ -243,6 +274,32 @@ def _hero(snapshot: WebConsoleSnapshot) -> str:
             ),
             "</div>",
             '<div class="status">',
+            '<a class="pill link" href="/console/settings">Settings</a>',
+            f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
+            f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
+            "</div>",
+            "</section>",
+        )
+    )
+
+
+def _settings_hero(snapshot: WebConsoleSnapshot) -> str:
+    ready_class = "ok" if snapshot.ready.ready else "warn"
+    return "\n".join(
+        (
+            '<section class="hero">',
+            "<div>",
+            "<p>Universal Agent Runtime</p>",
+            "<h1>Settings</h1>",
+            (
+                "<span>"
+                f"store={_html(snapshot.config.store_backend)} "
+                f"path={_html(snapshot.config.store_path or 'memory')}"
+                "</span>"
+            ),
+            "</div>",
+            '<div class="status">',
+            '<a class="pill link" href="/console">Console</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
             "</div>",
@@ -360,6 +417,61 @@ def _domain_details(domain: DomainView | None) -> str:
         + "".join(f"<dt>{_html(label)}</dt><dd>{_html(value)}</dd>" for label, value in items)
         + "</dl>",
     )
+
+
+def _runtime_settings(snapshot: WebConsoleSnapshot) -> str:
+    items = (
+        ("Store Backend", snapshot.config.store_backend),
+        ("Store Path", snapshot.config.store_path or "memory"),
+        ("Max Iterations", str(snapshot.config.max_iterations)),
+        ("Max Recovery Steps", str(snapshot.config.max_recovery_steps)),
+        ("Health", snapshot.health.status),
+        ("Ready", _ready_text(snapshot)),
+    )
+    return _section(
+        "Runtime Configuration",
+        '<dl class="details">'
+        + "".join(f"<dt>{_html(label)}</dt><dd>{_html(value)}</dd>" for label, value in items)
+        + "</dl>",
+    )
+
+
+def _configured_domains(snapshot: WebConsoleSnapshot) -> str:
+    rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(domain.name)}</td>",
+                f"<td>{_html(domain.version)}</td>",
+                f"<td>{'yes' if domain.primary else 'no'}</td>",
+                "</tr>",
+            )
+        )
+        for domain in snapshot.config.domains
+    ]
+    if not rows:
+        rows.append('<tr><td colspan="3">No configured domains</td></tr>')
+    return _section(
+        "Configured Domains",
+        _table(("Domain", "Version", "Primary"), tuple(rows)),
+    )
+
+
+def _environment(snapshot: WebConsoleSnapshot) -> str:
+    rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(key)}</td>",
+                f"<td>{_html(_value_text(value))}</td>",
+                "</tr>",
+            )
+        )
+        for key, value in sorted(snapshot.config.environment.items())
+    ]
+    if not rows:
+        rows.append('<tr><td colspan="2">No environment settings</td></tr>')
+    return _section("Environment", _table(("Key", "Value"), tuple(rows)))
 
 
 def _profiles(profiles: tuple[ProfileView, ...]) -> str:
@@ -1126,5 +1238,6 @@ __all__ = [
     "render_web_domain_detail",
     "render_web_evidence_explorer",
     "render_web_session_detail",
+    "render_web_settings",
     "render_web_world_model_explorer",
 ]

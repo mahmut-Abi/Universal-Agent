@@ -1935,6 +1935,7 @@ GET /console/sessions/{id}
 GET /console/sessions/{id}/evidence
 GET /console/sessions/{id}/world
 GET /console/domains/{name}/{version}
+GET /console/settings
 ```
 
 These views should be read-only application adapters over Runtime API / RuntimeService projections.

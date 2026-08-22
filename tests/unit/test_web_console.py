@@ -48,6 +48,7 @@ from universal_agent.web import (
     render_web_domain_detail,
     render_web_evidence_explorer,
     render_web_session_detail,
+    render_web_settings,
     render_web_world_model_explorer,
 )
 
@@ -283,6 +284,7 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "workload-health" in rendered
     assert "Memory Catalog" in rendered
     assert "kubernetes readiness" in rendered
+    assert 'href="/console/settings"' in rendered
     assert 'href="/console/sessions/session-1"' in rendered
     assert "World Facts" in rendered
     assert "Session Evidence" in rendered
@@ -352,3 +354,17 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "allow-read" in domain_detail
     assert "workload-health" in domain_detail
     assert "kubernetes readiness" in domain_detail
+
+    settings = render_web_settings(snapshot)
+
+    assert "Universal Agent Runtime Settings" in settings
+    assert "Settings" in settings
+    assert "Runtime Configuration" in settings
+    assert "Store Backend" in settings
+    assert "memory" in settings
+    assert "Max Iterations" in settings
+    assert "20" in settings
+    assert "Configured Domains" in settings
+    assert "kubernetes" in settings
+    assert "0.2.0" in settings
+    assert "No environment settings" in settings
