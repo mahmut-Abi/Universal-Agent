@@ -280,6 +280,71 @@ async def test_cli_init_force_overwrites_existing_profile(tmp_path: Path) -> Non
 
 
 @pytest.mark.asyncio
+async def test_cli_profile_config_drives_run_and_persisted_session_reads(tmp_path: Path) -> None:
+    profile_path = tmp_path / "profile.json"
+    store_path = tmp_path / "runtime-store"
+    init_output = StringIO()
+    run_output = StringIO()
+    list_output = StringIO()
+    config_output = StringIO()
+
+    init_status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--profile",
+            "configured-operator",
+            "--environment",
+            "production",
+            "--store-backend",
+            "file",
+            "--store-path",
+            str(store_path),
+        ],
+        stdout=init_output,
+    )
+    run_status = await run_cli(
+        [
+            "--profile-config",
+            str(profile_path),
+            "run",
+            "configured-operator",
+            "Verify configured workload health",
+        ],
+        stdout=run_output,
+    )
+    run_payload = read_json(run_output)
+    result = run_payload["result"]
+    assert isinstance(result, dict)
+    session_id = result["session_id"]
+    assert isinstance(session_id, str)
+
+    list_status = await run_cli(
+        ["--profile-config", str(profile_path), "session", "list"],
+        stdout=list_output,
+    )
+    config_status = await run_cli(
+        ["--profile-config", str(profile_path), "config", "show"],
+        stdout=config_output,
+    )
+    list_payload = read_json(list_output)
+    config_payload = read_json(config_output)
+
+    assert init_status == 0
+    assert run_status == 0
+    assert list_status == 0
+    assert config_status == 0
+    assert result["status"] == "completed"
+    assert run_payload["session"]["goal_description"] == "Verify configured workload health"
+    assert list_payload["sessions"][0]["session_id"] == session_id
+    assert config_payload["environment"] == {"environment": "production"}
+    assert config_payload["store"] == {"backend": "file", "path": str(store_path)}
+    assert list((store_path / "sessions").glob("*.json"))
+    assert (store_path / "events.jsonl").exists()
+
+
+@pytest.mark.asyncio
 async def test_cli_run_submits_goal_through_service() -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     output = StringIO()

@@ -121,8 +121,10 @@ not touch Runtime internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
 Capability/Tool catalogs, `config show`, and session list/show/events/pause/resume/cancel commands
-through `RuntimeService`, with cursor flags for session and event reads. It also exposes operations
-commands for metrics, cost, logs, traces, doctor and audit
+through `RuntimeService`, with cursor flags for session and event reads. It can also load an
+`agent init` Profile JSON through `--profile-config` and assemble the service through
+`RuntimeHost`, so generated memory/file/SQLite store settings are used by subsequent CLI commands.
+It also exposes operations commands for metrics, cost, logs, traces, doctor and audit
 projections; `agent metrics --format prometheus` emits Prometheus text exposition, while
 `agent traces --format otlp` and `agent session traces <id> --format otlp` emit OTLP
 JSON-compatible trace payloads from the same event-derived span projection. `agent serve` starts the
@@ -199,7 +201,8 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   Profile catalog reads, a standard-library `AgentdHttpServer` bridge, file-backed session/event
   stores for local recovery, a local CLI adapter, and typed
   `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, memory/file/SQLite store backends,
-  Domain identity validation, and multi-Domain composition activation.
+  Domain identity validation, multi-Domain composition activation, and CLI loading of generated
+  Profile config files through `RuntimeHost`.
 - P3.6/P3.7 foundation: event-derived `metrics`, Prometheus metrics text export, `cost`, `logs`,
   `traces`, OTLP trace export, `doctor` and `audit` projections exposed through RuntimeService,
   agentd-shaped routes and CLI commands, plus optional
@@ -271,6 +274,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_sqlite_persistence.py
 .venv/bin/python examples/p3_5_runtime_config.py
 .venv/bin/python examples/p3_5_cli_config.py
+.venv/bin/python examples/p3_5_cli_profile_config.py
 .venv/bin/python examples/p3_5_cli_event_stream.py
 .venv/bin/python examples/p3_5_cli_run.py
 .venv/bin/python examples/p3_6_cost_tracking.py
@@ -284,6 +288,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_7_deterministic_mode.py
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-profile.json --store-backend sqlite --store-path .tmp/runtime.sqlite3 --force
+.venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-profile.json config show
 .venv/bin/python -m universal_agent.cli eval list local-kubernetes --kind policy --tag kubernetes
 .venv/bin/python -m universal_agent.cli eval run local-kubernetes --kind regression --tag smoke --report-dir .tmp/eval-reports --fail-on-fail
 .venv/bin/python -m universal_agent.cli eval replay local-kubernetes --recording-dir .tmp/replay-recordings --kind regression --update

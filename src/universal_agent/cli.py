@@ -71,9 +71,9 @@ from universal_agent.evaluation.recording import (
 )
 from universal_agent.evaluation.replay import DeterministicReplayHarness, ReplayCheck, ReplayReport
 from universal_agent.evaluation.runner import EvaluationRunner, EvaluationRunResult
-from universal_agent.host import DomainConfig, RuntimeConfig
+from universal_agent.host import DomainConfig, RuntimeConfig, RuntimeHost
 from universal_agent.model import ScriptedModelAdapter
-from universal_agent.profile import AgentProfile
+from universal_agent.profile import AgentProfile, ProfileConfig
 from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
@@ -170,6 +170,17 @@ def build_default_service() -> RuntimeService:
     )
 
 
+def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
+    profile = ProfileConfig.from_json_file(profile_config_path).to_profile()
+    backend = _DefaultCliBackend()
+    host = RuntimeHost.from_profile(
+        profile=profile,
+        model=ScriptedModelAdapter(_default_decisions()),
+        domain=KubernetesRemediationDomain(backend, backend),
+    )
+    return host.service
+
+
 async def run_cli(
     argv: Sequence[str] | None = None,
     *,
@@ -182,7 +193,7 @@ async def run_cli(
     args = parser.parse_args(list(argv) if argv is not None else None)
     out = stdout or sys.stdout
     err = stderr or sys.stderr
-    runtime_service = service or build_default_service()
+    runtime_service = service or _service_from_args(args)
 
     try:
         await _dispatch(args, runtime_service, out, server_runner=server_runner)
@@ -203,6 +214,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agent")
+    parser.add_argument(
+        "--profile-config",
+        help="Load an Agent Profile JSON config before dispatching the command.",
+    )
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("version")
@@ -331,6 +346,13 @@ def build_parser() -> argparse.ArgumentParser:
     cancel.add_argument("--reason", default="session cancelled from CLI")
 
     return parser
+
+
+def _service_from_args(args: argparse.Namespace) -> RuntimeService:
+    profile_config = cast(str | None, args.profile_config)
+    if profile_config is None:
+        return build_default_service()
+    return build_configured_service(profile_config)
 
 
 def _add_evaluation_selector_arguments(command: argparse.ArgumentParser) -> None:
