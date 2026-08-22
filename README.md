@@ -137,6 +137,7 @@ contracts for local CI-style runs. `EvaluationQualityGate` evaluates suite-level
 completion rates, intervention rates, resource lock safety, action efficiency and model budget
 thresholds after execution. `EvaluationRunner` composes suite execution, quality gates and optional
 `EvaluationReportStore` persistence into one reusable application-facing module.
+`compare_evaluation_reports` compares stable suite recordings for golden report regression checks.
 `replay_execution` reconstructs execution history from recorded runtime events without calling a
 model, tool or Domain backend.
 `DeterministicReplayHarness` records a stable trace from those projections and replays later runs
@@ -204,7 +205,8 @@ not a database layer, event-sourcing model, or production migration system.
   Evaluation suites classify scenarios by kind and tags so regression, policy and recovery subsets
   can be selected without changing Kernel code, and quality gates turn suite metrics into CI-ready
   pass/fail checks. `EvaluationRunner` packages suite execution, gate evaluation and optional
-  stable report persistence behind one interface for future CLI/CI adapters.
+  stable report persistence behind one interface for future CLI/CI adapters. Stable evaluation
+  report recordings can be compared to detect suite, scenario, gate and metric drift.
   Execution replay can reconstruct decisions, actions, observations, evidence references and
   terminal status from recorded Runtime events without re-executing side effects.
   Deterministic Replay can record stable behavior traces and detect later drift in event shape,

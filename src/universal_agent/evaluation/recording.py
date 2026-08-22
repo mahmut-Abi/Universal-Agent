@@ -79,6 +79,28 @@ class EvaluationReportRecording:
     gate: EvaluationGateRecording | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class EvaluationReportComparisonCheck:
+    name: str
+    passed: bool
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationReportComparison:
+    expected: EvaluationReportRecording
+    actual: EvaluationReportRecording
+    checks: tuple[EvaluationReportComparisonCheck, ...]
+
+    @property
+    def passed(self) -> bool:
+        return all(check.passed for check in self.checks)
+
+    @property
+    def failed_checks(self) -> tuple[EvaluationReportComparisonCheck, ...]:
+        return tuple(check for check in self.checks if not check.passed)
+
+
 class EvaluationReportNotFoundError(LookupError):
     pass
 
@@ -250,6 +272,97 @@ def record_evaluation_scenario(report: ScenarioReport) -> EvaluationScenarioReco
             model_total_token_count=report.metrics.model_total_token_count,
             model_estimated_cost_micros=report.metrics.model_estimated_cost_micros,
         ),
+    )
+
+
+def compare_evaluation_reports(
+    expected: EvaluationReportRecording,
+    actual: EvaluationReportRecording,
+) -> EvaluationReportComparison:
+    checks: list[EvaluationReportComparisonCheck] = [
+        _comparison_check("suite_name", expected.suite_name, actual.suite_name),
+        _comparison_check("passed", expected.passed, actual.passed),
+        _comparison_check("summary", expected.summary, actual.summary),
+        _comparison_check(
+            "scenario_names",
+            tuple(item.scenario_name for item in expected.scenarios),
+            tuple(item.scenario_name for item in actual.scenarios),
+        ),
+        _comparison_check("gate_presence", expected.gate is not None, actual.gate is not None),
+    ]
+    expected_scenarios = {scenario.scenario_name: scenario for scenario in expected.scenarios}
+    actual_scenarios = {scenario.scenario_name: scenario for scenario in actual.scenarios}
+    for scenario_name in expected_scenarios:
+        actual_scenario = actual_scenarios.get(scenario_name)
+        if actual_scenario is None:
+            checks.append(
+                EvaluationReportComparisonCheck(
+                    f"scenario:{scenario_name}",
+                    False,
+                    "missing actual scenario",
+                )
+            )
+            continue
+        checks.extend(_compare_scenario(expected_scenarios[scenario_name], actual_scenario))
+    if expected.gate is not None and actual.gate is not None:
+        checks.extend(_compare_gate(expected.gate, actual.gate))
+    return EvaluationReportComparison(expected, actual, tuple(checks))
+
+
+def _compare_scenario(
+    expected: EvaluationScenarioRecording,
+    actual: EvaluationScenarioRecording,
+) -> tuple[EvaluationReportComparisonCheck, ...]:
+    prefix = f"scenario:{expected.scenario_name}"
+    return (
+        _comparison_check(f"{prefix}:passed", expected.passed, actual.passed),
+        _comparison_check(f"{prefix}:result_status", expected.result_status, actual.result_status),
+        _comparison_check(f"{prefix}:error_code", expected.error_code, actual.error_code),
+        _comparison_check(
+            f"{prefix}:satisfied_criteria",
+            dict(expected.satisfied_criteria),
+            dict(actual.satisfied_criteria),
+        ),
+        _comparison_check(f"{prefix}:event_types", expected.event_types, actual.event_types),
+        _comparison_check(
+            f"{prefix}:action_capabilities",
+            expected.action_capabilities,
+            actual.action_capabilities,
+        ),
+        _comparison_check(
+            f"{prefix}:audit_capabilities",
+            expected.audit_capabilities,
+            actual.audit_capabilities,
+        ),
+        _comparison_check(f"{prefix}:metrics", expected.metrics, actual.metrics),
+    )
+
+
+def _compare_gate(
+    expected: EvaluationGateRecording,
+    actual: EvaluationGateRecording,
+) -> tuple[EvaluationReportComparisonCheck, ...]:
+    return (
+        _comparison_check("gate:passed", expected.passed, actual.passed),
+        _comparison_check(
+            "gate:check_names",
+            tuple(check.name for check in expected.checks),
+            tuple(check.name for check in actual.checks),
+        ),
+        _comparison_check("gate:checks", expected.checks, actual.checks),
+    )
+
+
+def _comparison_check(
+    name: str,
+    expected: object,
+    actual: object,
+) -> EvaluationReportComparisonCheck:
+    passed = expected == actual
+    return EvaluationReportComparisonCheck(
+        name,
+        passed,
+        "matched" if passed else f"expected {expected!r}, got {actual!r}",
     )
 
 

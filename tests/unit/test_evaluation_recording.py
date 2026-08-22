@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from universal_agent.evaluation.recording import (
     FileEvaluationReportStore,
     FileReplayRecordingStore,
     ReplayRecordingNotFoundError,
+    compare_evaluation_reports,
     decode_evaluation_report,
     decode_replay_recording,
     encode_evaluation_report,
@@ -156,6 +158,45 @@ def test_evaluation_report_codec_rejects_unknown_schema_version() -> None:
 
     with pytest.raises(ValueError, match="unsupported evaluation report schema version"):
         decode_evaluation_report(payload)
+
+
+def test_evaluation_report_comparison_passes_matching_recordings() -> None:
+    expected = sample_report_recording()
+    actual = decode_evaluation_report(encode_evaluation_report(expected))
+
+    comparison = compare_evaluation_reports(expected, actual)
+
+    assert comparison.passed
+    assert comparison.failed_checks == ()
+
+
+def test_evaluation_report_comparison_detects_behavior_drift() -> None:
+    expected = sample_report_recording()
+    assert expected.gate is not None
+    drifted_summary = replace(expected.summary, action_started_count=2)
+    drifted_healthy = replace(
+        expected.scenarios[0],
+        action_capabilities=("query_metrics",),
+    )
+    drifted_gate = replace(
+        expected.gate,
+        checks=(EvaluationCheckRecording("pass_rate", True, "matched"),),
+    )
+    actual = replace(
+        expected,
+        summary=drifted_summary,
+        scenarios=(drifted_healthy, expected.scenarios[1]),
+        gate=drifted_gate,
+    )
+
+    comparison = compare_evaluation_reports(expected, actual)
+
+    assert not comparison.passed
+    assert {
+        "summary",
+        "scenario:healthy workload:action_capabilities",
+        "gate:checks",
+    } <= {check.name for check in comparison.failed_checks}
 
 
 def test_file_evaluation_report_store_saves_lists_and_loads_reports(tmp_path: Path) -> None:
