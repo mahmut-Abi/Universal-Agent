@@ -662,6 +662,33 @@ async def test_cli_eval_run_executes_suite_and_persists_report(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
+async def test_cli_eval_run_can_fail_process_on_gate_failure() -> None:
+    service, _ = build_cli_service([inspect_workload(), finish()])
+    output = StringIO()
+    error = StringIO()
+
+    status = await run_cli(
+        [
+            "eval",
+            "run",
+            "production-operator",
+            "--max-average-actions",
+            "0.0",
+            "--fail-on-fail",
+        ],
+        service=service,
+        stdout=output,
+        stderr=error,
+    )
+    payload = read_json(output)
+
+    assert status == 1
+    assert error.getvalue() == ""
+    assert payload["passed"] is False
+    assert payload["gate"]["passed"] is False
+
+
+@pytest.mark.asyncio
 async def test_cli_eval_compare_detects_report_drift(tmp_path: Path) -> None:
     service, _ = build_cli_service([inspect_workload(), finish()])
     report_output = StringIO()
@@ -680,12 +707,12 @@ async def test_cli_eval_compare_detects_report_drift(tmp_path: Path) -> None:
     output = StringIO()
 
     status = await run_cli(
-        ["eval", "compare", str(expected_path), str(actual_path)],
+        ["eval", "compare", str(expected_path), str(actual_path), "--fail-on-fail"],
         stdout=output,
     )
     payload = read_json(output)
 
-    assert status == 0
+    assert status == 1
     assert payload["passed"] is False
     assert "summary" in {
         item["name"] for item in payload["failed_checks"] if isinstance(item, dict)

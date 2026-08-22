@@ -128,7 +128,7 @@ projections; `agent metrics --format prometheus` emits Prometheus text expositio
 JSON-compatible trace payloads from the same event-derived span projection. `agent serve` starts the
 standard-library `AgentdHttpServer` around the same service; `agent eval run` executes the
 local evaluation suite through `EvaluationRunner`, and `agent eval compare` compares persisted golden
-reports for CLI/CI regression checks. The CLI does not access Kernel internals directly.
+reports for CLI/CI regression checks. Both eval commands support `--fail-on-fail` to preserve JSON output while returning a non-zero process status. The CLI does not access Kernel internals directly.
 
 `EvaluationHarness` is the first P3.7 behavior evaluation foundation. It runs explicit
 `EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
@@ -277,7 +277,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_7_replay.py
 .venv/bin/python examples/p3_7_deterministic_mode.py
 .venv/bin/python -m universal_agent.cli ready
-.venv/bin/python -m universal_agent.cli eval run local-kubernetes --report-dir .tmp/eval-reports
+.venv/bin/python -m universal_agent.cli eval run local-kubernetes --report-dir .tmp/eval-reports --fail-on-fail
 ```
 
 `mypy` runs in strict mode over `src`, `tests` and `examples`, and passes with no `type: ignore`

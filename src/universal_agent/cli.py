@@ -76,6 +76,11 @@ LOCAL_PROFILE_NAME = "local-kubernetes"
 ServerRunner = Callable[[AgentdHttpServer], None]
 
 
+class CliExit(Exception):
+    def __init__(self, status: int) -> None:
+        self.status = status
+
+
 def _local_domain() -> DomainConfig:
     return DomainConfig("kubernetes", "0.2.0")
 
@@ -170,6 +175,8 @@ async def run_cli(
     except StateNotFoundError as exc:
         _write_error(err, "not_found", str(exc))
         return 1
+    except CliExit as exc:
+        return exc.status
     except ValueError as exc:
         _write_error(err, "bad_request", str(exc))
         return 2
@@ -226,10 +233,12 @@ def build_parser() -> argparse.ArgumentParser:
     eval_run.add_argument("--min-pass-rate", type=float, default=1.0)
     eval_run.add_argument("--max-average-actions", type=float)
     eval_run.add_argument("--max-resource-conflict-rate", type=float)
+    eval_run.add_argument("--fail-on-fail", action="store_true")
 
     eval_compare = eval_commands.add_parser("compare")
     eval_compare.add_argument("expected")
     eval_compare.add_argument("actual")
+    eval_compare.add_argument("--fail-on-fail", action="store_true")
 
     domain = commands.add_parser("domain")
     domain_commands = domain.add_subparsers(dest="domain_command", required=True)
@@ -409,6 +418,8 @@ async def _dispatch_eval(
             ),
         )
         _write_json(out, _evaluation_run_body(result, report_dir))
+        if cast(bool, args.fail_on_fail) and not result.passed:
+            raise CliExit(1)
         return
     if command == "compare":
         comparison = compare_evaluation_reports(
@@ -416,6 +427,8 @@ async def _dispatch_eval(
             _load_evaluation_report(Path(cast(str, args.actual))),
         )
         _write_json(out, _evaluation_comparison_body(comparison))
+        if cast(bool, args.fail_on_fail) and not comparison.passed:
+            raise CliExit(1)
         return
     raise ValueError(f"unknown eval command: {command}")
 
