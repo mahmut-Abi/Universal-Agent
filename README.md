@@ -115,10 +115,12 @@ access Kernel internals directly and does not require a daemon process.
 
 `EvaluationHarness` is the first P3.7 behavior evaluation foundation. It runs explicit
 `EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
-Session, Event, Metrics and Audit projections. The harness is intentionally outside the Kernel:
-Domain `Evaluator`s still decide task/goal semantics during execution, while the Harness decides
-whether a completed scenario satisfies regression, policy and recovery expectations. See
-`examples/p3_7_evaluation_harness.py`.
+Session, Event, Metrics and Audit projections. `DeterministicReplayHarness` records a stable trace
+from those projections and replays later runs against it while ignoring dynamic IDs and timestamps.
+The harnesses are intentionally outside the Kernel: Domain `Evaluator`s still decide task/goal
+semantics during execution, while the Harness decides whether a completed scenario satisfies
+regression, policy, recovery and replay expectations. See `examples/p3_7_evaluation_harness.py` and
+`examples/p3_7_replay.py`.
 
 `AgentProfile` is the first application-level Profile foundation. A Profile declares a selectable
 runtime identity — name, version, Domain identity and Runtime Configuration — for future CLI/agentd
@@ -161,7 +163,9 @@ not a database layer, event-sourcing model, or production migration system.
 - P3.6/P3.7 foundation: event-derived `metrics`, `doctor` and `audit` projections exposed through
   RuntimeService, agentd-shaped routes and CLI commands, plus an Evaluation Harness that can assert
   status, error codes, events, executed capabilities, audit coverage, policy denials, recovery plans,
-  criteria, action counts and iteration budgets for behavior scenarios.
+  criteria, action counts and iteration budgets for behavior scenarios. Deterministic Replay can
+  record stable behavior traces and detect later drift in event shape, actions, policy effects, audit
+  entries and metrics without depending on runtime-generated IDs.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
@@ -209,6 +213,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_runtime_config.py
 .venv/bin/python examples/p3_5_cli_event_stream.py
 .venv/bin/python examples/p3_7_evaluation_harness.py
+.venv/bin/python examples/p3_7_replay.py
 .venv/bin/agent ready
 ```
 
