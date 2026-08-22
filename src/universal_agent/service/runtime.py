@@ -15,9 +15,11 @@ from universal_agent.domain import ActiveDomain, RuntimeComponents
 from universal_agent.operations import (
     AuditRecordView,
     DoctorReportView,
+    RuntimeCostView,
     RuntimeMetricsView,
     build_audit_records,
     build_doctor_report,
+    build_runtime_cost,
     build_runtime_metrics,
 )
 from universal_agent.profile import AgentProfile, ProfileRegistry
@@ -237,6 +239,12 @@ class RuntimeService:
     async def metrics(self) -> RuntimeMetricsView:
         sessions = await self.list_sessions()
         return build_runtime_metrics(sessions, await self._list_all_events(sessions))
+
+    async def cost(self, session_id: SessionId | None = None) -> RuntimeCostView:
+        if session_id is not None:
+            return build_runtime_cost(await self.list_events(session_id))
+        sessions = await self.list_sessions()
+        return build_runtime_cost(await self._list_all_events(sessions))
 
     async def doctor(self) -> DoctorReportView:
         health = self.health()

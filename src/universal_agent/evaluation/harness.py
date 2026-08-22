@@ -44,6 +44,8 @@ class ScenarioExpectations:
     recovery_planned_count: int | None = None
     max_actions: int | None = None
     max_iterations: int | None = None
+    max_model_total_tokens: int | None = None
+    max_model_estimated_cost_micros: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +95,9 @@ class EvaluationSuiteSummary:
     policy_denial_count: int
     recovery_planned_count: int
     human_intervention_count: int
+    model_call_count: int = 0
+    model_total_token_count: int = 0
+    model_estimated_cost_micros: int = 0
 
     @property
     def pass_rate(self) -> float:
@@ -126,6 +131,10 @@ class EvaluationSuiteSummary:
     @property
     def average_actions_per_scenario(self) -> float:
         return _rate(self.action_started_count, self.scenario_count)
+
+    @property
+    def average_model_tokens_per_scenario(self) -> float:
+        return _rate(self.model_total_token_count, self.scenario_count)
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,6 +215,11 @@ def summarize_suite(reports: tuple[ScenarioReport, ...]) -> EvaluationSuiteSumma
         policy_denial_count=sum(report.metrics.policy_denial_count for report in reports),
         recovery_planned_count=sum(report.metrics.recovery_planned_count for report in reports),
         human_intervention_count=sum(report.metrics.human_intervention_count for report in reports),
+        model_call_count=sum(report.metrics.model_call_count for report in reports),
+        model_total_token_count=sum(report.metrics.model_total_token_count for report in reports),
+        model_estimated_cost_micros=sum(
+            report.metrics.model_estimated_cost_micros for report in reports
+        ),
     )
 
 
@@ -316,8 +330,7 @@ def _evaluate_expectations(
                 "policy_denial_count",
                 metrics.policy_denial_count == expectations.policy_denial_count,
                 f"policy_denial_count={metrics.policy_denial_count}",
-                "expected "
-                f"{expectations.policy_denial_count}, got {metrics.policy_denial_count}",
+                f"expected {expectations.policy_denial_count}, got {metrics.policy_denial_count}",
             )
         )
 
@@ -349,6 +362,30 @@ def _evaluate_expectations(
                 result.iterations <= expectations.max_iterations,
                 f"iterations={result.iterations}",
                 f"expected <= {expectations.max_iterations}, got {result.iterations}",
+            )
+        )
+
+    if expectations.max_model_total_tokens is not None:
+        checks.append(
+            _check(
+                "max_model_total_tokens",
+                metrics.model_total_token_count <= expectations.max_model_total_tokens,
+                f"model_total_tokens={metrics.model_total_token_count}",
+                "expected <= "
+                f"{expectations.max_model_total_tokens}, got "
+                f"{metrics.model_total_token_count}",
+            )
+        )
+
+    if expectations.max_model_estimated_cost_micros is not None:
+        checks.append(
+            _check(
+                "max_model_estimated_cost_micros",
+                metrics.model_estimated_cost_micros <= expectations.max_model_estimated_cost_micros,
+                f"model_estimated_cost_micros={metrics.model_estimated_cost_micros}",
+                "expected <= "
+                f"{expectations.max_model_estimated_cost_micros}, got "
+                f"{metrics.model_estimated_cost_micros}",
             )
         )
 

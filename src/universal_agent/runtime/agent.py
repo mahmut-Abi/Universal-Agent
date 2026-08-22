@@ -26,7 +26,7 @@ from universal_agent.core import (
 )
 from universal_agent.domain import RuntimeComponents
 from universal_agent.memory import MemoryKind, MemoryRecord, RetrievalRequest
-from universal_agent.model import ModelAdapter
+from universal_agent.model import ModelAdapter, model_usage
 from universal_agent.recovery import Failure, RecoveryStrategy, classify_failure
 from universal_agent.runtime.actions import (
     ActionExecutor,
@@ -234,11 +234,26 @@ class AgentRuntime:
                     session,
                     fail(session, ErrorCode.MODEL_FAILURE, f"model failed: {exc}"),
                 )
+            usage = model_usage(self._model)
             await self._emit(
                 state,
                 "DecisionGenerated",
                 data={"decision_type": decision.type.value, "reason": decision.reason},
             )
+            if usage is not None:
+                await self._emit(
+                    state,
+                    "ModelUsageRecorded",
+                    data={
+                        "provider": usage.provider,
+                        "model": usage.model,
+                        "input_tokens": usage.input_tokens,
+                        "output_tokens": usage.output_tokens,
+                        "total_tokens": usage.total_tokens,
+                        "estimated_cost_micros": usage.estimated_cost_micros,
+                        "currency": usage.currency,
+                    },
+                )
             try:
                 decision.validate()
             except ValueError as exc:

@@ -101,15 +101,14 @@ async def main() -> None:
         expected = store.load("healthy workload replay")
 
         matching = await DeterministicReplayHarness(build_service()).replay(scenario(), expected)
-        drifted = await DeterministicReplayHarness(
-            build_service(initial_timeout=True)
-        ).replay(scenario(), expected)
+        drifted = await DeterministicReplayHarness(build_service(initial_timeout=True)).replay(
+            scenario(), expected
+        )
 
     print(f"matching_replay={matching.passed}")
     print(
         "drifted_replay="
-        f"{drifted.passed} failed_checks="
-        + ",".join(check.name for check in drifted.failed_checks)
+        f"{drifted.passed} failed_checks=" + ",".join(check.name for check in drifted.failed_checks)
     )
 
 

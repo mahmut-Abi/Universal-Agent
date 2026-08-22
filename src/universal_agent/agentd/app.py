@@ -36,6 +36,7 @@ from universal_agent.service import (
     HealthView,
     ProfileView,
     ReadyView,
+    RuntimeCostView,
     RuntimeMetricsView,
     RuntimeService,
     ToolView,
@@ -126,6 +127,10 @@ class AgentdApp:
             if method != "GET":
                 return method_not_allowed(("GET",))
             return json_response(metrics_body(await self._service.metrics()))
+        if path == "/v1/cost":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            return json_response(cost_body(await self._service.cost()))
         if path == "/v1/doctor":
             if method != "GET":
                 return method_not_allowed(("GET",))
@@ -188,6 +193,13 @@ class AgentdApp:
                 return json_response(
                     audit_records_body(await self._service.audit_records(session_id))
                 )
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
+        if session_id is not None and suffix == "cost":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                return json_response(cost_body(await self._service.cost(session_id)))
             except StateNotFoundError as exc:
                 return not_found(str(exc))
         if session_id is not None and suffix == "pause":
@@ -426,6 +438,37 @@ def metrics_body(view: RuntimeMetricsView) -> JsonMapping:
             "recovery_planned_count": view.recovery_planned_count,
             "recovery_exhausted_count": view.recovery_exhausted_count,
             "human_intervention_count": view.human_intervention_count,
+            "model_call_count": view.model_call_count,
+            "model_input_token_count": view.model_input_token_count,
+            "model_output_token_count": view.model_output_token_count,
+            "model_total_token_count": view.model_total_token_count,
+            "model_estimated_cost_micros": view.model_estimated_cost_micros,
+        }
+    )
+
+
+def cost_body(view: RuntimeCostView) -> JsonMapping:
+    return immutable_json(
+        {
+            "model_call_count": view.model_call_count,
+            "input_tokens": view.input_tokens,
+            "output_tokens": view.output_tokens,
+            "total_tokens": view.total_tokens,
+            "estimated_cost_micros": view.estimated_cost_micros,
+            "currency": view.currency,
+            "by_model": [
+                {
+                    "provider": item.provider,
+                    "model": item.model,
+                    "call_count": item.call_count,
+                    "input_tokens": item.input_tokens,
+                    "output_tokens": item.output_tokens,
+                    "total_tokens": item.total_tokens,
+                    "estimated_cost_micros": item.estimated_cost_micros,
+                    "currency": item.currency,
+                }
+                for item in view.by_model
+            ],
         }
     )
 

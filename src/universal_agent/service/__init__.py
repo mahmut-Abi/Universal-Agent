@@ -1,4 +1,9 @@
-from universal_agent.operations import AuditRecordView, DoctorReportView, RuntimeMetricsView
+from universal_agent.operations import (
+    AuditRecordView,
+    DoctorReportView,
+    RuntimeCostView,
+    RuntimeMetricsView,
+)
 from universal_agent.service.runtime import (
     CapabilityView,
     DomainView,
@@ -17,6 +22,7 @@ __all__ = [
     "HealthView",
     "ProfileView",
     "ReadyView",
+    "RuntimeCostView",
     "RuntimeMetricsView",
     "RuntimeService",
     "ToolView",

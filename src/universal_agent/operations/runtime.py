@@ -32,6 +32,34 @@ class RuntimeMetricsView:
     recovery_planned_count: int
     recovery_exhausted_count: int
     human_intervention_count: int
+    model_call_count: int = 0
+    model_input_token_count: int = 0
+    model_output_token_count: int = 0
+    model_total_token_count: int = 0
+    model_estimated_cost_micros: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class ModelCostBreakdownView:
+    provider: str
+    model: str
+    call_count: int
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    estimated_cost_micros: int
+    currency: str
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeCostView:
+    model_call_count: int
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    estimated_cost_micros: int
+    currency: str
+    by_model: tuple[ModelCostBreakdownView, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +98,7 @@ def build_runtime_metrics(
     sessions: tuple[SessionSummaryView, ...],
     events: tuple[RuntimeEventView, ...],
 ) -> RuntimeMetricsView:
+    cost = build_runtime_cost(events)
     return RuntimeMetricsView(
         session_count=len(sessions),
         active_session_count=sum(
@@ -108,6 +137,45 @@ def build_runtime_metrics(
         human_intervention_count=sum(
             1 for event in events if event.type in {"ConfirmationRequired", "GoalWaiting"}
         ),
+        model_call_count=cost.model_call_count,
+        model_input_token_count=cost.input_tokens,
+        model_output_token_count=cost.output_tokens,
+        model_total_token_count=cost.total_tokens,
+        model_estimated_cost_micros=cost.estimated_cost_micros,
+    )
+
+
+def build_runtime_cost(events: tuple[RuntimeEventView, ...]) -> RuntimeCostView:
+    accumulators: dict[tuple[str, str, str], _CostAccumulator] = {}
+    for event in events:
+        if event.type != "ModelUsageRecorded":
+            continue
+        provider = _string(event.data.get("provider")) or "unknown"
+        model = _string(event.data.get("model")) or "unknown"
+        currency = _string(event.data.get("currency")) or "USD"
+        key = (provider, model, currency)
+        if key not in accumulators:
+            accumulators[key] = _CostAccumulator(provider, model, currency)
+        accumulators[key].add(
+            input_tokens=_non_negative_int(event.data.get("input_tokens")),
+            output_tokens=_non_negative_int(event.data.get("output_tokens")),
+            estimated_cost_micros=_non_negative_int(event.data.get("estimated_cost_micros")),
+        )
+    by_model = tuple(
+        item.view()
+        for item in sorted(
+            accumulators.values(),
+            key=lambda item: (item.provider, item.model, item.currency),
+        )
+    )
+    return RuntimeCostView(
+        model_call_count=sum(item.call_count for item in by_model),
+        input_tokens=sum(item.input_tokens for item in by_model),
+        output_tokens=sum(item.output_tokens for item in by_model),
+        total_tokens=sum(item.total_tokens for item in by_model),
+        estimated_cost_micros=sum(item.estimated_cost_micros for item in by_model),
+        currency=_aggregate_currency(tuple(item.currency for item in by_model)),
+        by_model=by_model,
     )
 
 
@@ -123,6 +191,7 @@ def build_doctor_report(
     events: tuple[RuntimeEventView, ...],
 ) -> DoctorReportView:
     metrics = build_runtime_metrics(sessions, events)
+    cost = build_runtime_cost(events)
     checks = (
         _check(
             "service_health",
@@ -139,6 +208,13 @@ def build_doctor_report(
         _event_stream_check(sessions, events),
         _policy_denial_check(metrics.policy_denial_count),
         _recovery_check(metrics.recovery_exhausted_count),
+        DoctorCheckView(
+            "cost_tracking",
+            "ok",
+            "model_calls="
+            f"{cost.model_call_count} tokens={cost.total_tokens} "
+            f"cost_micros={cost.estimated_cost_micros} currency={cost.currency}",
+        ),
     )
     return DoctorReportView(_aggregate_status(checks), checks)
 
@@ -255,3 +331,53 @@ def _error_code(value: JsonValue | object) -> ErrorCode | None:
         return ErrorCode(value)
     except ValueError:
         return None
+
+
+def _non_negative_int(value: JsonValue | object) -> int:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return 0
+
+
+def _aggregate_currency(currencies: tuple[str, ...]) -> str:
+    if not currencies:
+        return "USD"
+    unique = frozenset(currencies)
+    if len(unique) == 1:
+        return currencies[0]
+    return "mixed"
+
+
+@dataclass(slots=True)
+class _CostAccumulator:
+    provider: str
+    model: str
+    currency: str
+    call_count: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_cost_micros: int = 0
+
+    def add(
+        self,
+        *,
+        input_tokens: int,
+        output_tokens: int,
+        estimated_cost_micros: int,
+    ) -> None:
+        self.call_count += 1
+        self.input_tokens += input_tokens
+        self.output_tokens += output_tokens
+        self.estimated_cost_micros += estimated_cost_micros
+
+    def view(self) -> ModelCostBreakdownView:
+        return ModelCostBreakdownView(
+            provider=self.provider,
+            model=self.model,
+            call_count=self.call_count,
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+            total_tokens=self.input_tokens + self.output_tokens,
+            estimated_cost_micros=self.estimated_cost_micros,
+            currency=self.currency,
+        )

@@ -14,6 +14,7 @@ from universal_agent import (
     Goal,
     InMemoryEventSink,
     InMemoryStateStore,
+    ModelUsage,
     RuntimeAPI,
     RuntimeBuilder,
     RuntimeService,
@@ -78,7 +79,11 @@ def goal_task() -> tuple[Goal, Task]:
     )
 
 
-def build_cli_service(decisions: list[Decision]) -> tuple[RuntimeService, CliBackend]:
+def build_cli_service(
+    decisions: list[Decision],
+    *,
+    usage: list[ModelUsage] | None = None,
+) -> tuple[RuntimeService, CliBackend]:
     backend = CliBackend()
     components = RuntimeBuilder().build(
         DomainLoader().load(KubernetesRemediationDomain(backend, backend))
@@ -86,7 +91,7 @@ def build_cli_service(decisions: list[Decision]) -> tuple[RuntimeService, CliBac
     store = InMemoryStateStore()
     events = InMemoryEventSink()
     runtime = AgentRuntime(
-        model=ScriptedModelAdapter(decisions),
+        model=ScriptedModelAdapter(decisions, usage=usage or ()),
         state_store=store,
         components=components,
         event_sink=events,
@@ -173,15 +178,37 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
 
 @pytest.mark.asyncio
 async def test_cli_exposes_operations_commands_through_service() -> None:
-    service, backend = build_cli_service([scale_workload(), inspect_workload(), finish()])
+    service, backend = build_cli_service(
+        [scale_workload(), inspect_workload(), finish()],
+        usage=[
+            ModelUsage(
+                "scripted",
+                "cli-test",
+                input_tokens=80,
+                output_tokens=20,
+                estimated_cost_micros=18,
+            ),
+            ModelUsage(
+                "scripted",
+                "cli-test",
+                input_tokens=40,
+                output_tokens=10,
+                estimated_cost_micros=9,
+            ),
+            ModelUsage("scripted", "cli-test", input_tokens=10, output_tokens=5),
+        ],
+    )
     run = await service.run_goal(*goal_task())
     session_id = str(run.result.session_id)
     metrics_output = StringIO()
+    cost_output = StringIO()
     doctor_output = StringIO()
     audit_output = StringIO()
     session_audit_output = StringIO()
+    session_cost_output = StringIO()
 
     metrics_status = await run_cli(["metrics"], service=service, stdout=metrics_output)
+    cost_status = await run_cli(["cost"], service=service, stdout=cost_output)
     doctor_status = await run_cli(["doctor"], service=service, stdout=doctor_output)
     audit_status = await run_cli(["audit"], service=service, stdout=audit_output)
     session_audit_status = await run_cli(
@@ -189,17 +216,32 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
         service=service,
         stdout=session_audit_output,
     )
+    session_cost_status = await run_cli(
+        ["session", "cost", session_id],
+        service=service,
+        stdout=session_cost_output,
+    )
 
     metrics = read_json(metrics_output)
+    cost = read_json(cost_output)
     doctor = read_json(doctor_output)
     audit = read_json(audit_output)
     session_audit = read_json(session_audit_output)
+    session_cost = read_json(session_cost_output)
     assert metrics_status == 0
+    assert cost_status == 0
     assert doctor_status == 0
     assert audit_status == 0
     assert session_audit_status == 0
+    assert session_cost_status == 0
     assert metrics["completed_goal_count"] == 1
     assert metrics["action_started_count"] == 2
+    assert metrics["model_call_count"] == 3
+    assert metrics["model_total_token_count"] == 165
+    assert cost == session_cost
+    assert cost["model_call_count"] == 3
+    assert cost["total_tokens"] == 165
+    assert cost["estimated_cost_micros"] == 27
     assert doctor["status"] == "ok"
     assert audit == session_audit
     audit_items = audit["audit_records"]

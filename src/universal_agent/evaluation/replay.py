@@ -28,6 +28,9 @@ class ReplayMetrics:
     recovery_planned_count: int
     recovery_exhausted_count: int
     human_intervention_count: int
+    model_call_count: int = 0
+    model_total_token_count: int = 0
+    model_estimated_cost_micros: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,9 +61,7 @@ class ReplayRecording:
     action_statuses: tuple[str, ...] = ()
     policy_effects: tuple[str, ...] = ()
     audit_entries: tuple[ReplayAuditEntry, ...] = ()
-    metrics: ReplayMetrics = field(
-        default_factory=lambda: ReplayMetrics(0, 0, 0, 0, 0, 0, 0, 0, 0)
-    )
+    metrics: ReplayMetrics = field(default_factory=lambda: ReplayMetrics(0, 0, 0, 0, 0, 0, 0, 0, 0))
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +135,9 @@ def record_report(report: ScenarioReport) -> ReplayRecording:
             recovery_planned_count=report.metrics.recovery_planned_count,
             recovery_exhausted_count=report.metrics.recovery_exhausted_count,
             human_intervention_count=report.metrics.human_intervention_count,
+            model_call_count=report.metrics.model_call_count,
+            model_total_token_count=report.metrics.model_total_token_count,
+            model_estimated_cost_micros=report.metrics.model_estimated_cost_micros,
         ),
     )
 

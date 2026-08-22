@@ -18,7 +18,7 @@ from universal_agent.host import (
     StoreBackend,
     StoreConfig,
 )
-from universal_agent.model import ModelAdapter, ScriptedModelAdapter
+from universal_agent.model import ModelAdapter, ModelUsage, ModelUsageProvider, ScriptedModelAdapter
 from universal_agent.persistence import FileEventStore, FileSessionStore
 from universal_agent.profile import AgentProfile, ProfileConfig, ProfileRegistry
 from universal_agent.runtime import (
@@ -32,6 +32,7 @@ from universal_agent.runtime import (
 from universal_agent.service import (
     AuditRecordView,
     DoctorReportView,
+    RuntimeCostView,
     RuntimeMetricsView,
     RuntimeService,
 )
@@ -56,11 +57,14 @@ __all__ = [
     "InMemoryEventSink",
     "InMemoryStateStore",
     "ModelAdapter",
+    "ModelUsage",
+    "ModelUsageProvider",
     "ProfileConfig",
     "ProfileRegistry",
     "RuntimeAPI",
     "RuntimeBuilder",
     "RuntimeConfig",
+    "RuntimeCostView",
     "RuntimeEventBatch",
     "RuntimeHost",
     "RuntimeLimitsConfig",

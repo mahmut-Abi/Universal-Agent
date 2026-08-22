@@ -12,6 +12,7 @@ from universal_agent import (
     Goal,
     InMemoryEventSink,
     InMemoryStateStore,
+    ModelUsage,
     RuntimeAPI,
     RuntimeBuilder,
     RuntimeService,
@@ -76,14 +77,19 @@ def scenario() -> EvaluationScenario:
     )
 
 
-def build_service(backend: ReplayBackend, decisions: list[Decision]) -> RuntimeService:
+def build_service(
+    backend: ReplayBackend,
+    decisions: list[Decision],
+    *,
+    usage: list[ModelUsage] | None = None,
+) -> RuntimeService:
     components = RuntimeBuilder().build(
         DomainLoader().load(KubernetesRemediationDomain(backend, backend))
     )
     store = InMemoryStateStore()
     events = InMemoryEventSink()
     runtime = AgentRuntime(
-        model=ScriptedModelAdapter(decisions),
+        model=ScriptedModelAdapter(decisions, usage=usage or ()),
         state_store=store,
         components=components,
         event_sink=events,
@@ -131,6 +137,49 @@ async def test_deterministic_replay_detects_behavior_drift() -> None:
         "metrics",
     }
     assert replay.actual.metrics.recovery_planned_count == 1
+
+
+@pytest.mark.asyncio
+async def test_deterministic_replay_detects_model_usage_drift() -> None:
+    expected = await DeterministicReplayHarness(
+        build_service(
+            ReplayBackend(),
+            [inspect_workload(), finish()],
+            usage=[
+                ModelUsage("scripted", "replay-test", input_tokens=50, output_tokens=10),
+                ModelUsage(
+                    "scripted",
+                    "replay-test",
+                    input_tokens=20,
+                    output_tokens=5,
+                    estimated_cost_micros=6,
+                ),
+            ],
+        )
+    ).record(scenario())
+
+    replay = await DeterministicReplayHarness(
+        build_service(
+            ReplayBackend(),
+            [inspect_workload(), finish()],
+            usage=[
+                ModelUsage("scripted", "replay-test", input_tokens=50, output_tokens=10),
+                ModelUsage(
+                    "scripted",
+                    "replay-test",
+                    input_tokens=25,
+                    output_tokens=5,
+                    estimated_cost_micros=8,
+                ),
+            ],
+        )
+    ).replay(scenario(), expected)
+
+    assert not replay.passed
+    assert [check.name for check in replay.failed_checks] == ["metrics"]
+    assert expected.metrics.model_total_token_count == 85
+    assert replay.actual.metrics.model_total_token_count == 90
+    assert replay.actual.metrics.model_estimated_cost_micros == 8
 
 
 @pytest.mark.asyncio

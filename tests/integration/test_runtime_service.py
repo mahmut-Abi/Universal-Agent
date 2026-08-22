@@ -10,6 +10,7 @@ from universal_agent import (
     Goal,
     InMemoryEventSink,
     InMemoryStateStore,
+    ModelUsage,
     RuntimeAPI,
     RuntimeBuilder,
     RuntimeService,
@@ -77,19 +78,28 @@ def goal_task() -> tuple[Goal, Task]:
     )
 
 
-def build_service(decisions: list[Decision]) -> tuple[RuntimeService, ServiceBackend]:
+def build_service(
+    decisions: list[Decision],
+    *,
+    usage: list[ModelUsage] | None = None,
+) -> tuple[RuntimeService, ServiceBackend]:
     backend = ServiceBackend()
     active = DomainLoader().load(KubernetesRemediationDomain(backend, backend))
     components = RuntimeBuilder().build(active)
-    api = build_api(components, decisions)
+    api = build_api(components, decisions, usage=usage)
     return RuntimeService(runtime_api=api, components=components), backend
 
 
-def build_api(components: RuntimeComponents, decisions: list[Decision]) -> RuntimeAPI:
+def build_api(
+    components: RuntimeComponents,
+    decisions: list[Decision],
+    *,
+    usage: list[ModelUsage] | None = None,
+) -> RuntimeAPI:
     store = InMemoryStateStore()
     events = InMemoryEventSink()
     runtime = AgentRuntime(
-        model=ScriptedModelAdapter(decisions),
+        model=ScriptedModelAdapter(decisions, usage=usage or ()),
         state_store=store,
         components=components,
         event_sink=events,
@@ -155,10 +165,24 @@ async def test_runtime_service_delegates_execution_to_runtime_api() -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_service_derives_metrics_doctor_and_audit_from_events() -> None:
-    service, backend = build_service([scale_workload(), inspect_workload(), finish()])
+    service, backend = build_service(
+        [scale_workload(), inspect_workload(), finish()],
+        usage=[
+            ModelUsage("scripted", "runtime-test", input_tokens=100, output_tokens=25),
+            ModelUsage(
+                "scripted",
+                "runtime-test",
+                input_tokens=50,
+                output_tokens=10,
+                estimated_cost_micros=12,
+            ),
+            ModelUsage("scripted", "runtime-test", input_tokens=20, output_tokens=5),
+        ],
+    )
 
     run = await service.run_goal(*goal_task())
     metrics = await service.metrics()
+    cost = await service.cost(run.result.session_id)
     doctor = await service.doctor()
     audit = await service.audit_records(run.result.session_id)
 
@@ -168,11 +192,19 @@ async def test_runtime_service_derives_metrics_doctor_and_audit_from_events() ->
     assert metrics.action_started_count == 2
     assert metrics.action_completed_count == 2
     assert metrics.policy_denial_count == 0
+    assert metrics.model_call_count == 3
+    assert metrics.model_total_token_count == 210
+    assert metrics.model_estimated_cost_micros == 12
+    assert cost.model_call_count == 3
+    assert cost.by_model[0].provider == "scripted"
+    assert cost.by_model[0].model == "runtime-test"
+    assert cost.by_model[0].total_tokens == 210
     assert doctor.status == "ok"
     assert {check.name for check in doctor.checks} >= {
         "service_health",
         "readiness",
         "event_stream",
+        "cost_tracking",
     }
     assert len(audit) == 1
     assert audit[0].capability == "scale_workload"

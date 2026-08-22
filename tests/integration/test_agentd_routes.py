@@ -10,6 +10,7 @@ from universal_agent import (
     Goal,
     InMemoryEventSink,
     InMemoryStateStore,
+    ModelUsage,
     ProfileConfig,
     RuntimeAPI,
     RuntimeBuilder,
@@ -153,7 +154,11 @@ def goal_submission_body(
     return immutable_json(body)
 
 
-def build_service(decisions: list[Decision]) -> tuple[RuntimeService, AgentdBackend]:
+def build_service(
+    decisions: list[Decision],
+    *,
+    usage: list[ModelUsage] | None = None,
+) -> tuple[RuntimeService, AgentdBackend]:
     backend = AgentdBackend()
     store = InMemoryStateStore()
     events = InMemoryEventSink()
@@ -161,7 +166,7 @@ def build_service(decisions: list[Decision]) -> tuple[RuntimeService, AgentdBack
         DomainLoader().load(KubernetesRemediationDomain(backend, backend))
     )
     runtime = AgentRuntime(
-        model=ScriptedModelAdapter(decisions),
+        model=ScriptedModelAdapter(decisions, usage=usage or ()),
         state_store=store,
         components=components,
         event_sink=events,
@@ -390,7 +395,26 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
 
 @pytest.mark.asyncio
 async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> None:
-    service, backend = build_service([scale_workload(), inspect_workload(), finish()])
+    service, backend = build_service(
+        [scale_workload(), inspect_workload(), finish()],
+        usage=[
+            ModelUsage(
+                "scripted",
+                "agentd-test",
+                input_tokens=90,
+                output_tokens=20,
+                estimated_cost_micros=25,
+            ),
+            ModelUsage(
+                "scripted",
+                "agentd-test",
+                input_tokens=60,
+                output_tokens=10,
+                estimated_cost_micros=10,
+            ),
+            ModelUsage("scripted", "agentd-test", input_tokens=30, output_tokens=5),
+        ],
+    )
     app = AgentdApp(service)
 
     created = await app.handle(HttpRequest("POST", "/v1/sessions", goal_submission_body()))
@@ -400,14 +424,28 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
     assert isinstance(session_id, str)
 
     metrics = await app.handle(HttpRequest("GET", "/v1/metrics"))
+    cost = await app.handle(HttpRequest("GET", "/v1/cost"))
     doctor = await app.handle(HttpRequest("GET", "/v1/doctor"))
     audit = await app.handle(HttpRequest("GET", "/v1/audit"))
     session_audit = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/audit"))
+    session_cost = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/cost"))
 
     assert metrics.status_code == 200
     assert metrics.body["session_count"] == 1
     assert metrics.body["completed_goal_count"] == 1
     assert metrics.body["action_started_count"] == 2
+    assert metrics.body["model_call_count"] == 3
+    assert metrics.body["model_total_token_count"] == 215
+    assert cost.status_code == 200
+    assert cost.body == session_cost.body
+    assert cost.body["model_call_count"] == 3
+    assert cost.body["total_tokens"] == 215
+    assert cost.body["estimated_cost_micros"] == 35
+    by_model = cost.body["by_model"]
+    assert isinstance(by_model, list)
+    first_cost_item = by_model[0]
+    assert isinstance(first_cost_item, dict)
+    assert first_cost_item["model"] == "agentd-test"
     assert doctor.status_code == 200
     assert doctor.body["status"] == "ok"
     assert audit.status_code == 200

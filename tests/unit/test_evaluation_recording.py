@@ -47,6 +47,9 @@ def sample_recording(name: str = "policy regression") -> ReplayRecording:
             recovery_planned_count=0,
             recovery_exhausted_count=0,
             human_intervention_count=0,
+            model_call_count=2,
+            model_total_token_count=150,
+            model_estimated_cost_micros=25,
         ),
     )
 
@@ -63,6 +66,21 @@ def test_replay_recording_codec_round_trips_stable_trace() -> None:
     assert restored.event_types == recording.event_types
     assert restored.audit_entries == recording.audit_entries
     assert restored.metrics == recording.metrics
+
+
+def test_replay_recording_codec_defaults_missing_model_metrics() -> None:
+    payload = encode_replay_recording(sample_recording())
+    metrics = payload["metrics"]
+    assert isinstance(metrics, dict)
+    del metrics["model_call_count"]
+    del metrics["model_total_token_count"]
+    del metrics["model_estimated_cost_micros"]
+
+    restored = decode_replay_recording(payload)
+
+    assert restored.metrics.model_call_count == 0
+    assert restored.metrics.model_total_token_count == 0
+    assert restored.metrics.model_estimated_cost_micros == 0
 
 
 def test_replay_recording_codec_rejects_unknown_schema_version() -> None:

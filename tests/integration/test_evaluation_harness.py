@@ -10,6 +10,7 @@ from universal_agent import (
     Goal,
     InMemoryEventSink,
     InMemoryStateStore,
+    ModelUsage,
     RuntimeAPI,
     RuntimeBuilder,
     RuntimeService,
@@ -24,6 +25,7 @@ from universal_agent.evaluation.harness import (
     EvaluationHarness,
     EvaluationScenario,
     ScenarioExpectations,
+    summarize_suite,
 )
 
 
@@ -84,6 +86,8 @@ def goal_task() -> tuple[Goal, Task]:
 def build_service(
     backend: HarnessBackend,
     decisions: list[Decision],
+    *,
+    usage: list[ModelUsage] | None = None,
 ) -> RuntimeService:
     components = RuntimeBuilder().build(
         DomainLoader().load(KubernetesRemediationDomain(backend, backend))
@@ -91,7 +95,7 @@ def build_service(
     store = InMemoryStateStore()
     events = InMemoryEventSink()
     runtime = AgentRuntime(
-        model=ScriptedModelAdapter(decisions),
+        model=ScriptedModelAdapter(decisions, usage=usage or ()),
         state_store=store,
         components=components,
         event_sink=events,
@@ -106,7 +110,26 @@ def build_service(
 @pytest.mark.asyncio
 async def test_evaluation_harness_passes_a_normal_scenario() -> None:
     backend = HarnessBackend()
-    service = build_service(backend, [inspect_workload(), finish()])
+    service = build_service(
+        backend,
+        [inspect_workload(), finish()],
+        usage=[
+            ModelUsage(
+                "scripted",
+                "harness-test",
+                input_tokens=75,
+                output_tokens=20,
+                estimated_cost_micros=11,
+            ),
+            ModelUsage(
+                "scripted",
+                "harness-test",
+                input_tokens=25,
+                output_tokens=5,
+                estimated_cost_micros=4,
+            ),
+        ],
+    )
     goal, task = goal_task()
     scenario = EvaluationScenario(
         "healthy workload inspection",
@@ -120,6 +143,8 @@ async def test_evaluation_harness_passes_a_normal_scenario() -> None:
             allowed_capabilities=("inspect_workload",),
             max_actions=1,
             max_iterations=3,
+            max_model_total_tokens=125,
+            max_model_estimated_cost_micros=20,
         ),
     )
 
@@ -128,8 +153,52 @@ async def test_evaluation_harness_passes_a_normal_scenario() -> None:
     assert report.passed
     assert report.failed_checks == ()
     assert report.metrics.action_started_count == 1
+    assert report.metrics.model_call_count == 2
+    assert report.metrics.model_total_token_count == 125
+    assert report.metrics.model_estimated_cost_micros == 15
     assert backend.inspect_calls == ["inspect_workload"]
     assert backend.mutation_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_evaluation_harness_summarizes_model_usage_across_scenarios() -> None:
+    first = build_service(
+        HarnessBackend(),
+        [inspect_workload(), finish()],
+        usage=[
+            ModelUsage("scripted", "suite-test", input_tokens=50, output_tokens=10),
+            ModelUsage("scripted", "suite-test", input_tokens=20, output_tokens=5),
+        ],
+    )
+    second = build_service(
+        HarnessBackend(),
+        [inspect_workload(), finish()],
+        usage=[
+            ModelUsage(
+                "scripted",
+                "suite-test",
+                input_tokens=70,
+                output_tokens=15,
+                estimated_cost_micros=8,
+            ),
+            ModelUsage("scripted", "suite-test", input_tokens=10, output_tokens=5),
+        ],
+    )
+    goal_one, task_one = goal_task()
+    goal_two, task_two = goal_task()
+    first_report = await EvaluationHarness(first).run(
+        EvaluationScenario("first", goal_one, task_one)
+    )
+    second_report = await EvaluationHarness(second).run(
+        EvaluationScenario("second", goal_two, task_two)
+    )
+
+    report = summarize_suite((first_report, second_report))
+
+    assert report.model_call_count == 4
+    assert report.model_total_token_count == 185
+    assert report.model_estimated_cost_micros == 8
+    assert report.average_model_tokens_per_scenario == 92.5
 
 
 @pytest.mark.asyncio

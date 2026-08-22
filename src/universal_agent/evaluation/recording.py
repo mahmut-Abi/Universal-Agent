@@ -92,6 +92,9 @@ def encode_replay_recording(recording: ReplayRecording) -> JsonObject:
             "recovery_planned_count": recording.metrics.recovery_planned_count,
             "recovery_exhausted_count": recording.metrics.recovery_exhausted_count,
             "human_intervention_count": recording.metrics.human_intervention_count,
+            "model_call_count": recording.metrics.model_call_count,
+            "model_total_token_count": recording.metrics.model_total_token_count,
+            "model_estimated_cost_micros": recording.metrics.model_estimated_cost_micros,
         },
     }
 
@@ -175,6 +178,21 @@ def _decode_metrics(payload: JsonObject) -> ReplayMetrics:
             _required(payload, "human_intervention_count"),
             "metrics.human_intervention_count",
         ),
+        model_call_count=_optional_int(
+            payload,
+            "model_call_count",
+            "metrics.model_call_count",
+        ),
+        model_total_token_count=_optional_int(
+            payload,
+            "model_total_token_count",
+            "metrics.model_total_token_count",
+        ),
+        model_estimated_cost_micros=_optional_int(
+            payload,
+            "model_estimated_cost_micros",
+            "metrics.model_estimated_cost_micros",
+        ),
     )
 
 
@@ -223,6 +241,13 @@ def _int(value: JsonValue, field: str) -> int:
     if isinstance(value, int) and not isinstance(value, bool):
         return value
     raise ValueError(f"{field} must be an integer")
+
+
+def _optional_int(payload: Mapping[str, JsonValue], key: str, field: str) -> int:
+    value = payload.get(key)
+    if value is None:
+        return 0
+    return _int(value, field)
 
 
 def _optional_error(value: JsonValue) -> ErrorCode | None:
