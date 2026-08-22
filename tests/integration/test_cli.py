@@ -438,6 +438,38 @@ async def test_cli_tui_renders_runtime_service_snapshot() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_session_diagnostics_renders_evidence_and_world_facts() -> None:
+    service, backend = build_cli_service([inspect_workload(), finish()])
+    run_output = StringIO()
+    diagnostics_output = StringIO()
+
+    run_status = await run_cli(
+        ["run", "production-operator", "Verify workload health"],
+        service=service,
+        stdout=run_output,
+    )
+    run_payload = read_json(run_output)
+    session_id = run_payload["result"]["session_id"]
+    assert isinstance(session_id, str)
+
+    diagnostics_status = await run_cli(
+        ["session", "diagnostics", session_id],
+        service=service,
+        stdout=diagnostics_output,
+    )
+    diagnostics = read_json(diagnostics_output)
+    evidence_claims = {item["claim"]: item for item in diagnostics["evidence"]}
+    world_claims = {item["claim"]: item for item in diagnostics["world_facts"]}
+
+    assert run_status == 0
+    assert diagnostics_status == 0
+    assert diagnostics["session"]["session_id"] == session_id
+    assert evidence_claims["healthy"]["value"] is True
+    assert world_claims["healthy"]["value"] is True
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_cli_run_rejects_unknown_profile() -> None:
     service, _ = build_cli_service([])
     output = StringIO()

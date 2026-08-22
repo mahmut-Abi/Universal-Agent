@@ -164,6 +164,25 @@ async def test_runtime_service_delegates_execution_to_runtime_api() -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_service_builds_session_explorer_projection() -> None:
+    service, backend = build_service([inspect_workload(), finish()])
+
+    run = await service.run_goal(*goal_task())
+    explorer = await service.session_explorer(run.result.session_id)
+
+    evidence_claims = {item.claim: item for item in explorer.evidence}
+    world_claims = {item.claim: item for item in explorer.world_facts}
+    assert explorer.session.session_id == run.result.session_id
+    assert evidence_claims["healthy"].value is True
+    assert world_claims["healthy"].value is True
+    assert world_claims["healthy"].subject == "deployment/example"
+    assert str(evidence_claims["healthy"].evidence_id) in {
+        evidence_id for fact in explorer.world_facts for evidence_id in fact.evidence_ids
+    }
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_runtime_service_derives_metrics_doctor_and_audit_from_events() -> None:
     service, backend = build_service(
         [scale_workload(), inspect_workload(), finish()],

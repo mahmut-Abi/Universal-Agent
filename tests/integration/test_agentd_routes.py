@@ -419,6 +419,7 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
     fetched = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}"))
     listed = await app.handle(HttpRequest("GET", "/v1/sessions"))
     events = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/events"))
+    diagnostics = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/diagnostics"))
 
     assert fetched.status_code == 200
     assert fetched.body["session_id"] == session_id
@@ -435,6 +436,15 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
     assert listed_session["pending_action"] is False
     assert listed_session["domain_name"] == "kubernetes"
     assert events.status_code == 200
+    assert diagnostics.status_code == 200
+    evidence_items = diagnostics.body["evidence"]
+    world_items = diagnostics.body["world_facts"]
+    assert isinstance(evidence_items, list)
+    assert isinstance(world_items, list)
+    evidence_claims = {item["claim"]: item for item in evidence_items if isinstance(item, dict)}
+    world_claims = {item["claim"]: item for item in world_items if isinstance(item, dict)}
+    assert evidence_claims["healthy"]["value"] is True
+    assert world_claims["healthy"]["value"] is True
     event_items = events.body["events"]
     assert isinstance(event_items, list)
     last_event = event_items[-1]

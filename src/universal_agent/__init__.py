@@ -30,10 +30,12 @@ from universal_agent.profile import AgentProfile, ProfileConfig, ProfileRegistry
 from universal_agent.runtime import (
     AgentRuntime,
     EventCursorError,
+    EvidenceView,
     InMemoryEventSink,
     RuntimeAPI,
     RuntimeEventBatch,
     RuntimeSessionBatch,
+    SessionDiagnosticsView,
     SessionSummaryView,
 )
 from universal_agent.service import (
@@ -46,6 +48,8 @@ from universal_agent.service import (
     RuntimeMetricsView,
     RuntimeService,
     RuntimeTraceSpanView,
+    SessionExplorerView,
+    WorldFactView,
 )
 from universal_agent.state import InMemoryStateStore, StateStore
 from universal_agent.tools import Tool
@@ -62,6 +66,7 @@ __all__ = [
     "DomainConfig",
     "DomainLoader",
     "EventCursorError",
+    "EvidenceView",
     "ExecutionResult",
     "ExecutionStatus",
     "FileEventStore",
@@ -92,6 +97,8 @@ __all__ = [
     "SQLiteEventStore",
     "SQLiteSessionStore",
     "ScriptedModelAdapter",
+    "SessionDiagnosticsView",
+    "SessionExplorerView",
     "SessionSummaryView",
     "StateStore",
     "StoreBackend",
@@ -102,6 +109,7 @@ __all__ = [
     "ToolDefinition",
     "TuiSnapshot",
     "WebConsoleSnapshot",
+    "WorldFactView",
     "build_runtime_console_snapshot",
     "build_tui_snapshot",
     "build_web_console_snapshot",

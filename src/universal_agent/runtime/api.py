@@ -16,6 +16,8 @@ from universal_agent.core import (
     GoalId,
     GoalStatus,
     JsonMapping,
+    JsonValue,
+    ObservationId,
     PendingAction,
     RuntimeEvent,
     SessionId,
@@ -24,6 +26,7 @@ from universal_agent.core import (
     TaskStatus,
     immutable_json,
 )
+from universal_agent.evidence import Evidence, EvidenceId
 from universal_agent.runtime.agent import AgentRuntime
 from universal_agent.runtime.events import EventReader
 from universal_agent.state import SessionSnapshot, SessionStore
@@ -116,6 +119,27 @@ class RuntimeEventView:
 
 
 @dataclass(frozen=True, slots=True)
+class EvidenceView:
+    evidence_id: EvidenceId
+    session_id: SessionId
+    task_id: TaskId
+    action_id: ActionId
+    observation_id: ObservationId
+    subject: str
+    claim: str
+    value: JsonValue
+    source: str
+    confidence: float
+    observed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class SessionDiagnosticsView:
+    session: SessionView
+    evidence: tuple[EvidenceView, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeRun:
     result: ExecutionResult
     session: SessionView
@@ -185,6 +209,9 @@ class RuntimeAPI:
 
     async def get_session(self, session_id: SessionId) -> SessionView:
         return session_view(await self._session_store.load_session(session_id))
+
+    async def get_session_diagnostics(self, session_id: SessionId) -> SessionDiagnosticsView:
+        return session_diagnostics_view(await self._session_store.load_session(session_id))
 
     async def list_sessions(
         self,
@@ -266,6 +293,14 @@ def session_view(snapshot: SessionSnapshot) -> SessionView:
         domain_name=snapshot.domain_name,
         domain_version=snapshot.domain_version,
     )
+
+
+def session_diagnostics_view(snapshot: SessionSnapshot) -> SessionDiagnosticsView:
+    evidence = tuple(
+        evidence_view(item)
+        for item in sorted(snapshot.evidence, key=lambda item: (item.observed_at, str(item.id)))
+    )
+    return SessionDiagnosticsView(session_view(snapshot), evidence)
 
 
 def session_summary_view(snapshot: SessionSnapshot) -> SessionSummaryView:
@@ -361,6 +396,30 @@ def event_view(event: RuntimeEvent) -> RuntimeEventView:
         data=MappingProxyType(dict(event.data)),
         occurred_at=event.occurred_at,
     )
+
+
+def evidence_view(evidence: Evidence) -> EvidenceView:
+    return EvidenceView(
+        evidence.id,
+        evidence.session_id,
+        evidence.task_id,
+        evidence.action_id,
+        evidence.observation_id,
+        evidence.subject,
+        evidence.claim,
+        _copy_json_value(evidence.value),
+        evidence.source,
+        evidence.confidence,
+        evidence.observed_at,
+    )
+
+
+def _copy_json_value(value: JsonValue) -> JsonValue:
+    if isinstance(value, list):
+        return [_copy_json_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _copy_json_value(item) for key, item in value.items()}
+    return value
 
 
 def _cursor_value(event_id: EventId | None) -> str | None:

@@ -22,6 +22,7 @@ from universal_agent.core import (
 from universal_agent.profile import ProfileNotFoundError
 from universal_agent.runtime import (
     EvaluationView,
+    EvidenceView,
     PendingActionView,
     RuntimeEventBatch,
     RuntimeEventView,
@@ -45,7 +46,9 @@ from universal_agent.service import (
     RuntimeMetricsView,
     RuntimeService,
     RuntimeTraceSpanView,
+    SessionExplorerView,
     ToolView,
+    WorldFactView,
 )
 from universal_agent.state import StateNotFoundError
 from universal_agent.web import build_web_console_snapshot, render_web_console
@@ -227,6 +230,15 @@ class AgentdApp:
                 return method_not_allowed(("GET",))
             try:
                 return json_response(session_body(await self._service.get_session(session_id)))
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
+        if session_id is not None and suffix == "diagnostics":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                return json_response(
+                    session_explorer_body(await self._service.session_explorer(session_id))
+                )
             except StateNotFoundError as exc:
                 return not_found(str(exc))
         if session_id is not None and suffix == "events":
@@ -798,6 +810,43 @@ def session_body(view: SessionView) -> JsonMapping:
             "domain_version": view.domain_version,
         }
     )
+
+
+def session_explorer_body(view: SessionExplorerView) -> JsonMapping:
+    return immutable_json(
+        {
+            "session": dict(session_body(view.session)),
+            "evidence": [evidence_body(item) for item in view.evidence],
+            "world_facts": [world_fact_body(item) for item in view.world_facts],
+        }
+    )
+
+
+def evidence_body(view: EvidenceView) -> dict[str, JsonValue]:
+    return {
+        "evidence_id": str(view.evidence_id),
+        "session_id": str(view.session_id),
+        "task_id": str(view.task_id),
+        "action_id": str(view.action_id),
+        "observation_id": str(view.observation_id),
+        "subject": view.subject,
+        "claim": view.claim,
+        "value": _json_value(view.value),
+        "source": view.source,
+        "confidence": view.confidence,
+        "observed_at": view.observed_at.isoformat(),
+    }
+
+
+def world_fact_body(view: WorldFactView) -> dict[str, JsonValue]:
+    return {
+        "subject": view.subject,
+        "claim": view.claim,
+        "value": _json_value(view.value),
+        "confidence": view.confidence,
+        "observed_at": view.observed_at.isoformat(),
+        "evidence_ids": list(view.evidence_ids),
+    }
 
 
 def session_summary_body(view: SessionSummaryView) -> dict[str, JsonValue]:

@@ -15,7 +15,9 @@ from universal_agent.service.runtime import (
     RuntimeConfigDomainView,
     RuntimeConfigView,
     RuntimeService,
+    SessionExplorerView,
     ToolView,
+    WorldFactView,
 )
 
 __all__ = [
@@ -33,5 +35,7 @@ __all__ = [
     "RuntimeMetricsView",
     "RuntimeService",
     "RuntimeTraceSpanView",
+    "SessionExplorerView",
     "ToolView",
+    "WorldFactView",
 ]

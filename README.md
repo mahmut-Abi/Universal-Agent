@@ -81,6 +81,8 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
 - `cancel_session(session_id, reason=...)` cancels a non-terminal session, clears any pending action,
   and returns a cancelled run plus the latest session projection.
 - `get_session(session_id)` loads an immutable projection of the latest `SessionSnapshot`.
+- `get_session_diagnostics(session_id)` returns a stable session diagnostics read model with
+  traceable Evidence projections for Session Explorer consumers.
 - `list_sessions()` returns recent `SessionSummaryView` projections without exposing stored
   snapshots to applications.
 - `stream_sessions(after_session_id=..., limit=...)` returns a cursor batch of session summaries.
@@ -114,16 +116,17 @@ configuration reads via `GET /v1/config`, confirmation resume via
 `POST /v1/sessions/{id}/cancel`, operations reads via `/v1/metrics`,
 `/v1/metrics/prometheus`, `/v1/cost`, `/v1/logs`, `/v1/traces`, `/v1/traces/otlp`,
 `/v1/doctor` and `/v1/audit`, per-session audit/cost/log/trace
-reads including `/v1/sessions/{id}/traces/otlp`, and cursor session/event reads with `after` /
-`limit` query parameters. `GET /v1/sessions/{id}/events/stream`
+reads including `/v1/sessions/{id}/traces/otlp`, `GET /v1/sessions/{id}/diagnostics` for
+session/evidence/world fact inspection, and cursor session/event reads with `after` / `limit`
+query parameters. `GET /v1/sessions/{id}/events/stream`
 returns the same cursor batch as `text/event-stream` frames for SSE clients. `GET /console` returns a
 read-only HTML Web Console snapshot built from the same RuntimeService projections. `AgentdHttpServer`
 is the standard-library HTTP bridge for this adapter: it owns socket/body/header translation only and
 does not touch Runtime internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
-Capability/Tool catalogs, `config show`, and session list/show/events/pause/resume/cancel commands
-through `RuntimeService`, with cursor flags and optional SSE text output for session event reads. It
+Capability/Tool catalogs, `config show`, and session list/show/diagnostics/events/pause/resume/cancel
+commands through `RuntimeService`, with cursor flags and optional SSE text output for session event reads. It
 can also load an
 `agent init` Profile JSON through `--profile-config` and assemble the service through
 `RuntimeHost`, so generated memory/file/SQLite store settings are used by subsequent CLI commands.
@@ -235,6 +238,8 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   golden fixtures.
   Replay recordings can be encoded as versioned JSON and saved through `FileReplayRecordingStore`
   for golden regression fixtures.
+- Session Explorer foundation: `RuntimeService.session_explorer` rebuilds read-only world facts from
+  persisted Evidence through Domain world updaters and exposes session diagnostics through agentd/CLI.
 - TUI foundation: `build_tui_snapshot` consumes RuntimeService projections and `render_tui_snapshot`
   produces a deterministic text view for CLI/operator use without touching Kernel internals.
 - Web Console foundation: `build_web_console_snapshot` consumes the shared console snapshot builder
@@ -306,6 +311,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_7_deterministic_mode.py
 .venv/bin/python examples/p5_tui.py
 .venv/bin/python examples/p5_web_console.py
+.venv/bin/python examples/p5_session_diagnostics.py
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-profile.json --store-backend sqlite --store-path .tmp/runtime.sqlite3 --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-profile.json config show

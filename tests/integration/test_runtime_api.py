@@ -208,6 +208,23 @@ async def test_runtime_api_runs_goal_and_returns_immutable_session_projection() 
 
 
 @pytest.mark.asyncio
+async def test_runtime_api_returns_session_diagnostics_with_evidence() -> None:
+    api, _, _, backend = build_health_api([inspect_workload("healthy"), finish()])
+
+    run = await api.run_goal(*health_goal_task())
+    diagnostics = await api.get_session_diagnostics(run.result.session_id)
+
+    assert diagnostics.session.session_id == run.result.session_id
+    assert diagnostics.session.goal_status is GoalStatus.COMPLETED
+    claims = {item.claim: item for item in diagnostics.evidence}
+    assert claims["healthy"].value is True
+    assert claims["resource"].value == "deployment/example"
+    assert claims["healthy"].source == "inspect_workload:kubernetes_inspect_workload"
+    assert claims["healthy"].confidence == 0.99
+    assert backend.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_runtime_api_lists_sessions_as_recent_summaries() -> None:
     api, store, _, backend = build_health_api(
         [

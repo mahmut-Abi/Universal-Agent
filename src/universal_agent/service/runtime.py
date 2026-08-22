@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from universal_agent.core import (
@@ -9,6 +10,7 @@ from universal_agent.core import (
     EventId,
     Goal,
     JsonMapping,
+    JsonValue,
     RiskLevel,
     SessionId,
     SideEffect,
@@ -16,6 +18,7 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.domain import ActiveDomain, RuntimeComponents
+from universal_agent.evidence import Evidence
 from universal_agent.operations import (
     AuditRecordView,
     DoctorReportView,
@@ -34,6 +37,7 @@ from universal_agent.operations import (
 )
 from universal_agent.profile import AgentProfile, ProfileRegistry
 from universal_agent.runtime import (
+    EvidenceView,
     RuntimeAPI,
     RuntimeEventBatch,
     RuntimeEventView,
@@ -42,6 +46,7 @@ from universal_agent.runtime import (
     SessionSummaryView,
     SessionView,
 )
+from universal_agent.world import InMemoryWorldModel, WorldFact
 
 if TYPE_CHECKING:
     from universal_agent.host.config import RuntimeConfig
@@ -123,6 +128,23 @@ class RuntimeConfigView:
     max_iterations: int
     max_recovery_steps: int
     domains: tuple[RuntimeConfigDomainView, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class WorldFactView:
+    subject: str
+    claim: str
+    value: JsonValue
+    confidence: float
+    observed_at: datetime
+    evidence_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SessionExplorerView:
+    session: SessionView
+    evidence: tuple[EvidenceView, ...]
+    world_facts: tuple[WorldFactView, ...]
 
 
 class RuntimeService:
@@ -292,6 +314,14 @@ class RuntimeService:
     async def get_session(self, session_id: SessionId) -> SessionView:
         return await self._runtime_api.get_session(session_id)
 
+    async def session_explorer(self, session_id: SessionId) -> SessionExplorerView:
+        diagnostics = await self._runtime_api.get_session_diagnostics(session_id)
+        return SessionExplorerView(
+            diagnostics.session,
+            diagnostics.evidence,
+            self._world_fact_views(session_id, diagnostics.evidence),
+        )
+
     async def list_sessions(
         self,
         *,
@@ -412,6 +442,21 @@ class RuntimeService:
             events.extend(await self.list_events(session.session_id))
         return tuple(sorted(events, key=lambda event: event.occurred_at))
 
+    def _world_fact_views(
+        self,
+        session_id: SessionId,
+        evidence: tuple[EvidenceView, ...],
+    ) -> tuple[WorldFactView, ...]:
+        if not evidence or not self._components.world_updaters:
+            return ()
+        world_model = InMemoryWorldModel()
+        world_model.rebuild(
+            session_id,
+            tuple(_evidence_from_view(item) for item in evidence),
+            self._components.world_updaters,
+        )
+        return tuple(world_fact_view(item) for item in world_model.snapshot(session_id).facts)
+
 
 def domain_view(domain: ActiveDomain, *, primary: bool) -> DomainView:
     metadata = domain.manifest.metadata
@@ -446,6 +491,41 @@ def runtime_config_domain_views(
         RuntimeConfigDomainView(identity.name, identity.version, index == 0)
         for index, identity in enumerate(identities)
     )
+
+
+def world_fact_view(fact: WorldFact) -> WorldFactView:
+    return WorldFactView(
+        fact.subject,
+        fact.claim,
+        _copy_json_value(fact.value),
+        fact.confidence,
+        fact.observed_at,
+        tuple(str(item) for item in fact.evidence_ids),
+    )
+
+
+def _evidence_from_view(view: EvidenceView) -> Evidence:
+    return Evidence(
+        view.session_id,
+        view.task_id,
+        view.action_id,
+        view.observation_id,
+        view.subject,
+        view.claim,
+        _copy_json_value(view.value),
+        view.source,
+        view.confidence,
+        view.evidence_id,
+        view.observed_at,
+    )
+
+
+def _copy_json_value(value: JsonValue) -> JsonValue:
+    if isinstance(value, list):
+        return [_copy_json_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _copy_json_value(item) for key, item in value.items()}
+    return value
 
 
 def _not_ready_reason(
