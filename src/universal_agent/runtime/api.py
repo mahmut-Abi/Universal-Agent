@@ -10,6 +10,7 @@ from universal_agent.core import (
     ErrorCode,
     EvaluationResult,
     EvaluationStatus,
+    EventId,
     ExecutionResult,
     Goal,
     GoalId,
@@ -96,6 +97,12 @@ class RuntimeRun:
     session: SessionView
 
 
+@dataclass(frozen=True, slots=True)
+class RuntimeEventBatch:
+    events: tuple[RuntimeEventView, ...]
+    next_cursor: str | None
+
+
 class RuntimeAPI:
     """Stable in-process interface for applications and future service adapters.
 
@@ -119,8 +126,22 @@ class RuntimeAPI:
         result = await self._runtime.run(goal, task)
         return RuntimeRun(result, await self.get_session(result.session_id))
 
-    async def resume_session(self, session_id: SessionId, *, confirmed: bool) -> RuntimeRun:
+    async def resume_session(
+        self,
+        session_id: SessionId,
+        *,
+        confirmed: bool | None = None,
+    ) -> RuntimeRun:
         result = await self._runtime.resume(session_id, confirmed=confirmed)
+        return RuntimeRun(result, await self.get_session(result.session_id))
+
+    async def pause_session(
+        self,
+        session_id: SessionId,
+        *,
+        reason: str = "session paused",
+    ) -> RuntimeRun:
+        result = await self._runtime.pause(session_id, reason=reason)
         return RuntimeRun(result, await self.get_session(result.session_id))
 
     async def cancel_session(
@@ -136,8 +157,26 @@ class RuntimeAPI:
         return session_view(await self._session_store.load_session(session_id))
 
     async def list_events(self, session_id: SessionId) -> tuple[RuntimeEventView, ...]:
-        events = await self._event_reader.list_events(session_id)
-        return tuple(event_view(event) for event in events)
+        return (await self.stream_events(session_id)).events
+
+    async def stream_events(
+        self,
+        session_id: SessionId,
+        *,
+        after_event_id: EventId | None = None,
+        limit: int | None = None,
+    ) -> RuntimeEventBatch:
+        await self._session_store.load_session(session_id)
+        events = await self._event_reader.list_events(
+            session_id,
+            after_event_id=after_event_id,
+            limit=limit,
+        )
+        views = tuple(event_view(event) for event in events)
+        return RuntimeEventBatch(
+            views,
+            views[-1].event_id if views else _cursor_value(after_event_id),
+        )
 
 
 def session_view(snapshot: SessionSnapshot) -> SessionView:
@@ -210,3 +249,9 @@ def event_view(event: RuntimeEvent) -> RuntimeEventView:
         data=MappingProxyType(dict(event.data)),
         occurred_at=event.occurred_at,
     )
+
+
+def _cursor_value(event_id: EventId | None) -> str | None:
+    if event_id is None:
+        return None
+    return str(event_id)

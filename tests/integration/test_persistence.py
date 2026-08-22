@@ -19,7 +19,7 @@ from universal_agent import (
     Task,
     immutable_json,
 )
-from universal_agent.core import ExecutionStatus, GoalStatus, JsonMapping
+from universal_agent.core import EventId, ExecutionStatus, GoalStatus, JsonMapping
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 
 
@@ -167,6 +167,11 @@ async def test_file_persistence_resumes_confirmation_after_runtime_rebuild(
     third = build_file_api(tmp_path, backend, [])
     reloaded = await third.get_session(waiting.result.session_id)
     reloaded_events = await third.list_events(waiting.result.session_id)
+    reloaded_batch = await third.stream_events(
+        waiting.result.session_id,
+        after_event_id=EventId(reloaded_events[0].event_id),
+        limit=2,
+    )
 
     assert reloaded.goal_status is GoalStatus.COMPLETED
     assert reloaded.latest_evaluation is not None
@@ -174,3 +179,7 @@ async def test_file_persistence_resumes_confirmation_after_runtime_rebuild(
     assert tuple(event.type for event in reloaded_events) == tuple(
         event.type for event in combined_events
     )
+    assert tuple(event.type for event in reloaded_batch.events) == tuple(
+        event.type for event in reloaded_events[1:3]
+    )
+    assert reloaded_batch.next_cursor == reloaded_batch.events[-1].event_id

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from urllib.parse import quote
 
-from universal_agent.core import AgentState, RuntimeEvent, SessionId
+from universal_agent.core import AgentState, EventId, RuntimeEvent, SessionId
 from universal_agent.persistence.codec import (
     decode_runtime_event,
     decode_session_snapshot,
@@ -12,6 +12,7 @@ from universal_agent.persistence.codec import (
     encode_session_snapshot,
     json_mapping,
 )
+from universal_agent.runtime.events import filter_events
 from universal_agent.state import SessionSnapshot, StateNotFoundError, session_from_state
 from universal_agent.state.session import with_state
 
@@ -80,7 +81,13 @@ class FileEventStore:
             handle.write(json.dumps(encode_runtime_event(event), sort_keys=True))
             handle.write("\n")
 
-    async def list_events(self, session_id: SessionId | None = None) -> tuple[RuntimeEvent, ...]:
+    async def list_events(
+        self,
+        session_id: SessionId | None = None,
+        *,
+        after_event_id: EventId | None = None,
+        limit: int | None = None,
+    ) -> tuple[RuntimeEvent, ...]:
         if not self._path.exists():
             return ()
         events: list[RuntimeEvent] = []
@@ -89,6 +96,10 @@ class FileEventStore:
                 if not line.strip():
                     continue
                 event = decode_runtime_event(json_mapping(json.loads(line)))
-                if session_id is None or event.session_id == session_id:
-                    events.append(event)
-        return tuple(events)
+                events.append(event)
+        return filter_events(
+            events,
+            session_id=session_id,
+            after_event_id=after_event_id,
+            limit=limit,
+        )

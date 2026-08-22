@@ -118,6 +118,10 @@ def finish() -> Decision:
     return Decision(DecisionType.FINISH, "Required evidence is present")
 
 
+def wait() -> Decision:
+    return Decision(DecisionType.WAIT, "Operator pause requested")
+
+
 def goal_task() -> tuple[Goal, Task]:
     return (
         Goal("Verify workload health", (SuccessCriterion("healthy", True),)),
@@ -367,7 +371,78 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
     last_event = event_items[-1]
     assert isinstance(last_event, dict)
     assert last_event["type"] == "GoalCompleted"
+    assert events.body["next_cursor"] == last_event["event_id"]
     assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_agentd_events_route_supports_cursor_and_limit() -> None:
+    service, _ = build_service([inspect_workload(), finish()])
+    app = AgentdApp(service)
+    created = await app.handle(HttpRequest("POST", "/v1/sessions", goal_submission_body()))
+    result = created.body["result"]
+    assert isinstance(result, dict)
+    session_id = result["session_id"]
+    assert isinstance(session_id, str)
+
+    all_events = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/events"))
+    event_items = all_events.body["events"]
+    assert isinstance(event_items, list)
+    first_event = event_items[0]
+    assert isinstance(first_event, dict)
+
+    streamed = await app.handle(
+        HttpRequest(
+            "GET", f"/v1/sessions/{session_id}/events?after={first_event['event_id']}&limit=2"
+        )
+    )
+
+    assert streamed.status_code == 200
+    streamed_items = streamed.body["events"]
+    assert isinstance(streamed_items, list)
+    assert len(streamed_items) == 2
+    assert streamed_items == event_items[1:3]
+    last_streamed = streamed_items[-1]
+    assert isinstance(last_streamed, dict)
+    assert streamed.body["next_cursor"] == last_streamed["event_id"]
+
+
+@pytest.mark.asyncio
+async def test_agentd_pause_and_resume_routes_continue_waiting_session_without_pending_action() -> (
+    None
+):
+    service, backend = build_service([wait(), inspect_workload(), finish()])
+    app = AgentdApp(service)
+    created = await app.handle(HttpRequest("POST", "/v1/sessions", goal_submission_body()))
+    result = created.body["result"]
+    assert isinstance(result, dict)
+    session_id = result["session_id"]
+    assert isinstance(session_id, str)
+
+    paused = await app.handle(
+        HttpRequest(
+            "POST",
+            f"/v1/sessions/{session_id}/pause",
+            immutable_json({"reason": "operator paused via route"}),
+        )
+    )
+    resumed = await app.handle(HttpRequest("POST", f"/v1/sessions/{session_id}/resume"))
+    events = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/events"))
+
+    paused_result = paused.body["result"]
+    resumed_result = resumed.body["result"]
+    assert isinstance(paused_result, dict)
+    assert isinstance(resumed_result, dict)
+    assert paused.status_code == 200
+    assert paused_result["status"] == "waiting"
+    assert resumed.status_code == 200
+    assert resumed_result["status"] == "completed"
+    assert backend.inspect_calls == 1
+    event_items = events.body["events"]
+    assert isinstance(event_items, list)
+    event_types = [item["type"] for item in event_items if isinstance(item, dict)]
+    assert "SessionPaused" in event_types
+    assert "SessionResumed" in event_types
 
 
 @pytest.mark.asyncio
@@ -399,6 +474,7 @@ async def test_agentd_session_and_events_routes_are_json_safe() -> None:
     assert isinstance(last_event, dict)
     assert last_event["type"] == "GoalCompleted"
     assert isinstance(last_event["occurred_at"], str)
+    assert events.body["next_cursor"] == last_event["event_id"]
     assert backend.inspect_calls == 1
 
 
@@ -573,13 +649,23 @@ async def test_agentd_resume_route_validates_request_body() -> None:
     app = AgentdApp(service)
 
     wrong_method = await app.handle(HttpRequest("GET", "/v1/sessions/session-1/resume"))
+    pause_wrong_method = await app.handle(HttpRequest("GET", "/v1/sessions/session-1/pause"))
     cancel_wrong_method = await app.handle(HttpRequest("GET", "/v1/sessions/session-1/cancel"))
-    missing_confirmed = await app.handle(HttpRequest("POST", "/v1/sessions/session-1/resume"))
+    missing_session_without_confirmed = await app.handle(
+        HttpRequest("POST", "/v1/sessions/session-1/resume")
+    )
     invalid_confirmed = await app.handle(
         HttpRequest(
             "POST",
             "/v1/sessions/session-1/resume",
             immutable_json({"confirmed": "true"}),
+        )
+    )
+    invalid_pause_reason = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/sessions/session-1/pause",
+            immutable_json({"reason": 42}),
         )
     )
     invalid_cancel_reason = await app.handle(
@@ -592,22 +678,48 @@ async def test_agentd_resume_route_validates_request_body() -> None:
 
     assert wrong_method.status_code == 405
     assert wrong_method.headers["allow"] == "POST"
+    assert pause_wrong_method.status_code == 405
+    assert pause_wrong_method.headers["allow"] == "POST"
     assert cancel_wrong_method.status_code == 405
     assert cancel_wrong_method.headers["allow"] == "POST"
-    assert missing_confirmed.status_code == 400
-    assert missing_confirmed.body["error"] == {
-        "code": "bad_request",
-        "message": "resume requires boolean confirmed",
+    assert missing_session_without_confirmed.status_code == 404
+    assert missing_session_without_confirmed.body["error"] == {
+        "code": "not_found",
+        "message": "session not found: session-1",
     }
     assert invalid_confirmed.status_code == 400
     assert invalid_confirmed.body["error"] == {
         "code": "bad_request",
-        "message": "resume requires boolean confirmed",
+        "message": "resume confirmed must be a boolean",
+    }
+    assert invalid_pause_reason.status_code == 400
+    assert invalid_pause_reason.body["error"] == {
+        "code": "bad_request",
+        "message": "pause reason must be a string",
     }
     assert invalid_cancel_reason.status_code == 400
     assert invalid_cancel_reason.body["error"] == {
         "code": "bad_request",
         "message": "cancel reason must be a string",
+    }
+
+
+@pytest.mark.asyncio
+async def test_agentd_resume_route_requires_confirmed_for_pending_action() -> None:
+    service, _ = build_remediation_service(
+        [inspect_workload("healthy"), inspect_pod(), scale_workload()]
+    )
+    app = AgentdApp(service)
+    waiting = await service.run_goal(*remediation_goal_task())
+
+    response = await app.handle(
+        HttpRequest("POST", f"/v1/sessions/{waiting.result.session_id}/resume")
+    )
+
+    assert response.status_code == 400
+    assert response.body["error"] == {
+        "code": "bad_request",
+        "message": "resume requires boolean confirmed for pending action",
     }
 
 
@@ -625,6 +737,12 @@ async def test_agentd_routes_return_404_and_405_errors() -> None:
             "/v1/sessions/session-missing/resume",
             immutable_json({"confirmed": True}),
         )
+    )
+    missing_pause_session = await app.handle(
+        HttpRequest("POST", "/v1/sessions/session-missing/pause")
+    )
+    missing_events_session = await app.handle(
+        HttpRequest("GET", "/v1/sessions/session-missing/events")
     )
     missing_cancel_session = await app.handle(
         HttpRequest("POST", "/v1/sessions/session-missing/cancel")
@@ -648,6 +766,16 @@ async def test_agentd_routes_return_404_and_405_errors() -> None:
     }
     assert missing_resume_session.status_code == 404
     assert missing_resume_session.body["error"] == {
+        "code": "not_found",
+        "message": "session not found: session-missing",
+    }
+    assert missing_pause_session.status_code == 404
+    assert missing_pause_session.body["error"] == {
+        "code": "not_found",
+        "message": "session not found: session-missing",
+    }
+    assert missing_events_session.status_code == 404
+    assert missing_events_session.body["error"] == {
         "code": "not_found",
         "message": "session not found: session-missing",
     }

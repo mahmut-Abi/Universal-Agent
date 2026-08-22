@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from universal_agent.core import (
     CapabilityCategory,
+    EventId,
     Goal,
     RiskLevel,
     SessionId,
@@ -12,7 +13,13 @@ from universal_agent.core import (
 )
 from universal_agent.domain import ActiveDomain, RuntimeComponents
 from universal_agent.profile import AgentProfile, ProfileRegistry
-from universal_agent.runtime import RuntimeAPI, RuntimeEventView, RuntimeRun, SessionView
+from universal_agent.runtime import (
+    RuntimeAPI,
+    RuntimeEventBatch,
+    RuntimeEventView,
+    RuntimeRun,
+    SessionView,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,8 +192,21 @@ class RuntimeService:
     async def run_goal(self, goal: Goal, task: Task) -> RuntimeRun:
         return await self._runtime_api.run_goal(goal, task)
 
-    async def resume_session(self, session_id: SessionId, *, confirmed: bool) -> RuntimeRun:
+    async def resume_session(
+        self,
+        session_id: SessionId,
+        *,
+        confirmed: bool | None = None,
+    ) -> RuntimeRun:
         return await self._runtime_api.resume_session(session_id, confirmed=confirmed)
+
+    async def pause_session(
+        self,
+        session_id: SessionId,
+        *,
+        reason: str = "session paused",
+    ) -> RuntimeRun:
+        return await self._runtime_api.pause_session(session_id, reason=reason)
 
     async def cancel_session(
         self,
@@ -201,6 +221,19 @@ class RuntimeService:
 
     async def list_events(self, session_id: SessionId) -> tuple[RuntimeEventView, ...]:
         return await self._runtime_api.list_events(session_id)
+
+    async def stream_events(
+        self,
+        session_id: SessionId,
+        *,
+        after_event_id: EventId | None = None,
+        limit: int | None = None,
+    ) -> RuntimeEventBatch:
+        return await self._runtime_api.stream_events(
+            session_id,
+            after_event_id=after_event_id,
+            limit=limit,
+        )
 
 
 def domain_view(domain: ActiveDomain, *, primary: bool) -> DomainView:

@@ -19,7 +19,14 @@ from universal_agent import (
     Task,
     immutable_json,
 )
-from universal_agent.core import ErrorCode, ExecutionStatus, GoalStatus, JsonMapping, TaskStatus
+from universal_agent.core import (
+    ErrorCode,
+    EventId,
+    ExecutionStatus,
+    GoalStatus,
+    JsonMapping,
+    TaskStatus,
+)
 from universal_agent.domains.kubernetes import KubernetesDomain, KubernetesRemediationDomain
 from universal_agent.runtime import RuntimeEventView
 
@@ -109,6 +116,10 @@ def scale_workload() -> Decision:
 
 def finish() -> Decision:
     return Decision(DecisionType.FINISH, "Required evidence is present")
+
+
+def wait() -> Decision:
+    return Decision(DecisionType.WAIT, "Operator pause requested")
 
 
 def health_goal_task() -> tuple[Goal, Task]:
@@ -229,6 +240,35 @@ async def test_runtime_api_resumes_confirmation_and_reads_combined_events() -> N
     assert [event.type for event in combined_events].count("PolicyChecked") == 5
     assert [event.type for event in combined_events][-1] == "GoalCompleted"
     assert all(isinstance(event, RuntimeEventView) for event in combined_events)
+
+
+@pytest.mark.asyncio
+async def test_runtime_api_pauses_and_resumes_waiting_session_without_pending_action() -> None:
+    api, _, _, backend = build_health_api([wait(), inspect_workload("healthy"), finish()])
+
+    waiting = await api.run_goal(*health_goal_task())
+    paused = await api.pause_session(waiting.result.session_id, reason="operator paused session")
+    resumed = await api.resume_session(waiting.result.session_id)
+    events = await api.list_events(waiting.result.session_id)
+    batch = await api.stream_events(
+        waiting.result.session_id,
+        after_event_id=EventId(events[0].event_id),
+        limit=3,
+    )
+
+    assert waiting.result.status is ExecutionStatus.WAITING
+    assert waiting.session.pending_action is None
+    assert paused.result.status is ExecutionStatus.WAITING
+    assert paused.session.goal_status is GoalStatus.WAITING
+    assert paused.session.termination_reason == "operator paused session"
+    assert resumed.result.status is ExecutionStatus.COMPLETED
+    assert resumed.session.goal_status is GoalStatus.COMPLETED
+    assert resumed.session.pending_action is None
+    assert backend.calls == 1
+    assert "SessionPaused" in [event.type for event in events]
+    assert "SessionResumed" in [event.type for event in events]
+    assert batch.next_cursor == batch.events[-1].event_id
+    assert tuple(event.type for event in batch.events) == tuple(event.type for event in events[1:4])
 
 
 @pytest.mark.asyncio

@@ -5,10 +5,11 @@ A typed Universal Agent Kernel and Runtime with pluggable Domain Runtimes.
 The long-term architecture is defined in
 `universal-agent-runtime-domain-runtime-design.md`. The current implementation is a typed runtime
 with fake-backed Kubernetes remediation plus the first P3.5 productization foundation: a stable
-in-process Runtime API, immutable Session read models, readable Events, and local file-backed
-session/event persistence. The v3.0 design document also defines later productization layers such as
-real `agentd`, CLI, database persistence, streaming event delivery, operations, evaluation, optional
-Multi-Agent, UI, distributed runtime, and ecosystem packaging.
+in-process Runtime API, immutable Session read models, cursor-readable Events, explicit
+pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter, a local CLI adapter,
+and local file-backed session/event persistence. The v3.0 design document also defines later
+productization layers such as real HTTP `agentd`, database persistence, SSE delivery, operations,
+evaluation, optional Multi-Agent, UI, distributed runtime, and ecosystem packaging.
 
 ## Architectural boundaries
 
@@ -70,15 +71,18 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
 `AgentRuntime` with stable read models:
 
 - `run_goal(goal, task)` executes a goal and returns both the `ExecutionResult` and a `SessionView`.
-- `resume_session(session_id, confirmed=...)` resumes a waiting confirmation through the same
-  policy-checked runtime path as `AgentRuntime.resume`.
+- `pause_session(session_id, reason=...)` moves a non-terminal session into an explicit waiting state.
+- `resume_session(session_id, confirmed=...)` resumes either a waiting confirmation or a paused
+  session through the same runtime-controlled path as `AgentRuntime.resume`.
 - `cancel_session(session_id, reason=...)` cancels a non-terminal session, clears any pending action,
   and returns a cancelled run plus the latest session projection.
 - `get_session(session_id)` loads an immutable projection of the latest `SessionSnapshot`.
 - `list_events(session_id)` returns immutable event projections filtered to one session.
+- `stream_events(session_id, after_event_id=..., limit=...)` returns a cursor batch for CLI/Web/SSE
+  consumers.
 
-This is intentionally still in-process. Real HTTP `agentd`, database persistence, SSE delivery, CLI,
-and explicit pause endpoints are later P3.5 work built on this interface, not replacements for it.
+This is intentionally still in-process. Real HTTP `agentd`, database persistence and SSE delivery are
+later P3.5 work built on this interface, not replacements for it.
 
 `RuntimeService` is the first framework-free `agentd` foundation. It delegates execution, session and
 event reads to `RuntimeAPI`, and adds service-level health, readiness, Domain, Capability and Tool
@@ -87,16 +91,22 @@ Kernel internals directly. `RuntimeHost` is the typed application assembly bound
 Configuration: it validates the configured Domain identity, builds memory or file-backed stores,
 applies runtime limits/environment, optionally binds an application-level Agent Profile, and exposes
 both `RuntimeAPI` and `RuntimeService` without teaching applications Kernel internals. See
-`examples/p3_5_runtime_api.py`, `examples/p3_5_runtime_service.py`, and
-`examples/p3_5_runtime_config.py` for minimal application-facing usage.
+`examples/p3_5_runtime_api.py`, `examples/p3_5_runtime_service.py`,
+`examples/p3_5_runtime_config.py`, and `examples/p3_5_cli_event_stream.py` for minimal
+application-facing usage.
 
 `AgentdApp` is the framework-free route adapter foundation for `agentd`. It accepts small
 `HttpRequest` objects and returns JSON-safe `HttpResponse` objects for `GET /health`, `GET /ready`,
 catalog routes, route-level goal submission via `POST /v1/sessions`, session/event reads, and
 Profile catalog reads via `GET /v1/profiles`, confirmation resume via
-`POST /v1/sessions/{id}/resume` plus cancellation via
-`POST /v1/sessions/{id}/cancel`. It still does not open sockets; a real HTTP server can wrap this
-adapter later without touching Runtime internals.
+`POST /v1/sessions/{id}/resume`, explicit pause via `POST /v1/sessions/{id}/pause`, cancellation via
+`POST /v1/sessions/{id}/cancel`, and cursor event reads with `after` / `limit` query parameters. It
+still does not open sockets; a real HTTP server can wrap this adapter later without touching Runtime
+internals.
+
+`agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
+Capability/Tool catalogs, and session show/events/pause/resume/cancel commands through
+`RuntimeService`; it does not access Kernel internals directly and does not require a daemon process.
 
 `AgentProfile` is the first application-level Profile foundation. A Profile declares a selectable
 runtime identity — name, version, Domain identity and Runtime Configuration — for future CLI/agentd
@@ -126,11 +136,12 @@ database layer, event-sourcing model, or production migration system.
   confirmation, capability-scoped timeout recovery, dynamic remediation tasks, and fresh health
   verification. Mutation receipts never substitute for verification evidence.
 - P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
-  projections, `EventReader`, and integration tests covering run/get/events plus confirmation resume
-  and cancellation. `RuntimeService` now adds framework-free `agentd` foundation metadata: health,
-  readiness, domains, capabilities, tools, delegated execution, runnable examples, an `AgentdApp`
-  route adapter for HTTP-shaped goal submission, session/event reads, confirmation resume and
-  cancellation, Profile catalog reads, file-backed session/event stores for local recovery, and typed
+  projections, cursor-aware `EventReader`, `RuntimeEventBatch`, and integration tests covering
+  run/get/events plus explicit pause, non-confirmation resume, confirmation resume and cancellation.
+  `RuntimeService` now adds framework-free `agentd` foundation metadata: health, readiness, domains,
+  capabilities, tools, delegated execution, runnable examples, an `AgentdApp` route adapter for
+  HTTP-shaped goal submission, session/event reads, pause/resume/cancel routes, Profile catalog
+  reads, file-backed session/event stores for local recovery, a local CLI adapter, and typed
   `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, store backend
   and Domain identity validation.
 
@@ -178,6 +189,8 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_agentd_routes.py
 .venv/bin/python examples/p3_5_persistence.py
 .venv/bin/python examples/p3_5_runtime_config.py
+.venv/bin/python examples/p3_5_cli_event_stream.py
+.venv/bin/agent ready
 ```
 
 `mypy` runs in strict mode over `src`, `tests` and `examples`, and passes with no `type: ignore`

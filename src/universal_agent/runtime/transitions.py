@@ -64,6 +64,7 @@ def pause(
     return Transition(
         build_result(state, ExecutionStatus.WAITING, reason, user_message=user_message),
         event_type,
+        {"reason": reason},
         action_id=action_id,
     )
 

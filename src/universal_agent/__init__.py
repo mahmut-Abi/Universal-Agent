@@ -21,7 +21,13 @@ from universal_agent.host import (
 from universal_agent.model import ModelAdapter, ScriptedModelAdapter
 from universal_agent.persistence import FileEventStore, FileSessionStore
 from universal_agent.profile import AgentProfile, ProfileConfig, ProfileRegistry
-from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI
+from universal_agent.runtime import (
+    AgentRuntime,
+    EventCursorError,
+    InMemoryEventSink,
+    RuntimeAPI,
+    RuntimeEventBatch,
+)
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, StateStore
 from universal_agent.tools import Tool
@@ -33,6 +39,7 @@ __all__ = [
     "DecisionType",
     "DomainConfig",
     "DomainLoader",
+    "EventCursorError",
     "ExecutionResult",
     "ExecutionStatus",
     "FileEventStore",
@@ -46,6 +53,7 @@ __all__ = [
     "RuntimeAPI",
     "RuntimeBuilder",
     "RuntimeConfig",
+    "RuntimeEventBatch",
     "RuntimeHost",
     "RuntimeLimitsConfig",
     "RuntimeService",

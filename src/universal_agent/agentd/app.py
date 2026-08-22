@@ -5,9 +5,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from types import MappingProxyType
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from universal_agent.core import (
+    EventId,
     ExecutionResult,
     Goal,
     JsonMapping,
@@ -20,6 +21,7 @@ from universal_agent.core import (
 from universal_agent.runtime import (
     EvaluationView,
     PendingActionView,
+    RuntimeEventBatch,
     RuntimeEventView,
     RuntimeRun,
     SessionView,
@@ -142,19 +144,37 @@ class AgentdApp:
             if method != "GET":
                 return method_not_allowed(("GET",))
             try:
-                events = await self._service.list_events(session_id)
-                return json_response(
-                    immutable_json({"events": [event_body(item) for item in events]})
+                batch = await self._service.stream_events(
+                    session_id,
+                    after_event_id=_optional_event_cursor(request.path),
+                    limit=_optional_positive_int_query(request.path, "limit"),
                 )
+                return json_response(event_batch_body(batch))
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
+            except ValueError as exc:
+                return bad_request(str(exc))
+        if session_id is not None and suffix == "pause":
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            reason = request.body.get("reason", "session paused")
+            if not isinstance(reason, str):
+                return bad_request("pause reason must be a string")
+            try:
+                run = await self._service.pause_session(session_id, reason=reason)
+                return json_response(runtime_run_body(run))
             except StateNotFoundError as exc:
                 return not_found(str(exc))
         if session_id is not None and suffix == "resume":
             if method != "POST":
                 return method_not_allowed(("POST",))
             confirmed = request.body.get("confirmed")
-            if not isinstance(confirmed, bool):
-                return bad_request("resume requires boolean confirmed")
+            if confirmed is not None and not isinstance(confirmed, bool):
+                return bad_request("resume confirmed must be a boolean")
             try:
+                session = await self._service.get_session(session_id)
+                if session.pending_action is not None and confirmed is None:
+                    return bad_request("resume requires boolean confirmed for pending action")
                 run = await self._service.resume_session(session_id, confirmed=confirmed)
                 return json_response(runtime_run_body(run))
             except StateNotFoundError as exc:
@@ -310,6 +330,15 @@ def runtime_run_body(run: RuntimeRun) -> JsonMapping:
         {
             "result": execution_result_body(run.result),
             "session": dict(session_body(run.session)),
+        }
+    )
+
+
+def event_batch_body(batch: RuntimeEventBatch) -> JsonMapping:
+    return immutable_json(
+        {
+            "events": [event_body(item) for item in batch.events],
+            "next_cursor": batch.next_cursor,
         }
     )
 
@@ -485,6 +514,38 @@ def _normalize_path(path: str) -> str:
         normalized = "/" + normalized
     normalized = normalized.rstrip("/")
     return normalized or "/"
+
+
+def _optional_event_cursor(path: str) -> EventId | None:
+    value = _optional_query_value(path, "after")
+    if value is None:
+        return None
+    return EventId(value)
+
+
+def _optional_positive_int_query(path: str, key: str) -> int | None:
+    value = _optional_query_value(path, key)
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{key} must be a positive integer") from exc
+    if parsed < 1:
+        raise ValueError(f"{key} must be a positive integer")
+    return parsed
+
+
+def _optional_query_value(path: str, key: str) -> str | None:
+    values = parse_qs(urlsplit(path).query, keep_blank_values=True).get(key)
+    if values is None:
+        return None
+    if len(values) != 1:
+        raise ValueError(f"{key} must be specified once")
+    value = values[0]
+    if not value.strip():
+        raise ValueError(f"{key} must not be empty")
+    return value
 
 
 def _session_route(path: str) -> tuple[SessionId | None, str]:

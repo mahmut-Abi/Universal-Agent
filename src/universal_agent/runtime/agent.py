@@ -40,6 +40,7 @@ from universal_agent.runtime.session import (
     DomainMismatchError,
     SessionRuntimeState,
     hydrate_session,
+    mark_current_task,
     start_session,
 )
 from universal_agent.runtime.transitions import (
@@ -47,11 +48,11 @@ from universal_agent.runtime.transitions import (
     build_result,
     fail,
     finish,
-    pause,
 )
 from universal_agent.runtime.transitions import (
     cancel as cancel_transition,
 )
+from universal_agent.runtime.transitions import pause as pause_transition
 from universal_agent.state import SessionStore
 
 
@@ -114,7 +115,12 @@ class AgentRuntime:
         await self._emit(state, "StateUpdated")
         return await self._loop(session)
 
-    async def resume(self, session_id: SessionId, *, confirmed: bool) -> ExecutionResult:
+    async def resume(
+        self,
+        session_id: SessionId,
+        *,
+        confirmed: bool | None = None,
+    ) -> ExecutionResult:
         snapshot = await self._state_store.load_session(session_id)
         try:
             session = hydrate_session(snapshot, self._components)
@@ -122,23 +128,64 @@ class AgentRuntime:
             return await self._reject_session(snapshot.state, str(exc))
         state = session.state
         pending = state.pending_action
-        if pending is None or state.goal.status is not GoalStatus.WAITING:
+        if state.goal.status is not GoalStatus.WAITING:
             return await self._settle(
                 session,
-                fail(session, ErrorCode.INVALID_STATE, "session has no pending action"),
+                fail(session, ErrorCode.INVALID_STATE, "session is not waiting"),
             )
-        if not confirmed:
+        if pending is not None and confirmed is None:
+            return await self._settle(
+                session,
+                fail(
+                    session,
+                    ErrorCode.INVALID_STATE,
+                    "resume requires confirmation for pending action",
+                ),
+            )
+        if pending is not None and not confirmed:
             state.pending_action = None
             return await self._settle(
                 session,
                 fail(session, ErrorCode.CONFIRMATION_REJECTED, "user rejected pending action"),
             )
         state.goal.status = GoalStatus.RUNNING
-        state.current_task.status = TaskStatus.RUNNING
-        result = await self._drive(session, pending=pending)
-        if result is not None:
-            return result
+        mark_current_task(session, TaskStatus.RUNNING)
+        state.termination_reason = None
+        await self._save(session)
+        await self._emit(state, "SessionResumed")
+        if pending is not None:
+            result = await self._drive(session, pending=pending)
+            if result is not None:
+                return result
         return await self._loop(session)
+
+    async def pause(
+        self,
+        session_id: SessionId,
+        *,
+        reason: str = "session paused",
+    ) -> ExecutionResult:
+        snapshot = await self._state_store.load_session(session_id)
+        try:
+            session = hydrate_session(snapshot, self._components)
+        except DomainMismatchError as exc:
+            return await self._reject_session(snapshot.state, str(exc))
+        state = session.state
+        if state.goal.status in {
+            GoalStatus.COMPLETED,
+            GoalStatus.FAILED,
+            GoalStatus.CANCELLED,
+        }:
+            return build_result(
+                state,
+                ExecutionStatus.FAILED,
+                "cannot pause a terminal session",
+                error_code=ErrorCode.INVALID_STATE,
+            )
+        return await self._settle(
+            session,
+            pause_transition(session, reason, event_type="SessionPaused"),
+        )
 
     async def cancel(
         self,
@@ -221,11 +268,18 @@ class AgentRuntime:
         if decision.type is DecisionType.FINISH:
             return await self._settle(session, finish(session))
         if decision.type is DecisionType.WAIT:
-            return await self._settle(session, pause(session, "runtime paused by wait decision"))
+            return await self._settle(
+                session,
+                pause_transition(session, "runtime paused by wait decision"),
+            )
         if decision.type is DecisionType.ASK_USER:
             return await self._settle(
                 session,
-                pause(session, "runtime paused for user input", user_message=decision.message),
+                pause_transition(
+                    session,
+                    "runtime paused for user input",
+                    user_message=decision.message,
+                ),
             )
         return await self._settle(
             session,
@@ -265,7 +319,7 @@ class AgentRuntime:
                 target = outcome.pending.target or "target"
                 return await self._settle(
                     session,
-                    pause(
+                    pause_transition(
                         session,
                         outcome.reason,
                         user_message=f"Confirm capability {outcome.pending.capability} on {target}",
@@ -402,7 +456,7 @@ class AgentRuntime:
         if recovery.strategy is RecoveryStrategy.ASK_USER:
             return await self._settle(
                 session,
-                pause(
+                pause_transition(
                     session,
                     failure.reason,
                     user_message=f"Recovery requires user input: {failure.reason}",

@@ -12,6 +12,9 @@ license = { text = "MIT" }
 authors = [{ name = "Universal Agent Runtime contributors" }]
 dependencies = []
 
+[project.scripts]
+agent = "universal_agent.cli:main"
+
 [project.optional-dependencies]
 dev = [
   "mypy>=1.11,<2",

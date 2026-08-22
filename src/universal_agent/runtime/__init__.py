@@ -10,6 +10,7 @@ from universal_agent.runtime.api import (
     EvaluationView,
     PendingActionView,
     RuntimeAPI,
+    RuntimeEventBatch,
     RuntimeEventView,
     RuntimeRun,
     SessionView,
@@ -17,7 +18,12 @@ from universal_agent.runtime.api import (
     event_view,
     session_view,
 )
-from universal_agent.runtime.events import EventReader, EventSink, InMemoryEventSink
+from universal_agent.runtime.events import (
+    EventCursorError,
+    EventReader,
+    EventSink,
+    InMemoryEventSink,
+)
 from universal_agent.runtime.session import (
     DomainMismatchError,
     SessionRuntimeState,
@@ -35,11 +41,13 @@ __all__ = [
     "ConfirmationRequired",
     "DomainMismatchError",
     "EvaluationView",
+    "EventCursorError",
     "EventReader",
     "EventSink",
     "InMemoryEventSink",
     "PendingActionView",
     "RuntimeAPI",
+    "RuntimeEventBatch",
     "RuntimeEventView",
     "RuntimeRun",
     "SessionRuntimeState",
