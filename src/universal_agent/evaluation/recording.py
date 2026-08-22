@@ -41,6 +41,10 @@ class EvaluationSummaryRecording:
     policy_denial_count: int
     recovery_planned_count: int
     human_intervention_count: int
+    resource_lock_acquired_count: int = 0
+    resource_lock_released_count: int = 0
+    resource_conflict_count: int = 0
+    active_resource_lock_count: int = 0
     model_call_count: int = 0
     model_total_token_count: int = 0
     model_estimated_cost_micros: int = 0
@@ -191,6 +195,10 @@ def record_evaluation_suite(
             policy_denial_count=summary.policy_denial_count,
             recovery_planned_count=summary.recovery_planned_count,
             human_intervention_count=summary.human_intervention_count,
+            resource_lock_acquired_count=summary.resource_lock_acquired_count,
+            resource_lock_released_count=summary.resource_lock_released_count,
+            resource_conflict_count=summary.resource_conflict_count,
+            active_resource_lock_count=summary.active_resource_lock_count,
             model_call_count=summary.model_call_count,
             model_total_token_count=summary.model_total_token_count,
             model_estimated_cost_micros=summary.model_estimated_cost_micros,
@@ -234,6 +242,10 @@ def record_evaluation_scenario(report: ScenarioReport) -> EvaluationScenarioReco
             recovery_planned_count=report.metrics.recovery_planned_count,
             recovery_exhausted_count=report.metrics.recovery_exhausted_count,
             human_intervention_count=report.metrics.human_intervention_count,
+            resource_lock_acquired_count=report.metrics.resource_lock_acquired_count,
+            resource_lock_released_count=report.metrics.resource_lock_released_count,
+            resource_conflict_count=report.metrics.resource_conflict_count,
+            active_resource_lock_count=report.metrics.active_resource_lock_count,
             model_call_count=report.metrics.model_call_count,
             model_total_token_count=report.metrics.model_total_token_count,
             model_estimated_cost_micros=report.metrics.model_estimated_cost_micros,
@@ -352,6 +364,10 @@ def _encode_evaluation_summary(summary: EvaluationSummaryRecording) -> JsonObjec
         "policy_denial_count": summary.policy_denial_count,
         "recovery_planned_count": summary.recovery_planned_count,
         "human_intervention_count": summary.human_intervention_count,
+        "resource_lock_acquired_count": summary.resource_lock_acquired_count,
+        "resource_lock_released_count": summary.resource_lock_released_count,
+        "resource_conflict_count": summary.resource_conflict_count,
+        "active_resource_lock_count": summary.active_resource_lock_count,
         "model_call_count": summary.model_call_count,
         "model_total_token_count": summary.model_total_token_count,
         "model_estimated_cost_micros": summary.model_estimated_cost_micros,
@@ -394,6 +410,26 @@ def _decode_evaluation_summary(payload: JsonObject) -> EvaluationSummaryRecordin
         human_intervention_count=_int(
             _required(payload, "human_intervention_count"),
             "summary.human_intervention_count",
+        ),
+        resource_lock_acquired_count=_optional_int(
+            payload,
+            "resource_lock_acquired_count",
+            "summary.resource_lock_acquired_count",
+        ),
+        resource_lock_released_count=_optional_int(
+            payload,
+            "resource_lock_released_count",
+            "summary.resource_lock_released_count",
+        ),
+        resource_conflict_count=_optional_int(
+            payload,
+            "resource_conflict_count",
+            "summary.resource_conflict_count",
+        ),
+        active_resource_lock_count=_optional_int(
+            payload,
+            "active_resource_lock_count",
+            "summary.active_resource_lock_count",
         ),
         model_call_count=_optional_int(payload, "model_call_count", "summary.model_call_count"),
         model_total_token_count=_optional_int(
@@ -492,6 +528,10 @@ def _encode_metrics(metrics: ReplayMetrics) -> JsonObject:
         "recovery_planned_count": metrics.recovery_planned_count,
         "recovery_exhausted_count": metrics.recovery_exhausted_count,
         "human_intervention_count": metrics.human_intervention_count,
+        "resource_lock_acquired_count": metrics.resource_lock_acquired_count,
+        "resource_lock_released_count": metrics.resource_lock_released_count,
+        "resource_conflict_count": metrics.resource_conflict_count,
+        "active_resource_lock_count": metrics.active_resource_lock_count,
         "model_call_count": metrics.model_call_count,
         "model_total_token_count": metrics.model_total_token_count,
         "model_estimated_cost_micros": metrics.model_estimated_cost_micros,
@@ -542,6 +582,26 @@ def _decode_metrics(payload: JsonObject) -> ReplayMetrics:
         human_intervention_count=_int(
             _required(payload, "human_intervention_count"),
             "metrics.human_intervention_count",
+        ),
+        resource_lock_acquired_count=_optional_int(
+            payload,
+            "resource_lock_acquired_count",
+            "metrics.resource_lock_acquired_count",
+        ),
+        resource_lock_released_count=_optional_int(
+            payload,
+            "resource_lock_released_count",
+            "metrics.resource_lock_released_count",
+        ),
+        resource_conflict_count=_optional_int(
+            payload,
+            "resource_conflict_count",
+            "metrics.resource_conflict_count",
+        ),
+        active_resource_lock_count=_optional_int(
+            payload,
+            "active_resource_lock_count",
+            "metrics.active_resource_lock_count",
         ),
         model_call_count=_optional_int(
             payload,

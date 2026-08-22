@@ -43,6 +43,8 @@ class ScenarioExpectations:
     required_audit_capabilities: tuple[str, ...] = ()
     policy_denial_count: int | None = None
     recovery_planned_count: int | None = None
+    resource_conflict_count: int | None = None
+    active_resource_lock_count: int | None = None
     max_actions: int | None = None
     max_iterations: int | None = None
     max_model_total_tokens: int | None = None
@@ -136,6 +138,10 @@ class EvaluationSuiteSummary:
     policy_denial_count: int
     recovery_planned_count: int
     human_intervention_count: int
+    resource_lock_acquired_count: int = 0
+    resource_lock_released_count: int = 0
+    resource_conflict_count: int = 0
+    active_resource_lock_count: int = 0
     model_call_count: int = 0
     model_total_token_count: int = 0
     model_estimated_cost_micros: int = 0
@@ -168,6 +174,14 @@ class EvaluationSuiteSummary:
     @property
     def human_intervention_rate(self) -> float:
         return _rate(self.human_intervention_count, self.scenario_count)
+
+    @property
+    def resource_conflict_rate(self) -> float:
+        return _rate(self.resource_conflict_count, self.scenario_count)
+
+    @property
+    def average_active_resource_locks_per_scenario(self) -> float:
+        return _rate(self.active_resource_lock_count, self.scenario_count)
 
     @property
     def average_actions_per_scenario(self) -> float:
@@ -207,6 +221,8 @@ class EvaluationQualityGate:
     min_task_success_rate: float | None = None
     max_policy_denial_rate: float | None = None
     max_human_intervention_rate: float | None = None
+    max_resource_conflict_rate: float | None = None
+    max_average_active_resource_locks_per_scenario: float | None = None
     max_average_actions_per_scenario: float | None = None
     max_average_model_tokens_per_scenario: float | None = None
     max_total_model_estimated_cost_micros: int | None = None
@@ -217,6 +233,11 @@ class EvaluationQualityGate:
         _validate_optional_rate("min_task_success_rate", self.min_task_success_rate)
         _validate_optional_rate("max_policy_denial_rate", self.max_policy_denial_rate)
         _validate_optional_rate("max_human_intervention_rate", self.max_human_intervention_rate)
+        _validate_optional_rate("max_resource_conflict_rate", self.max_resource_conflict_rate)
+        _validate_optional_non_negative(
+            "max_average_active_resource_locks_per_scenario",
+            self.max_average_active_resource_locks_per_scenario,
+        )
         _validate_optional_non_negative(
             "max_average_actions_per_scenario",
             self.max_average_actions_per_scenario,
@@ -327,6 +348,16 @@ def summarize_suite(reports: tuple[ScenarioReport, ...]) -> EvaluationSuiteSumma
         policy_denial_count=sum(report.metrics.policy_denial_count for report in reports),
         recovery_planned_count=sum(report.metrics.recovery_planned_count for report in reports),
         human_intervention_count=sum(report.metrics.human_intervention_count for report in reports),
+        resource_lock_acquired_count=sum(
+            report.metrics.resource_lock_acquired_count for report in reports
+        ),
+        resource_lock_released_count=sum(
+            report.metrics.resource_lock_released_count for report in reports
+        ),
+        resource_conflict_count=sum(report.metrics.resource_conflict_count for report in reports),
+        active_resource_lock_count=sum(
+            report.metrics.active_resource_lock_count for report in reports
+        ),
         model_call_count=sum(report.metrics.model_call_count for report in reports),
         model_total_token_count=sum(report.metrics.model_total_token_count for report in reports),
         model_estimated_cost_micros=sum(
@@ -383,6 +414,22 @@ def evaluate_quality_gate(
                 "human_intervention_rate",
                 summary.human_intervention_rate,
                 active_gate.max_human_intervention_rate,
+            )
+        )
+    if active_gate.max_resource_conflict_rate is not None:
+        checks.append(
+            _gate_maximum(
+                "resource_conflict_rate",
+                summary.resource_conflict_rate,
+                active_gate.max_resource_conflict_rate,
+            )
+        )
+    if active_gate.max_average_active_resource_locks_per_scenario is not None:
+        checks.append(
+            _gate_maximum(
+                "average_active_resource_locks_per_scenario",
+                summary.average_active_resource_locks_per_scenario,
+                active_gate.max_average_active_resource_locks_per_scenario,
             )
         )
     if active_gate.max_average_actions_per_scenario is not None:
@@ -531,6 +578,29 @@ def _evaluate_expectations(
                 f"recovery_planned_count={metrics.recovery_planned_count}",
                 "expected "
                 f"{expectations.recovery_planned_count}, got {metrics.recovery_planned_count}",
+            )
+        )
+
+    if expectations.resource_conflict_count is not None:
+        checks.append(
+            _check(
+                "resource_conflict_count",
+                metrics.resource_conflict_count == expectations.resource_conflict_count,
+                f"resource_conflict_count={metrics.resource_conflict_count}",
+                "expected "
+                f"{expectations.resource_conflict_count}, got {metrics.resource_conflict_count}",
+            )
+        )
+
+    if expectations.active_resource_lock_count is not None:
+        checks.append(
+            _check(
+                "active_resource_lock_count",
+                metrics.active_resource_lock_count == expectations.active_resource_lock_count,
+                f"active_resource_lock_count={metrics.active_resource_lock_count}",
+                "expected "
+                f"{expectations.active_resource_lock_count}, got "
+                f"{metrics.active_resource_lock_count}",
             )
         )
 

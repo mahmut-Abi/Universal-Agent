@@ -19,7 +19,15 @@ from universal_agent import (
     Task,
     immutable_json,
 )
-from universal_agent.core import ErrorCode, ExecutionStatus, JsonMapping
+from universal_agent.core import (
+    ActionId,
+    ErrorCode,
+    ExecutionStatus,
+    JsonMapping,
+    SessionId,
+    TaskId,
+)
+from universal_agent.domain import RuntimeComponents
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.harness import (
     EvaluationHarness,
@@ -96,7 +104,24 @@ def build_service(
     decisions: list[Decision],
     *,
     usage: list[ModelUsage] | None = None,
+    environment: str = "staging",
 ) -> RuntimeService:
+    service, _ = build_service_with_components(
+        backend,
+        decisions,
+        usage=usage,
+        environment=environment,
+    )
+    return service
+
+
+def build_service_with_components(
+    backend: HarnessBackend,
+    decisions: list[Decision],
+    *,
+    usage: list[ModelUsage] | None = None,
+    environment: str = "staging",
+) -> tuple[RuntimeService, RuntimeComponents]:
     components = RuntimeBuilder().build(
         DomainLoader().load(KubernetesRemediationDomain(backend, backend))
     )
@@ -107,11 +132,14 @@ def build_service(
         state_store=store,
         components=components,
         event_sink=events,
-        environment=immutable_json({"environment": "staging"}),
+        environment=immutable_json({"environment": environment}),
     )
-    return RuntimeService(
-        runtime_api=RuntimeAPI(runtime=runtime, session_store=store, event_reader=events),
-        components=components,
+    return (
+        RuntimeService(
+            runtime_api=RuntimeAPI(runtime=runtime, session_store=store, event_reader=events),
+            components=components,
+        ),
+        components,
     )
 
 
@@ -222,8 +250,20 @@ def test_evaluation_quality_gate_validates_thresholds() -> None:
     with pytest.raises(ValueError, match=r"min_pass_rate must be between 0\.0 and 1\.0"):
         EvaluationQualityGate(min_pass_rate=1.1)
 
+    with pytest.raises(
+        ValueError,
+        match=r"max_resource_conflict_rate must be between 0\.0 and 1\.0",
+    ):
+        EvaluationQualityGate(max_resource_conflict_rate=1.1)
+
     with pytest.raises(ValueError, match="max_average_actions_per_scenario must be non-negative"):
         EvaluationQualityGate(max_average_actions_per_scenario=-1.0)
+
+    with pytest.raises(
+        ValueError,
+        match="max_average_active_resource_locks_per_scenario must be non-negative",
+    ):
+        EvaluationQualityGate(max_average_active_resource_locks_per_scenario=-1.0)
 
 
 @pytest.mark.asyncio
@@ -388,6 +428,93 @@ async def test_evaluation_harness_reports_policy_regression_checks() -> None:
     assert len(report.audit_records) == 1
     assert report.audit_records[0].status == "denied"
     assert backend.mutation_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_evaluation_harness_reports_resource_lock_regression_checks() -> None:
+    backend = HarnessBackend()
+    service, components = build_service_with_components(backend, [scale_workload(replicas=3)])
+    components.resource_locks.acquire(
+        resource_key="deployment/example",
+        action_id=ActionId("action-existing"),
+        session_id=SessionId("session-existing"),
+        task_id=TaskId("task-existing"),
+    )
+    goal, task = goal_task()
+    scenario = EvaluationScenario(
+        "scale conflict is detected",
+        goal,
+        task,
+        ScenarioExpectations(
+            expected_status=ExecutionStatus.FAILED,
+            expected_error_code=ErrorCode.RESOURCE_CONFLICT,
+            required_events=("ResourceConflictDetected",),
+            forbidden_events=("ActionStarted",),
+            resource_conflict_count=1,
+            active_resource_lock_count=0,
+            max_actions=0,
+        ),
+    )
+
+    report = await EvaluationHarness(service).run(scenario)
+    suite_report = EvaluationSuiteReport((report,), "resource contention suite")
+    gate_report = evaluate_quality_gate(
+        suite_report,
+        EvaluationQualityGate(
+            min_pass_rate=1.0,
+            max_resource_conflict_rate=0.0,
+        ),
+    )
+
+    assert report.passed
+    assert report.metrics.resource_conflict_count == 1
+    assert report.metrics.active_resource_lock_count == 0
+    assert backend.mutation_calls == 0
+    assert not gate_report.passed
+    assert [check.name for check in gate_report.failed_checks] == ["resource_conflict_rate"]
+
+
+@pytest.mark.asyncio
+async def test_evaluation_harness_reports_active_resource_lock_regression_checks() -> None:
+    backend = HarnessBackend()
+    service = build_service(
+        backend,
+        [scale_workload(replicas=3)],
+        environment="production",
+    )
+    goal, task = goal_task()
+    scenario = EvaluationScenario(
+        "production scale waits for confirmation",
+        goal,
+        task,
+        ScenarioExpectations(
+            expected_status=ExecutionStatus.WAITING,
+            required_events=("ResourceLockAcquired",),
+            forbidden_events=("ActionStarted",),
+            active_resource_lock_count=1,
+            resource_conflict_count=0,
+            max_actions=0,
+        ),
+    )
+
+    report = await EvaluationHarness(service).run(scenario)
+    suite_report = EvaluationSuiteReport((report,), "confirmation lock suite")
+    gate_report = evaluate_quality_gate(
+        suite_report,
+        EvaluationQualityGate(
+            min_pass_rate=1.0,
+            max_average_active_resource_locks_per_scenario=0.0,
+        ),
+    )
+
+    assert report.passed
+    assert report.metrics.active_resource_lock_count == 1
+    assert report.metrics.resource_conflict_count == 0
+    assert backend.mutation_calls == 0
+    assert not gate_report.passed
+    assert [check.name for check in gate_report.failed_checks] == [
+        "average_active_resource_locks_per_scenario"
+    ]
 
 
 @pytest.mark.asyncio

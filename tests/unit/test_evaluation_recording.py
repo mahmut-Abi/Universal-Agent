@@ -43,6 +43,10 @@ def sample_report_recording(name: str = "nightly behavior suite") -> EvaluationR
             policy_denial_count=1,
             recovery_planned_count=0,
             human_intervention_count=0,
+            resource_lock_acquired_count=1,
+            resource_lock_released_count=1,
+            resource_conflict_count=1,
+            active_resource_lock_count=0,
             model_call_count=3,
             model_total_token_count=215,
             model_estimated_cost_micros=35,
@@ -92,6 +96,10 @@ def sample_report_recording(name: str = "nightly behavior suite") -> EvaluationR
                     recovery_planned_count=0,
                     recovery_exhausted_count=0,
                     human_intervention_count=0,
+                    resource_lock_acquired_count=1,
+                    resource_lock_released_count=1,
+                    resource_conflict_count=1,
+                    active_resource_lock_count=0,
                     model_call_count=1,
                     model_total_token_count=90,
                     model_estimated_cost_micros=15,
@@ -120,10 +128,12 @@ def test_evaluation_report_codec_round_trips_stable_report() -> None:
     assert not restored.passed
     assert restored.summary.scenario_count == 2
     assert restored.summary.model_total_token_count == 215
+    assert restored.summary.resource_conflict_count == 1
     assert restored.scenarios[0].passed
     assert restored.scenarios[0].satisfied_criteria == {"healthy": True}
     assert restored.scenarios[1].error_code is ErrorCode.POLICY_DENIED
     assert restored.scenarios[1].audit_capabilities == ("scale_workload",)
+    assert restored.scenarios[1].metrics.resource_conflict_count == 1
     assert restored.gate is not None
     assert not restored.gate.passed
     assert restored.gate.checks[0].name == "pass_rate"
@@ -201,6 +211,10 @@ def sample_recording(name: str = "policy regression") -> ReplayRecording:
             recovery_planned_count=0,
             recovery_exhausted_count=0,
             human_intervention_count=0,
+            resource_lock_acquired_count=1,
+            resource_lock_released_count=1,
+            resource_conflict_count=1,
+            active_resource_lock_count=0,
             model_call_count=2,
             model_total_token_count=150,
             model_estimated_cost_micros=25,

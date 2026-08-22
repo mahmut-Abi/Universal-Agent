@@ -301,7 +301,7 @@ class ActionExecutor:
         session: SessionRuntimeState,
         pending: PendingAction,
         emit: EmitFn,
-    ) -> ResourceLock | None | ActionRejected:
+    ) -> ResourceLock | ActionRejected | None:
         if not pending.resource_key:
             return None
         already_owned = self.components.resource_locks.is_owned_by(
