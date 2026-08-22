@@ -22,11 +22,13 @@ from universal_agent.core import ErrorCode, ExecutionStatus, JsonMapping
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.harness import (
     EvaluationHarness,
+    EvaluationQualityGate,
     EvaluationScenario,
     EvaluationScenarioKind,
     EvaluationScenarioSelector,
     EvaluationSuite,
     ScenarioExpectations,
+    evaluate_quality_gate,
 )
 
 
@@ -165,7 +167,12 @@ async def run_policy_suite() -> None:
         suite,
         selector=EvaluationScenarioSelector(kinds=(EvaluationScenarioKind.POLICY,)),
     )
+    gate = evaluate_quality_gate(
+        report,
+        EvaluationQualityGate(min_pass_rate=1.0, max_policy_denial_rate=1.0),
+    )
     print(f"{report.suite_name}: scenarios={report.summary.scenario_count} passed={report.passed}")
+    print(f"quality_gate={gate.passed} checks={len(gate.checks)}")
 
 
 def finish() -> Decision:

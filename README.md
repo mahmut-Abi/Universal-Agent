@@ -131,8 +131,10 @@ Kernel internals directly.
 `EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
 Session, Event, Metrics and Audit projections. `EvaluationSuite` and
 `EvaluationScenarioSelector` make scenario, regression, policy and recovery subsets first-class
-contracts for local CI-style runs. `DeterministicReplayHarness` records a stable trace from those
-projections and replays later runs against it while ignoring dynamic IDs and timestamps.
+contracts for local CI-style runs. `EvaluationQualityGate` evaluates suite-level pass rates,
+completion rates, intervention rates, action efficiency and model budget thresholds after execution.
+`DeterministicReplayHarness` records a stable trace from those projections and replays later runs
+against it while ignoring dynamic IDs and timestamps.
 `FileReplayRecordingStore` persists those traces as JSON golden recordings for local regression tests.
 The harnesses are intentionally outside the Kernel: Domain `Evaluator`s still decide task/goal
 semantics during execution, while the Harness decides whether a completed scenario satisfies
@@ -184,7 +186,8 @@ not a database layer, event-sourcing model, or production migration system.
   codes, events, executed capabilities, audit coverage, policy denials, recovery plans, criteria,
   action counts, iteration budgets and model token/cost budgets for behavior scenarios.
   Evaluation suites classify scenarios by kind and tags so regression, policy and recovery subsets
-  can be selected without changing Kernel code.
+  can be selected without changing Kernel code, and quality gates turn suite metrics into CI-ready
+  pass/fail checks.
   Deterministic Replay can record stable behavior traces and detect later drift in event shape,
   actions, policy effects, audit entries and metrics without depending on runtime-generated IDs.
   Replay recordings can be encoded as versioned JSON and saved through `FileReplayRecordingStore`
@@ -209,7 +212,7 @@ The design roadmap now separates semantic runtime maturity from productization:
 - P3.5: Runtime Productization — Runtime API, Session API, `agentd`, CLI, Event Stream, Persistence,
   Resume / Pause / Cancel, and Runtime Configuration.
 - P3.6-P3.7: Operations and Evaluation — OpenTelemetry, metrics, audit, cost tracking, runtime
-  doctor, evaluation suites, replay, and deterministic test mode.
+  doctor, evaluation suites, quality gates, replay, and deterministic test mode.
 - P4+: Optional Multi-Agent, user interfaces, distributed runtime, and ecosystem packaging.
 
 `PROMPT.md` is intentionally not kept as a project authority. Development instructions live in

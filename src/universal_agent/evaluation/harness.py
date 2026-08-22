@@ -200,6 +200,59 @@ class EvaluationSuiteReport:
         return tuple(report.scenario_name for report in self.reports)
 
 
+@dataclass(frozen=True, slots=True)
+class EvaluationQualityGate:
+    min_pass_rate: float = 1.0
+    min_goal_completion_rate: float | None = None
+    min_task_success_rate: float | None = None
+    max_policy_denial_rate: float | None = None
+    max_human_intervention_rate: float | None = None
+    max_average_actions_per_scenario: float | None = None
+    max_average_model_tokens_per_scenario: float | None = None
+    max_total_model_estimated_cost_micros: int | None = None
+
+    def __post_init__(self) -> None:
+        _validate_rate("min_pass_rate", self.min_pass_rate)
+        _validate_optional_rate("min_goal_completion_rate", self.min_goal_completion_rate)
+        _validate_optional_rate("min_task_success_rate", self.min_task_success_rate)
+        _validate_optional_rate("max_policy_denial_rate", self.max_policy_denial_rate)
+        _validate_optional_rate("max_human_intervention_rate", self.max_human_intervention_rate)
+        _validate_optional_non_negative(
+            "max_average_actions_per_scenario",
+            self.max_average_actions_per_scenario,
+        )
+        _validate_optional_non_negative(
+            "max_average_model_tokens_per_scenario",
+            self.max_average_model_tokens_per_scenario,
+        )
+        _validate_optional_non_negative(
+            "max_total_model_estimated_cost_micros",
+            self.max_total_model_estimated_cost_micros,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationGateCheck:
+    name: str
+    passed: bool
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationGateReport:
+    suite_name: str
+    summary: EvaluationSuiteSummary
+    checks: tuple[EvaluationGateCheck, ...]
+
+    @property
+    def passed(self) -> bool:
+        return all(check.passed for check in self.checks)
+
+    @property
+    def failed_checks(self) -> tuple[EvaluationGateCheck, ...]:
+        return tuple(check for check in self.checks if not check.passed)
+
+
 class EvaluationHarness:
     """Run behavior scenarios through the application-facing runtime surface.
 
@@ -289,6 +342,74 @@ def select_scenarios(
     if selector is None:
         return scenarios
     return tuple(scenario for scenario in scenarios if selector.matches(scenario))
+
+
+def evaluate_quality_gate(
+    report: EvaluationSuiteReport,
+    gate: EvaluationQualityGate | None = None,
+) -> EvaluationGateReport:
+    active_gate = EvaluationQualityGate() if gate is None else gate
+    summary = report.summary
+    checks: list[EvaluationGateCheck] = [
+        _gate_minimum("pass_rate", summary.pass_rate, active_gate.min_pass_rate)
+    ]
+    if active_gate.min_goal_completion_rate is not None:
+        checks.append(
+            _gate_minimum(
+                "goal_completion_rate",
+                summary.goal_completion_rate,
+                active_gate.min_goal_completion_rate,
+            )
+        )
+    if active_gate.min_task_success_rate is not None:
+        checks.append(
+            _gate_minimum(
+                "task_success_rate",
+                summary.task_success_rate,
+                active_gate.min_task_success_rate,
+            )
+        )
+    if active_gate.max_policy_denial_rate is not None:
+        checks.append(
+            _gate_maximum(
+                "policy_denial_rate",
+                summary.policy_denial_rate,
+                active_gate.max_policy_denial_rate,
+            )
+        )
+    if active_gate.max_human_intervention_rate is not None:
+        checks.append(
+            _gate_maximum(
+                "human_intervention_rate",
+                summary.human_intervention_rate,
+                active_gate.max_human_intervention_rate,
+            )
+        )
+    if active_gate.max_average_actions_per_scenario is not None:
+        checks.append(
+            _gate_maximum(
+                "average_actions_per_scenario",
+                summary.average_actions_per_scenario,
+                active_gate.max_average_actions_per_scenario,
+            )
+        )
+    if active_gate.max_average_model_tokens_per_scenario is not None:
+        checks.append(
+            _gate_maximum(
+                "average_model_tokens_per_scenario",
+                summary.average_model_tokens_per_scenario,
+                active_gate.max_average_model_tokens_per_scenario,
+            )
+        )
+    if active_gate.max_total_model_estimated_cost_micros is not None:
+        checks.append(
+            _gate_maximum(
+                "total_model_estimated_cost_micros",
+                float(summary.model_estimated_cost_micros),
+                float(active_gate.max_total_model_estimated_cost_micros),
+            )
+        )
+    return EvaluationGateReport(report.suite_name, summary, tuple(checks))
 
 
 def _evaluate_expectations(
@@ -486,6 +607,43 @@ def _check(
     failure_message: str,
 ) -> ScenarioCheck:
     return ScenarioCheck(name, passed, success_message if passed else failure_message)
+
+
+def _gate_minimum(name: str, actual: float, minimum: float) -> EvaluationGateCheck:
+    passed = actual >= minimum
+    return EvaluationGateCheck(
+        name,
+        passed,
+        f"{name}={actual:.3f} >= {minimum:.3f}"
+        if passed
+        else f"expected {name} >= {minimum:.3f}, got {actual:.3f}",
+    )
+
+
+def _gate_maximum(name: str, actual: float, maximum: float) -> EvaluationGateCheck:
+    passed = actual <= maximum
+    return EvaluationGateCheck(
+        name,
+        passed,
+        f"{name}={actual:.3f} <= {maximum:.3f}"
+        if passed
+        else f"expected {name} <= {maximum:.3f}, got {actual:.3f}",
+    )
+
+
+def _validate_optional_rate(name: str, value: float | None) -> None:
+    if value is not None:
+        _validate_rate(name, value)
+
+
+def _validate_rate(name: str, value: float) -> None:
+    if value < 0.0 or value > 1.0:
+        raise ValueError(f"{name} must be between 0.0 and 1.0")
+
+
+def _validate_optional_non_negative(name: str, value: float | int | None) -> None:
+    if value is not None and value < 0:
+        raise ValueError(f"{name} must be non-negative")
 
 
 def _evaluation_flag(report: ScenarioReport, flag: str) -> bool:

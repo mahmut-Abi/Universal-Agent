@@ -23,12 +23,14 @@ from universal_agent.core import ErrorCode, ExecutionStatus, JsonMapping
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.harness import (
     EvaluationHarness,
+    EvaluationQualityGate,
     EvaluationScenario,
     EvaluationScenarioKind,
     EvaluationScenarioSelector,
     EvaluationSuite,
     EvaluationSuiteReport,
     ScenarioExpectations,
+    evaluate_quality_gate,
     select_scenarios,
     summarize_suite,
 )
@@ -196,6 +198,32 @@ async def test_evaluation_harness_runs_selected_named_suite() -> None:
     assert report.summary.policy_denial_count == 1
     assert report.summary.action_started_count == 0
     assert backend.mutation_calls == 0
+
+    gate_report = evaluate_quality_gate(
+        report,
+        EvaluationQualityGate(
+            min_pass_rate=1.0,
+            max_policy_denial_rate=1.0,
+            max_average_actions_per_scenario=0.0,
+        ),
+    )
+    strict_gate_report = evaluate_quality_gate(
+        report,
+        EvaluationQualityGate(min_pass_rate=1.0, max_policy_denial_rate=0.0),
+    )
+
+    assert gate_report.passed
+    assert gate_report.suite_name == "kubernetes behavior contract"
+    assert not strict_gate_report.passed
+    assert strict_gate_report.failed_checks[0].name == "policy_denial_rate"
+
+
+def test_evaluation_quality_gate_validates_thresholds() -> None:
+    with pytest.raises(ValueError, match=r"min_pass_rate must be between 0\.0 and 1\.0"):
+        EvaluationQualityGate(min_pass_rate=1.1)
+
+    with pytest.raises(ValueError, match="max_average_actions_per_scenario must be non-negative"):
+        EvaluationQualityGate(max_average_actions_per_scenario=-1.0)
 
 
 @pytest.mark.asyncio
