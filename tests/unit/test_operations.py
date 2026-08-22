@@ -14,6 +14,7 @@ from universal_agent.core import (
 from universal_agent.operations import (
     build_audit_records,
     build_doctor_report,
+    build_opentelemetry_trace_export,
     build_runtime_cost,
     build_runtime_logs,
     build_runtime_metrics,
@@ -266,6 +267,89 @@ def test_runtime_trace_spans_project_session_and_action_tree() -> None:
         "ActionStarted",
         "ActionCompleted",
     ]
+
+
+def test_opentelemetry_trace_export_projects_otlp_json_payload() -> None:
+    events = (
+        event(
+            "event-1",
+            "GoalCreated",
+            occurred_at=datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
+        ),
+        event(
+            "event-2",
+            "ActionStarted",
+            action_id="action-1",
+            data={
+                "capability": "inspect_workload",
+                "tool_name": "kubernetes_inspect_workload",
+                "arguments": {"api_token": "secret-token"},
+            },
+            occurred_at=datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC),
+        ),
+        event(
+            "event-3",
+            "ActionCompleted",
+            action_id="action-1",
+            data={"status": "succeeded"},
+            occurred_at=datetime(2026, 1, 1, 0, 0, 2, tzinfo=UTC),
+        ),
+        event(
+            "event-4",
+            "GoalCompleted",
+            occurred_at=datetime(2026, 1, 1, 0, 0, 3, tzinfo=UTC),
+        ),
+    )
+    spans = build_runtime_trace_spans(events)
+
+    payload = build_opentelemetry_trace_export(
+        spans,
+        service_name="universal-agent-test",
+        scope_version="0.2.0",
+    )
+
+    resource_spans = payload["resourceSpans"]
+    assert isinstance(resource_spans, list)
+    resource_span = resource_spans[0]
+    assert isinstance(resource_span, dict)
+    resource = resource_span["resource"]
+    assert isinstance(resource, dict)
+    assert resource["attributes"] == [
+        {"key": "service.name", "value": {"stringValue": "universal-agent-test"}}
+    ]
+    scope_spans = resource_span["scopeSpans"]
+    assert isinstance(scope_spans, list)
+    scope_span = scope_spans[0]
+    assert isinstance(scope_span, dict)
+    assert scope_span["scope"] == {"name": "universal-agent-runtime", "version": "0.2.0"}
+    exported_spans = scope_span["spans"]
+    assert isinstance(exported_spans, list)
+    exported_root, exported_action = exported_spans
+    assert isinstance(exported_root, dict)
+    assert isinstance(exported_action, dict)
+    trace_id = exported_root["traceId"]
+    span_id = exported_root["spanId"]
+    assert isinstance(trace_id, str)
+    assert isinstance(span_id, str)
+    assert len(trace_id) == 32
+    assert len(span_id) == 16
+    assert exported_action["parentSpanId"] == span_id
+    assert exported_action["kind"] == "SPAN_KIND_CLIENT"
+    assert exported_action["status"] == {"code": "STATUS_CODE_OK", "message": "ok"}
+    attributes = exported_action["attributes"]
+    assert isinstance(attributes, list)
+    assert {
+        "key": "runtime.session_id",
+        "value": {"stringValue": "session-1"},
+    } in attributes
+    assert {
+        "key": "arguments",
+        "value": {
+            "kvlistValue": {
+                "values": [{"key": "api_token", "value": {"stringValue": "[REDACTED]"}}]
+            }
+        },
+    } in attributes
 
 
 def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:

@@ -111,8 +111,9 @@ catalog routes, cursor session listing via `GET /v1/sessions`, route-level goal 
 configuration reads via `GET /v1/config`, confirmation resume via
 `POST /v1/sessions/{id}/resume`, explicit pause via `POST /v1/sessions/{id}/pause`, cancellation via
 `POST /v1/sessions/{id}/cancel`, operations reads via `/v1/metrics`, `/v1/cost`, `/v1/logs`,
-`/v1/traces`, `/v1/doctor` and `/v1/audit`, per-session audit/cost/log/trace reads, and cursor
-session/event reads with `after` / `limit` query parameters. `GET /v1/sessions/{id}/events/stream`
+`/v1/traces`, `/v1/traces/otlp`, `/v1/doctor` and `/v1/audit`, per-session audit/cost/log/trace
+reads including `/v1/sessions/{id}/traces/otlp`, and cursor session/event reads with `after` /
+`limit` query parameters. `GET /v1/sessions/{id}/events/stream`
 returns the same cursor batch as `text/event-stream` frames for SSE clients. `AgentdHttpServer` is the
 standard-library HTTP bridge for this adapter: it owns socket/body/header translation only and does
 not touch Runtime internals.
@@ -121,8 +122,10 @@ not touch Runtime internals.
 Capability/Tool catalogs, `config show`, and session list/show/events/pause/resume/cancel commands
 through `RuntimeService`, with cursor flags for session and event reads. It also exposes operations
 commands for metrics, cost, logs, traces, doctor and audit
-projections. `agent serve` starts the standard-library `AgentdHttpServer` around the same service;
-the CLI does not access Kernel internals directly.
+projections; `agent traces --format otlp` and `agent session traces <id> --format otlp` emit
+OTLP JSON-compatible trace payloads from the same event-derived span projection. `agent serve`
+starts the standard-library `AgentdHttpServer` around the same service; the CLI does not access
+Kernel internals directly.
 
 `EvaluationHarness` is the first P3.7 behavior evaluation foundation. It runs explicit
 `EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
@@ -174,9 +177,9 @@ not a database layer, event-sourcing model, or production migration system.
   stores for local recovery, a local CLI adapter, and typed
   `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, store backend,
   Domain identity validation, and multi-Domain composition activation.
-- P3.6/P3.7 foundation: event-derived `metrics`, `cost`, `logs`, `traces`, `doctor` and `audit` projections exposed
+- P3.6/P3.7 foundation: event-derived `metrics`, `cost`, `logs`, `traces`, OTLP trace export, `doctor` and `audit` projections exposed
   through RuntimeService, agentd-shaped routes and CLI commands, plus optional
-  `ModelUsageRecorded` events from model adapters. Structured log projections preserve runtime identifiers, event types, severity and redacted event data for CLI/agentd consumers. Trace span projections derive session/action trees from the same event stream with redacted attributes for OpenTelemetry-shaped consumers. The Evaluation Harness can assert status, error
+  `ModelUsageRecorded` events from model adapters. Structured log projections preserve runtime identifiers, event types, severity and redacted event data for CLI/agentd consumers. Trace span projections derive session/action trees from the same event stream with redacted attributes for OpenTelemetry-shaped consumers, and the OTLP adapter projects those spans into dependency-free collector payloads. The Evaluation Harness can assert status, error
   codes, events, executed capabilities, audit coverage, policy denials, recovery plans, criteria,
   action counts, iteration budgets and model token/cost budgets for behavior scenarios.
   Deterministic Replay can record stable behavior traces and detect later drift in event shape,

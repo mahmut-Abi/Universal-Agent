@@ -156,6 +156,10 @@ class AgentdApp:
             if method != "GET":
                 return method_not_allowed(("GET",))
             return json_response(trace_spans_body(await self._service.traces()))
+        if path == "/v1/traces/otlp":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            return json_response(await self._service.opentelemetry_traces())
         if path == "/v1/doctor":
             if method != "GET":
                 return method_not_allowed(("GET",))
@@ -254,6 +258,13 @@ class AgentdApp:
                 return method_not_allowed(("GET",))
             try:
                 return json_response(trace_spans_body(await self._service.traces(session_id)))
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
+        if session_id is not None and suffix == "traces/otlp":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                return json_response(await self._service.opentelemetry_traces(session_id))
             except StateNotFoundError as exc:
                 return not_found(str(exc))
         if session_id is not None and suffix == "pause":

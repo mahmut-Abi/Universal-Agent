@@ -168,7 +168,8 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("metrics")
     commands.add_parser("cost")
     commands.add_parser("logs")
-    commands.add_parser("traces")
+    traces = commands.add_parser("traces")
+    traces.add_argument("--format", choices=("runtime", "otlp"), default="runtime")
     commands.add_parser("doctor")
     commands.add_parser("audit")
 
@@ -239,6 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     traces = session_commands.add_parser("traces")
     traces.add_argument("session_id")
+    traces.add_argument("--format", choices=("runtime", "otlp"), default="runtime")
 
     pause = session_commands.add_parser("pause")
     pause.add_argument("session_id")
@@ -282,6 +284,9 @@ async def _dispatch(
         _write_json(out, log_records_body(await service.logs()))
         return
     if command == "traces":
+        if cast(str, args.format) == "otlp":
+            _write_json(out, await service.opentelemetry_traces())
+            return
         _write_json(out, trace_spans_body(await service.traces()))
         return
     if command == "doctor":
@@ -492,6 +497,9 @@ async def _dispatch_session(
         return
     if command == "traces":
         session_id = SessionId(cast(str, args.session_id))
+        if cast(str, args.format) == "otlp":
+            _write_json(out, await service.opentelemetry_traces(session_id))
+            return
         _write_json(out, trace_spans_body(await service.traces(session_id)))
         return
     if command == "pause":

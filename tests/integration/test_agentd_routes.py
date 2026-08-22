@@ -532,6 +532,10 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
     session_logs = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/logs"))
     traces = await app.handle(HttpRequest("GET", "/v1/traces"))
     session_traces = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/traces"))
+    otlp_traces = await app.handle(HttpRequest("GET", "/v1/traces/otlp"))
+    session_otlp_traces = await app.handle(
+        HttpRequest("GET", f"/v1/sessions/{session_id}/traces/otlp")
+    )
 
     assert metrics.status_code == 200
     assert metrics.body["session_count"] == 1
@@ -576,6 +580,25 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
         isinstance(item, dict) and item["parent_span_id"] == root_span["span_id"]
         for item in span_items[1:]
     )
+    assert otlp_traces.status_code == 200
+    assert otlp_traces.body == session_otlp_traces.body
+    resource_spans = otlp_traces.body["resourceSpans"]
+    assert isinstance(resource_spans, list)
+    resource_span = resource_spans[0]
+    assert isinstance(resource_span, dict)
+    scope_spans = resource_span["scopeSpans"]
+    assert isinstance(scope_spans, list)
+    scope_span = scope_spans[0]
+    assert isinstance(scope_span, dict)
+    exported_spans = scope_span["spans"]
+    assert isinstance(exported_spans, list)
+    assert len(exported_spans) == 3
+    exported_root = exported_spans[0]
+    exported_action = exported_spans[1]
+    assert isinstance(exported_root, dict)
+    assert isinstance(exported_action, dict)
+    assert exported_action["kind"] == "SPAN_KIND_CLIENT"
+    assert exported_action["parentSpanId"] == exported_root["spanId"]
     assert audit.status_code == 200
     audit_items = audit.body["audit_records"]
     session_audit_items = session_audit.body["audit_records"]

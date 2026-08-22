@@ -461,11 +461,18 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     session_logs_output = StringIO()
     traces_output = StringIO()
     session_traces_output = StringIO()
+    otlp_traces_output = StringIO()
+    session_otlp_traces_output = StringIO()
 
     metrics_status = await run_cli(["metrics"], service=service, stdout=metrics_output)
     cost_status = await run_cli(["cost"], service=service, stdout=cost_output)
     logs_status = await run_cli(["logs"], service=service, stdout=logs_output)
     traces_status = await run_cli(["traces"], service=service, stdout=traces_output)
+    otlp_traces_status = await run_cli(
+        ["traces", "--format", "otlp"],
+        service=service,
+        stdout=otlp_traces_output,
+    )
     doctor_status = await run_cli(["doctor"], service=service, stdout=doctor_output)
     audit_status = await run_cli(["audit"], service=service, stdout=audit_output)
     session_audit_status = await run_cli(
@@ -488,27 +495,36 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
         service=service,
         stdout=session_traces_output,
     )
+    session_otlp_traces_status = await run_cli(
+        ["session", "traces", session_id, "--format", "otlp"],
+        service=service,
+        stdout=session_otlp_traces_output,
+    )
 
     metrics = read_json(metrics_output)
     cost = read_json(cost_output)
     logs = read_json(logs_output)
     traces = read_json(traces_output)
+    otlp_traces = read_json(otlp_traces_output)
     doctor = read_json(doctor_output)
     audit = read_json(audit_output)
     session_audit = read_json(session_audit_output)
     session_cost = read_json(session_cost_output)
     session_logs = read_json(session_logs_output)
     session_traces = read_json(session_traces_output)
+    session_otlp_traces = read_json(session_otlp_traces_output)
     assert metrics_status == 0
     assert cost_status == 0
     assert logs_status == 0
     assert traces_status == 0
+    assert otlp_traces_status == 0
     assert doctor_status == 0
     assert audit_status == 0
     assert session_audit_status == 0
     assert session_cost_status == 0
     assert session_logs_status == 0
     assert session_traces_status == 0
+    assert session_otlp_traces_status == 0
     assert metrics["completed_goal_count"] == 1
     assert metrics["action_started_count"] == 2
     assert metrics["model_call_count"] == 3
@@ -529,6 +545,18 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
         "runtime.action.scale_workload",
         "runtime.action.inspect_workload",
     ]
+    assert otlp_traces == session_otlp_traces
+    resource_spans = otlp_traces["resourceSpans"]
+    assert isinstance(resource_spans, list)
+    resource_span = resource_spans[0]
+    assert isinstance(resource_span, dict)
+    scope_spans = resource_span["scopeSpans"]
+    assert isinstance(scope_spans, list)
+    scope_span = scope_spans[0]
+    assert isinstance(scope_span, dict)
+    exported_spans = scope_span["spans"]
+    assert isinstance(exported_spans, list)
+    assert len(exported_spans) == 3
     assert doctor["status"] == "ok"
     assert audit == session_audit
     audit_items = audit["audit_records"]

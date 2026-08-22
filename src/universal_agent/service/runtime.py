@@ -25,6 +25,7 @@ from universal_agent.operations import (
     RuntimeTraceSpanView,
     build_audit_records,
     build_doctor_report,
+    build_opentelemetry_trace_export,
     build_runtime_cost,
     build_runtime_logs,
     build_runtime_metrics,
@@ -345,6 +346,12 @@ class RuntimeService:
             )
         sessions = await self.list_sessions()
         return build_runtime_trace_spans(await self._list_all_events(sessions))
+
+    async def opentelemetry_traces(
+        self,
+        session_id: SessionId | None = None,
+    ) -> JsonMapping:
+        return build_opentelemetry_trace_export(await self.traces(session_id))
 
     async def doctor(self) -> DoctorReportView:
         health = self.health()

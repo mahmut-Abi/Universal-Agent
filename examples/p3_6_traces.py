@@ -64,6 +64,32 @@ def inspect_workload() -> Decision:
     )
 
 
+def _otlp_resource_span_count(payload: JsonMapping) -> int:
+    resource_spans = payload.get("resourceSpans")
+    if not isinstance(resource_spans, list):
+        return 0
+    return len(resource_spans)
+
+
+def _otlp_span_count(payload: JsonMapping) -> int:
+    resource_spans = payload.get("resourceSpans")
+    if not isinstance(resource_spans, list) or not resource_spans:
+        return 0
+    resource_span = resource_spans[0]
+    if not isinstance(resource_span, dict):
+        return 0
+    scope_spans = resource_span.get("scopeSpans")
+    if not isinstance(scope_spans, list) or not scope_spans:
+        return 0
+    scope_span = scope_spans[0]
+    if not isinstance(scope_span, dict):
+        return 0
+    spans = scope_span.get("spans")
+    if not isinstance(spans, list):
+        return 0
+    return len(spans)
+
+
 async def main() -> None:
     backend = FakeTraceBackend()
     components = RuntimeBuilder().build(
@@ -93,11 +119,15 @@ async def main() -> None:
         Task("Scale then inspect workload", ("healthy",)),
     )
     spans = await service.traces(run.result.session_id)
+    otlp = await service.opentelemetry_traces(run.result.session_id)
 
     print(f"status={run.result.status.value} spans={len(spans)}")
     for span in spans:
         parent = span.parent_span_id or "root"
         print(f"{span.name}:{span.status}:parent={parent}:duration_ms={span.duration_ms}")
+    print(
+        f"otlp_resource_spans={_otlp_resource_span_count(otlp)} otlp_spans={_otlp_span_count(otlp)}"
+    )
 
 
 if __name__ == "__main__":
