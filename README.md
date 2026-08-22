@@ -188,7 +188,7 @@ not a database layer, event-sourcing model, or production migration system.
 - P3.6/P3.7 foundation: event-derived `metrics`, Prometheus metrics text export, `cost`, `logs`,
   `traces`, OTLP trace export, `doctor` and `audit` projections exposed through RuntimeService,
   agentd-shaped routes and CLI commands, plus optional
-  `ModelUsageRecorded` events from model adapters. Structured log projections preserve runtime identifiers, event types, severity and redacted event data for CLI/agentd consumers. Trace span projections derive session/action trees from the same event stream with redacted attributes for OpenTelemetry-shaped consumers, and the OTLP adapter projects those spans into dependency-free collector payloads. The Evaluation Harness can assert status, error
+  `ModelUsageRecorded` events from model adapters. Structured log projections preserve runtime identifiers, event types, severity and redacted event data for CLI/agentd consumers. Trace span projections derive session/action trees plus decision, model usage, policy, observation and evaluation phase spans from the same event stream with redacted attributes for OpenTelemetry-shaped consumers, and the OTLP adapter projects those spans into dependency-free collector payloads. The Evaluation Harness can assert status, error
   codes, events, executed capabilities, audit coverage, policy denials, recovery plans, criteria,
   action counts, iteration budgets and model token/cost budgets for behavior scenarios.
   Evaluation suites classify scenarios by kind and tags so regression, policy and recovery subsets

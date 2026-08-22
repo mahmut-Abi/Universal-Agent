@@ -552,11 +552,27 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     assert traces == session_traces
     span_items = traces["spans"]
     assert isinstance(span_items, list)
-    assert [item["name"] for item in span_items if isinstance(item, dict)] == [
-        "runtime.session",
+    assert [
+        item["name"]
+        for item in span_items
+        if isinstance(item, dict) and str(item["name"]).startswith("runtime.action.")
+    ] == [
         "runtime.action.scale_workload",
         "runtime.action.inspect_workload",
     ]
+    phase_span_names = {
+        item["name"]
+        for item in span_items
+        if isinstance(item, dict) and not str(item["name"]).startswith("runtime.action.")
+    }
+    assert phase_span_names >= {
+        "runtime.session",
+        "runtime.decision",
+        "runtime.model_usage",
+        "runtime.policy",
+        "runtime.observation",
+        "runtime.evaluation",
+    }
     assert otlp_traces == session_otlp_traces
     resource_spans = otlp_traces["resourceSpans"]
     assert isinstance(resource_spans, list)
@@ -568,7 +584,7 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     assert isinstance(scope_span, dict)
     exported_spans = scope_span["spans"]
     assert isinstance(exported_spans, list)
-    assert len(exported_spans) == 3
+    assert len(exported_spans) > 3
     assert doctor["status"] == "ok"
     assert audit == session_audit
     audit_items = audit["audit_records"]

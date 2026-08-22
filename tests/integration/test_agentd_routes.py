@@ -574,20 +574,33 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
     assert traces.body == session_traces.body
     span_items = traces.body["spans"]
     assert isinstance(span_items, list)
-    assert len(span_items) == 3
     root_span = span_items[0]
     assert isinstance(root_span, dict)
     assert root_span["name"] == "runtime.session"
     assert root_span["status"] == "ok"
-    action_span_names = [item["name"] for item in span_items[1:] if isinstance(item, dict)]
+    action_span_items = [
+        item
+        for item in span_items[1:]
+        if isinstance(item, dict) and str(item["name"]).startswith("runtime.action.")
+    ]
+    action_span_names = [item["name"] for item in action_span_items]
     assert action_span_names == [
         "runtime.action.scale_workload",
         "runtime.action.inspect_workload",
     ]
-    assert all(
-        isinstance(item, dict) and item["parent_span_id"] == root_span["span_id"]
+    phase_span_names = {
+        item["name"]
         for item in span_items[1:]
-    )
+        if isinstance(item, dict) and not str(item["name"]).startswith("runtime.action.")
+    }
+    assert phase_span_names >= {
+        "runtime.decision",
+        "runtime.model_usage",
+        "runtime.policy",
+        "runtime.observation",
+        "runtime.evaluation",
+    }
+    assert all(item["parent_span_id"] == root_span["span_id"] for item in action_span_items)
     assert otlp_traces.status_code == 200
     assert otlp_traces.body == session_otlp_traces.body
     resource_spans = otlp_traces.body["resourceSpans"]
@@ -600,7 +613,7 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
     assert isinstance(scope_span, dict)
     exported_spans = scope_span["spans"]
     assert isinstance(exported_spans, list)
-    assert len(exported_spans) == 3
+    assert len(exported_spans) > 3
     exported_root = exported_spans[0]
     exported_action = exported_spans[1]
     assert isinstance(exported_root, dict)

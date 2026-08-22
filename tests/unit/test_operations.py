@@ -285,8 +285,9 @@ def test_runtime_trace_spans_project_session_and_action_tree() -> None:
     assert [span.name for span in spans] == [
         "runtime.session",
         "runtime.action.inspect_workload",
+        "runtime.policy",
     ]
-    root, action = spans
+    root, action, policy = spans
     assert root.trace_id == "trace:session-1"
     assert root.parent_span_id is None
     assert root.status == "ok"
@@ -307,6 +308,69 @@ def test_runtime_trace_spans_project_session_and_action_tree() -> None:
         "ActionStarted",
         "ActionCompleted",
     ]
+    assert policy.parent_span_id == action.span_id
+    assert policy.action_id == ActionId("action-1")
+    assert policy.status == "ok"
+    assert policy.attributes["event_type"] == "PolicyChecked"
+    assert policy.attributes["policy"] == "allow-safe-read"
+
+
+def test_runtime_trace_spans_project_decision_model_and_evaluation_phases() -> None:
+    events = (
+        event(
+            "event-1",
+            "GoalCreated",
+            occurred_at=datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
+        ),
+        event(
+            "event-2",
+            "DecisionGenerated",
+            data={"decision_type": "execute", "reason": "inspect workload"},
+            occurred_at=datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC),
+        ),
+        event(
+            "event-3",
+            "ModelUsageRecorded",
+            data={
+                "provider": "scripted",
+                "model": "fixture-model",
+                "input_tokens": 10,
+                "output_tokens": 3,
+                "estimated_cost_micros": 1,
+            },
+            occurred_at=datetime(2026, 1, 1, 0, 0, 2, tzinfo=UTC),
+        ),
+        event(
+            "event-4",
+            "EvaluationCompleted",
+            data={"status": "completed", "evaluator": "workload-health"},
+            occurred_at=datetime(2026, 1, 1, 0, 0, 3, tzinfo=UTC),
+        ),
+        event(
+            "event-5",
+            "GoalCompleted",
+            occurred_at=datetime(2026, 1, 1, 0, 0, 4, tzinfo=UTC),
+        ),
+    )
+
+    spans = build_runtime_trace_spans(events)
+
+    assert [span.name for span in spans] == [
+        "runtime.session",
+        "runtime.decision",
+        "runtime.model_usage",
+        "runtime.evaluation",
+    ]
+    root, decision, model_usage, evaluation = spans
+    assert decision.parent_span_id == root.span_id
+    assert decision.duration_ms == 0.0
+    assert decision.attributes["decision_type"] == "execute"
+    assert model_usage.parent_span_id == root.span_id
+    assert model_usage.attributes["provider"] == "scripted"
+    assert model_usage.attributes["input_tokens"] == 10
+    assert evaluation.parent_span_id == root.span_id
+    assert evaluation.status == "ok"
+    assert evaluation.attributes["evaluator"] == "workload-health"
 
 
 def test_opentelemetry_trace_export_projects_otlp_json_payload() -> None:

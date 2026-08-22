@@ -545,33 +545,41 @@ def _session_trace_spans(events: tuple[RuntimeEventView, ...]) -> tuple[RuntimeT
     last = events[-1]
     trace_id = f"trace:{first.session_id}"
     root_span_id = f"span:session:{first.session_id}"
-    spans = [
-        RuntimeTraceSpanView(
-            trace_id=trace_id,
-            span_id=root_span_id,
-            parent_span_id=None,
-            name="runtime.session",
-            kind="internal",
-            status=_session_span_status(events),
-            session_id=first.session_id,
-            goal_id=first.goal_id,
-            task_id=first.task_id,
-            action_id=None,
-            start_time=first.occurred_at,
-            end_time=last.occurred_at,
-            duration_ms=_duration_ms(first.occurred_at, last.occurred_at),
-            attributes=immutable_json(
-                {
-                    "event_count": len(events),
-                    "first_event": first.type,
-                    "last_event": last.type,
-                }
-            ),
-        )
-    ]
-    for action_events in _events_by_action(events):
-        spans.append(_action_trace_span(trace_id, root_span_id, action_events))
-    return tuple(spans)
+    root = RuntimeTraceSpanView(
+        trace_id=trace_id,
+        span_id=root_span_id,
+        parent_span_id=None,
+        name="runtime.session",
+        kind="internal",
+        status=_session_span_status(events),
+        session_id=first.session_id,
+        goal_id=first.goal_id,
+        task_id=first.task_id,
+        action_id=None,
+        start_time=first.occurred_at,
+        end_time=last.occurred_at,
+        duration_ms=_duration_ms(first.occurred_at, last.occurred_at),
+        attributes=immutable_json(
+            {
+                "event_count": len(events),
+                "first_event": first.type,
+                "last_event": last.type,
+            }
+        ),
+    )
+    action_spans = tuple(
+        _action_trace_span(trace_id, root_span_id, action_events)
+        for action_events in _events_by_action(events)
+    )
+    action_parents = {
+        span.action_id: span.span_id for span in action_spans if span.action_id is not None
+    }
+    phase_spans = tuple(
+        span
+        for event in events
+        if (span := _phase_trace_span(trace_id, root_span_id, action_parents, event)) is not None
+    )
+    return (root, *action_spans, *phase_spans)
 
 
 def _action_trace_span(
@@ -599,6 +607,75 @@ def _action_trace_span(
         duration_ms=_duration_ms(first.occurred_at, last.occurred_at),
         attributes=attributes,
     )
+
+
+def _phase_trace_span(
+    trace_id: str,
+    root_span_id: str,
+    action_parents: dict[ActionId, str],
+    event: RuntimeEventView,
+) -> RuntimeTraceSpanView | None:
+    name = _phase_span_name(event.type)
+    if name is None:
+        return None
+    parent_span_id = (
+        action_parents.get(event.action_id, root_span_id)
+        if event.action_id is not None
+        else root_span_id
+    )
+    return RuntimeTraceSpanView(
+        trace_id=trace_id,
+        span_id=f"span:event:{event.event_id}",
+        parent_span_id=parent_span_id,
+        name=name,
+        kind="internal",
+        status=_phase_span_status(event),
+        session_id=event.session_id,
+        goal_id=event.goal_id,
+        task_id=event.task_id,
+        action_id=event.action_id,
+        start_time=event.occurred_at,
+        end_time=event.occurred_at,
+        duration_ms=0.0,
+        attributes=_phase_span_attributes(event),
+    )
+
+
+def _phase_span_name(event_type: str) -> str | None:
+    if event_type == "DecisionGenerated":
+        return "runtime.decision"
+    if event_type == "ModelUsageRecorded":
+        return "runtime.model_usage"
+    if event_type == "PolicyChecked":
+        return "runtime.policy"
+    if event_type == "ObservationReceived":
+        return "runtime.observation"
+    if event_type == "EvaluationCompleted":
+        return "runtime.evaluation"
+    return None
+
+
+def _phase_span_status(event: RuntimeEventView) -> str:
+    if event.type == "PolicyChecked" and _string(event.data.get("effect")) == "deny":
+        return "error"
+    if event.type == "EvaluationCompleted":
+        status = _string(event.data.get("status"))
+        if status == "failed":
+            return "error"
+        if status == "incomplete":
+            return "waiting"
+    return "ok"
+
+
+def _phase_span_attributes(event: RuntimeEventView) -> JsonMapping:
+    values: dict[str, JsonValue] = {
+        "event_id": event.event_id,
+        "event_type": event.type,
+    }
+    for key, value in event.data.items():
+        if value is not None:
+            values[str(key)] = _redacted_value(str(key), value)
+    return immutable_json(values)
 
 
 def _events_by_session(
@@ -887,6 +964,17 @@ def _redacted_value(key: str, value: object) -> JsonValue:
 
 def _sensitive_key(key: str) -> bool:
     normalized = key.lower().replace("-", "_")
+    public_token_metrics = {
+        "cached_tokens",
+        "input_tokens",
+        "model_input_tokens",
+        "model_output_tokens",
+        "model_total_tokens",
+        "output_tokens",
+        "total_tokens",
+    }
+    if normalized in public_token_metrics:
+        return False
     return any(
         marker in normalized
         for marker in (
