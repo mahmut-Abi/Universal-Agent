@@ -5,10 +5,14 @@ from types import MappingProxyType
 
 from universal_agent.core import (
     ActionId,
+    CapabilityCategory,
+    DomainIdentity,
     GoalId,
     GoalStatus,
     ObservationId,
+    RiskLevel,
     SessionId,
+    SideEffect,
     TaskId,
     TaskStatus,
 )
@@ -22,12 +26,15 @@ from universal_agent.runtime import (
     TaskView,
 )
 from universal_agent.service import (
+    CapabilityView,
     DomainView,
     HealthView,
+    ProfileView,
     ReadyView,
     RuntimeConfigDomainView,
     RuntimeConfigView,
     SessionExplorerView,
+    ToolView,
     WorldFactView,
 )
 from universal_agent.web import WebConsoleSnapshot, render_web_console
@@ -77,6 +84,41 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
                 ("Deployment",),
                 ("inspect_workload",),
                 ("criteria",),
+            ),
+        ),
+        profiles=(
+            ProfileView(
+                "production-operator",
+                "1.0.0",
+                "Production Kubernetes operator",
+                "kubernetes",
+                "0.2.0",
+                (DomainIdentity("kubernetes", "0.2.0"),),
+            ),
+        ),
+        capabilities=(
+            CapabilityView(
+                "inspect_workload",
+                "Inspect workload health",
+                CapabilityCategory.OBSERVATION,
+                RiskLevel.LOW,
+                "kubernetes",
+                "0.2.0",
+                ("kubernetes_inspect_workload",),
+            ),
+        ),
+        tools=(
+            ToolView(
+                "kubernetes_inspect_workload",
+                "Inspect workload with Kubernetes backend",
+                ("inspect_workload",),
+                ("name",),
+                SideEffect.NONE,
+                RiskLevel.LOW,
+                5.0,
+                0,
+                "kubernetes",
+                "0.2.0",
             ),
         ),
         metrics=RuntimeMetricsView(
@@ -189,6 +231,12 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "kubernetes@0.2.0" in rendered
     assert "Verify &lt;script&gt;alert(1)&lt;/script&gt;" in rendered
     assert "<script>alert(1)</script>" not in rendered
+    assert "Profile Catalog" in rendered
+    assert "production-operator" in rendered
+    assert "Capability Catalog" in rendered
+    assert "inspect_workload" in rendered
+    assert "Tool Catalog" in rendered
+    assert "kubernetes_inspect_workload" in rendered
     assert "World Facts" in rendered
     assert "Session Evidence" in rendered
     assert "deployment/example" in rendered

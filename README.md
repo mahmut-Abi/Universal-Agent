@@ -243,7 +243,8 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
 - TUI foundation: `build_tui_snapshot` consumes RuntimeService projections and `render_tui_snapshot`
   produces a deterministic text view for CLI/operator use without touching Kernel internals.
 - Web Console foundation: `build_web_console_snapshot` consumes the shared console snapshot builder
-  and `render_web_console` produces deterministic read-only HTML for `AgentdApp` without a web
+  and `render_web_console` produces deterministic read-only HTML for `AgentdApp`, including
+  Profile/Domain/Capability/Tool catalogs plus session Evidence and World Facts without a web
   framework dependency or Kernel access.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster

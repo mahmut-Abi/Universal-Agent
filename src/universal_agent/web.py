@@ -9,7 +9,13 @@ from universal_agent.console import RuntimeConsoleSnapshot, build_runtime_consol
 from universal_agent.core import SessionId
 from universal_agent.operations import AuditRecordView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
-from universal_agent.service import RuntimeService, SessionExplorerView
+from universal_agent.service import (
+    CapabilityView,
+    ProfileView,
+    RuntimeService,
+    SessionExplorerView,
+    ToolView,
+)
 
 WebConsoleSnapshot = RuntimeConsoleSnapshot
 
@@ -55,6 +61,9 @@ def render_web_console(snapshot: WebConsoleSnapshot) -> str:
             _metric_card("Cost micros", snapshot.cost.estimated_cost_micros),
             "</section>",
             _domains(snapshot),
+            _profiles(snapshot.profiles),
+            _capabilities(snapshot.capabilities),
+            _tools(snapshot.tools),
             _sessions(snapshot.sessions),
             _selected_session(snapshot.selected_session),
             _world_facts(snapshot.session_explorer),
@@ -113,6 +122,84 @@ def _domains(snapshot: WebConsoleSnapshot) -> str:
         "Active Domains",
         _table(
             ("Domain", "Primary", "Capabilities", "Evaluators"),
+            tuple(rows),
+        ),
+    )
+
+
+def _profiles(profiles: tuple[ProfileView, ...]) -> str:
+    rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(profile.name)}</td>",
+                f"<td>{_html(profile.version)}</td>",
+                f"<td>{_html(profile.domain_name)}@{_html(profile.domain_version)}</td>",
+                f"<td>{_html(_profile_domain_text(profile))}</td>",
+                f"<td>{_html(profile.description)}</td>",
+                "</tr>",
+            )
+        )
+        for profile in profiles
+    ]
+    if not rows:
+        rows.append('<tr><td colspan="5">No profiles</td></tr>')
+    return _section(
+        "Profile Catalog",
+        _table(("Profile", "Version", "Primary Domain", "Domains", "Description"), tuple(rows)),
+    )
+
+
+def _capabilities(capabilities: tuple[CapabilityView, ...]) -> str:
+    rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(capability.name)}</td>",
+                f"<td>{_html(capability.category.value)}</td>",
+                f"<td>{_html(capability.risk.value)}</td>",
+                (
+                    f"<td>{_html(capability.domain_name)}@"
+                    f"{_html(capability.domain_version)}</td>"
+                ),
+                f"<td>{_html(', '.join(capability.tool_names))}</td>",
+                f"<td>{_html(capability.description)}</td>",
+                "</tr>",
+            )
+        )
+        for capability in capabilities
+    ]
+    if not rows:
+        rows.append('<tr><td colspan="6">No capabilities</td></tr>')
+    return _section(
+        "Capability Catalog",
+        _table(("Capability", "Category", "Risk", "Domain", "Tools", "Description"), tuple(rows)),
+    )
+
+
+def _tools(tools: tuple[ToolView, ...]) -> str:
+    rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(tool.name)}</td>",
+                f"<td>{_html(tool.side_effect.value)}</td>",
+                f"<td>{_html(tool.risk.value)}</td>",
+                f"<td>{_html(', '.join(tool.capabilities))}</td>",
+                f"<td>{_html(', '.join(tool.required_arguments))}</td>",
+                f"<td>{tool.timeout_seconds:g}s</td>",
+                f"<td>{_html(tool.domain_name)}@{_html(tool.domain_version)}</td>",
+                "</tr>",
+            )
+        )
+        for tool in tools
+    ]
+    if not rows:
+        rows.append('<tr><td colspan="7">No tools</td></tr>')
+    return _section(
+        "Tool Catalog",
+        _table(
+            ("Tool", "Side Effect", "Risk", "Capabilities", "Required Args", "Timeout", "Domain"),
             tuple(rows),
         ),
     )
@@ -348,6 +435,12 @@ def _mapping_text(values: Mapping[str, Any]) -> str:
     if not values:
         return "none"
     return ", ".join(f"{key}={values[key]}" for key in sorted(values))
+
+
+def _profile_domain_text(profile: ProfileView) -> str:
+    if not profile.domains:
+        return "none"
+    return ", ".join(f"{identity.name}@{identity.version}" for identity in profile.domains)
 
 
 def _value_text(value: object) -> str:

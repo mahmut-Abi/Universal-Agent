@@ -478,6 +478,10 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert "Runtime Console" in console.text_body
     assert "Verify workload health" in console.text_body
     assert "kubernetes@0.2.0" in console.text_body
+    assert "Capability Catalog" in console.text_body
+    assert "inspect_workload" in console.text_body
+    assert "Tool Catalog" in console.text_body
+    assert "kubernetes_inspect_workload" in console.text_body
     assert "ActionStarted" in console.text_body
     assert "capability=inspect_workload" in console.text_body
     assert missing.status_code == 404

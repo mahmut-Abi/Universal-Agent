@@ -50,6 +50,9 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
                 ("criteria",),
             ),
         ),
+        profiles=(),
+        capabilities=(),
+        tools=(),
         metrics=RuntimeMetricsView(
             session_count=1,
             active_session_count=0,
