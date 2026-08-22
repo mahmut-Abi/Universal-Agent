@@ -58,6 +58,7 @@ from universal_agent.web import (
     WebConsoleSnapshot,
     build_web_console_snapshot,
     render_web_console,
+    render_web_domain_detail,
     render_web_evidence_explorer,
     render_web_session_detail,
     render_web_world_model_explorer,
@@ -114,6 +115,31 @@ class AgentdApp:
             return self._get(method, health_body(self._service.health()))
         if path == "/ready":
             return self._get(method, ready_body(self._service.ready()))
+        console_domain_name, console_domain_version = _console_domain_route(path)
+        if console_domain_name is not None:
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                snapshot = await build_web_console_snapshot(
+                    self._service,
+                    session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
+                    event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
+                )
+            except ValueError as exc:
+                return bad_request(str(exc))
+            domain = _console_domain_view(snapshot, console_domain_name, console_domain_version)
+            if domain is None:
+                return not_found(
+                    _domain_not_found_message(console_domain_name, console_domain_version)
+                )
+            return text_response(
+                render_web_domain_detail(
+                    snapshot,
+                    domain_name=domain.name,
+                    domain_version=domain.version,
+                ),
+                content_type="text/html; charset=utf-8",
+            )
         console_session_id, console_session_suffix = _console_session_route(path)
         if console_session_id is not None:
             if method != "GET":
@@ -1136,6 +1162,41 @@ def _console_session_route(path: str) -> tuple[SessionId | None, str]:
     if len(segments) == 4 and segments[:2] == ("console", "sessions") and segments[2].strip():
         return SessionId(segments[2]), segments[3]
     return None, ""
+
+
+def _console_domain_route(path: str) -> tuple[str | None, str | None]:
+    segments = tuple(segment for segment in path.split("/") if segment)
+    if len(segments) == 3 and segments[:2] == ("console", "domains") and segments[2].strip():
+        return segments[2], None
+    if (
+        len(segments) == 4
+        and segments[:2] == ("console", "domains")
+        and segments[2].strip()
+        and segments[3].strip()
+    ):
+        return segments[2], segments[3]
+    return None, None
+
+
+def _console_domain_view(
+    snapshot: WebConsoleSnapshot,
+    name: str,
+    version: str | None,
+) -> DomainView | None:
+    matches = tuple(
+        domain
+        for domain in snapshot.domains
+        if domain.name == name and (version is None or domain.version == version)
+    )
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def _domain_not_found_message(name: str, version: str | None) -> str:
+    if version is None:
+        return f"domain not found or ambiguous: {name}"
+    return f"domain not found: {name}@{version}"
 
 
 def _console_session_renderer(

@@ -11,6 +11,7 @@ from universal_agent.operations import AuditRecordView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
 from universal_agent.service import (
     CapabilityView,
+    DomainView,
     EvaluatorView,
     MemoryView,
     PolicyView,
@@ -183,6 +184,48 @@ def render_web_world_model_explorer(snapshot: WebConsoleSnapshot) -> str:
     )
 
 
+def render_web_domain_detail(
+    snapshot: WebConsoleSnapshot,
+    *,
+    domain_name: str,
+    domain_version: str | None = None,
+) -> str:
+    domain = _selected_domain(snapshot, domain_name, domain_version)
+    title = "Universal Agent Runtime Domain Manager"
+    return "\n".join(
+        (
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f"<title>{_html(title)}</title>",
+            f"<style>{_stylesheet()}</style>",
+            "</head>",
+            "<body>",
+            '<main class="shell">',
+            _domain_hero(snapshot, domain),
+            '<section class="grid cards" aria-label="Domain summary">',
+            _metric_card("Capabilities", _domain_capability_count(snapshot, domain)),
+            _metric_card("Tools", _domain_tool_count(snapshot, domain)),
+            _metric_card("Policies", _domain_policy_count(snapshot, domain)),
+            _metric_card("Evaluators", _domain_evaluator_count(snapshot, domain)),
+            _metric_card("Memories", _domain_memory_count(snapshot, domain)),
+            "</section>",
+            _domain_details(domain),
+            _profiles(_domain_profiles(snapshot, domain)),
+            _capabilities(_domain_capabilities(snapshot, domain)),
+            _tools(_domain_tools(snapshot, domain)),
+            _policies(_domain_policies(snapshot, domain)),
+            _evaluators(_domain_evaluators(snapshot, domain)),
+            _memory(_domain_memories(snapshot, domain)),
+            "</main>",
+            "</body>",
+            "</html>",
+        )
+    )
+
+
 def _hero(snapshot: WebConsoleSnapshot) -> str:
     ready_class = "ok" if snapshot.ready.ready else "warn"
     return "\n".join(
@@ -200,6 +243,29 @@ def _hero(snapshot: WebConsoleSnapshot) -> str:
             ),
             "</div>",
             '<div class="status">',
+            f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
+            f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
+            "</div>",
+            "</section>",
+        )
+    )
+
+
+def _domain_hero(snapshot: WebConsoleSnapshot, domain: DomainView | None) -> str:
+    ready_class = "ok" if snapshot.ready.ready else "warn"
+    domain_text = "No selected domain"
+    if domain is not None:
+        domain_text = f"{domain.name}@{domain.version}"
+    return "\n".join(
+        (
+            '<section class="hero">',
+            "<div>",
+            "<p>Universal Agent Runtime</p>",
+            "<h1>Domain Manager</h1>",
+            f"<span>domain={_html(domain_text)}</span>",
+            "</div>",
+            '<div class="status">',
+            '<a class="pill link" href="/console">Console</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
             "</div>",
@@ -253,7 +319,11 @@ def _domains(snapshot: WebConsoleSnapshot) -> str:
         "\n".join(
             (
                 "<tr>",
-                f"<td>{_html(domain.name)}@{_html(domain.version)}</td>",
+                (
+                    '<td><a href="/console/domains/'
+                    f'{_attr(domain.name)}/{_attr(domain.version)}">'
+                    f"{_html(domain.name)}@{_html(domain.version)}</a></td>"
+                ),
                 f"<td>{'yes' if domain.primary else 'no'}</td>",
                 f"<td>{len(domain.capability_names)}</td>",
                 f"<td>{len(domain.evaluator_names)}</td>",
@@ -270,6 +340,25 @@ def _domains(snapshot: WebConsoleSnapshot) -> str:
             ("Domain", "Primary", "Capabilities", "Evaluators"),
             tuple(rows),
         ),
+    )
+
+
+def _domain_details(domain: DomainView | None) -> str:
+    if domain is None:
+        return _section("Domain", '<p class="empty">No selected domain</p>')
+    items = (
+        ("Domain", f"{domain.name}@{domain.version}"),
+        ("Primary", "yes" if domain.primary else "no"),
+        ("Description", domain.description),
+        ("Ontology", _string_tuple_text(domain.ontology)),
+        ("Capabilities", _string_tuple_text(domain.capability_names)),
+        ("Evaluators", _string_tuple_text(domain.evaluator_names)),
+    )
+    return _section(
+        "Domain",
+        '<dl class="details">'
+        + "".join(f"<dt>{_html(label)}</dt><dd>{_html(value)}</dd>" for label, value in items)
+        + "</dl>",
     )
 
 
@@ -713,6 +802,120 @@ def _selected_world_fact_count(explorer: SessionExplorerView | None) -> int:
     return len(explorer.world_facts)
 
 
+def _selected_domain(
+    snapshot: WebConsoleSnapshot,
+    domain_name: str,
+    domain_version: str | None,
+) -> DomainView | None:
+    matches = tuple(
+        domain
+        for domain in snapshot.domains
+        if domain.name == domain_name
+        and (domain_version is None or domain.version == domain_version)
+    )
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def _domain_profiles(
+    snapshot: WebConsoleSnapshot,
+    domain: DomainView | None,
+) -> tuple[ProfileView, ...]:
+    if domain is None:
+        return ()
+    return tuple(
+        profile
+        for profile in snapshot.profiles
+        if (profile.domain_name, profile.domain_version) == (domain.name, domain.version)
+        or any(
+            identity.name == domain.name and identity.version == domain.version
+            for identity in profile.domains
+        )
+    )
+
+
+def _domain_capabilities(
+    snapshot: WebConsoleSnapshot,
+    domain: DomainView | None,
+) -> tuple[CapabilityView, ...]:
+    if domain is None:
+        return ()
+    return tuple(
+        item
+        for item in snapshot.capabilities
+        if (item.domain_name, item.domain_version) == (domain.name, domain.version)
+    )
+
+
+def _domain_tools(
+    snapshot: WebConsoleSnapshot,
+    domain: DomainView | None,
+) -> tuple[ToolView, ...]:
+    if domain is None:
+        return ()
+    return tuple(
+        item
+        for item in snapshot.tools
+        if (item.domain_name, item.domain_version) == (domain.name, domain.version)
+    )
+
+
+def _domain_policies(
+    snapshot: WebConsoleSnapshot,
+    domain: DomainView | None,
+) -> tuple[PolicyView, ...]:
+    if domain is None:
+        return ()
+    return tuple(
+        item
+        for item in snapshot.policies
+        if (item.domain_name, item.domain_version) == (domain.name, domain.version)
+    )
+
+
+def _domain_evaluators(
+    snapshot: WebConsoleSnapshot,
+    domain: DomainView | None,
+) -> tuple[EvaluatorView, ...]:
+    if domain is None:
+        return ()
+    return tuple(
+        item
+        for item in snapshot.evaluators
+        if (item.domain_name, item.domain_version) == (domain.name, domain.version)
+    )
+
+
+def _domain_memories(
+    snapshot: WebConsoleSnapshot,
+    domain: DomainView | None,
+) -> tuple[MemoryView, ...]:
+    if domain is None:
+        return ()
+    return tuple(item for item in snapshot.memories if item.scope == domain.name)
+
+
+def _domain_capability_count(snapshot: WebConsoleSnapshot, domain: DomainView | None) -> int:
+    return len(_domain_capabilities(snapshot, domain))
+
+
+def _domain_tool_count(snapshot: WebConsoleSnapshot, domain: DomainView | None) -> int:
+    return len(_domain_tools(snapshot, domain))
+
+
+def _domain_policy_count(snapshot: WebConsoleSnapshot, domain: DomainView | None) -> int:
+    return len(_domain_policies(snapshot, domain))
+
+
+def _domain_evaluator_count(snapshot: WebConsoleSnapshot, domain: DomainView | None) -> int:
+    return len(_domain_evaluators(snapshot, domain))
+
+
+def _domain_memory_count(snapshot: WebConsoleSnapshot, domain: DomainView | None) -> int:
+    return len(_domain_memories(snapshot, domain))
+
+
 def _profile_domain_text(profile: ProfileView) -> str:
     if not profile.domains:
         return "none"
@@ -920,6 +1123,7 @@ __all__ = [
     "WebConsoleSnapshot",
     "build_web_console_snapshot",
     "render_web_console",
+    "render_web_domain_detail",
     "render_web_evidence_explorer",
     "render_web_session_detail",
     "render_web_world_model_explorer",

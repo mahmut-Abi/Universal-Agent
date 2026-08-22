@@ -45,6 +45,7 @@ from universal_agent.service import (
 from universal_agent.web import (
     WebConsoleSnapshot,
     render_web_console,
+    render_web_domain_detail,
     render_web_evidence_explorer,
     render_web_session_detail,
     render_web_world_model_explorer,
@@ -332,3 +333,22 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "deployment/example" in world_explorer
     assert "healthy" in world_explorer
     assert "Session Evidence" in world_explorer
+
+    domain_detail = render_web_domain_detail(
+        snapshot,
+        domain_name="kubernetes",
+        domain_version="0.2.0",
+    )
+
+    assert 'href="/console/domains/kubernetes/0.2.0"' in rendered
+    assert "Universal Agent Runtime Domain Manager" in domain_detail
+    assert "Domain Manager" in domain_detail
+    assert "domain=kubernetes@0.2.0" in domain_detail
+    assert "Ontology" in domain_detail
+    assert "Deployment" in domain_detail
+    assert "production-operator" in domain_detail
+    assert "inspect_workload" in domain_detail
+    assert "kubernetes_inspect_workload" in domain_detail
+    assert "allow-read" in domain_detail
+    assert "workload-health" in domain_detail
+    assert "kubernetes readiness" in domain_detail

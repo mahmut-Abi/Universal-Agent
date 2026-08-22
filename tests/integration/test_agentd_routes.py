@@ -496,6 +496,8 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     detail = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}?event_limit=20"))
     evidence_page = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/evidence"))
     world_page = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/world"))
+    domain_page = await app.handle(HttpRequest("GET", "/console/domains/kubernetes/0.2.0"))
+    missing_domain_page = await app.handle(HttpRequest("GET", "/console/domains/missing/0.1.0"))
     unknown_detail_page = await app.handle(
         HttpRequest("GET", f"/console/sessions/{session_id}/unknown")
     )
@@ -540,6 +542,14 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert "Universal Agent Runtime World Model Explorer" in world_page.text_body
     assert "World Facts" in world_page.text_body
     assert "healthy" in world_page.text_body
+    assert domain_page.status_code == 200
+    assert domain_page.text_body is not None
+    assert "Universal Agent Runtime Domain Manager" in domain_page.text_body
+    assert "Domain Manager" in domain_page.text_body
+    assert "domain=kubernetes@0.2.0" in domain_page.text_body
+    assert "inspect_workload" in domain_page.text_body
+    assert "kubernetes_inspect_workload" in domain_page.text_body
+    assert missing_domain_page.status_code == 404
     assert unknown_detail_page.status_code == 404
     assert missing.status_code == 404
     assert missing_detail.status_code == 404
