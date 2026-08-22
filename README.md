@@ -134,7 +134,9 @@ internals directly.
 Session, Event, Metrics and Audit projections. `EvaluationSuite` and
 `EvaluationScenarioSelector` make scenario, regression, policy and recovery subsets first-class
 contracts for local CI-style runs. `EvaluationQualityGate` evaluates suite-level pass rates,
-completion rates, intervention rates, action efficiency and model budget thresholds after execution.
+completion rates, intervention rates, resource lock safety, action efficiency and model budget
+thresholds after execution. `EvaluationRunner` composes suite execution, quality gates and optional
+`EvaluationReportStore` persistence into one reusable application-facing module.
 `DeterministicReplayHarness` records a stable trace from those projections and replays later runs
 against it while ignoring dynamic IDs and timestamps.
 `FileReplayRecordingStore` persists those traces as JSON golden recordings for local regression tests.
@@ -143,8 +145,8 @@ events from the Runtime itself.
 The harnesses are intentionally outside the Kernel: Domain `Evaluator`s still decide task/goal
 semantics during execution, while the Harness decides whether a completed scenario satisfies
 regression, policy, recovery, token/cost budget and replay expectations. See
-`examples/p3_7_evaluation_harness.py`, `examples/p3_7_replay.py` and
-`examples/p3_7_deterministic_mode.py`.
+`examples/p3_7_evaluation_harness.py`, `examples/p3_7_evaluation_runner.py`,
+`examples/p3_7_replay.py` and `examples/p3_7_deterministic_mode.py`.
 
 `AgentProfile` is the first application-level Profile foundation. A Profile declares a selectable
 runtime identity — name, version, Domain identity and Runtime Configuration — for future CLI/agentd
@@ -194,10 +196,12 @@ not a database layer, event-sourcing model, or production migration system.
   agentd-shaped routes and CLI commands, plus optional
   `ModelUsageRecorded` events from model adapters. Structured log projections preserve runtime identifiers, event types, severity and redacted event data for CLI/agentd consumers. Trace span projections derive session/action trees plus decision, model usage, policy, observation, resource lock, resource conflict and evaluation phase spans from the same event stream with redacted attributes for OpenTelemetry-shaped consumers, and the OTLP adapter projects those spans into dependency-free collector payloads. Resource lock metrics and doctor checks report acquired/released locks, conflicts and active locks derived from runtime events. The Evaluation Harness can assert status, error
   codes, events, executed capabilities, audit coverage, policy denials, recovery plans, criteria,
-  action counts, iteration budgets and model token/cost budgets for behavior scenarios.
+  resource lock conflicts, active resource locks, action counts, iteration budgets and model
+  token/cost budgets for behavior scenarios.
   Evaluation suites classify scenarios by kind and tags so regression, policy and recovery subsets
   can be selected without changing Kernel code, and quality gates turn suite metrics into CI-ready
-  pass/fail checks.
+  pass/fail checks. `EvaluationRunner` packages suite execution, gate evaluation and optional
+  stable report persistence behind one interface for future CLI/CI adapters.
   Deterministic Replay can record stable behavior traces and detect later drift in event shape,
   actions, policy effects, audit entries and metrics without depending on runtime-generated IDs.
   `DeterministicRuntimeMode` can also install stable runtime ID and clock primitives while building
