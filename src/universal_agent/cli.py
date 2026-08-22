@@ -67,6 +67,7 @@ from universal_agent.evaluation.recording import (
     ReplayRecordingNotFoundError,
     compare_evaluation_reports,
     decode_evaluation_report,
+    encode_evaluation_junit_xml,
     encode_replay_recording,
     json_mapping,
 )
@@ -269,6 +270,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_run.add_argument("--suite", default="local evaluation suite")
     eval_run.add_argument("--suite-file")
     eval_run.add_argument("--report-dir")
+    eval_run.add_argument("--format", choices=("json", "junit"), default="json")
     eval_run.add_argument("--min-pass-rate", type=float, default=1.0)
     eval_run.add_argument("--min-goal-completion-rate", type=float)
     eval_run.add_argument("--min-task-success-rate", type=float)
@@ -541,7 +543,11 @@ async def _dispatch_eval(
                 ),
             ),
         )
-        _write_json(out, _evaluation_run_body(result, report_dir))
+        if cast(str, args.format) == "junit":
+            _write_text(out, encode_evaluation_junit_xml(result.recording))
+            _write_text(out, "\n")
+        else:
+            _write_json(out, _evaluation_run_body(result, report_dir))
         if cast(bool, args.fail_on_fail) and not result.passed:
             raise CliExit(1)
         return

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from xml.etree.ElementTree import fromstring
 
 import pytest
 
@@ -20,6 +21,7 @@ from universal_agent.evaluation.recording import (
     compare_evaluation_reports,
     decode_evaluation_report,
     decode_replay_recording,
+    encode_evaluation_junit_xml,
     encode_evaluation_report,
     encode_replay_recording,
 )
@@ -152,6 +154,31 @@ def test_evaluation_report_codec_round_trips_stable_report() -> None:
     assert restored.gate is not None
     assert not restored.gate.passed
     assert restored.gate.checks[0].name == "pass_rate"
+
+
+def test_evaluation_report_junit_xml_marks_scenarios_and_gates() -> None:
+    recording = sample_report_recording()
+
+    root = fromstring(encode_evaluation_junit_xml(recording))
+    testcases = root.findall("testcase")
+    failures = root.findall("./testcase/failure")
+
+    assert root.tag == "testsuite"
+    assert root.attrib["name"] == "nightly behavior suite"
+    assert root.attrib["tests"] == "3"
+    assert root.attrib["failures"] == "2"
+    assert root.attrib["errors"] == "0"
+    assert root.attrib["time"] == "1.200"
+    assert [item.attrib["name"] for item in testcases] == [
+        "healthy workload",
+        "invalid scale",
+        "pass_rate",
+    ]
+    assert testcases[2].attrib["classname"] == "nightly behavior suite.quality_gate"
+    assert {item.attrib["type"] for item in failures} == {
+        "evaluation_scenario_failure",
+        "evaluation_quality_gate_failure",
+    }
 
 
 def test_evaluation_report_recording_rejects_ambiguous_scenario_keys() -> None:

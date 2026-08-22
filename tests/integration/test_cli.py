@@ -5,6 +5,7 @@ from dataclasses import replace
 from io import StringIO
 from pathlib import Path
 from typing import Any
+from xml.etree.ElementTree import fromstring
 
 import pytest
 
@@ -932,6 +933,40 @@ async def test_cli_eval_run_executes_suite_and_persists_report(tmp_path: Path) -
     assert stored.scenarios[0].kind.value == "regression"
     assert stored.scenarios[0].tags == ("smoke", "kubernetes")
     assert stored.scenarios[0].evidence_claims == ("resource", "healthy")
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cli_eval_run_can_emit_junit_xml() -> None:
+    service, backend = build_cli_service([inspect_workload(), finish()])
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "eval",
+            "run",
+            "production-operator",
+            "--kind",
+            "regression",
+            "--tag",
+            "smoke",
+            "--format",
+            "junit",
+        ],
+        service=service,
+        stdout=output,
+    )
+    root = fromstring(output.getvalue())
+
+    assert status == 0
+    assert root.tag == "testsuite"
+    assert root.attrib["name"] == "local evaluation suite"
+    assert root.attrib["tests"] == "2"
+    assert root.attrib["failures"] == "0"
+    assert [item.attrib["name"] for item in root.findall("testcase")] == [
+        "healthy workload",
+        "pass_rate",
+    ]
     assert backend.inspect_calls == 1
 
 
