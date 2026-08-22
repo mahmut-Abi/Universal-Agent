@@ -161,11 +161,11 @@ class FileReplayRecordingStore:
 def record_evaluation_suite(
     report: EvaluationSuiteReport,
     *,
-    suite_name: str = "evaluation suite",
+    suite_name: str | None = None,
 ) -> EvaluationReportRecording:
     summary = report.summary
     return EvaluationReportRecording(
-        suite_name=suite_name,
+        suite_name=report.suite_name if suite_name is None else suite_name,
         passed=report.passed,
         summary=EvaluationSummaryRecording(
             scenario_count=summary.scenario_count,

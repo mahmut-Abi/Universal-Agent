@@ -24,8 +24,12 @@ from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.harness import (
     EvaluationHarness,
     EvaluationScenario,
+    EvaluationScenarioKind,
+    EvaluationScenarioSelector,
+    EvaluationSuite,
     EvaluationSuiteReport,
     ScenarioExpectations,
+    select_scenarios,
     summarize_suite,
 )
 from universal_agent.evaluation.recording import record_evaluation_suite
@@ -107,6 +111,91 @@ def build_service(
         runtime_api=RuntimeAPI(runtime=runtime, session_store=store, event_reader=events),
         components=components,
     )
+
+
+def test_evaluation_scenario_selector_filters_by_kind_and_tags() -> None:
+    goal, task = goal_task()
+    smoke = EvaluationScenario(
+        "healthy smoke",
+        goal,
+        task,
+        kind=EvaluationScenarioKind.REGRESSION,
+        tags=("smoke", "kubernetes"),
+    )
+    policy = EvaluationScenario(
+        "invalid scale policy",
+        goal,
+        task,
+        kind=EvaluationScenarioKind.POLICY,
+        tags=("policy", "kubernetes"),
+    )
+    recovery = EvaluationScenario(
+        "timeout recovery",
+        goal,
+        task,
+        kind=EvaluationScenarioKind.RECOVERY,
+        tags=("recovery", "kubernetes", "slow"),
+    )
+
+    selected = select_scenarios(
+        (smoke, policy, recovery),
+        EvaluationScenarioSelector(
+            kinds=(EvaluationScenarioKind.POLICY, EvaluationScenarioKind.RECOVERY),
+            tags=("kubernetes",),
+            exclude_tags=("slow",),
+        ),
+    )
+
+    assert selected == (policy,)
+
+
+@pytest.mark.asyncio
+async def test_evaluation_harness_runs_selected_named_suite() -> None:
+    backend = HarnessBackend()
+    service = build_service(backend, [scale_workload(replicas=0)])
+    goal, task = goal_task()
+    suite = EvaluationSuite(
+        "kubernetes behavior contract",
+        (
+            EvaluationScenario(
+                "healthy smoke",
+                goal,
+                task,
+                kind=EvaluationScenarioKind.REGRESSION,
+                tags=("smoke", "kubernetes"),
+            ),
+            EvaluationScenario(
+                "invalid scale policy",
+                goal,
+                task,
+                ScenarioExpectations(
+                    expected_status=ExecutionStatus.FAILED,
+                    expected_error_code=ErrorCode.POLICY_DENIED,
+                    forbidden_events=("ActionStarted",),
+                    required_audit_capabilities=("scale_workload",),
+                    policy_denial_count=1,
+                    max_actions=0,
+                ),
+                kind=EvaluationScenarioKind.POLICY,
+                tags=("policy", "kubernetes"),
+            ),
+        ),
+    )
+
+    report = await EvaluationHarness(service).run_suite(
+        suite,
+        selector=EvaluationScenarioSelector(
+            kinds=(EvaluationScenarioKind.POLICY,),
+            tags=("kubernetes",),
+        ),
+    )
+
+    assert report.suite_name == "kubernetes behavior contract"
+    assert report.scenario_names == ("invalid scale policy",)
+    assert report.passed
+    assert report.summary.policy_denial_count == 1
+    assert report.summary.action_started_count == 0
+    assert backend.mutation_calls == 0
 
 
 @pytest.mark.asyncio
@@ -227,8 +316,7 @@ async def test_evaluation_harness_records_stable_suite_report() -> None:
         )
     )
     recording = record_evaluation_suite(
-        EvaluationSuiteReport((*suite.reports, policy_report)),
-        suite_name="nightly behavior suite",
+        EvaluationSuiteReport((*suite.reports, policy_report), "nightly behavior suite")
     )
 
     assert recording.suite_name == "nightly behavior suite"

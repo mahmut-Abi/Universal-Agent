@@ -23,6 +23,9 @@ from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.harness import (
     EvaluationHarness,
     EvaluationScenario,
+    EvaluationScenarioKind,
+    EvaluationScenarioSelector,
+    EvaluationSuite,
     ScenarioExpectations,
 )
 
@@ -130,6 +133,41 @@ async def run_policy_scenario() -> None:
     )
 
 
+async def run_policy_suite() -> None:
+    goal, task = workload_goal_task()
+    suite = EvaluationSuite(
+        "local behavior contract",
+        (
+            EvaluationScenario(
+                "healthy workload",
+                goal,
+                task,
+                kind=EvaluationScenarioKind.REGRESSION,
+                tags=("smoke", "kubernetes"),
+            ),
+            EvaluationScenario(
+                "invalid scale policy",
+                goal,
+                task,
+                ScenarioExpectations(
+                    expected_status=ExecutionStatus.FAILED,
+                    expected_error_code=ErrorCode.POLICY_DENIED,
+                    forbidden_events=("ActionStarted",),
+                    required_audit_capabilities=("scale_workload",),
+                    policy_denial_count=1,
+                ),
+                kind=EvaluationScenarioKind.POLICY,
+                tags=("policy", "kubernetes"),
+            ),
+        ),
+    )
+    report = await EvaluationHarness(build_service([invalid_scale()])).run_suite(
+        suite,
+        selector=EvaluationScenarioSelector(kinds=(EvaluationScenarioKind.POLICY,)),
+    )
+    print(f"{report.suite_name}: scenarios={report.summary.scenario_count} passed={report.passed}")
+
+
 def finish() -> Decision:
     return Decision(DecisionType.FINISH, "Required evidence is present")
 
@@ -137,6 +175,7 @@ def finish() -> Decision:
 async def main() -> None:
     await run_healthy_scenario()
     await run_policy_scenario()
+    await run_policy_suite()
 
 
 if __name__ == "__main__":

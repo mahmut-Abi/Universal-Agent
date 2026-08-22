@@ -129,10 +129,11 @@ Kernel internals directly.
 
 `EvaluationHarness` is the first P3.7 behavior evaluation foundation. It runs explicit
 `EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
-Session, Event, Metrics and Audit projections. `DeterministicReplayHarness` records a stable trace
-from those projections and replays later runs against it while ignoring dynamic IDs and timestamps.
-`FileReplayRecordingStore` persists those traces as JSON golden recordings for local regression
-tests.
+Session, Event, Metrics and Audit projections. `EvaluationSuite` and
+`EvaluationScenarioSelector` make scenario, regression, policy and recovery subsets first-class
+contracts for local CI-style runs. `DeterministicReplayHarness` records a stable trace from those
+projections and replays later runs against it while ignoring dynamic IDs and timestamps.
+`FileReplayRecordingStore` persists those traces as JSON golden recordings for local regression tests.
 The harnesses are intentionally outside the Kernel: Domain `Evaluator`s still decide task/goal
 semantics during execution, while the Harness decides whether a completed scenario satisfies
 regression, policy, recovery, token/cost budget and replay expectations. See
@@ -182,6 +183,8 @@ not a database layer, event-sourcing model, or production migration system.
   `ModelUsageRecorded` events from model adapters. Structured log projections preserve runtime identifiers, event types, severity and redacted event data for CLI/agentd consumers. Trace span projections derive session/action trees from the same event stream with redacted attributes for OpenTelemetry-shaped consumers, and the OTLP adapter projects those spans into dependency-free collector payloads. The Evaluation Harness can assert status, error
   codes, events, executed capabilities, audit coverage, policy denials, recovery plans, criteria,
   action counts, iteration budgets and model token/cost budgets for behavior scenarios.
+  Evaluation suites classify scenarios by kind and tags so regression, policy and recovery subsets
+  can be selected without changing Kernel code.
   Deterministic Replay can record stable behavior traces and detect later drift in event shape,
   actions, policy effects, audit entries and metrics without depending on runtime-generated IDs.
   Replay recordings can be encoded as versioned JSON and saved through `FileReplayRecordingStore`
@@ -206,7 +209,7 @@ The design roadmap now separates semantic runtime maturity from productization:
 - P3.5: Runtime Productization — Runtime API, Session API, `agentd`, CLI, Event Stream, Persistence,
   Resume / Pause / Cancel, and Runtime Configuration.
 - P3.6-P3.7: Operations and Evaluation — OpenTelemetry, metrics, audit, cost tracking, runtime
-  doctor, evaluation harness, replay, and deterministic test mode.
+  doctor, evaluation suites, replay, and deterministic test mode.
 - P4+: Optional Multi-Agent, user interfaces, distributed runtime, and ecosystem packaging.
 
 `PROMPT.md` is intentionally not kept as a project authority. Development instructions live in

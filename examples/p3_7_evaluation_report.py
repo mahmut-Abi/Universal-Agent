@@ -129,8 +129,7 @@ async def main() -> None:
     )
 
     recording = record_evaluation_suite(
-        EvaluationSuiteReport((healthy_report, policy_report)),
-        suite_name="local behavior suite",
+        EvaluationSuiteReport((healthy_report, policy_report), "local behavior suite")
     )
     with TemporaryDirectory() as directory:
         store = FileEvaluationReportStore(directory)

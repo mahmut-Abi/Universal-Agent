@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Protocol
 
 from universal_agent.core import (
@@ -48,12 +49,52 @@ class ScenarioExpectations:
     max_model_estimated_cost_micros: int | None = None
 
 
+class EvaluationScenarioKind(StrEnum):
+    SCENARIO = "scenario"
+    REGRESSION = "regression"
+    POLICY = "policy"
+    RECOVERY = "recovery"
+    CROSS_DOMAIN = "cross_domain"
+    MULTI_AGENT = "multi_agent"
+
+
 @dataclass(frozen=True, slots=True)
 class EvaluationScenario:
     name: str
     goal: Goal
     task: Task
     expectations: ScenarioExpectations = field(default_factory=ScenarioExpectations)
+    kind: EvaluationScenarioKind = EvaluationScenarioKind.SCENARIO
+    tags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationScenarioSelector:
+    kinds: tuple[EvaluationScenarioKind, ...] | None = None
+    tags: tuple[str, ...] = ()
+    exclude_tags: tuple[str, ...] = ()
+
+    def matches(self, scenario: EvaluationScenario) -> bool:
+        if self.kinds is not None and scenario.kind not in self.kinds:
+            return False
+        if any(tag not in scenario.tags for tag in self.tags):
+            return False
+        if any(tag in scenario.tags for tag in self.exclude_tags):
+            return False
+        return True
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationSuite:
+    name: str
+    scenarios: tuple[EvaluationScenario, ...]
+    tags: tuple[str, ...] = ()
+
+    def select(
+        self,
+        selector: EvaluationScenarioSelector | None = None,
+    ) -> tuple[EvaluationScenario, ...]:
+        return select_scenarios(self.scenarios, selector)
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +181,7 @@ class EvaluationSuiteSummary:
 @dataclass(frozen=True, slots=True)
 class EvaluationSuiteReport:
     reports: tuple[ScenarioReport, ...]
+    suite_name: str = "evaluation suite"
 
     @property
     def summary(self) -> EvaluationSuiteSummary:
@@ -152,6 +194,10 @@ class EvaluationSuiteReport:
     @property
     def failed_reports(self) -> tuple[ScenarioReport, ...]:
         return tuple(report for report in self.reports if not report.passed)
+
+    @property
+    def scenario_names(self) -> tuple[str, ...]:
+        return tuple(report.scenario_name for report in self.reports)
 
 
 class EvaluationHarness:
@@ -189,11 +235,24 @@ class EvaluationHarness:
             ),
         )
 
-    async def run_many(self, scenarios: tuple[EvaluationScenario, ...]) -> EvaluationSuiteReport:
+    async def run_many(
+        self,
+        scenarios: tuple[EvaluationScenario, ...],
+        *,
+        suite_name: str = "evaluation suite",
+    ) -> EvaluationSuiteReport:
         reports: list[ScenarioReport] = []
         for scenario in scenarios:
             reports.append(await self.run(scenario))
-        return EvaluationSuiteReport(tuple(reports))
+        return EvaluationSuiteReport(tuple(reports), suite_name)
+
+    async def run_suite(
+        self,
+        suite: EvaluationSuite,
+        *,
+        selector: EvaluationScenarioSelector | None = None,
+    ) -> EvaluationSuiteReport:
+        return await self.run_many(suite.select(selector), suite_name=suite.name)
 
     async def _session_summary(self, session_id: SessionId) -> SessionSummaryView:
         for summary in await self._runtime.list_sessions():
@@ -221,6 +280,15 @@ def summarize_suite(reports: tuple[ScenarioReport, ...]) -> EvaluationSuiteSumma
             report.metrics.model_estimated_cost_micros for report in reports
         ),
     )
+
+
+def select_scenarios(
+    scenarios: tuple[EvaluationScenario, ...],
+    selector: EvaluationScenarioSelector | None = None,
+) -> tuple[EvaluationScenario, ...]:
+    if selector is None:
+        return scenarios
+    return tuple(scenario for scenario in scenarios if selector.matches(scenario))
 
 
 def _evaluate_expectations(
