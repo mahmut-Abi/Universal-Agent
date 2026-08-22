@@ -34,6 +34,7 @@ from universal_agent.core import (
     Decision,
     DecisionType,
     EventId,
+    ExecutionStatus,
     Goal,
     JsonMapping,
     SessionId,
@@ -43,6 +44,27 @@ from universal_agent.core import (
 )
 from universal_agent.domain import DomainLoader, RuntimeBuilder
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.evaluation.harness import (
+    EvaluationQualityGate,
+    EvaluationScenario,
+    EvaluationScenarioKind,
+    EvaluationSuite,
+    ScenarioExpectations,
+)
+from universal_agent.evaluation.recording import (
+    EvaluationCheckRecording,
+    EvaluationGateRecording,
+    EvaluationReportComparison,
+    EvaluationReportComparisonCheck,
+    EvaluationReportRecording,
+    EvaluationScenarioRecording,
+    EvaluationSummaryRecording,
+    FileEvaluationReportStore,
+    compare_evaluation_reports,
+    decode_evaluation_report,
+    json_mapping,
+)
+from universal_agent.evaluation.runner import EvaluationRunner, EvaluationRunResult
 from universal_agent.host import DomainConfig, RuntimeConfig
 from universal_agent.model import ScriptedModelAdapter
 from universal_agent.profile import AgentProfile
@@ -194,6 +216,21 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("goal")
     run.add_argument("--task", default="Run goal")
 
+    evaluate = commands.add_parser("eval")
+    eval_commands = evaluate.add_subparsers(dest="eval_command", required=True)
+
+    eval_run = eval_commands.add_parser("run")
+    eval_run.add_argument("profile")
+    eval_run.add_argument("--suite", default="local evaluation suite")
+    eval_run.add_argument("--report-dir")
+    eval_run.add_argument("--min-pass-rate", type=float, default=1.0)
+    eval_run.add_argument("--max-average-actions", type=float)
+    eval_run.add_argument("--max-resource-conflict-rate", type=float)
+
+    eval_compare = eval_commands.add_parser("compare")
+    eval_compare.add_argument("expected")
+    eval_compare.add_argument("actual")
+
     domain = commands.add_parser("domain")
     domain_commands = domain.add_subparsers(dest="domain_command", required=True)
     domain_commands.add_parser("list")
@@ -311,6 +348,9 @@ async def _dispatch(
     if command == "run":
         await _dispatch_run(args, service, out)
         return
+    if command == "eval":
+        await _dispatch_eval(args, service, out)
+        return
     if command == "domain":
         _write_json(out, {"domains": [domain_body(item) for item in service.domains()]})
         return
@@ -344,6 +384,65 @@ async def _dispatch_run(
     task = Task(cast(str, args.task), ("healthy",))
     run = await service.run_goal(goal, task)
     _write_json(out, runtime_run_body(run))
+
+
+async def _dispatch_eval(
+    args: argparse.Namespace,
+    service: RuntimeService,
+    out: TextIO,
+) -> None:
+    command = cast(str, args.eval_command)
+    if command == "run":
+        profile = cast(str, args.profile)
+        if not service.accepts_profile(profile):
+            raise ValueError(f"unknown profile: {profile}")
+        report_dir = cast(str | None, args.report_dir)
+        result = await EvaluationRunner(
+            service,
+            report_store=None if report_dir is None else FileEvaluationReportStore(report_dir),
+        ).run_suite(
+            _local_evaluation_suite(cast(str, args.suite)),
+            gate=EvaluationQualityGate(
+                min_pass_rate=cast(float, args.min_pass_rate),
+                max_average_actions_per_scenario=cast(float | None, args.max_average_actions),
+                max_resource_conflict_rate=cast(float | None, args.max_resource_conflict_rate),
+            ),
+        )
+        _write_json(out, _evaluation_run_body(result, report_dir))
+        return
+    if command == "compare":
+        comparison = compare_evaluation_reports(
+            _load_evaluation_report(Path(cast(str, args.expected))),
+            _load_evaluation_report(Path(cast(str, args.actual))),
+        )
+        _write_json(out, _evaluation_comparison_body(comparison))
+        return
+    raise ValueError(f"unknown eval command: {command}")
+
+
+def _local_evaluation_suite(name: str) -> EvaluationSuite:
+    goal = Goal("Evaluate workload health", (SuccessCriterion("healthy", True),))
+    task = Task("Inspect workload", ("healthy",))
+    return EvaluationSuite(
+        name,
+        (
+            EvaluationScenario(
+                "healthy workload",
+                goal,
+                task,
+                ScenarioExpectations(
+                    expected_status=ExecutionStatus.COMPLETED,
+                    expected_criteria=immutable_json({"healthy": True}),
+                    required_events=("GoalCompleted", "EvaluationCompleted"),
+                    required_capabilities=("inspect_workload",),
+                    max_actions=1,
+                ),
+                kind=EvaluationScenarioKind.REGRESSION,
+                tags=("smoke", "kubernetes"),
+            ),
+        ),
+        tags=("local", "kubernetes"),
+    )
 
 
 def _dispatch_profile(
@@ -525,6 +624,96 @@ async def _dispatch_session(
         _write_json(out, runtime_run_body(run))
         return
     raise ValueError(f"unknown session command: {command}")
+
+
+def _load_evaluation_report(path: Path) -> EvaluationReportRecording:
+    with path.open("r", encoding="utf-8") as handle:
+        return decode_evaluation_report(json_mapping(json.load(handle)))
+
+
+def _evaluation_run_body(
+    result: EvaluationRunResult,
+    report_dir: str | None,
+) -> dict[str, object]:
+    return {
+        "passed": result.passed,
+        "suite": _evaluation_report_body(result.recording),
+        "gate": (
+            None if result.recording.gate is None else _evaluation_gate_body(result.recording.gate)
+        ),
+        "report_dir": report_dir,
+    }
+
+
+def _evaluation_report_body(recording: EvaluationReportRecording) -> dict[str, object]:
+    return {
+        "suite_name": recording.suite_name,
+        "passed": recording.passed,
+        "summary": _evaluation_summary_body(recording.summary),
+        "scenarios": [_evaluation_scenario_body(item) for item in recording.scenarios],
+    }
+
+
+def _evaluation_summary_body(summary: EvaluationSummaryRecording) -> dict[str, object]:
+    return {
+        "scenario_count": summary.scenario_count,
+        "passed_count": summary.passed_count,
+        "failed_count": summary.failed_count,
+        "goal_completed_count": summary.goal_completed_count,
+        "task_completed_count": summary.task_completed_count,
+        "action_started_count": summary.action_started_count,
+        "action_completed_count": summary.action_completed_count,
+        "tool_failure_count": summary.tool_failure_count,
+        "policy_denial_count": summary.policy_denial_count,
+        "recovery_planned_count": summary.recovery_planned_count,
+        "human_intervention_count": summary.human_intervention_count,
+        "resource_conflict_count": summary.resource_conflict_count,
+        "active_resource_lock_count": summary.active_resource_lock_count,
+        "model_call_count": summary.model_call_count,
+        "model_total_token_count": summary.model_total_token_count,
+        "model_estimated_cost_micros": summary.model_estimated_cost_micros,
+    }
+
+
+def _evaluation_scenario_body(scenario: EvaluationScenarioRecording) -> dict[str, object]:
+    return {
+        "scenario_name": scenario.scenario_name,
+        "passed": scenario.passed,
+        "result_status": scenario.result_status.value,
+        "error_code": None if scenario.error_code is None else scenario.error_code.value,
+        "satisfied_criteria": dict(scenario.satisfied_criteria),
+        "checks": [_evaluation_check_body(check) for check in scenario.checks],
+        "event_types": list(scenario.event_types),
+        "action_capabilities": list(scenario.action_capabilities),
+        "audit_capabilities": list(scenario.audit_capabilities),
+    }
+
+
+def _evaluation_gate_body(gate: EvaluationGateRecording) -> dict[str, object]:
+    return {
+        "passed": gate.passed,
+        "checks": [_evaluation_check_body(check) for check in gate.checks],
+    }
+
+
+def _evaluation_check_body(check: EvaluationCheckRecording) -> dict[str, object]:
+    return {"name": check.name, "passed": check.passed, "message": check.message}
+
+
+def _evaluation_comparison_body(comparison: EvaluationReportComparison) -> dict[str, object]:
+    return {
+        "passed": comparison.passed,
+        "checks": [_comparison_check_body(check) for check in comparison.checks],
+        "failed_checks": [_comparison_check_body(check) for check in comparison.failed_checks],
+    }
+
+
+def _comparison_check_body(check: EvaluationReportComparisonCheck) -> dict[str, object]:
+    return {
+        "name": check.name,
+        "passed": check.passed,
+        "message": check.message,
+    }
 
 
 def _write_json(out: TextIO, payload: object) -> None:

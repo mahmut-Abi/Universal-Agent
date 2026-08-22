@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,10 @@ from universal_agent.agentd import AgentdHttpServer
 from universal_agent.cli import run_cli
 from universal_agent.core import JsonMapping
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.evaluation.recording import (
+    FileEvaluationReportStore,
+    encode_evaluation_report,
+)
 
 
 class CliBackend:
@@ -622,3 +627,66 @@ async def test_cli_serve_starts_agentd_http_server_with_injected_runner() -> Non
     assert payload["status"] == "serving"
     assert payload["base_url"] == observed_urls[0]
     assert payload["base_url"].startswith("http://127.0.0.1:")
+
+
+@pytest.mark.asyncio
+async def test_cli_eval_run_executes_suite_and_persists_report(tmp_path: Path) -> None:
+    service, backend = build_cli_service([inspect_workload(), finish()])
+    output = StringIO()
+    report_dir = tmp_path / "reports"
+
+    status = await run_cli(
+        [
+            "eval",
+            "run",
+            "production-operator",
+            "--report-dir",
+            str(report_dir),
+            "--max-average-actions",
+            "1.0",
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+    stored = FileEvaluationReportStore(report_dir).load("local evaluation suite")
+
+    assert status == 0
+    assert payload["passed"] is True
+    assert payload["suite"]["summary"]["scenario_count"] == 1
+    assert payload["suite"]["summary"]["action_started_count"] == 1
+    assert payload["gate"]["passed"] is True
+    assert payload["report_dir"] == str(report_dir)
+    assert stored.suite_name == "local evaluation suite"
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cli_eval_compare_detects_report_drift(tmp_path: Path) -> None:
+    service, _ = build_cli_service([inspect_workload(), finish()])
+    report_output = StringIO()
+    report_dir = tmp_path / "reports"
+    await run_cli(
+        ["eval", "run", "production-operator", "--report-dir", str(report_dir)],
+        service=service,
+        stdout=report_output,
+    )
+    expected = FileEvaluationReportStore(report_dir).load("local evaluation suite")
+    actual = replace(expected, summary=replace(expected.summary, action_started_count=2))
+    expected_path = tmp_path / "expected.json"
+    actual_path = tmp_path / "actual.json"
+    expected_path.write_text(json.dumps(encode_evaluation_report(expected)), encoding="utf-8")
+    actual_path.write_text(json.dumps(encode_evaluation_report(actual)), encoding="utf-8")
+    output = StringIO()
+
+    status = await run_cli(
+        ["eval", "compare", str(expected_path), str(actual_path)],
+        stdout=output,
+    )
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["passed"] is False
+    assert "summary" in {
+        item["name"] for item in payload["failed_checks"] if isinstance(item, dict)
+    }
