@@ -62,10 +62,14 @@ from universal_agent.evaluation.recording import (
     EvaluationScenarioRecording,
     EvaluationSummaryRecording,
     FileEvaluationReportStore,
+    FileReplayRecordingStore,
+    ReplayRecordingNotFoundError,
     compare_evaluation_reports,
     decode_evaluation_report,
+    encode_replay_recording,
     json_mapping,
 )
+from universal_agent.evaluation.replay import DeterministicReplayHarness, ReplayCheck, ReplayReport
 from universal_agent.evaluation.runner import EvaluationRunner, EvaluationRunResult
 from universal_agent.host import DomainConfig, RuntimeConfig
 from universal_agent.model import ScriptedModelAdapter
@@ -244,13 +248,15 @@ def build_parser() -> argparse.ArgumentParser:
     eval_run.add_argument("--max-average-actions", type=float)
     eval_run.add_argument("--max-resource-conflict-rate", type=float)
     eval_run.add_argument("--fail-on-fail", action="store_true")
-    eval_run.add_argument(
-        "--kind",
-        action="append",
-        choices=tuple(item.value for item in EvaluationScenarioKind),
-    )
-    eval_run.add_argument("--tag", action="append")
-    eval_run.add_argument("--exclude-tag", action="append")
+    _add_evaluation_selector_arguments(eval_run)
+
+    eval_replay = eval_commands.add_parser("replay")
+    eval_replay.add_argument("profile")
+    eval_replay.add_argument("--suite", default="local evaluation suite")
+    eval_replay.add_argument("--recording-dir", required=True)
+    eval_replay.add_argument("--update", action="store_true")
+    eval_replay.add_argument("--fail-on-fail", action="store_true")
+    _add_evaluation_selector_arguments(eval_replay)
 
     eval_compare = eval_commands.add_parser("compare")
     eval_compare.add_argument("expected")
@@ -319,6 +325,16 @@ def build_parser() -> argparse.ArgumentParser:
     cancel.add_argument("--reason", default="session cancelled from CLI")
 
     return parser
+
+
+def _add_evaluation_selector_arguments(command: argparse.ArgumentParser) -> None:
+    command.add_argument(
+        "--kind",
+        action="append",
+        choices=tuple(item.value for item in EvaluationScenarioKind),
+    )
+    command.add_argument("--tag", action="append")
+    command.add_argument("--exclude-tag", action="append")
 
 
 async def _dispatch(
@@ -439,6 +455,12 @@ async def _dispatch_eval(
         if cast(bool, args.fail_on_fail) and not result.passed:
             raise CliExit(1)
         return
+    if command == "replay":
+        payload = await _dispatch_eval_replay(args, service)
+        _write_json(out, payload)
+        if cast(bool, args.fail_on_fail) and not cast(bool, payload["passed"]):
+            raise CliExit(1)
+        return
     if command == "compare":
         comparison = compare_evaluation_reports(
             _load_evaluation_report(Path(cast(str, args.expected))),
@@ -462,6 +484,53 @@ def _evaluation_selector(args: argparse.Namespace) -> EvaluationScenarioSelector
         tags=tuple(tags or ()),
         exclude_tags=tuple(exclude_tags or ()),
     )
+
+
+async def _dispatch_eval_replay(
+    args: argparse.Namespace,
+    service: RuntimeService,
+) -> dict[str, object]:
+    profile = cast(str, args.profile)
+    if not service.accepts_profile(profile):
+        raise ValueError(f"unknown profile: {profile}")
+    suite = _local_evaluation_suite(cast(str, args.suite))
+    scenarios = suite.select(_evaluation_selector(args))
+    if not scenarios:
+        raise ValueError("evaluation replay selected no scenarios")
+
+    recording_dir = cast(str, args.recording_dir)
+    store = FileReplayRecordingStore(recording_dir)
+    harness = DeterministicReplayHarness(service)
+    if cast(bool, args.update):
+        recordings = []
+        for scenario in scenarios:
+            recording = await harness.record(scenario)
+            store.save(recording)
+            recordings.append(recording)
+        return {
+            "mode": "record",
+            "passed": True,
+            "suite_name": suite.name,
+            "recording_dir": recording_dir,
+            "scenario_count": len(recordings),
+            "scenarios": [encode_replay_recording(item) for item in recordings],
+        }
+
+    reports = []
+    for scenario in scenarios:
+        try:
+            expected = store.load(scenario.name)
+        except ReplayRecordingNotFoundError as exc:
+            raise ValueError(str(exc)) from exc
+        reports.append(await harness.replay(scenario, expected))
+    return {
+        "mode": "replay",
+        "passed": all(report.passed for report in reports),
+        "suite_name": suite.name,
+        "recording_dir": recording_dir,
+        "scenario_count": len(reports),
+        "scenarios": [_replay_report_body(report) for report in reports],
+    }
 
 
 def _local_evaluation_suite(name: str) -> EvaluationSuite:
@@ -760,6 +829,21 @@ def _evaluation_gate_body(gate: EvaluationGateRecording) -> dict[str, object]:
 
 
 def _evaluation_check_body(check: EvaluationCheckRecording) -> dict[str, object]:
+    return {"name": check.name, "passed": check.passed, "message": check.message}
+
+
+def _replay_report_body(report: ReplayReport) -> dict[str, object]:
+    return {
+        "scenario_name": report.actual.scenario_name,
+        "passed": report.passed,
+        "checks": [_replay_check_body(check) for check in report.checks],
+        "failed_checks": [_replay_check_body(check) for check in report.failed_checks],
+        "expected": encode_replay_recording(report.expected),
+        "actual": encode_replay_recording(report.actual),
+    }
+
+
+def _replay_check_body(check: ReplayCheck) -> dict[str, object]:
     return {"name": check.name, "passed": check.passed, "message": check.message}
 
 

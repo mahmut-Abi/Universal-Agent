@@ -37,6 +37,7 @@ from universal_agent.core import JsonMapping
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.recording import (
     FileEvaluationReportStore,
+    FileReplayRecordingStore,
     encode_evaluation_report,
 )
 
@@ -741,4 +742,101 @@ async def test_cli_eval_compare_detects_report_drift(tmp_path: Path) -> None:
     assert payload["passed"] is False
     assert "summary" in {
         item["name"] for item in payload["failed_checks"] if isinstance(item, dict)
+    }
+
+
+@pytest.mark.asyncio
+async def test_cli_eval_replay_records_and_replays_golden_recording(tmp_path: Path) -> None:
+    recording_dir = tmp_path / "replay-recordings"
+    record_output = StringIO()
+
+    record_status = await run_cli(
+        [
+            "eval",
+            "replay",
+            "production-operator",
+            "--recording-dir",
+            str(recording_dir),
+            "--kind",
+            "regression",
+            "--update",
+        ],
+        service=build_cli_service([inspect_workload(), finish()])[0],
+        stdout=record_output,
+    )
+    record_payload = read_json(record_output)
+    stored = FileReplayRecordingStore(recording_dir).load("healthy workload")
+
+    replay_output = StringIO()
+    replay_status = await run_cli(
+        [
+            "eval",
+            "replay",
+            "production-operator",
+            "--recording-dir",
+            str(recording_dir),
+            "--kind",
+            "regression",
+            "--fail-on-fail",
+        ],
+        service=build_cli_service([inspect_workload(), finish()])[0],
+        stdout=replay_output,
+    )
+    replay_payload = read_json(replay_output)
+
+    assert record_status == 0
+    assert record_payload["mode"] == "record"
+    assert record_payload["passed"] is True
+    assert record_payload["scenario_count"] == 1
+    assert stored.scenario_name == "healthy workload"
+    assert replay_status == 0
+    assert replay_payload["mode"] == "replay"
+    assert replay_payload["passed"] is True
+    assert replay_payload["scenarios"][0]["failed_checks"] == []
+
+
+@pytest.mark.asyncio
+async def test_cli_eval_replay_can_fail_process_on_drift(tmp_path: Path) -> None:
+    recording_dir = tmp_path / "replay-recordings"
+    await run_cli(
+        [
+            "eval",
+            "replay",
+            "production-operator",
+            "--recording-dir",
+            str(recording_dir),
+            "--kind",
+            "regression",
+            "--update",
+        ],
+        service=build_cli_service([inspect_workload(), finish()])[0],
+        stdout=StringIO(),
+    )
+    output = StringIO()
+    error = StringIO()
+
+    status = await run_cli(
+        [
+            "eval",
+            "replay",
+            "production-operator",
+            "--recording-dir",
+            str(recording_dir),
+            "--kind",
+            "regression",
+            "--fail-on-fail",
+        ],
+        service=build_cli_service([invalid_scale_workload()])[0],
+        stdout=output,
+        stderr=error,
+    )
+    payload = read_json(output)
+
+    assert status == 1
+    assert error.getvalue() == ""
+    assert payload["mode"] == "replay"
+    assert payload["passed"] is False
+    assert {item["name"] for item in payload["scenarios"][0]["failed_checks"]} >= {
+        "result_status",
+        "event_types",
     }
