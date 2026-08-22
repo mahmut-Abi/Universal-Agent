@@ -259,6 +259,9 @@ class ToolCall:
     target: str | None = None
     domain_name: str = ""
     domain_version: str = ""
+    idempotency_key: str = ""
+    parameters_hash: str = ""
+    attempt: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -373,6 +376,9 @@ class PendingAction:
     arguments: JsonMapping
     domain_name: str = ""
     domain_version: str = ""
+    idempotency_key: str = ""
+    parameters_hash: str = ""
+    attempt: int = 1
 
 
 @dataclass(frozen=True, slots=True)

@@ -111,8 +111,17 @@ async def test_normal_loop_requires_evaluator_before_finish() -> None:
     started = next(event for event in events.events if event.type == "ActionStarted")
     assert resolved.data["domain"] == "kubernetes"
     assert resolved.data["domain_version"] == "0.1.0"
+    assert resolved.data["attempt"] == 1
+    assert isinstance(resolved.data["parameters_hash"], str)
+    assert len(resolved.data["parameters_hash"]) == 64
+    assert resolved.data["idempotency_key"] == (
+        f"{result.session_id}:{result.task_id}:{resolved.data['parameters_hash'][:16]}"
+    )
     assert started.data["domain"] == "kubernetes"
     assert started.data["domain_version"] == "0.1.0"
+    assert started.data["attempt"] == resolved.data["attempt"]
+    assert started.data["parameters_hash"] == resolved.data["parameters_hash"]
+    assert started.data["idempotency_key"] == resolved.data["idempotency_key"]
 
 
 @pytest.mark.asyncio

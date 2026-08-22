@@ -92,6 +92,9 @@ def test_session_snapshot_codec_preserves_rebuildable_runtime_state() -> None:
             immutable_json({"name": "example", "namespace": "default", "replicas": 3}),
             "kubernetes",
             "0.2.0",
+            "session-1:task-root:abc123",
+            "abc123def456",
+            2,
         ),
         tasks=[root, diagnose],
         recovery_attempts={"task-root:timeout:kubernetes-timeout-retry": 1},
@@ -153,6 +156,51 @@ def test_session_snapshot_codec_preserves_rebuildable_runtime_state() -> None:
     assert restored.task_graph.nodes[1].depends_on == (root.id,)
     assert restored.evidence[0].id == evidence.id
     assert restored.evidence[0].value is False
+
+
+def test_session_snapshot_codec_defaults_legacy_pending_action_metadata() -> None:
+    observed_at = datetime(2026, 8, 22, 10, 30, tzinfo=UTC)
+    task = Task("Inspect", (), TaskId("task-legacy"), TaskStatus.WAITING, observed_at)
+    state = AgentState(
+        session_id=SessionId("session-legacy"),
+        goal=Goal("Legacy", (), GoalId("goal-legacy"), GoalStatus.WAITING, observed_at),
+        current_task=task,
+        pending_action=PendingAction(
+            ActionId("action-legacy"),
+            "scale_workload",
+            "kubernetes_scale_workload",
+            "deployment/example",
+            immutable_json({"name": "example"}),
+            "kubernetes",
+            "0.2.0",
+            "session-legacy:task-legacy:abc123",
+            "abc123",
+            2,
+        ),
+        tasks=[task],
+    )
+    snapshot = SessionSnapshot(
+        state,
+        TaskGraphSnapshot((TaskNodeSnapshot("task-legacy", task),), task.id),
+        (),
+        "kubernetes",
+        "0.2.0",
+    )
+    encoded = encode_session_snapshot(snapshot)
+    payload_state = encoded["state"]
+    assert isinstance(payload_state, dict)
+    pending_action = payload_state["pending_action"]
+    assert isinstance(pending_action, dict)
+    del pending_action["idempotency_key"]
+    del pending_action["parameters_hash"]
+    del pending_action["attempt"]
+
+    restored = decode_session_snapshot(encoded)
+
+    assert restored.state.pending_action is not None
+    assert restored.state.pending_action.idempotency_key == ""
+    assert restored.state.pending_action.parameters_hash == ""
+    assert restored.state.pending_action.attempt == 1
 
 
 def test_session_snapshot_codec_accepts_legacy_single_domain_payload() -> None:

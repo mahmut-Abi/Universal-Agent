@@ -997,10 +997,18 @@ async def test_agentd_resume_route_requires_confirmed_for_pending_action() -> No
     app = AgentdApp(service)
     waiting = await service.run_goal(*remediation_goal_task())
 
+    session = await app.handle(HttpRequest("GET", f"/v1/sessions/{waiting.result.session_id}"))
     response = await app.handle(
         HttpRequest("POST", f"/v1/sessions/{waiting.result.session_id}/resume")
     )
 
+    assert session.status_code == 200
+    pending_action = session.body["pending_action"]
+    assert isinstance(pending_action, dict)
+    assert pending_action["attempt"] == 1
+    assert isinstance(pending_action["idempotency_key"], str)
+    assert isinstance(pending_action["parameters_hash"], str)
+    assert len(pending_action["parameters_hash"]) == 64
     assert response.status_code == 400
     assert response.body["error"] == {
         "code": "bad_request",

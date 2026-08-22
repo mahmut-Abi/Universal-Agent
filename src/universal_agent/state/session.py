@@ -190,6 +190,9 @@ def _copy_pending_action(action: PendingAction | None) -> PendingAction | None:
         _copy_mapping(action.arguments),
         action.domain_name,
         action.domain_version,
+        action.idempotency_key,
+        action.parameters_hash,
+        action.attempt,
     )
 
 

@@ -332,6 +332,11 @@ async def test_runtime_api_resumes_confirmation_and_reads_combined_events() -> N
     assert waiting.result.status is ExecutionStatus.WAITING
     assert waiting.session.pending_action is not None
     assert waiting.session.pending_action.capability == "scale_workload"
+    assert waiting.session.pending_action.attempt == 1
+    assert len(waiting.session.pending_action.parameters_hash) == 64
+    assert waiting.session.pending_action.idempotency_key.endswith(
+        waiting.session.pending_action.parameters_hash[:16]
+    )
     assert backend.mutation_calls == 0
 
     second = build_remediation_api(

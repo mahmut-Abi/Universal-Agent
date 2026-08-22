@@ -38,6 +38,9 @@ class PendingActionView:
     arguments: JsonMapping
     domain_name: str
     domain_version: str
+    idempotency_key: str
+    parameters_hash: str
+    attempt: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -324,6 +327,9 @@ def pending_action_view(pending: PendingAction | None) -> PendingActionView | No
         immutable_json(pending.arguments),
         pending.domain_name,
         pending.domain_version,
+        pending.idempotency_key,
+        pending.parameters_hash,
+        pending.attempt,
     )
 
 

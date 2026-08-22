@@ -175,8 +175,10 @@ not a database layer, event-sourcing model, or production migration system.
   verification. Mutation receipts never substitute for verification evidence.
 - P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
   projections, lightweight cursor-aware `SessionSummaryView` listing, cursor-aware `EventReader`,
-  `RuntimeSessionBatch` / `RuntimeEventBatch`, and integration tests covering run/list/get/events plus
-  explicit pause, non-confirmation resume, confirmation resume and cancellation.
+  `RuntimeSessionBatch` / `RuntimeEventBatch`, action idempotency metadata (`idempotency_key`,
+  `parameters_hash`, `attempt`) carried through pending-action views, events and persistence, and
+  integration tests covering run/list/get/events plus explicit pause, non-confirmation resume,
+  confirmation resume and cancellation.
   `RuntimeService` now adds framework-free `agentd` foundation metadata: health, readiness, domains,
   capabilities, tools, delegated execution, runnable examples, an `AgentdApp` route adapter for
   HTTP-shaped goal submission, cursor session listing, JSON and SSE-formatted session/event reads,

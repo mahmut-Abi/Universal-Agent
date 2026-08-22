@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import hashlib
+import json
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from universal_agent.capability import (
@@ -12,6 +14,7 @@ from universal_agent.core import (
     Decision,
     ErrorCode,
     JsonMapping,
+    JsonValue,
     Observation,
     PendingAction,
     PolicyContext,
@@ -86,6 +89,7 @@ class ActionExecutor:
         domain_version = (
             resolution.capability_domain.version if resolution.capability_domain else ""
         )
+        parameters_hash = _action_parameters_hash(decision)
         pending = PendingAction(
             action_id=new_action_id(),
             capability=capability.name,
@@ -94,6 +98,13 @@ class ActionExecutor:
             arguments=decision.arguments,
             domain_name=domain_name,
             domain_version=domain_version,
+            idempotency_key=_idempotency_key(
+                session.state.session_id,
+                session.state.current_task.id,
+                parameters_hash,
+            ),
+            parameters_hash=parameters_hash,
+            attempt=1,
         )
         await emit(
             "CapabilityResolved",
@@ -103,6 +114,9 @@ class ActionExecutor:
                 "tool_name": tool.definition.name,
                 "domain": domain_name,
                 "domain_version": domain_version,
+                "idempotency_key": pending.idempotency_key,
+                "parameters_hash": pending.parameters_hash,
+                "attempt": pending.attempt,
             },
         )
         return await self.execute(session, pending, emit, confirmed=False)
@@ -185,6 +199,9 @@ class ActionExecutor:
             target=pending.target,
             domain_name=pending.domain_name,
             domain_version=pending.domain_version,
+            idempotency_key=pending.idempotency_key,
+            parameters_hash=pending.parameters_hash,
+            attempt=pending.attempt,
         )
         await emit(
             "ActionStarted",
@@ -196,6 +213,9 @@ class ActionExecutor:
                 "risk": tool.definition.risk.value,
                 "domain": call.domain_name,
                 "domain_version": call.domain_version,
+                "idempotency_key": call.idempotency_key,
+                "parameters_hash": call.parameters_hash,
+                "attempt": call.attempt,
             },
         )
         tool_result = await self._tool_runtime.execute(call)
@@ -221,3 +241,27 @@ class ActionExecutor:
             {"observation_id": observation.id, "status": observation.status.value},
         )
         return ActionObserved(pending, observation)
+
+
+def _action_parameters_hash(decision: Decision) -> str:
+    payload = {
+        "arguments": _canonical_json(decision.arguments),
+        "capability": decision.capability,
+        "target": decision.target,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _idempotency_key(session_id: object, task_id: object, parameters_hash: str) -> str:
+    return f"{session_id}:{task_id}:{parameters_hash[:16]}"
+
+
+def _canonical_json(value: JsonValue | object) -> JsonValue:
+    if value is None or isinstance(value, bool | int | float | str):
+        return value
+    if isinstance(value, Mapping):
+        return {str(key): _canonical_json(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
+        return [_canonical_json(item) for item in value]
+    return str(value)

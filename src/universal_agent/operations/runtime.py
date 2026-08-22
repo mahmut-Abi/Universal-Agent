@@ -749,6 +749,9 @@ def _action_span_attributes(events: tuple[RuntimeEventView, ...]) -> JsonMapping
             "risk",
             "status",
             "error_code",
+            "idempotency_key",
+            "parameters_hash",
+            "attempt",
             "arguments",
         ):
             value = event.data.get(key)

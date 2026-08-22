@@ -321,6 +321,9 @@ def _encode_pending_action(action: PendingAction) -> JsonObject:
         "arguments": _to_json(action.arguments),
         "domain_name": action.domain_name,
         "domain_version": action.domain_version,
+        "idempotency_key": action.idempotency_key,
+        "parameters_hash": action.parameters_hash,
+        "attempt": action.attempt,
     }
 
 
@@ -336,6 +339,9 @@ def _decode_optional_pending_action(value: JsonValue) -> PendingAction | None:
         immutable_json(_object(_required(payload, "arguments"), "pending_action.arguments")),
         _string(_required(payload, "domain_name"), "pending_action.domain_name"),
         _string(_required(payload, "domain_version"), "pending_action.domain_version"),
+        _optional_string(payload.get("idempotency_key")) or "",
+        _optional_string(payload.get("parameters_hash")) or "",
+        _int(payload.get("attempt", 1), "pending_action.attempt"),
     )
 
 

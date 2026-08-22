@@ -817,6 +817,9 @@ def pending_action_body(view: PendingActionView | None) -> JsonValue:
         "arguments": _json_value(view.arguments),
         "domain_name": view.domain_name,
         "domain_version": view.domain_version,
+        "idempotency_key": view.idempotency_key,
+        "parameters_hash": view.parameters_hash,
+        "attempt": view.attempt,
     }
 
 
