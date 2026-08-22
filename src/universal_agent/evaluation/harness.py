@@ -71,6 +71,10 @@ class EvaluationScenario:
     kind: EvaluationScenarioKind = EvaluationScenarioKind.SCENARIO
     tags: tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        _validate_non_empty_name("evaluation scenario name", self.name)
+        _validate_tags("evaluation scenario tags", self.tags)
+
 
 @dataclass(frozen=True, slots=True)
 class EvaluationScenarioSelector:
@@ -93,6 +97,13 @@ class EvaluationSuite:
     name: str
     scenarios: tuple[EvaluationScenario, ...]
     tags: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_name("evaluation suite name", self.name)
+        _validate_tags("evaluation suite tags", self.tags)
+        duplicates = _duplicate_values(tuple(scenario.name for scenario in self.scenarios))
+        if duplicates:
+            raise ValueError("duplicate evaluation scenario names: " + ", ".join(duplicates))
 
     def select(
         self,
@@ -752,6 +763,30 @@ def _validate_rate(name: str, value: float) -> None:
 def _validate_optional_non_negative(name: str, value: float | int | None) -> None:
     if value is not None and value < 0:
         raise ValueError(f"{name} must be non-negative")
+
+
+def _validate_non_empty_name(field: str, value: str) -> None:
+    if not value.strip():
+        raise ValueError(f"{field} must not be empty")
+
+
+def _validate_tags(field: str, tags: tuple[str, ...]) -> None:
+    empty = tuple(tag for tag in tags if not tag.strip())
+    if empty:
+        raise ValueError(f"{field} must not contain empty values")
+    duplicates = _duplicate_values(tags)
+    if duplicates:
+        raise ValueError(f"duplicate {field}: " + ", ".join(duplicates))
+
+
+def _duplicate_values(values: tuple[str, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for value in values:
+        if value in seen:
+            duplicates.add(value)
+        seen.add(value)
+    return tuple(sorted(duplicates))
 
 
 def _evaluation_flag(report: ScenarioReport, flag: str) -> bool:

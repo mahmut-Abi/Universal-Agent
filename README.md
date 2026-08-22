@@ -216,7 +216,8 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   pass/fail checks. `EvaluationRunner` packages suite execution, gate evaluation and optional
   stable report persistence behind one interface for future CLI/CI adapters. Stable evaluation
   report recordings preserve scenario kind/tags and Evidence claim summaries, so comparisons can
-  detect suite, scenario, gate, evidence and metric drift. The local CLI exposes these through
+  detect suite, scenario, gate, evidence and metric drift. Scenario and suite names/tags are
+  validated up front so report and replay keys cannot be silently ambiguous. The local CLI exposes these through
   `agent eval run` and `agent eval compare` without adding Kernel-specific evaluation branches.
   Execution replay can reconstruct decisions, actions, observations, evidence references and
   terminal status from recorded Runtime events without re-executing side effects.

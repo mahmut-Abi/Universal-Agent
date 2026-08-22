@@ -143,6 +143,29 @@ def build_service_with_components(
     )
 
 
+def test_evaluation_suite_contract_rejects_unstable_recording_keys() -> None:
+    goal, task = goal_task()
+    scenario = EvaluationScenario("healthy smoke", goal, task, tags=("smoke", "kubernetes"))
+
+    with pytest.raises(ValueError, match="evaluation scenario name must not be empty"):
+        EvaluationScenario(" ", goal, task)
+
+    with pytest.raises(ValueError, match="evaluation scenario tags must not contain empty values"):
+        EvaluationScenario("empty tag", goal, task, tags=("smoke", " "))
+
+    with pytest.raises(ValueError, match="duplicate evaluation scenario tags: smoke"):
+        EvaluationScenario("duplicate tag", goal, task, tags=("smoke", "smoke"))
+
+    with pytest.raises(ValueError, match="evaluation suite name must not be empty"):
+        EvaluationSuite(" ", ())
+
+    with pytest.raises(ValueError, match="duplicate evaluation suite tags: local"):
+        EvaluationSuite("tagged suite", (scenario,), tags=("local", "local"))
+
+    with pytest.raises(ValueError, match="duplicate evaluation scenario names: healthy smoke"):
+        EvaluationSuite("duplicate scenario suite", (scenario, scenario))
+
+
 def test_evaluation_scenario_selector_filters_by_kind_and_tags() -> None:
     goal, task = goal_task()
     smoke = EvaluationScenario(
