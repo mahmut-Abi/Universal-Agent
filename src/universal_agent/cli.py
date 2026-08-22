@@ -71,7 +71,12 @@ from universal_agent.evaluation.recording import (
     encode_replay_recording,
     json_mapping,
 )
-from universal_agent.evaluation.replay import DeterministicReplayHarness, ReplayCheck, ReplayReport
+from universal_agent.evaluation.replay import (
+    DeterministicReplayHarness,
+    ReplayCheck,
+    ReplayRecording,
+    ReplayReport,
+)
 from universal_agent.evaluation.runner import EvaluationRunner, EvaluationRunResult
 from universal_agent.evaluation.scenario_config import load_evaluation_suite
 from universal_agent.host import DomainConfig, RuntimeConfig, RuntimeHost
@@ -297,6 +302,9 @@ def build_parser() -> argparse.ArgumentParser:
     eval_replay.add_argument("--update", action="store_true")
     eval_replay.add_argument("--fail-on-fail", action="store_true")
     _add_evaluation_selector_arguments(eval_replay)
+
+    eval_recordings = eval_commands.add_parser("recordings")
+    eval_recordings.add_argument("--recording-dir", required=True)
 
     eval_compare = eval_commands.add_parser("compare")
     eval_compare.add_argument("expected")
@@ -559,6 +567,11 @@ async def _dispatch_eval(
         _write_json(out, payload)
         if cast(bool, args.fail_on_fail) and not cast(bool, payload["passed"]):
             raise CliExit(1)
+        return
+    if command == "recordings":
+        recording_dir = cast(str, args.recording_dir)
+        recordings = FileReplayRecordingStore(recording_dir).list_recordings()
+        _write_json(out, _replay_recordings_body(recording_dir, recordings))
         return
     if command == "compare":
         comparison = compare_evaluation_reports(
@@ -1012,6 +1025,35 @@ def _replay_report_body(report: ReplayReport) -> dict[str, object]:
         "failed_checks": [_replay_check_body(check) for check in report.failed_checks],
         "expected": encode_replay_recording(report.expected),
         "actual": encode_replay_recording(report.actual),
+    }
+
+
+def _replay_recordings_body(
+    recording_dir: str,
+    recordings: tuple[ReplayRecording, ...],
+) -> dict[str, object]:
+    return {
+        "recording_dir": recording_dir,
+        "recording_count": len(recordings),
+        "recordings": [_replay_recording_summary_body(item) for item in recordings],
+    }
+
+
+def _replay_recording_summary_body(recording: ReplayRecording) -> dict[str, object]:
+    return {
+        "scenario_name": recording.scenario_name,
+        "result_status": recording.result_status.value,
+        "error_code": None if recording.error_code is None else recording.error_code.value,
+        "event_count": recording.metrics.event_count,
+        "action_started_count": recording.metrics.action_started_count,
+        "policy_denial_count": recording.metrics.policy_denial_count,
+        "recovery_planned_count": recording.metrics.recovery_planned_count,
+        "resource_conflict_count": recording.metrics.resource_conflict_count,
+        "model_total_token_count": recording.metrics.model_total_token_count,
+        "model_estimated_cost_micros": recording.metrics.model_estimated_cost_micros,
+        "action_capabilities": list(recording.action_capabilities),
+        "policy_effects": list(recording.policy_effects),
+        "audit_capabilities": [item.capability for item in recording.audit_entries],
     }
 
 

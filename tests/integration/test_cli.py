@@ -1205,6 +1205,18 @@ async def test_cli_eval_replay_records_and_replays_golden_recording(tmp_path: Pa
     record_payload = read_json(record_output)
     stored = FileReplayRecordingStore(recording_dir).load("healthy workload")
 
+    recordings_output = StringIO()
+    recordings_status = await run_cli(
+        ["eval", "recordings", "--recording-dir", str(recording_dir)],
+        service=build_cli_service([inspect_workload(), finish()])[0],
+        stdout=recordings_output,
+    )
+    recordings_payload = read_json(recordings_output)
+    recordings = recordings_payload["recordings"]
+    assert isinstance(recordings, list)
+    recording = recordings[0]
+    assert isinstance(recording, dict)
+
     replay_output = StringIO()
     replay_status = await run_cli(
         [
@@ -1227,6 +1239,16 @@ async def test_cli_eval_replay_records_and_replays_golden_recording(tmp_path: Pa
     assert record_payload["passed"] is True
     assert record_payload["scenario_count"] == 1
     assert stored.scenario_name == "healthy workload"
+    assert recordings_status == 0
+    assert recordings_payload["recording_dir"] == str(recording_dir)
+    assert recordings_payload["recording_count"] == 1
+    assert recording["scenario_name"] == "healthy workload"
+    assert recording["result_status"] == "completed"
+    assert recording["error_code"] is None
+    assert recording["action_started_count"] == 1
+    assert recording["policy_denial_count"] == 0
+    assert recording["action_capabilities"] == ["inspect_workload"]
+    assert recording["policy_effects"] == ["allow"]
     assert replay_status == 0
     assert replay_payload["mode"] == "replay"
     assert replay_payload["passed"] is True
