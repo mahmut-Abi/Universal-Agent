@@ -207,3 +207,26 @@ def test_agentd_http_server_serves_sse_event_stream_batches() -> None:
     assert "event: GoalCreated\n" in text
     assert "data: " in text
     assert ": next_cursor=" in text
+
+
+def test_agentd_http_server_serves_web_console() -> None:
+    app, backend = build_app([inspect_workload(), finish()])
+
+    with running_server(app) as base_url:
+        _, created = request_json(base_url, "POST", "/v1/sessions", goal_submission_body())
+        result = created["result"]
+        assert isinstance(result, dict)
+        session_id = result["session_id"]
+        assert isinstance(session_id, str)
+        status, text, headers = request(
+            base_url,
+            "GET",
+            f"/console?session_id={session_id}&event_limit=20",
+        )
+
+    assert status == 200
+    assert headers["content-type"] == "text/html; charset=utf-8"
+    assert "Universal Agent Runtime Console" in text
+    assert "Verify workload health" in text
+    assert "ActionStarted" in text
+    assert backend.inspect_calls == 1

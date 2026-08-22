@@ -1,3 +1,4 @@
+from universal_agent.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
 from universal_agent.core import (
     Decision,
     DecisionType,
@@ -49,6 +50,7 @@ from universal_agent.service import (
 from universal_agent.state import InMemoryStateStore, StateStore
 from universal_agent.tools import Tool
 from universal_agent.tui import TuiSnapshot, build_tui_snapshot, render_tui_snapshot
+from universal_agent.web import WebConsoleSnapshot, build_web_console_snapshot, render_web_console
 
 __all__ = [
     "AgentProfile",
@@ -77,6 +79,7 @@ __all__ = [
     "RuntimeConfig",
     "RuntimeConfigDomainView",
     "RuntimeConfigView",
+    "RuntimeConsoleSnapshot",
     "RuntimeCostView",
     "RuntimeEventBatch",
     "RuntimeHost",
@@ -98,7 +101,11 @@ __all__ = [
     "Tool",
     "ToolDefinition",
     "TuiSnapshot",
+    "WebConsoleSnapshot",
+    "build_runtime_console_snapshot",
     "build_tui_snapshot",
+    "build_web_console_snapshot",
     "immutable_json",
     "render_tui_snapshot",
+    "render_web_console",
 ]

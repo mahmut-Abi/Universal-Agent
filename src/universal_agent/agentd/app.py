@@ -48,6 +48,7 @@ from universal_agent.service import (
     ToolView,
 )
 from universal_agent.state import StateNotFoundError
+from universal_agent.web import build_web_console_snapshot, render_web_console
 
 
 def _empty_json() -> JsonMapping:
@@ -100,6 +101,25 @@ class AgentdApp:
             return self._get(method, health_body(self._service.health()))
         if path == "/ready":
             return self._get(method, ready_body(self._service.ready()))
+        if path in ("/", "/console"):
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                snapshot = await build_web_console_snapshot(
+                    self._service,
+                    session_id=_optional_session_id_query(request.path),
+                    session_limit=_optional_positive_int_query(request.path, "session_limit")
+                    or 10,
+                    event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
+                )
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
+            except ValueError as exc:
+                return bad_request(str(exc))
+            return text_response(
+                render_web_console(snapshot),
+                content_type="text/html; charset=utf-8",
+            )
         if path == "/v1/domains":
             return self._get(
                 method,
@@ -886,6 +906,13 @@ def _optional_event_cursor(path: str) -> EventId | None:
 
 def _optional_session_cursor(path: str) -> SessionId | None:
     value = _optional_query_value(path, "after")
+    if value is None:
+        return None
+    return SessionId(value)
+
+
+def _optional_session_id_query(path: str) -> SessionId | None:
+    value = _optional_query_value(path, "session_id")
     if value is None:
         return None
     return SessionId(value)

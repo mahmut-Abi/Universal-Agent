@@ -445,6 +445,37 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
 
 
 @pytest.mark.asyncio
+async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
+    service, backend = build_service([inspect_workload(), finish()])
+    app = AgentdApp(service)
+
+    created = await app.handle(HttpRequest("POST", "/v1/sessions", goal_submission_body()))
+    result = created.body["result"]
+    assert isinstance(result, dict)
+    session_id = result["session_id"]
+    assert isinstance(session_id, str)
+
+    console = await app.handle(
+        HttpRequest("GET", f"/console?session_id={session_id}&event_limit=20")
+    )
+    missing = await app.handle(HttpRequest("GET", "/console?session_id=missing-session"))
+    invalid_limit = await app.handle(HttpRequest("GET", "/console?event_limit=0"))
+
+    assert console.status_code == 200
+    assert console.headers["content-type"] == "text/html; charset=utf-8"
+    assert console.text_body is not None
+    assert "Universal Agent Runtime Console" in console.text_body
+    assert "Runtime Console" in console.text_body
+    assert "Verify workload health" in console.text_body
+    assert "kubernetes@0.2.0" in console.text_body
+    assert "ActionStarted" in console.text_body
+    assert "capability=inspect_workload" in console.text_body
+    assert missing.status_code == 404
+    assert invalid_limit.status_code == 400
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_agentd_session_list_route_supports_cursor_and_limit() -> None:
     service, _ = build_service(
         [

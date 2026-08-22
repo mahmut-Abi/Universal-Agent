@@ -10,9 +10,10 @@ in-process Runtime API, immutable Session read models, cursor-readable Events, e
 pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter, a standard-library
 HTTP bridge, a local CLI adapter, local file-backed session/event persistence, the first P3.6
 operations surface with cost tracking and OpenTelemetry-shaped trace span projections, a P3.7
-Evaluation Harness / Replay foundation, and the first read-only TUI snapshot foundation. The v3.0 design document also defines later productization
-layers such as production database persistence, SSE delivery, OpenTelemetry exporters,
-optional Multi-Agent, UI, distributed runtime, and ecosystem packaging.
+Evaluation Harness / Replay foundation, and the first read-only TUI and Web Console snapshot
+foundations. The v3.0 design document also defines later productization layers such as production
+database persistence, long-lived event delivery, OpenTelemetry exporters, optional Multi-Agent,
+distributed runtime, and ecosystem packaging.
 
 ## Architectural boundaries
 
@@ -115,9 +116,10 @@ configuration reads via `GET /v1/config`, confirmation resume via
 `/v1/doctor` and `/v1/audit`, per-session audit/cost/log/trace
 reads including `/v1/sessions/{id}/traces/otlp`, and cursor session/event reads with `after` /
 `limit` query parameters. `GET /v1/sessions/{id}/events/stream`
-returns the same cursor batch as `text/event-stream` frames for SSE clients. `AgentdHttpServer` is the
-standard-library HTTP bridge for this adapter: it owns socket/body/header translation only and does
-not touch Runtime internals.
+returns the same cursor batch as `text/event-stream` frames for SSE clients. `GET /console` returns a
+read-only HTML Web Console snapshot built from the same RuntimeService projections. `AgentdHttpServer`
+is the standard-library HTTP bridge for this adapter: it owns socket/body/header translation only and
+does not touch Runtime internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
 Capability/Tool catalogs, `config show`, and session list/show/events/pause/resume/cancel commands
@@ -235,6 +237,9 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   for golden regression fixtures.
 - TUI foundation: `build_tui_snapshot` consumes RuntimeService projections and `render_tui_snapshot`
   produces a deterministic text view for CLI/operator use without touching Kernel internals.
+- Web Console foundation: `build_web_console_snapshot` consumes the shared console snapshot builder
+  and `render_web_console` produces deterministic read-only HTML for `AgentdApp` without a web
+  framework dependency or Kernel access.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
@@ -300,6 +305,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_7_suite_file.py
 .venv/bin/python examples/p3_7_deterministic_mode.py
 .venv/bin/python examples/p5_tui.py
+.venv/bin/python examples/p5_web_console.py
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-profile.json --store-backend sqlite --store-path .tmp/runtime.sqlite3 --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-profile.json config show

@@ -1,33 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import Any
 
+from universal_agent.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
 from universal_agent.core import SessionId
-from universal_agent.operations import AuditRecordView, RuntimeCostView, RuntimeMetricsView
+from universal_agent.operations import AuditRecordView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
-from universal_agent.service import (
-    DomainView,
-    HealthView,
-    ReadyView,
-    RuntimeConfigView,
-    RuntimeService,
-)
+from universal_agent.service import DomainView, ReadyView, RuntimeService
 
-
-@dataclass(frozen=True, slots=True)
-class TuiSnapshot:
-    health: HealthView
-    ready: ReadyView
-    config: RuntimeConfigView
-    domains: tuple[DomainView, ...]
-    metrics: RuntimeMetricsView
-    cost: RuntimeCostView
-    sessions: tuple[SessionSummaryView, ...]
-    selected_session: SessionView | None
-    events: tuple[RuntimeEventView, ...]
-    audit_records: tuple[AuditRecordView, ...]
+TuiSnapshot = RuntimeConsoleSnapshot
 
 
 async def build_tui_snapshot(
@@ -39,35 +21,11 @@ async def build_tui_snapshot(
 ) -> TuiSnapshot:
     """Build a read-only TUI snapshot from RuntimeService-facing projections."""
 
-    session_batch = await service.stream_sessions(limit=session_limit)
-    selected_session_id = session_id
-    if selected_session_id is None and session_batch.sessions:
-        selected_session_id = session_batch.sessions[0].session_id
-
-    selected_session: SessionView | None = None
-    events: tuple[RuntimeEventView, ...] = ()
-    audit_records: tuple[AuditRecordView, ...] = ()
-    if selected_session_id is not None:
-        selected_session = await service.get_session(selected_session_id)
-        events = (
-            await service.stream_events(
-                selected_session_id,
-                limit=event_limit,
-            )
-        ).events
-        audit_records = await service.audit_records(selected_session_id)
-
-    return TuiSnapshot(
-        health=service.health(),
-        ready=service.ready(),
-        config=service.config(),
-        domains=service.domains(),
-        metrics=await service.metrics(),
-        cost=await service.cost(),
-        sessions=session_batch.sessions,
-        selected_session=selected_session,
-        events=events,
-        audit_records=audit_records,
+    return await build_runtime_console_snapshot(
+        service,
+        session_id=session_id,
+        session_limit=session_limit,
+        event_limit=event_limit,
     )
 
 
