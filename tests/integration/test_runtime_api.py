@@ -26,6 +26,7 @@ from universal_agent.core import (
     ExecutionStatus,
     GoalStatus,
     JsonMapping,
+    SessionId,
     TaskStatus,
 )
 from universal_agent.domains.kubernetes import KubernetesDomain, KubernetesRemediationDomain
@@ -253,6 +254,65 @@ async def test_runtime_api_lists_sessions_as_recent_summaries() -> None:
     snapshot.state.goal.status = GoalStatus.FAILED
     reloaded = await api.list_sessions()
     assert reloaded[0].goal_status is GoalStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_runtime_api_streams_session_summaries_with_cursor_and_limit() -> None:
+    api, _, _, _ = build_health_api(
+        [
+            inspect_workload("healthy"),
+            finish(),
+            inspect_workload("healthy"),
+            finish(),
+            inspect_workload("healthy"),
+            finish(),
+        ]
+    )
+
+    await api.run_goal(
+        Goal(
+            "Verify oldest workload",
+            (SuccessCriterion("healthy", True),),
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ),
+        Task("Inspect oldest workload", ("healthy",)),
+    )
+    await api.run_goal(
+        Goal(
+            "Verify middle workload",
+            (SuccessCriterion("healthy", True),),
+            created_at=datetime(2026, 1, 2, tzinfo=UTC),
+        ),
+        Task("Inspect middle workload", ("healthy",)),
+    )
+    await api.run_goal(
+        Goal(
+            "Verify newest workload",
+            (SuccessCriterion("healthy", True),),
+            created_at=datetime(2026, 1, 3, tzinfo=UTC),
+        ),
+        Task("Inspect newest workload", ("healthy",)),
+    )
+
+    first_batch = await api.stream_sessions(limit=2)
+    second_batch = await api.stream_sessions(
+        after_session_id=first_batch.sessions[-1].session_id,
+        limit=2,
+    )
+
+    assert [item.goal_description for item in first_batch.sessions] == [
+        "Verify newest workload",
+        "Verify middle workload",
+    ]
+    assert first_batch.next_cursor == str(first_batch.sessions[-1].session_id)
+    assert [item.goal_description for item in second_batch.sessions] == ["Verify oldest workload"]
+    assert second_batch.next_cursor == str(second_batch.sessions[-1].session_id)
+
+    with pytest.raises(ValueError, match="session list limit must be positive"):
+        await api.stream_sessions(limit=0)
+
+    with pytest.raises(ValueError, match="session cursor not found"):
+        await api.stream_sessions(after_session_id=SessionId("missing-session"))
 
 
 @pytest.mark.asyncio

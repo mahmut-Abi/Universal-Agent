@@ -445,6 +445,54 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
 
 
 @pytest.mark.asyncio
+async def test_agentd_session_list_route_supports_cursor_and_limit() -> None:
+    service, _ = build_service(
+        [
+            inspect_workload(),
+            finish(),
+            inspect_workload(),
+            finish(),
+            inspect_workload(),
+            finish(),
+        ]
+    )
+    app = AgentdApp(service)
+
+    for index in range(3):
+        await app.handle(
+            HttpRequest(
+                "POST",
+                "/v1/sessions",
+                goal_submission_body(goal_description=f"Verify workload health {index}"),
+            )
+        )
+
+    first_page = await app.handle(HttpRequest("GET", "/v1/sessions?limit=2"))
+    first_items = first_page.body["sessions"]
+    assert isinstance(first_items, list)
+    first_cursor = first_page.body["next_cursor"]
+    assert isinstance(first_cursor, str)
+    second_page = await app.handle(HttpRequest("GET", f"/v1/sessions?after={first_cursor}&limit=2"))
+    missing_cursor = await app.handle(HttpRequest("GET", "/v1/sessions?after=missing-session"))
+
+    assert first_page.status_code == 200
+    assert len(first_items) == 2
+    last_first_item = first_items[-1]
+    assert isinstance(last_first_item, dict)
+    assert first_cursor == last_first_item["session_id"]
+    second_items = second_page.body["sessions"]
+    assert isinstance(second_items, list)
+    assert len(second_items) == 1
+    last_second_item = second_items[-1]
+    assert isinstance(last_second_item, dict)
+    assert second_page.body["next_cursor"] == last_second_item["session_id"]
+    assert missing_cursor.status_code == 400
+    error = missing_cursor.body["error"]
+    assert isinstance(error, dict)
+    assert error["message"] == "session cursor not found: missing-session"
+
+
+@pytest.mark.asyncio
 async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> None:
     service, backend = build_service(
         [scale_workload(), inspect_workload(), finish()],

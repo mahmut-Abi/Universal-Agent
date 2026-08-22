@@ -122,6 +122,12 @@ class RuntimeEventBatch:
     next_cursor: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class RuntimeSessionBatch:
+    sessions: tuple[SessionSummaryView, ...]
+    next_cursor: str | None
+
+
 class RuntimeAPI:
     """Stable in-process interface for applications and future service adapters.
 
@@ -175,9 +181,31 @@ class RuntimeAPI:
     async def get_session(self, session_id: SessionId) -> SessionView:
         return session_view(await self._session_store.load_session(session_id))
 
-    async def list_sessions(self) -> tuple[SessionSummaryView, ...]:
-        return tuple(
+    async def list_sessions(
+        self,
+        *,
+        after_session_id: SessionId | None = None,
+        limit: int | None = None,
+    ) -> tuple[SessionSummaryView, ...]:
+        return (await self.stream_sessions(after_session_id=after_session_id, limit=limit)).sessions
+
+    async def stream_sessions(
+        self,
+        *,
+        after_session_id: SessionId | None = None,
+        limit: int | None = None,
+    ) -> RuntimeSessionBatch:
+        summaries = tuple(
             session_summary_view(snapshot) for snapshot in await self._session_store.list_sessions()
+        )
+        views = filter_session_summaries(
+            summaries,
+            after_session_id=after_session_id,
+            limit=limit,
+        )
+        return RuntimeSessionBatch(
+            views,
+            str(views[-1].session_id) if views else _session_cursor_value(after_session_id),
         )
 
     async def list_events(self, session_id: SessionId) -> tuple[RuntimeEventView, ...]:
@@ -257,6 +285,34 @@ def session_summary_view(snapshot: SessionSnapshot) -> SessionSummaryView:
     )
 
 
+def filter_session_summaries(
+    sessions: tuple[SessionSummaryView, ...],
+    *,
+    after_session_id: SessionId | None = None,
+    limit: int | None = None,
+) -> tuple[SessionSummaryView, ...]:
+    if limit is not None and limit < 1:
+        raise ValueError("session list limit must be positive")
+
+    selected: list[SessionSummaryView] = []
+    cursor_seen = after_session_id is None
+    cursor_in_scope = False
+    for session in sessions:
+        if after_session_id is not None and session.session_id == after_session_id:
+            cursor_in_scope = True
+        if not cursor_seen:
+            if session.session_id == after_session_id:
+                cursor_seen = True
+            continue
+        selected.append(session)
+        if limit is not None and len(selected) >= limit:
+            break
+
+    if after_session_id is not None and not cursor_in_scope:
+        raise ValueError(f"session cursor not found: {after_session_id}")
+    return tuple(selected)
+
+
 def pending_action_view(pending: PendingAction | None) -> PendingActionView | None:
     if pending is None:
         return None
@@ -301,3 +357,9 @@ def _cursor_value(event_id: EventId | None) -> str | None:
     if event_id is None:
         return None
     return str(event_id)
+
+
+def _session_cursor_value(session_id: SessionId | None) -> str | None:
+    if session_id is None:
+        return None
+    return str(session_id)

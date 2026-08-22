@@ -300,6 +300,53 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_session_list_supports_cursor_and_limit() -> None:
+    service, _ = build_cli_service(
+        [
+            inspect_workload(),
+            finish(),
+            inspect_workload(),
+            finish(),
+            inspect_workload(),
+            finish(),
+        ]
+    )
+    for index in range(3):
+        await service.run_goal(
+            Goal(f"Verify workload {index}", (SuccessCriterion("healthy", True),)),
+            Task(f"Inspect workload {index}", ("healthy",)),
+        )
+    first_output = StringIO()
+    second_output = StringIO()
+
+    first_status = await run_cli(
+        ["session", "list", "--limit", "2"],
+        service=service,
+        stdout=first_output,
+    )
+    first_payload = read_json(first_output)
+    first_sessions = first_payload["sessions"]
+    assert isinstance(first_sessions, list)
+    cursor = first_payload["next_cursor"]
+    assert isinstance(cursor, str)
+    second_status = await run_cli(
+        ["session", "list", "--after", cursor, "--limit", "2"],
+        service=service,
+        stdout=second_output,
+    )
+    second_payload = read_json(second_output)
+    second_sessions = second_payload["sessions"]
+
+    assert first_status == 0
+    assert second_status == 0
+    assert len(first_sessions) == 2
+    assert cursor == first_sessions[-1]["session_id"]
+    assert isinstance(second_sessions, list)
+    assert len(second_sessions) == 1
+    assert second_payload["next_cursor"] == second_sessions[-1]["session_id"]
+
+
+@pytest.mark.asyncio
 async def test_cli_exposes_operations_commands_through_service() -> None:
     service, backend = build_cli_service(
         [scale_workload(), inspect_workload(), finish()],

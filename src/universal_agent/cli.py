@@ -23,8 +23,8 @@ from universal_agent.agentd.app import (
     profile_body,
     ready_body,
     runtime_run_body,
+    session_batch_body,
     session_body,
-    session_summary_body,
     tool_body,
     trace_spans_body,
 )
@@ -208,7 +208,9 @@ def build_parser() -> argparse.ArgumentParser:
     session = commands.add_parser("session")
     session_commands = session.add_subparsers(dest="session_command", required=True)
 
-    session_commands.add_parser("list")
+    list_sessions = session_commands.add_parser("list")
+    list_sessions.add_argument("--after")
+    list_sessions.add_argument("--limit", type=int)
 
     show = session_commands.add_parser("show")
     show.add_argument("session_id")
@@ -394,9 +396,16 @@ async def _dispatch_session(
 ) -> None:
     command = cast(str, args.session_command)
     if command == "list":
+        after = cast(str | None, args.after)
+        limit = cast(int | None, args.limit)
         _write_json(
             out,
-            {"sessions": [session_summary_body(item) for item in await service.list_sessions()]},
+            session_batch_body(
+                await service.stream_sessions(
+                    after_session_id=None if after is None else SessionId(after),
+                    limit=limit,
+                )
+            ),
         )
         return
     if command == "show":

@@ -82,6 +82,7 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
 - `get_session(session_id)` loads an immutable projection of the latest `SessionSnapshot`.
 - `list_sessions()` returns recent `SessionSummaryView` projections without exposing stored
   snapshots to applications.
+- `stream_sessions(after_session_id=..., limit=...)` returns a cursor batch of session summaries.
 - `list_events(session_id)` returns immutable event projections filtered to one session.
 - `stream_events(session_id, after_event_id=..., limit=...)` returns a cursor batch for CLI/Web/SSE
   consumers.
@@ -105,20 +106,21 @@ application-facing usage.
 
 `AgentdApp` is the framework-free route adapter foundation for `agentd`. It accepts small
 `HttpRequest` objects and returns JSON-safe `HttpResponse` objects for `GET /health`, `GET /ready`,
-catalog routes, session listing via `GET /v1/sessions`, route-level goal submission via
+catalog routes, cursor session listing via `GET /v1/sessions`, route-level goal submission via
 `POST /v1/sessions`, session/event reads, and Profile catalog/detail reads via `GET /v1/profiles`,
 configuration reads via `GET /v1/config`, confirmation resume via
 `POST /v1/sessions/{id}/resume`, explicit pause via `POST /v1/sessions/{id}/pause`, cancellation via
 `POST /v1/sessions/{id}/cancel`, operations reads via `/v1/metrics`, `/v1/cost`, `/v1/logs`,
-`/v1/traces`, `/v1/doctor` and `/v1/audit`, per-session audit/cost/log/trace reads, and cursor event
-reads with `after` / `limit` query parameters. `GET /v1/sessions/{id}/events/stream` returns the same
-cursor batch as `text/event-stream` frames for SSE clients. `AgentdHttpServer` is the standard-library
-HTTP bridge for this adapter: it owns socket/body/header translation only and does not touch Runtime
-internals.
+`/v1/traces`, `/v1/doctor` and `/v1/audit`, per-session audit/cost/log/trace reads, and cursor
+session/event reads with `after` / `limit` query parameters. `GET /v1/sessions/{id}/events/stream`
+returns the same cursor batch as `text/event-stream` frames for SSE clients. `AgentdHttpServer` is the
+standard-library HTTP bridge for this adapter: it owns socket/body/header translation only and does
+not touch Runtime internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
-Capability/Tool catalogs, `config show`, and session list/show/events/pause/resume/cancel commands through
-`RuntimeService`, plus operations commands for metrics, cost, logs, traces, doctor and audit
+Capability/Tool catalogs, `config show`, and session list/show/events/pause/resume/cancel commands
+through `RuntimeService`, with cursor flags for session and event reads. It also exposes operations
+commands for metrics, cost, logs, traces, doctor and audit
 projections. `agent serve` starts the standard-library `AgentdHttpServer` around the same service;
 the CLI does not access Kernel internals directly.
 
@@ -161,12 +163,12 @@ not a database layer, event-sourcing model, or production migration system.
   confirmation, capability-scoped timeout recovery, dynamic remediation tasks, and fresh health
   verification. Mutation receipts never substitute for verification evidence.
 - P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
-  projections, lightweight `SessionSummaryView` listing, cursor-aware `EventReader`,
-  `RuntimeEventBatch`, and integration tests covering run/list/get/events plus explicit pause,
-  non-confirmation resume, confirmation resume and cancellation.
+  projections, lightweight cursor-aware `SessionSummaryView` listing, cursor-aware `EventReader`,
+  `RuntimeSessionBatch` / `RuntimeEventBatch`, and integration tests covering run/list/get/events plus
+  explicit pause, non-confirmation resume, confirmation resume and cancellation.
   `RuntimeService` now adds framework-free `agentd` foundation metadata: health, readiness, domains,
   capabilities, tools, delegated execution, runnable examples, an `AgentdApp` route adapter for
-  HTTP-shaped goal submission, session listing, JSON and SSE-formatted session/event reads,
+  HTTP-shaped goal submission, cursor session listing, JSON and SSE-formatted session/event reads,
   pause/resume/cancel routes, runtime configuration reads,
   Profile catalog reads, a standard-library `AgentdHttpServer` bridge, file-backed session/event
   stores for local recovery, a local CLI adapter, and typed

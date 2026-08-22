@@ -26,6 +26,7 @@ from universal_agent.runtime import (
     RuntimeEventBatch,
     RuntimeEventView,
     RuntimeRun,
+    RuntimeSessionBatch,
     SessionSummaryView,
     SessionView,
     TaskView,
@@ -165,16 +166,17 @@ class AgentdApp:
             return json_response(audit_records_body(await self._service.audit_records()))
         if path == "/v1/sessions":
             if method == "GET":
-                return json_response(
-                    immutable_json(
-                        {
-                            "sessions": [
-                                session_summary_body(item)
-                                for item in await self._service.list_sessions()
-                            ]
-                        }
+                try:
+                    return json_response(
+                        session_batch_body(
+                            await self._service.stream_sessions(
+                                after_session_id=_optional_session_cursor(request.path),
+                                limit=_optional_positive_int_query(request.path, "limit"),
+                            )
+                        )
                     )
-                )
+                except ValueError as exc:
+                    return bad_request(str(exc))
             if method != "POST":
                 return method_not_allowed(("GET", "POST"))
             try:
@@ -438,6 +440,15 @@ def event_batch_body(batch: RuntimeEventBatch) -> JsonMapping:
     return immutable_json(
         {
             "events": [event_body(item) for item in batch.events],
+            "next_cursor": batch.next_cursor,
+        }
+    )
+
+
+def session_batch_body(batch: RuntimeSessionBatch) -> JsonMapping:
+    return immutable_json(
+        {
+            "sessions": [session_summary_body(item) for item in batch.sessions],
             "next_cursor": batch.next_cursor,
         }
     )
@@ -830,6 +841,13 @@ def _optional_event_cursor(path: str) -> EventId | None:
     if value is None:
         return None
     return EventId(value)
+
+
+def _optional_session_cursor(path: str) -> SessionId | None:
+    value = _optional_query_value(path, "after")
+    if value is None:
+        return None
+    return SessionId(value)
 
 
 def _optional_positive_int_query(path: str, key: str) -> int | None:

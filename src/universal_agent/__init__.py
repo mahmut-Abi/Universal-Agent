@@ -27,6 +27,7 @@ from universal_agent.runtime import (
     InMemoryEventSink,
     RuntimeAPI,
     RuntimeEventBatch,
+    RuntimeSessionBatch,
     SessionSummaryView,
 )
 from universal_agent.service import (
@@ -77,6 +78,7 @@ __all__ = [
     "RuntimeLogRecordView",
     "RuntimeMetricsView",
     "RuntimeService",
+    "RuntimeSessionBatch",
     "RuntimeTraceSpanView",
     "ScriptedModelAdapter",
     "SessionSummaryView",

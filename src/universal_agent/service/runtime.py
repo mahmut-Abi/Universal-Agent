@@ -36,6 +36,7 @@ from universal_agent.runtime import (
     RuntimeEventBatch,
     RuntimeEventView,
     RuntimeRun,
+    RuntimeSessionBatch,
     SessionSummaryView,
     SessionView,
 )
@@ -289,8 +290,27 @@ class RuntimeService:
     async def get_session(self, session_id: SessionId) -> SessionView:
         return await self._runtime_api.get_session(session_id)
 
-    async def list_sessions(self) -> tuple[SessionSummaryView, ...]:
-        return await self._runtime_api.list_sessions()
+    async def list_sessions(
+        self,
+        *,
+        after_session_id: SessionId | None = None,
+        limit: int | None = None,
+    ) -> tuple[SessionSummaryView, ...]:
+        return await self._runtime_api.list_sessions(
+            after_session_id=after_session_id,
+            limit=limit,
+        )
+
+    async def stream_sessions(
+        self,
+        *,
+        after_session_id: SessionId | None = None,
+        limit: int | None = None,
+    ) -> RuntimeSessionBatch:
+        return await self._runtime_api.stream_sessions(
+            after_session_id=after_session_id,
+            limit=limit,
+        )
 
     async def list_events(self, session_id: SessionId) -> tuple[RuntimeEventView, ...]:
         return await self._runtime_api.list_events(session_id)
