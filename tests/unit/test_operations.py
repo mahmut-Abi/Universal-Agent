@@ -565,6 +565,7 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
         "service_health",
         "readiness",
         "catalog",
+        "runtime_config",
         "session_store",
         "event_stream",
         "structured_logs",
@@ -578,6 +579,33 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
     assert next(check for check in report.checks if check.name == "event_stream").status == "warn"
     assert next(check for check in report.checks if check.name == "traces").status == "warn"
     assert next(check for check in report.checks if check.name == "resource_locks").status == "ok"
+    assert next(check for check in report.checks if check.name == "runtime_config").status == "ok"
+
+
+def test_doctor_report_errors_on_invalid_runtime_config_projection() -> None:
+    report = build_doctor_report(
+        health_status="ok",
+        ready=True,
+        ready_reason="ready",
+        domain_count=1,
+        capability_count=2,
+        tool_count=2,
+        sessions=(),
+        events=(),
+        configured_domain_count=2,
+        store_backend="unsupported",
+        max_iterations=0,
+        max_recovery_steps=0,
+    )
+
+    runtime_config = next(check for check in report.checks if check.name == "runtime_config")
+
+    assert report.status == "error"
+    assert runtime_config.status == "error"
+    assert "configured_domains=2 active_domains=1" in runtime_config.message
+    assert "unsupported store backend: unsupported" in runtime_config.message
+    assert "max_iterations=0" in runtime_config.message
+    assert "max_recovery_steps=0" in runtime_config.message
 
 
 def test_doctor_report_warns_on_resource_lock_conflicts() -> None:

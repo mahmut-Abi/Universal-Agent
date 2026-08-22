@@ -341,6 +341,10 @@ def build_doctor_report(
     tool_count: int,
     sessions: tuple[SessionSummaryView, ...],
     events: tuple[RuntimeEventView, ...],
+    configured_domain_count: int | None = None,
+    store_backend: str | None = None,
+    max_iterations: int | None = None,
+    max_recovery_steps: int | None = None,
 ) -> DoctorReportView:
     metrics = build_runtime_metrics(sessions, events)
     cost = build_runtime_cost(events)
@@ -358,6 +362,13 @@ def build_doctor_report(
             "catalog",
             domain_count > 0 and capability_count > 0 and tool_count > 0,
             f"domains={domain_count} capabilities={capability_count} tools={tool_count}",
+        ),
+        _runtime_config_check(
+            domain_count=domain_count,
+            configured_domain_count=configured_domain_count,
+            store_backend=store_backend,
+            max_iterations=max_iterations,
+            max_recovery_steps=max_recovery_steps,
         ),
         DoctorCheckView("session_store", "ok", f"sessions listed: {len(sessions)}"),
         _event_stream_check(sessions, events),
@@ -913,6 +924,44 @@ def _resource_lock_check(
         "ok",
         "resource locks balanced: "
         f"active={metrics.active_resource_lock_count} conflicts={metrics.resource_conflict_count}",
+    )
+
+
+def _runtime_config_check(
+    *,
+    domain_count: int,
+    configured_domain_count: int | None,
+    store_backend: str | None,
+    max_iterations: int | None,
+    max_recovery_steps: int | None,
+) -> DoctorCheckView:
+    if (
+        configured_domain_count is None
+        and store_backend is None
+        and max_iterations is None
+        and max_recovery_steps is None
+    ):
+        return DoctorCheckView("runtime_config", "ok", "runtime configuration not provided")
+
+    errors: list[str] = []
+    if configured_domain_count is not None and configured_domain_count != domain_count:
+        errors.append(f"configured_domains={configured_domain_count} active_domains={domain_count}")
+    if store_backend is not None and store_backend not in {"memory", "file", "sqlite"}:
+        errors.append(f"unsupported store backend: {store_backend}")
+    if max_iterations is not None and max_iterations < 1:
+        errors.append(f"max_iterations={max_iterations}")
+    if max_recovery_steps is not None and max_recovery_steps < 1:
+        errors.append(f"max_recovery_steps={max_recovery_steps}")
+    if errors:
+        return DoctorCheckView("runtime_config", "error", "; ".join(errors))
+
+    return DoctorCheckView(
+        "runtime_config",
+        "ok",
+        "store="
+        f"{store_backend or 'unknown'} domains={configured_domain_count or domain_count} "
+        f"max_iterations={max_iterations or 'unknown'} "
+        f"max_recovery_steps={max_recovery_steps or 'unknown'}",
     )
 
 

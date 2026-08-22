@@ -360,6 +360,7 @@ class RuntimeService:
     async def doctor(self) -> DoctorReportView:
         health = self.health()
         ready = self.ready()
+        config = self.config()
         sessions = await self.list_sessions()
         events = await self._list_all_events(sessions)
         return build_doctor_report(
@@ -371,6 +372,10 @@ class RuntimeService:
             tool_count=ready.tool_count,
             sessions=sessions,
             events=events,
+            configured_domain_count=len(config.domains),
+            store_backend=config.store_backend,
+            max_iterations=config.max_iterations,
+            max_recovery_steps=config.max_recovery_steps,
         )
 
     async def audit_records(
