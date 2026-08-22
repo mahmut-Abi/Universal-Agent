@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import cast
 
 import pytest
@@ -203,6 +204,55 @@ async def test_runtime_api_runs_goal_and_returns_immutable_session_projection() 
         cast(dict[str, object], loaded.satisfied_criteria)["healthy"] = False
     with pytest.raises(TypeError):
         cast(dict[str, object], events[0].data)["changed"] = True
+
+
+@pytest.mark.asyncio
+async def test_runtime_api_lists_sessions_as_recent_summaries() -> None:
+    api, store, _, backend = build_health_api(
+        [
+            inspect_workload("healthy"),
+            finish(),
+            inspect_workload("healthy"),
+            finish(),
+        ]
+    )
+
+    first = await api.run_goal(
+        Goal(
+            "Verify older workload",
+            (SuccessCriterion("healthy", True),),
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ),
+        Task("Inspect older workload", ("healthy",)),
+    )
+    second = await api.run_goal(
+        Goal(
+            "Verify newer workload",
+            (SuccessCriterion("healthy", True),),
+            created_at=datetime(2026, 1, 2, tzinfo=UTC),
+        ),
+        Task("Inspect newer workload", ("healthy",)),
+    )
+
+    summaries = await api.list_sessions()
+
+    assert [item.session_id for item in summaries] == [
+        second.result.session_id,
+        first.result.session_id,
+    ]
+    assert summaries[0].goal_description == "Verify newer workload"
+    assert summaries[0].goal_status is GoalStatus.COMPLETED
+    assert summaries[0].current_task_status is TaskStatus.COMPLETED
+    assert summaries[0].task_count == 1
+    assert not summaries[0].pending_action
+    assert summaries[0].domain_name == "kubernetes"
+    assert summaries[0].created_at == datetime(2026, 1, 2, tzinfo=UTC)
+    assert backend.calls == 2
+
+    snapshot = await store.load_session(second.result.session_id)
+    snapshot.state.goal.status = GoalStatus.FAILED
+    reloaded = await api.list_sessions()
+    assert reloaded[0].goal_status is GoalStatus.COMPLETED
 
 
 @pytest.mark.asyncio

@@ -135,6 +135,7 @@ async def main() -> None:
             ],
         )
         completed = await second.resume_session(waiting.result.session_id, confirmed=True)
+        sessions = await second.list_sessions()
         events = await second.list_events(waiting.result.session_id)
         session_files = tuple((root / "sessions").glob("*.json"))
 
@@ -144,6 +145,7 @@ async def main() -> None:
         print(f"completed_status={completed.result.status.value}")
         print(f"goal_status={completed.session.goal_status.value}")
         print(f"mutation_calls={backend.mutation_calls}")
+        print(f"session_count={len(sessions)}")
         print(f"session_files={len(session_files)}")
         print(f"event_count={len(events)}")
 

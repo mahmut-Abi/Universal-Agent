@@ -113,10 +113,16 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
     service, backend = build_cli_service([wait(), inspect_workload(), finish()])
     waiting = await service.run_goal(*goal_task())
     session_id = str(waiting.result.session_id)
+    list_output = StringIO()
     pause_output = StringIO()
     events_output = StringIO()
     resume_output = StringIO()
 
+    list_status = await run_cli(
+        ["session", "list"],
+        service=service,
+        stdout=list_output,
+    )
     pause_status = await run_cli(
         ["session", "pause", session_id, "--reason", "operator paused from test"],
         service=service,
@@ -131,12 +137,22 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
         ["session", "resume", session_id], service=service, stdout=resume_output
     )
 
+    list_payload = read_json(list_output)
     pause_payload = read_json(pause_output)
     events_payload = read_json(events_output)
     resume_payload = read_json(resume_output)
+    assert list_status == 0
     assert pause_status == 0
     assert events_status == 0
     assert resume_status == 0
+    session_items = list_payload["sessions"]
+    assert isinstance(session_items, list)
+    assert len(session_items) == 1
+    listed_session = session_items[0]
+    assert isinstance(listed_session, dict)
+    assert listed_session["session_id"] == session_id
+    assert listed_session["goal_status"] == "waiting"
+    assert listed_session["pending_action"] is False
     assert pause_payload["result"]["status"] == "waiting"
     assert len(events_payload["events"]) == 2
     assert events_payload["next_cursor"] == events_payload["events"][-1]["event_id"]

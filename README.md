@@ -77,6 +77,8 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
 - `cancel_session(session_id, reason=...)` cancels a non-terminal session, clears any pending action,
   and returns a cancelled run plus the latest session projection.
 - `get_session(session_id)` loads an immutable projection of the latest `SessionSnapshot`.
+- `list_sessions()` returns recent `SessionSummaryView` projections without exposing stored
+  snapshots to applications.
 - `list_events(session_id)` returns immutable event projections filtered to one session.
 - `stream_events(session_id, after_event_id=..., limit=...)` returns a cursor batch for CLI/Web/SSE
   consumers.
@@ -97,15 +99,16 @@ application-facing usage.
 
 `AgentdApp` is the framework-free route adapter foundation for `agentd`. It accepts small
 `HttpRequest` objects and returns JSON-safe `HttpResponse` objects for `GET /health`, `GET /ready`,
-catalog routes, route-level goal submission via `POST /v1/sessions`, session/event reads, and
-Profile catalog reads via `GET /v1/profiles`, confirmation resume via
+catalog routes, session listing via `GET /v1/sessions`, route-level goal submission via
+`POST /v1/sessions`, session/event reads, and Profile catalog reads via `GET /v1/profiles`,
+confirmation resume via
 `POST /v1/sessions/{id}/resume`, explicit pause via `POST /v1/sessions/{id}/pause`, cancellation via
 `POST /v1/sessions/{id}/cancel`, and cursor event reads with `after` / `limit` query parameters. It
 still does not open sockets; a real HTTP server can wrap this adapter later without touching Runtime
 internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
-Capability/Tool catalogs, and session show/events/pause/resume/cancel commands through
+Capability/Tool catalogs, and session list/show/events/pause/resume/cancel commands through
 `RuntimeService`; it does not access Kernel internals directly and does not require a daemon process.
 
 `AgentProfile` is the first application-level Profile foundation. A Profile declares a selectable
@@ -113,9 +116,9 @@ runtime identity â€” name, version, Domain identity and Runtime Configuration â€
 entry points. It is not a new Kernel, not a Domain implementation, and not a routing Agent.
 
 `FileSessionStore` and `FileEventStore` are local persistence adapters for P3.5 recovery tests and
-embedded demos. They persist `SessionSnapshot` JSON documents and JSONL runtime events behind the
-same `SessionStore` and `EventSink/EventReader` seams used by in-memory stores. They are not a
-database layer, event-sourcing model, or production migration system.
+embedded demos. They persist and list `SessionSnapshot` JSON documents and JSONL runtime events
+behind the same `SessionStore` and `EventSink/EventReader` seams used by in-memory stores. They are
+not a database layer, event-sourcing model, or production migration system.
 
 ## Current scope
 
@@ -136,12 +139,14 @@ database layer, event-sourcing model, or production migration system.
   confirmation, capability-scoped timeout recovery, dynamic remediation tasks, and fresh health
   verification. Mutation receipts never substitute for verification evidence.
 - P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
-  projections, cursor-aware `EventReader`, `RuntimeEventBatch`, and integration tests covering
-  run/get/events plus explicit pause, non-confirmation resume, confirmation resume and cancellation.
+  projections, lightweight `SessionSummaryView` listing, cursor-aware `EventReader`,
+  `RuntimeEventBatch`, and integration tests covering run/list/get/events plus explicit pause,
+  non-confirmation resume, confirmation resume and cancellation.
   `RuntimeService` now adds framework-free `agentd` foundation metadata: health, readiness, domains,
   capabilities, tools, delegated execution, runnable examples, an `AgentdApp` route adapter for
-  HTTP-shaped goal submission, session/event reads, pause/resume/cancel routes, Profile catalog
-  reads, file-backed session/event stores for local recovery, a local CLI adapter, and typed
+  HTTP-shaped goal submission, session listing, session/event reads, pause/resume/cancel routes,
+  Profile catalog reads, file-backed session/event stores for local recovery, a local CLI adapter,
+  and typed
   `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, store backend
   and Domain identity validation.
 

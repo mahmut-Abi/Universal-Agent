@@ -161,6 +161,7 @@ async def main() -> None:
     session_id = created_result["session_id"]
     assert isinstance(session_id, str)
     waiting_session = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}"))
+    listed_sessions = await app.handle(HttpRequest("GET", "/v1/sessions"))
     resumed = await app.handle(
         HttpRequest(
             "POST",
@@ -172,9 +173,11 @@ async def main() -> None:
     session = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}"))
     route_events = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/events"))
     capability_items = capabilities.body["capabilities"]
+    session_items = listed_sessions.body["sessions"]
     event_items = route_events.body["events"]
     result_body = resumed.body["result"]
     assert isinstance(capability_items, list)
+    assert isinstance(session_items, list)
     assert isinstance(event_items, list)
     assert isinstance(result_body, dict)
 
@@ -215,6 +218,7 @@ async def main() -> None:
     print(f"health={health.status_code}:{health.body['status']}")
     print(f"ready={ready.body['ready']} reason={ready.body['reason']}")
     print(f"capability_count={len(capability_items)}")
+    print(f"session_count={len(session_items)}")
     print(f"initial_status={created_result['status']}")
     print(f"pending_before_resume={waiting_session.body['pending_action'] is not None}")
     print(f"resumed_status={result_body['status']}")

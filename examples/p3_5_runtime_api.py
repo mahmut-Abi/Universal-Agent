@@ -71,10 +71,12 @@ async def main() -> None:
         Task("Inspect workload", ("healthy",)),
     )
     session = await api.get_session(run.result.session_id)
+    sessions = await api.list_sessions()
     runtime_events = await api.list_events(run.result.session_id)
 
     print(f"status={run.result.status.value} iterations={run.result.iterations}")
     print(f"session={session.session_id} goal_status={session.goal_status.value}")
+    print(f"session_count={len(sessions)}")
     print(f"current_task={session.current_task_status.value}")
     print("events=" + " -> ".join(event.type for event in runtime_events))
 

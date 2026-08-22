@@ -26,6 +26,8 @@ class StateStore(Protocol):
 class SessionStore(StateStore, Protocol):
     async def create_session(self, snapshot: SessionSnapshot) -> None: ...
 
+    async def list_sessions(self) -> tuple[SessionSnapshot, ...]: ...
+
     async def load_session(self, session_id: SessionId) -> SessionSnapshot: ...
 
     async def save_session(self, snapshot: SessionSnapshot) -> None: ...
@@ -40,6 +42,19 @@ class InMemorySessionStore:
         if session_id in self._sessions:
             raise ValueError(f"session already exists: {session_id}")
         self._sessions[session_id] = copy_session(snapshot)
+
+    async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
+        snapshots = tuple(copy_session(snapshot) for snapshot in self._sessions.values())
+        return tuple(
+            sorted(
+                snapshots,
+                key=lambda snapshot: (
+                    snapshot.state.goal.created_at,
+                    str(snapshot.state.session_id),
+                ),
+                reverse=True,
+            )
+        )
 
     async def load_session(self, session_id: SessionId) -> SessionSnapshot:
         try:

@@ -27,6 +27,7 @@ from universal_agent.runtime import (
     InMemoryEventSink,
     RuntimeAPI,
     RuntimeEventBatch,
+    SessionSummaryView,
 )
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, StateStore
@@ -58,6 +59,7 @@ __all__ = [
     "RuntimeLimitsConfig",
     "RuntimeService",
     "ScriptedModelAdapter",
+    "SessionSummaryView",
     "StateStore",
     "StoreBackend",
     "StoreConfig",

@@ -17,6 +17,7 @@ from universal_agent.agentd.app import (
     ready_body,
     runtime_run_body,
     session_body,
+    session_summary_body,
     tool_body,
 )
 from universal_agent.core import EventId, JsonMapping, SessionId, immutable_json
@@ -128,6 +129,8 @@ def build_parser() -> argparse.ArgumentParser:
     session = commands.add_parser("session")
     session_commands = session.add_subparsers(dest="session_command", required=True)
 
+    session_commands.add_parser("list")
+
     show = session_commands.add_parser("show")
     show.add_argument("session_id")
 
@@ -193,11 +196,18 @@ async def _dispatch_session(
     out: TextIO,
 ) -> None:
     command = cast(str, args.session_command)
-    session_id = SessionId(cast(str, args.session_id))
+    if command == "list":
+        _write_json(
+            out,
+            {"sessions": [session_summary_body(item) for item in await service.list_sessions()]},
+        )
+        return
     if command == "show":
+        session_id = SessionId(cast(str, args.session_id))
         _write_json(out, session_body(await service.get_session(session_id)))
         return
     if command == "events":
+        session_id = SessionId(cast(str, args.session_id))
         after = cast(str | None, args.after)
         limit = cast(int | None, args.limit)
         _write_json(
@@ -212,10 +222,12 @@ async def _dispatch_session(
         )
         return
     if command == "pause":
+        session_id = SessionId(cast(str, args.session_id))
         run = await service.pause_session(session_id, reason=cast(str, args.reason))
         _write_json(out, runtime_run_body(run))
         return
     if command == "resume":
+        session_id = SessionId(cast(str, args.session_id))
         run = await service.resume_session(
             session_id,
             confirmed=_optional_bool(cast(str | None, args.confirmed)),
@@ -223,6 +235,7 @@ async def _dispatch_session(
         _write_json(out, runtime_run_body(run))
         return
     if command == "cancel":
+        session_id = SessionId(cast(str, args.session_id))
         run = await service.cancel_session(session_id, reason=cast(str, args.reason))
         _write_json(out, runtime_run_body(run))
         return

@@ -34,6 +34,24 @@ class FileSessionStore:
             raise ValueError(f"session already exists: {snapshot.state.session_id}")
         self._write_snapshot(path, snapshot)
 
+    async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
+        if not self._sessions.exists():
+            return ()
+        snapshots: list[SessionSnapshot] = []
+        for path in sorted(self._sessions.glob("*.json")):
+            with path.open("r", encoding="utf-8") as handle:
+                snapshots.append(decode_session_snapshot(json_mapping(json.load(handle))))
+        return tuple(
+            sorted(
+                snapshots,
+                key=lambda snapshot: (
+                    snapshot.state.goal.created_at,
+                    str(snapshot.state.session_id),
+                ),
+                reverse=True,
+            )
+        )
+
     async def load_session(self, session_id: SessionId) -> SessionSnapshot:
         path = self._session_path(session_id)
         if not path.exists():

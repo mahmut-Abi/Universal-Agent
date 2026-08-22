@@ -361,10 +361,23 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
     assert isinstance(session_id, str)
 
     fetched = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}"))
+    listed = await app.handle(HttpRequest("GET", "/v1/sessions"))
     events = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/events"))
 
     assert fetched.status_code == 200
     assert fetched.body["session_id"] == session_id
+    assert listed.status_code == 200
+    session_items = listed.body["sessions"]
+    assert isinstance(session_items, list)
+    assert len(session_items) == 1
+    listed_session = session_items[0]
+    assert isinstance(listed_session, dict)
+    assert listed_session["session_id"] == session_id
+    assert listed_session["goal_description"] == "Verify workload health"
+    assert listed_session["goal_status"] == "completed"
+    assert listed_session["current_task_status"] == "completed"
+    assert listed_session["pending_action"] is False
+    assert listed_session["domain_name"] == "kubernetes"
     assert events.status_code == 200
     event_items = events.body["events"]
     assert isinstance(event_items, list)
@@ -595,7 +608,7 @@ async def test_agentd_create_session_route_validates_request_body() -> None:
         "success_criteria": [{"key": "healthy", "expected": True}],
     }
 
-    wrong_method = await app.handle(HttpRequest("GET", "/v1/sessions"))
+    wrong_method = await app.handle(HttpRequest("PUT", "/v1/sessions"))
     missing_goal = await app.handle(HttpRequest("POST", "/v1/sessions"))
     empty_goal_description = await app.handle(
         HttpRequest(
@@ -620,7 +633,7 @@ async def test_agentd_create_session_route_validates_request_body() -> None:
     )
 
     assert wrong_method.status_code == 405
-    assert wrong_method.headers["allow"] == "POST"
+    assert wrong_method.headers["allow"] == "GET, POST"
     assert missing_goal.status_code == 400
     assert missing_goal.body["error"] == {
         "code": "bad_request",

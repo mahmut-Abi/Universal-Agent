@@ -127,10 +127,14 @@ async def test_runtime_service_delegates_execution_to_runtime_api() -> None:
 
     run = await service.run_goal(*goal_task())
     session = await service.get_session(run.result.session_id)
+    sessions = await service.list_sessions()
     events = await service.list_events(run.result.session_id)
 
     assert run.result.status is ExecutionStatus.COMPLETED
     assert session.session_id == run.result.session_id
+    assert [item.session_id for item in sessions] == [run.result.session_id]
+    assert sessions[0].goal_status is session.goal_status
+    assert sessions[0].current_task_status is session.current_task_status
     assert session.latest_evaluation is not None
     assert session.latest_evaluation.goal_completed
     assert [event.type for event in events][-1] == "GoalCompleted"

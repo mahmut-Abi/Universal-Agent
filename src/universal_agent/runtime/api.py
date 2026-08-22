@@ -80,6 +80,25 @@ class SessionView:
 
 
 @dataclass(frozen=True, slots=True)
+class SessionSummaryView:
+    session_id: SessionId
+    goal_id: GoalId
+    goal_description: str
+    goal_status: GoalStatus
+    current_task_id: TaskId
+    current_task_description: str
+    current_task_status: TaskStatus
+    iteration: int
+    task_count: int
+    pending_action: bool
+    termination_reason: str | None
+    error_code: ErrorCode | None
+    domain_name: str
+    domain_version: str
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeEventView:
     event_id: str
     type: str
@@ -156,6 +175,11 @@ class RuntimeAPI:
     async def get_session(self, session_id: SessionId) -> SessionView:
         return session_view(await self._session_store.load_session(session_id))
 
+    async def list_sessions(self) -> tuple[SessionSummaryView, ...]:
+        return tuple(
+            session_summary_view(snapshot) for snapshot in await self._session_store.list_sessions()
+        )
+
     async def list_events(self, session_id: SessionId) -> tuple[RuntimeEventView, ...]:
         return (await self.stream_events(session_id)).events
 
@@ -208,6 +232,28 @@ def session_view(snapshot: SessionSnapshot) -> SessionView:
         error_code=state.error_code,
         domain_name=snapshot.domain_name,
         domain_version=snapshot.domain_version,
+    )
+
+
+def session_summary_view(snapshot: SessionSnapshot) -> SessionSummaryView:
+    state = snapshot.state
+    current = state.current_task
+    return SessionSummaryView(
+        session_id=state.session_id,
+        goal_id=state.goal.id,
+        goal_description=state.goal.description,
+        goal_status=state.goal.status,
+        current_task_id=current.id,
+        current_task_description=current.description,
+        current_task_status=current.status,
+        iteration=state.iteration,
+        task_count=len(snapshot.task_graph.nodes),
+        pending_action=state.pending_action is not None,
+        termination_reason=state.termination_reason,
+        error_code=state.error_code,
+        domain_name=snapshot.domain_name,
+        domain_version=snapshot.domain_version,
+        created_at=state.goal.created_at,
     )
 
 

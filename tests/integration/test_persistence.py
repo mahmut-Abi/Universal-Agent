@@ -166,6 +166,7 @@ async def test_file_persistence_resumes_confirmation_after_runtime_rebuild(
 
     third = build_file_api(tmp_path, backend, [])
     reloaded = await third.get_session(waiting.result.session_id)
+    reloaded_sessions = await third.list_sessions()
     reloaded_events = await third.list_events(waiting.result.session_id)
     reloaded_batch = await third.stream_events(
         waiting.result.session_id,
@@ -174,6 +175,10 @@ async def test_file_persistence_resumes_confirmation_after_runtime_rebuild(
     )
 
     assert reloaded.goal_status is GoalStatus.COMPLETED
+    assert [item.session_id for item in reloaded_sessions] == [waiting.result.session_id]
+    assert reloaded_sessions[0].goal_status is GoalStatus.COMPLETED
+    assert reloaded_sessions[0].current_task_status is reloaded.current_task_status
+    assert reloaded_sessions[0].pending_action is False
     assert reloaded.latest_evaluation is not None
     assert reloaded.latest_evaluation.goal_completed
     assert tuple(event.type for event in reloaded_events) == tuple(

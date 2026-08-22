@@ -100,6 +100,7 @@ async def main() -> None:
         Task("Inspect workload", ("healthy",)),
     )
     session_id = str(waiting.result.session_id)
+    await run_cli(["session", "list"], service=service)
     await run_cli(
         ["session", "pause", session_id, "--reason", "operator paused from example"],
         service=service,

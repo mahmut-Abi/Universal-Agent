@@ -24,6 +24,7 @@ from universal_agent.runtime import (
     RuntimeEventBatch,
     RuntimeEventView,
     RuntimeRun,
+    SessionSummaryView,
     SessionView,
     TaskView,
 )
@@ -119,8 +120,19 @@ class AgentdApp:
                 ),
             )
         if path == "/v1/sessions":
+            if method == "GET":
+                return json_response(
+                    immutable_json(
+                        {
+                            "sessions": [
+                                session_summary_body(item)
+                                for item in await self._service.list_sessions()
+                            ]
+                        }
+                    )
+                )
             if method != "POST":
-                return method_not_allowed(("POST",))
+                return method_not_allowed(("GET", "POST"))
             try:
                 submission = parse_goal_submission(request.body)
             except ValueError as exc:
@@ -442,6 +454,26 @@ def session_body(view: SessionView) -> JsonMapping:
             "domain_version": view.domain_version,
         }
     )
+
+
+def session_summary_body(view: SessionSummaryView) -> dict[str, JsonValue]:
+    return {
+        "session_id": str(view.session_id),
+        "goal_id": str(view.goal_id),
+        "goal_description": view.goal_description,
+        "goal_status": view.goal_status.value,
+        "current_task_id": str(view.current_task_id),
+        "current_task_description": view.current_task_description,
+        "current_task_status": view.current_task_status.value,
+        "iteration": view.iteration,
+        "task_count": view.task_count,
+        "pending_action": view.pending_action,
+        "termination_reason": view.termination_reason,
+        "error_code": view.error_code.value if view.error_code is not None else None,
+        "domain_name": view.domain_name,
+        "domain_version": view.domain_version,
+        "created_at": view.created_at.isoformat(),
+    }
 
 
 def task_body(view: TaskView) -> dict[str, JsonValue]:
