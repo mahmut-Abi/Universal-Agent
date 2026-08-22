@@ -389,6 +389,44 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
 
 
 @pytest.mark.asyncio
+async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> None:
+    service, backend = build_service([scale_workload(), inspect_workload(), finish()])
+    app = AgentdApp(service)
+
+    created = await app.handle(HttpRequest("POST", "/v1/sessions", goal_submission_body()))
+    result = created.body["result"]
+    assert isinstance(result, dict)
+    session_id = result["session_id"]
+    assert isinstance(session_id, str)
+
+    metrics = await app.handle(HttpRequest("GET", "/v1/metrics"))
+    doctor = await app.handle(HttpRequest("GET", "/v1/doctor"))
+    audit = await app.handle(HttpRequest("GET", "/v1/audit"))
+    session_audit = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/audit"))
+
+    assert metrics.status_code == 200
+    assert metrics.body["session_count"] == 1
+    assert metrics.body["completed_goal_count"] == 1
+    assert metrics.body["action_started_count"] == 2
+    assert doctor.status_code == 200
+    assert doctor.body["status"] == "ok"
+    assert audit.status_code == 200
+    audit_items = audit.body["audit_records"]
+    session_audit_items = session_audit.body["audit_records"]
+    assert isinstance(audit_items, list)
+    assert isinstance(session_audit_items, list)
+    assert audit_items == session_audit_items
+    assert len(audit_items) == 1
+    record = audit_items[0]
+    assert isinstance(record, dict)
+    assert record["session_id"] == session_id
+    assert record["capability"] == "scale_workload"
+    assert record["policy_effect"] == "allow"
+    assert record["status"] == "succeeded"
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_agentd_events_route_supports_cursor_and_limit() -> None:
     service, _ = build_service([inspect_workload(), finish()])
     app = AgentdApp(service)

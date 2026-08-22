@@ -152,7 +152,14 @@ class ActionExecutor:
         await emit(
             "PolicyChecked",
             pending.action_id,
-            {"effect": policy_result.effect.value, "policy": policy_result.policy_name},
+            {
+                "effect": policy_result.effect.value,
+                "policy": policy_result.policy_name,
+                "capability": capability.name,
+                "tool_name": tool.definition.name,
+                "side_effect": tool.definition.side_effect.value,
+                "risk": tool.definition.risk.value,
+            },
         )
         if policy_result.effect is PolicyEffect.DENY:
             return ActionRejected(ErrorCode.POLICY_DENIED, policy_result.reason)
@@ -169,6 +176,7 @@ class ActionExecutor:
         emit: EmitFn,
     ) -> ActionObserved:
         state = session.state
+        tool = self.components.tools.resolve(pending.tool_name)
         call = ToolCall(
             action_id=pending.action_id,
             tool_name=pending.tool_name,
@@ -184,12 +192,23 @@ class ActionExecutor:
             {
                 "tool_name": call.tool_name,
                 "capability": call.capability,
+                "side_effect": tool.definition.side_effect.value,
+                "risk": tool.definition.risk.value,
                 "domain": call.domain_name,
                 "domain_version": call.domain_version,
             },
         )
         tool_result = await self._tool_runtime.execute(call)
-        await emit("ActionCompleted", call.action_id, {"status": tool_result.status.value})
+        await emit(
+            "ActionCompleted",
+            call.action_id,
+            {
+                "status": tool_result.status.value,
+                "error_code": (
+                    None if tool_result.error_code is None else tool_result.error_code.value
+                ),
+            },
+        )
         observation = self._observations.from_tool_result(
             task_id=state.current_task.id,
             call=call,

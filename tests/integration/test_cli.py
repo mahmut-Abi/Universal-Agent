@@ -52,6 +52,17 @@ def inspect_workload() -> Decision:
     )
 
 
+def scale_workload() -> Decision:
+    return Decision(
+        DecisionType.EXECUTE,
+        "Scale workload through CLI test service",
+        capability="scale_workload",
+        target="deployment/example",
+        arguments=immutable_json({"name": "example", "namespace": "default", "replicas": 3}),
+        expected_observations=("mutation_applied",),
+    )
+
+
 def wait() -> Decision:
     return Decision(DecisionType.WAIT, "CLI test waiting point")
 
@@ -157,4 +168,46 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
     assert len(events_payload["events"]) == 2
     assert events_payload["next_cursor"] == events_payload["events"][-1]["event_id"]
     assert resume_payload["result"]["status"] == "completed"
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cli_exposes_operations_commands_through_service() -> None:
+    service, backend = build_cli_service([scale_workload(), inspect_workload(), finish()])
+    run = await service.run_goal(*goal_task())
+    session_id = str(run.result.session_id)
+    metrics_output = StringIO()
+    doctor_output = StringIO()
+    audit_output = StringIO()
+    session_audit_output = StringIO()
+
+    metrics_status = await run_cli(["metrics"], service=service, stdout=metrics_output)
+    doctor_status = await run_cli(["doctor"], service=service, stdout=doctor_output)
+    audit_status = await run_cli(["audit"], service=service, stdout=audit_output)
+    session_audit_status = await run_cli(
+        ["session", "audit", session_id],
+        service=service,
+        stdout=session_audit_output,
+    )
+
+    metrics = read_json(metrics_output)
+    doctor = read_json(doctor_output)
+    audit = read_json(audit_output)
+    session_audit = read_json(session_audit_output)
+    assert metrics_status == 0
+    assert doctor_status == 0
+    assert audit_status == 0
+    assert session_audit_status == 0
+    assert metrics["completed_goal_count"] == 1
+    assert metrics["action_started_count"] == 2
+    assert doctor["status"] == "ok"
+    assert audit == session_audit
+    audit_items = audit["audit_records"]
+    assert isinstance(audit_items, list)
+    assert len(audit_items) == 1
+    record = audit_items[0]
+    assert isinstance(record, dict)
+    assert record["session_id"] == session_id
+    assert record["capability"] == "scale_workload"
+    assert record["status"] == "succeeded"
     assert backend.inspect_calls == 1

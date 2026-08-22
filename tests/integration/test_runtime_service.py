@@ -55,6 +55,17 @@ def inspect_workload() -> Decision:
     )
 
 
+def scale_workload() -> Decision:
+    return Decision(
+        DecisionType.EXECUTE,
+        "Scale workload",
+        capability="scale_workload",
+        target="deployment/example",
+        arguments=immutable_json({"name": "example", "namespace": "default", "replicas": 3}),
+        expected_observations=("mutation_applied",),
+    )
+
+
 def finish() -> Decision:
     return Decision(DecisionType.FINISH, "Required evidence is present")
 
@@ -140,3 +151,35 @@ async def test_runtime_service_delegates_execution_to_runtime_api() -> None:
     assert [event.type for event in events][-1] == "GoalCompleted"
     assert backend.inspect_calls == 1
     assert backend.mutation_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_runtime_service_derives_metrics_doctor_and_audit_from_events() -> None:
+    service, backend = build_service([scale_workload(), inspect_workload(), finish()])
+
+    run = await service.run_goal(*goal_task())
+    metrics = await service.metrics()
+    doctor = await service.doctor()
+    audit = await service.audit_records(run.result.session_id)
+
+    assert run.result.status is ExecutionStatus.COMPLETED
+    assert metrics.session_count == 1
+    assert metrics.completed_goal_count == 1
+    assert metrics.action_started_count == 2
+    assert metrics.action_completed_count == 2
+    assert metrics.policy_denial_count == 0
+    assert doctor.status == "ok"
+    assert {check.name for check in doctor.checks} >= {
+        "service_health",
+        "readiness",
+        "event_stream",
+    }
+    assert len(audit) == 1
+    assert audit[0].capability == "scale_workload"
+    assert audit[0].tool_name == "kubernetes_scale_workload"
+    assert audit[0].side_effect == "reversible"
+    assert audit[0].risk == "medium"
+    assert audit[0].policy_effect == "allow"
+    assert audit[0].status == "succeeded"
+    assert backend.inspect_calls == 1
+    assert backend.mutation_calls == 1

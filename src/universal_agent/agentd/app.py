@@ -29,11 +29,14 @@ from universal_agent.runtime import (
     TaskView,
 )
 from universal_agent.service import (
+    AuditRecordView,
     CapabilityView,
+    DoctorReportView,
     DomainView,
     HealthView,
     ProfileView,
     ReadyView,
+    RuntimeMetricsView,
     RuntimeService,
     ToolView,
 )
@@ -119,6 +122,18 @@ class AgentdApp:
                     {"profiles": [profile_body(item) for item in self._service.profiles()]}
                 ),
             )
+        if path == "/v1/metrics":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            return json_response(metrics_body(await self._service.metrics()))
+        if path == "/v1/doctor":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            return json_response(doctor_body(await self._service.doctor()))
+        if path == "/v1/audit":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            return json_response(audit_records_body(await self._service.audit_records()))
         if path == "/v1/sessions":
             if method == "GET":
                 return json_response(
@@ -166,6 +181,15 @@ class AgentdApp:
                 return not_found(str(exc))
             except ValueError as exc:
                 return bad_request(str(exc))
+        if session_id is not None and suffix == "audit":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                return json_response(
+                    audit_records_body(await self._service.audit_records(session_id))
+                )
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
         if session_id is not None and suffix == "pause":
             if method != "POST":
                 return method_not_allowed(("POST",))
@@ -382,6 +406,68 @@ def ready_body(view: ReadyView) -> JsonMapping:
             "tool_count": view.tool_count,
         }
     )
+
+
+def metrics_body(view: RuntimeMetricsView) -> JsonMapping:
+    return immutable_json(
+        {
+            "session_count": view.session_count,
+            "active_session_count": view.active_session_count,
+            "waiting_session_count": view.waiting_session_count,
+            "completed_goal_count": view.completed_goal_count,
+            "failed_goal_count": view.failed_goal_count,
+            "cancelled_goal_count": view.cancelled_goal_count,
+            "event_count": view.event_count,
+            "action_started_count": view.action_started_count,
+            "action_completed_count": view.action_completed_count,
+            "tool_failure_count": view.tool_failure_count,
+            "policy_denial_count": view.policy_denial_count,
+            "confirmation_required_count": view.confirmation_required_count,
+            "recovery_planned_count": view.recovery_planned_count,
+            "recovery_exhausted_count": view.recovery_exhausted_count,
+            "human_intervention_count": view.human_intervention_count,
+        }
+    )
+
+
+def doctor_body(view: DoctorReportView) -> JsonMapping:
+    return immutable_json(
+        {
+            "status": view.status,
+            "checks": [
+                {
+                    "name": check.name,
+                    "status": check.status,
+                    "message": check.message,
+                }
+                for check in view.checks
+            ],
+        }
+    )
+
+
+def audit_records_body(records: tuple[AuditRecordView, ...]) -> JsonMapping:
+    return immutable_json({"audit_records": [audit_record_body(record) for record in records]})
+
+
+def audit_record_body(view: AuditRecordView) -> dict[str, JsonValue]:
+    return {
+        "record_id": view.record_id,
+        "session_id": str(view.session_id),
+        "goal_id": str(view.goal_id),
+        "task_id": str(view.task_id),
+        "action_id": str(view.action_id) if view.action_id is not None else None,
+        "capability": view.capability,
+        "tool_name": view.tool_name,
+        "side_effect": view.side_effect,
+        "risk": view.risk,
+        "policy_effect": view.policy_effect,
+        "policy_name": view.policy_name,
+        "status": view.status,
+        "occurred_at": view.occurred_at.isoformat(),
+        "completed_at": None if view.completed_at is None else view.completed_at.isoformat(),
+        "error_code": view.error_code.value if view.error_code is not None else None,
+    }
 
 
 def domain_body(view: DomainView) -> dict[str, JsonValue]:

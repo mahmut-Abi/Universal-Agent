@@ -12,6 +12,14 @@ from universal_agent.core import (
     Task,
 )
 from universal_agent.domain import ActiveDomain, RuntimeComponents
+from universal_agent.operations import (
+    AuditRecordView,
+    DoctorReportView,
+    RuntimeMetricsView,
+    build_audit_records,
+    build_doctor_report,
+    build_runtime_metrics,
+)
 from universal_agent.profile import AgentProfile, ProfileRegistry
 from universal_agent.runtime import (
     RuntimeAPI,
@@ -226,6 +234,38 @@ class RuntimeService:
     async def list_events(self, session_id: SessionId) -> tuple[RuntimeEventView, ...]:
         return await self._runtime_api.list_events(session_id)
 
+    async def metrics(self) -> RuntimeMetricsView:
+        sessions = await self.list_sessions()
+        return build_runtime_metrics(sessions, await self._list_all_events(sessions))
+
+    async def doctor(self) -> DoctorReportView:
+        health = self.health()
+        ready = self.ready()
+        sessions = await self.list_sessions()
+        events = await self._list_all_events(sessions)
+        return build_doctor_report(
+            health_status=health.status,
+            ready=ready.ready,
+            ready_reason=ready.reason,
+            domain_count=ready.domain_count,
+            capability_count=ready.capability_count,
+            tool_count=ready.tool_count,
+            sessions=sessions,
+            events=events,
+        )
+
+    async def audit_records(
+        self,
+        session_id: SessionId | None = None,
+    ) -> tuple[AuditRecordView, ...]:
+        if session_id is not None:
+            return build_audit_records(
+                await self.list_events(session_id),
+                session_id=session_id,
+            )
+        sessions = await self.list_sessions()
+        return build_audit_records(await self._list_all_events(sessions))
+
     async def stream_events(
         self,
         session_id: SessionId,
@@ -238,6 +278,15 @@ class RuntimeService:
             after_event_id=after_event_id,
             limit=limit,
         )
+
+    async def _list_all_events(
+        self,
+        sessions: tuple[SessionSummaryView, ...],
+    ) -> tuple[RuntimeEventView, ...]:
+        events: list[RuntimeEventView] = []
+        for session in sessions:
+            events.extend(await self.list_events(session.session_id))
+        return tuple(sorted(events, key=lambda event: event.occurred_at))
 
 
 def domain_view(domain: ActiveDomain, *, primary: bool) -> DomainView:
