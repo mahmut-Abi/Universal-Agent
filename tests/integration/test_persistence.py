@@ -15,6 +15,8 @@ from universal_agent import (
     RuntimeAPI,
     RuntimeBuilder,
     ScriptedModelAdapter,
+    SQLiteEventStore,
+    SQLiteSessionStore,
     SuccessCriterion,
     Task,
     immutable_json,
@@ -107,6 +109,29 @@ def remediation_goal_task() -> tuple[Goal, Task]:
     )
 
 
+def build_sqlite_api(
+    path: Path,
+    backend: PersistentRemediationBackend,
+    decisions: list[Decision],
+) -> RuntimeAPI:
+    session_store = SQLiteSessionStore(path)
+    event_store = SQLiteEventStore(path)
+    runtime = AgentRuntime(
+        model=ScriptedModelAdapter(decisions),
+        state_store=session_store,
+        components=RuntimeBuilder().build(
+            DomainLoader().load(KubernetesRemediationDomain(backend, backend))
+        ),
+        event_sink=event_store,
+        environment=immutable_json({"environment": "production"}),
+    )
+    return RuntimeAPI(
+        runtime=runtime,
+        session_store=session_store,
+        event_reader=event_store,
+    )
+
+
 def build_file_api(
     root: Path,
     backend: PersistentRemediationBackend,
@@ -188,3 +213,52 @@ async def test_file_persistence_resumes_confirmation_after_runtime_rebuild(
         event.type for event in reloaded_events[1:3]
     )
     assert reloaded_batch.next_cursor == reloaded_batch.events[-1].event_id
+
+
+@pytest.mark.asyncio
+async def test_sqlite_persistence_resumes_confirmation_after_runtime_rebuild(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "runtime.sqlite3"
+    backend = PersistentRemediationBackend()
+    first = build_sqlite_api(
+        db_path,
+        backend,
+        [inspect_workload("healthy"), inspect_pod(), scale_workload()],
+    )
+
+    waiting = await first.run_goal(*remediation_goal_task())
+
+    assert waiting.result.status is ExecutionStatus.WAITING
+    assert waiting.session.pending_action is not None
+    assert db_path.exists()
+    assert backend.mutation_calls == 0
+
+    second = build_sqlite_api(
+        db_path,
+        backend,
+        [inspect_workload("verification_observed", "healthy"), finish()],
+    )
+    completed = await second.resume_session(waiting.result.session_id, confirmed=True)
+    events = await second.list_events(waiting.result.session_id)
+    event_batch = await second.stream_events(
+        waiting.result.session_id,
+        after_event_id=EventId(events[0].event_id),
+        limit=3,
+    )
+
+    assert completed.result.status is ExecutionStatus.COMPLETED
+    assert completed.session.goal_status is GoalStatus.COMPLETED
+    assert completed.session.pending_action is None
+    assert backend.mutation_calls == 1
+    assert [event.type for event in events][-1] == "GoalCompleted"
+    assert tuple(event.type for event in event_batch.events) == tuple(
+        event.type for event in events[1:4]
+    )
+
+    third = build_sqlite_api(db_path, backend, [])
+    reloaded = await third.get_session(waiting.result.session_id)
+    reloaded_sessions = await third.list_sessions()
+
+    assert reloaded.goal_status is GoalStatus.COMPLETED
+    assert [item.session_id for item in reloaded_sessions] == [waiting.result.session_id]

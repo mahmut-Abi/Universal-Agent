@@ -70,12 +70,26 @@ def test_runtime_config_from_json_file_parses_typed_values(tmp_path: Path) -> No
     assert config.domain == DomainConfig("kubernetes", "0.2.0")
 
 
+def test_runtime_config_parses_sqlite_store() -> None:
+    config = RuntimeConfig.from_mapping(
+        {
+            "store": {"backend": "sqlite", "path": "/tmp/universal-agent/runtime.sqlite3"},
+        }
+    )
+
+    assert config.store == StoreConfig.sqlite("/tmp/universal-agent/runtime.sqlite3")
+    assert config.store.backend is StoreBackend.SQLITE
+
+
 def test_runtime_config_rejects_invalid_store_and_limits() -> None:
     with pytest.raises(ValueError, match="file store requires path"):
         StoreConfig.from_mapping({"backend": "file"})
 
     with pytest.raises(ValueError, match="memory store does not accept path"):
         StoreConfig.from_mapping({"backend": "memory", "path": "/tmp/runtime"})
+
+    with pytest.raises(ValueError, match="sqlite store requires path"):
+        StoreConfig.from_mapping({"backend": "sqlite"})
 
     with pytest.raises(ValueError, match="max_iterations must be positive"):
         RuntimeLimitsConfig(max_iterations=0).validate()

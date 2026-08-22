@@ -12,6 +12,7 @@ from universal_agent.core import DomainIdentity, JsonMapping, JsonValue, immutab
 class StoreBackend(StrEnum):
     MEMORY = "memory"
     FILE = "file"
+    SQLITE = "sqlite"
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +29,10 @@ class StoreConfig:
         return cls(StoreBackend.FILE, path)
 
     @classmethod
+    def sqlite(cls, path: str) -> StoreConfig:
+        return cls(StoreBackend.SQLITE, path)
+
+    @classmethod
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> StoreConfig:
         backend = StoreBackend(_string(values.get("backend", StoreBackend.MEMORY.value), "backend"))
         path = _optional_string(values.get("path"), "path")
@@ -38,6 +43,8 @@ class StoreConfig:
     def validate(self) -> None:
         if self.backend is StoreBackend.FILE and not self.path:
             raise ValueError("file store requires path")
+        if self.backend is StoreBackend.SQLITE and not self.path:
+            raise ValueError("sqlite store requires path")
         if self.backend is StoreBackend.MEMORY and self.path is not None:
             raise ValueError("memory store does not accept path")
 

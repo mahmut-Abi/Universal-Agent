@@ -11,7 +11,7 @@ pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter,
 HTTP bridge, a local CLI adapter, local file-backed session/event persistence, the first P3.6
 operations surface with cost tracking and OpenTelemetry-shaped trace span projections, and a P3.7
 Evaluation Harness / Replay foundation. The v3.0 design document also defines later productization
-layers such as database persistence, SSE delivery, OpenTelemetry exporters,
+layers such as production database persistence, SSE delivery, OpenTelemetry exporters,
 optional Multi-Agent, UI, distributed runtime, and ecosystem packaging.
 
 ## Architectural boundaries
@@ -89,7 +89,7 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
 
 This remains usable in-process, while the standard-library HTTP bridge now wraps the same
 `AgentdApp` route adapter for local `agentd` hosting. SSE-formatted event batches now share the same
-cursor semantics as JSON event reads; database persistence and long-lived push delivery are later
+cursor semantics as JSON event reads; production database persistence and long-lived push delivery are later
 P3.5 work built on this interface, not replacements for it.
 
 `RuntimeService` is the first framework-free `agentd` foundation. It delegates execution, session and
@@ -160,10 +160,11 @@ regression, policy, recovery, token/cost budget and replay expectations. See
 runtime identity — name, version, Domain identity and Runtime Configuration — for future CLI/agentd
 entry points. It is not a new Kernel, not a Domain implementation, and not a routing Agent.
 
-`FileSessionStore` and `FileEventStore` are local persistence adapters for P3.5 recovery tests and
-embedded demos. They persist and list `SessionSnapshot` JSON documents and JSONL runtime events
-behind the same `SessionStore` and `EventSink/EventReader` seams used by in-memory stores. They are
-not a database layer, event-sourcing model, or production migration system.
+`FileSessionStore` / `FileEventStore` and `SQLiteSessionStore` / `SQLiteEventStore` are local
+persistence adapters for P3.5 recovery tests and embedded deployments. They persist and list
+`SessionSnapshot` documents and runtime events behind the same `SessionStore` and
+`EventSink/EventReader` seams used by in-memory stores. The SQLite adapter is a local database
+backend for `RuntimeHost` configuration, not an event-sourcing model or production migration system.
 
 ## Current scope
 
@@ -197,7 +198,7 @@ not a database layer, event-sourcing model, or production migration system.
   pause/resume/cancel routes, runtime configuration reads,
   Profile catalog reads, a standard-library `AgentdHttpServer` bridge, file-backed session/event
   stores for local recovery, a local CLI adapter, and typed
-  `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, store backend,
+  `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, memory/file/SQLite store backends,
   Domain identity validation, and multi-Domain composition activation.
 - P3.6/P3.7 foundation: event-derived `metrics`, Prometheus metrics text export, `cost`, `logs`,
   `traces`, OTLP trace export, `doctor` and `audit` projections exposed through RuntimeService,
@@ -228,9 +229,9 @@ while `KubernetesRemediationDomain` adds the fake-backed mutation path. Multi-do
 has a conservative `DomainManager` / `DomainComposition` foundation: Domain identities,
 capabilities and tools are validated before activation, Profiles may declare ordered Domain sets,
 and snapshots persist the activated composition for safe resume. Cross-domain World Model reasoning,
-persistent databases, packaging, marketplace behavior, optional Multi-Agent Runtime, and real
-Kubernetes API remediation remain outside P3.2. Persistence includes in-memory stores plus local file-backed session/event adapters with
-snapshot isolation; no database backend, event sourcing, or schema migration is included.
+production database migration systems, packaging, marketplace behavior, optional Multi-Agent Runtime, and real
+Kubernetes API remediation remain outside P3.2. Persistence includes in-memory stores plus local file-backed and SQLite-backed session/event adapters with
+snapshot isolation; event sourcing and schema migration are not included.
 
 ## Roadmap alignment
 
@@ -267,6 +268,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_runtime_service.py
 .venv/bin/python examples/p3_5_agentd_routes.py
 .venv/bin/python examples/p3_5_persistence.py
+.venv/bin/python examples/p3_5_sqlite_persistence.py
 .venv/bin/python examples/p3_5_runtime_config.py
 .venv/bin/python examples/p3_5_cli_config.py
 .venv/bin/python examples/p3_5_cli_event_stream.py

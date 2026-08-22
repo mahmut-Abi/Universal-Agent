@@ -19,7 +19,12 @@ from universal_agent.host import (
     StoreConfig,
 )
 from universal_agent.model import ModelAdapter, ModelUsage, ModelUsageProvider, ScriptedModelAdapter
-from universal_agent.persistence import FileEventStore, FileSessionStore
+from universal_agent.persistence import (
+    FileEventStore,
+    FileSessionStore,
+    SQLiteEventStore,
+    SQLiteSessionStore,
+)
 from universal_agent.profile import AgentProfile, ProfileConfig, ProfileRegistry
 from universal_agent.runtime import (
     AgentRuntime,
@@ -80,6 +85,8 @@ __all__ = [
     "RuntimeService",
     "RuntimeSessionBatch",
     "RuntimeTraceSpanView",
+    "SQLiteEventStore",
+    "SQLiteSessionStore",
     "ScriptedModelAdapter",
     "SessionSummaryView",
     "StateStore",

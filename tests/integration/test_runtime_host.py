@@ -113,16 +113,49 @@ def configured_host(
     path: Path,
     backend: HostRemediationBackend,
     decisions: list[Decision],
+    *,
+    store: StoreConfig | None = None,
 ) -> RuntimeHost:
     return RuntimeHost.build(
         config=RuntimeConfig(
             environment=immutable_json({"environment": "production"}),
-            store=StoreConfig.file(str(path)),
+            store=StoreConfig.file(str(path)) if store is None else store,
             domain=DomainConfig("kubernetes", "0.2.0"),
         ),
         model=ScriptedModelAdapter(decisions),
         domain=KubernetesRemediationDomain(backend, backend),
     )
+
+
+@pytest.mark.asyncio
+async def test_runtime_host_assembles_configured_sqlite_backed_service(tmp_path: Path) -> None:
+    db_path = tmp_path / "runtime.sqlite3"
+    backend = HostRemediationBackend()
+    first = configured_host(
+        db_path,
+        backend,
+        [inspect_workload("healthy"), inspect_pod(), scale_workload()],
+        store=StoreConfig.sqlite(str(db_path)),
+    )
+
+    waiting = await first.service.run_goal(*remediation_goal_task())
+
+    assert waiting.result.status is ExecutionStatus.WAITING
+    assert waiting.session.pending_action is not None
+    assert db_path.exists()
+
+    second = configured_host(
+        db_path,
+        backend,
+        [inspect_workload("verification_observed", "healthy"), finish()],
+        store=StoreConfig.sqlite(str(db_path)),
+    )
+    completed = await second.runtime_api.resume_session(waiting.result.session_id, confirmed=True)
+    events = await second.service.list_events(waiting.result.session_id)
+
+    assert completed.result.status is ExecutionStatus.COMPLETED
+    assert completed.session.goal_status is GoalStatus.COMPLETED
+    assert [event.type for event in events][-1] == "GoalCompleted"
 
 
 def production_profile(path: Path) -> ProfileConfig:
