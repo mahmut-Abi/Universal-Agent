@@ -216,7 +216,7 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   budgets and model token/cost budgets for behavior scenarios.
   Evaluation suites classify scenarios by kind and tags so regression, policy and recovery subsets
   can be selected without changing Kernel code. File-backed suite configs load those same typed
-  scenario contracts from JSON for local CI runs, and quality gates turn suite metrics into CI-ready
+  scenario contracts plus optional quality gates from JSON for local CI runs, and quality gates turn suite metrics into CI-ready
   pass/fail checks. `EvaluationRunner` packages suite execution, gate evaluation and optional
   stable report persistence behind one interface for future CLI/CI adapters. Stable evaluation
   report recordings preserve scenario kind/tags and Evidence claim summaries, so comparisons can

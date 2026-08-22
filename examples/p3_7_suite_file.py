@@ -22,6 +22,7 @@ def write_suite(path: Path) -> None:
             {
                 "name": "external evaluation suite",
                 "tags": ["file", "kubernetes"],
+                "quality_gate": {"min_action_success_rate": 1.0},
                 "scenarios": [
                     {
                         "name": "external healthy workload",
@@ -66,8 +67,6 @@ async def main() -> None:
                 LOCAL_PROFILE_NAME,
                 "--suite-file",
                 str(suite_path),
-                "--min-action-success-rate",
-                "1.0",
                 "--fail-on-fail",
             ],
             stdout=output,

@@ -156,40 +156,42 @@ def read_json(buffer: StringIO) -> dict[str, Any]:
     return loaded
 
 
-def write_evaluation_suite_file(path: Path) -> None:
-    path.write_text(
-        json.dumps(
+def write_evaluation_suite_file(
+    path: Path,
+    *,
+    quality_gate: dict[str, Any] | None = None,
+) -> None:
+    payload: dict[str, Any] = {
+        "name": "file evaluation suite",
+        "tags": ["file", "kubernetes"],
+        "scenarios": [
             {
-                "name": "file evaluation suite",
-                "tags": ["file", "kubernetes"],
-                "scenarios": [
-                    {
-                        "name": "file healthy workload",
-                        "kind": "regression",
-                        "tags": ["smoke", "file"],
-                        "goal": {
-                            "description": "Evaluate workload health from file",
-                            "success_criteria": {"healthy": True},
-                        },
-                        "task": {
-                            "description": "Inspect workload from file",
-                            "required_criteria": ["healthy"],
-                        },
-                        "expectations": {
-                            "expected_status": "completed",
-                            "expected_criteria": {"healthy": True},
-                            "required_events": ["GoalCompleted", "EvaluationCompleted"],
-                            "required_evidence_claims": ["healthy"],
-                            "required_capabilities": ["inspect_workload"],
-                            "allowed_capabilities": ["inspect_workload"],
-                            "max_actions": 1,
-                        },
-                    }
-                ],
+                "name": "file healthy workload",
+                "kind": "regression",
+                "tags": ["smoke", "file"],
+                "goal": {
+                    "description": "Evaluate workload health from file",
+                    "success_criteria": {"healthy": True},
+                },
+                "task": {
+                    "description": "Inspect workload from file",
+                    "required_criteria": ["healthy"],
+                },
+                "expectations": {
+                    "expected_status": "completed",
+                    "expected_criteria": {"healthy": True},
+                    "required_events": ["GoalCompleted", "EvaluationCompleted"],
+                    "required_evidence_claims": ["healthy"],
+                    "required_capabilities": ["inspect_workload"],
+                    "allowed_capabilities": ["inspect_workload"],
+                    "max_actions": 1,
+                },
             }
-        ),
-        encoding="utf-8",
-    )
+        ],
+    }
+    if quality_gate is not None:
+        payload["quality_gate"] = quality_gate
+    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 @pytest.mark.asyncio
@@ -1052,6 +1054,61 @@ async def test_cli_eval_run_executes_suite_file_and_persists_report(tmp_path: Pa
     assert stored.suite_name == "file evaluation suite"
     assert stored.scenarios[0].scenario_name == "file healthy workload"
     assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cli_eval_run_uses_suite_file_quality_gate_and_cli_overrides(
+    tmp_path: Path,
+) -> None:
+    suite_path = tmp_path / "suite.json"
+    write_evaluation_suite_file(
+        suite_path,
+        quality_gate={"max_average_actions_per_scenario": 0.0},
+    )
+
+    failing_output = StringIO()
+    failing_status = await run_cli(
+        [
+            "eval",
+            "run",
+            "production-operator",
+            "--suite-file",
+            str(suite_path),
+            "--fail-on-fail",
+        ],
+        service=build_cli_service([inspect_workload(), finish()])[0],
+        stdout=failing_output,
+    )
+    failing_payload = read_json(failing_output)
+    failed_checks = {
+        item["name"]
+        for item in failing_payload["gate"]["checks"]
+        if isinstance(item, dict) and not item["passed"]
+    }
+
+    passing_output = StringIO()
+    passing_status = await run_cli(
+        [
+            "eval",
+            "run",
+            "production-operator",
+            "--suite-file",
+            str(suite_path),
+            "--max-average-actions",
+            "1.0",
+            "--fail-on-fail",
+        ],
+        service=build_cli_service([inspect_workload(), finish()])[0],
+        stdout=passing_output,
+    )
+    passing_payload = read_json(passing_output)
+
+    assert failing_status == 1
+    assert failing_payload["passed"] is False
+    assert "average_actions_per_scenario" in failed_checks
+    assert passing_status == 0
+    assert passing_payload["passed"] is True
+    assert passing_payload["gate"]["passed"] is True
 
 
 @pytest.mark.asyncio

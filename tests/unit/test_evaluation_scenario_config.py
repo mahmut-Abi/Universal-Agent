@@ -7,6 +7,7 @@ import pytest
 from universal_agent.core import ErrorCode, ExecutionStatus
 from universal_agent.evaluation.harness import EvaluationScenarioKind
 from universal_agent.evaluation.scenario_config import (
+    evaluation_suite_config_from_mapping,
     evaluation_suite_from_mapping,
     load_evaluation_suite,
 )
@@ -89,6 +90,40 @@ def test_evaluation_suite_config_parses_typed_scenarios() -> None:
     assert policy.expectations.expected_error_code is ErrorCode.POLICY_DENIED
     assert policy.expectations.required_audit_capabilities == ("scale_workload",)
     assert policy.expectations.policy_denial_count == 1
+
+
+def test_evaluation_suite_config_parses_quality_gate() -> None:
+    config = evaluation_suite_config_from_mapping(
+        {
+            "name": "gated suite",
+            "quality_gate": {
+                "min_pass_rate": 0.9,
+                "min_goal_completion_rate": 1,
+                "max_average_actions_per_scenario": 2,
+                "max_total_model_estimated_cost_micros": 100,
+            },
+            "scenarios": [
+                {
+                    "name": "healthy workload",
+                    "goal": {
+                        "description": "Evaluate workload health",
+                        "success_criteria": {"healthy": True},
+                    },
+                    "task": {
+                        "description": "Inspect workload",
+                        "required_criteria": ["healthy"],
+                    },
+                }
+            ],
+        }
+    )
+
+    assert config.suite.name == "gated suite"
+    assert config.quality_gate is not None
+    assert config.quality_gate.min_pass_rate == 0.9
+    assert config.quality_gate.min_goal_completion_rate == 1.0
+    assert config.quality_gate.max_average_actions_per_scenario == 2.0
+    assert config.quality_gate.max_total_model_estimated_cost_micros == 100
 
 
 def test_load_evaluation_suite_reads_json_file(tmp_path: Path) -> None:

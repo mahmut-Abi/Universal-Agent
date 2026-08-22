@@ -78,7 +78,10 @@ from universal_agent.evaluation.replay import (
     ReplayReport,
 )
 from universal_agent.evaluation.runner import EvaluationRunner, EvaluationRunResult
-from universal_agent.evaluation.scenario_config import load_evaluation_suite
+from universal_agent.evaluation.scenario_config import (
+    EvaluationSuiteConfig,
+    load_evaluation_suite_config,
+)
 from universal_agent.host import DomainConfig, RuntimeConfig, RuntimeHost
 from universal_agent.model import ScriptedModelAdapter
 from universal_agent.profile import AgentProfile, ProfileConfig
@@ -276,7 +279,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_run.add_argument("--suite-file")
     eval_run.add_argument("--report-dir")
     eval_run.add_argument("--format", choices=("json", "junit"), default="json")
-    eval_run.add_argument("--min-pass-rate", type=float, default=1.0)
+    eval_run.add_argument("--min-pass-rate", type=float)
     eval_run.add_argument("--min-goal-completion-rate", type=float)
     eval_run.add_argument("--min-task-success-rate", type=float)
     eval_run.add_argument("--min-action-success-rate", type=float)
@@ -506,53 +509,14 @@ async def _dispatch_eval(
         if not service.accepts_profile(profile):
             raise ValueError(f"unknown profile: {profile}")
         report_dir = cast(str | None, args.report_dir)
+        suite_config = _evaluation_suite_config(args)
         result = await EvaluationRunner(
             service,
             report_store=None if report_dir is None else FileEvaluationReportStore(report_dir),
         ).run_suite(
-            _evaluation_suite(args),
+            suite_config.suite,
             selector=_evaluation_selector(args),
-            gate=EvaluationQualityGate(
-                min_pass_rate=cast(float, args.min_pass_rate),
-                min_goal_completion_rate=cast(
-                    float | None,
-                    args.min_goal_completion_rate,
-                ),
-                min_task_success_rate=cast(float | None, args.min_task_success_rate),
-                min_action_success_rate=cast(float | None, args.min_action_success_rate),
-                max_tool_failure_rate=cast(float | None, args.max_tool_failure_rate),
-                max_policy_denial_rate=cast(float | None, args.max_policy_denial_rate),
-                max_average_recoveries_per_scenario=cast(
-                    float | None,
-                    args.max_average_recoveries,
-                ),
-                max_human_intervention_rate=cast(
-                    float | None,
-                    args.max_human_intervention_rate,
-                ),
-                max_average_actions_per_scenario=cast(float | None, args.max_average_actions),
-                max_average_active_resource_locks_per_scenario=cast(
-                    float | None,
-                    args.max_average_active_resource_locks,
-                ),
-                max_average_execution_duration_ms_per_scenario=cast(
-                    float | None,
-                    args.max_average_duration_ms,
-                ),
-                max_average_model_calls_per_scenario=cast(
-                    float | None,
-                    args.max_average_model_calls,
-                ),
-                max_average_model_tokens_per_scenario=cast(
-                    float | None,
-                    args.max_average_model_tokens,
-                ),
-                max_resource_conflict_rate=cast(float | None, args.max_resource_conflict_rate),
-                max_total_model_estimated_cost_micros=cast(
-                    int | None,
-                    args.max_total_model_cost_micros,
-                ),
-            ),
+            gate=_evaluation_quality_gate(args, suite_config.quality_gate),
         )
         if cast(str, args.format) == "junit":
             _write_text(out, encode_evaluation_junit_xml(result.recording))
@@ -651,10 +615,107 @@ async def _dispatch_eval_replay(
 
 
 def _evaluation_suite(args: argparse.Namespace) -> EvaluationSuite:
+    return _evaluation_suite_config(args).suite
+
+
+def _evaluation_suite_config(args: argparse.Namespace) -> EvaluationSuiteConfig:
     suite_file = cast(str | None, args.suite_file)
     if suite_file is not None:
-        return load_evaluation_suite(suite_file)
-    return _local_evaluation_suite(cast(str, args.suite))
+        return load_evaluation_suite_config(suite_file)
+    return EvaluationSuiteConfig(_local_evaluation_suite(cast(str, args.suite)))
+
+
+def _evaluation_quality_gate(
+    args: argparse.Namespace,
+    suite_gate: EvaluationQualityGate | None,
+) -> EvaluationQualityGate | None:
+    overrides = {
+        "min_pass_rate": cast(float | None, args.min_pass_rate),
+        "min_goal_completion_rate": cast(float | None, args.min_goal_completion_rate),
+        "min_task_success_rate": cast(float | None, args.min_task_success_rate),
+        "min_action_success_rate": cast(float | None, args.min_action_success_rate),
+        "max_tool_failure_rate": cast(float | None, args.max_tool_failure_rate),
+        "max_policy_denial_rate": cast(float | None, args.max_policy_denial_rate),
+        "max_average_recoveries_per_scenario": cast(
+            float | None,
+            args.max_average_recoveries,
+        ),
+        "max_human_intervention_rate": cast(float | None, args.max_human_intervention_rate),
+        "max_average_actions_per_scenario": cast(float | None, args.max_average_actions),
+        "max_average_active_resource_locks_per_scenario": cast(
+            float | None,
+            args.max_average_active_resource_locks,
+        ),
+        "max_average_execution_duration_ms_per_scenario": cast(
+            float | None,
+            args.max_average_duration_ms,
+        ),
+        "max_average_model_calls_per_scenario": cast(float | None, args.max_average_model_calls),
+        "max_average_model_tokens_per_scenario": cast(
+            float | None,
+            args.max_average_model_tokens,
+        ),
+        "max_resource_conflict_rate": cast(float | None, args.max_resource_conflict_rate),
+    }
+    cost_override = cast(int | None, args.max_total_model_cost_micros)
+    if (
+        suite_gate is None
+        and cost_override is None
+        and all(value is None for value in overrides.values())
+    ):
+        return None
+    base = EvaluationQualityGate() if suite_gate is None else suite_gate
+    return EvaluationQualityGate(
+        min_pass_rate=overrides["min_pass_rate"]
+        if overrides["min_pass_rate"] is not None
+        else base.min_pass_rate,
+        min_goal_completion_rate=overrides["min_goal_completion_rate"]
+        if overrides["min_goal_completion_rate"] is not None
+        else base.min_goal_completion_rate,
+        min_task_success_rate=overrides["min_task_success_rate"]
+        if overrides["min_task_success_rate"] is not None
+        else base.min_task_success_rate,
+        min_action_success_rate=overrides["min_action_success_rate"]
+        if overrides["min_action_success_rate"] is not None
+        else base.min_action_success_rate,
+        max_tool_failure_rate=overrides["max_tool_failure_rate"]
+        if overrides["max_tool_failure_rate"] is not None
+        else base.max_tool_failure_rate,
+        max_policy_denial_rate=overrides["max_policy_denial_rate"]
+        if overrides["max_policy_denial_rate"] is not None
+        else base.max_policy_denial_rate,
+        max_average_recoveries_per_scenario=overrides["max_average_recoveries_per_scenario"]
+        if overrides["max_average_recoveries_per_scenario"] is not None
+        else base.max_average_recoveries_per_scenario,
+        max_human_intervention_rate=overrides["max_human_intervention_rate"]
+        if overrides["max_human_intervention_rate"] is not None
+        else base.max_human_intervention_rate,
+        max_resource_conflict_rate=overrides["max_resource_conflict_rate"]
+        if overrides["max_resource_conflict_rate"] is not None
+        else base.max_resource_conflict_rate,
+        max_average_active_resource_locks_per_scenario=overrides[
+            "max_average_active_resource_locks_per_scenario"
+        ]
+        if overrides["max_average_active_resource_locks_per_scenario"] is not None
+        else base.max_average_active_resource_locks_per_scenario,
+        max_average_actions_per_scenario=overrides["max_average_actions_per_scenario"]
+        if overrides["max_average_actions_per_scenario"] is not None
+        else base.max_average_actions_per_scenario,
+        max_average_execution_duration_ms_per_scenario=overrides[
+            "max_average_execution_duration_ms_per_scenario"
+        ]
+        if overrides["max_average_execution_duration_ms_per_scenario"] is not None
+        else base.max_average_execution_duration_ms_per_scenario,
+        max_average_model_calls_per_scenario=overrides["max_average_model_calls_per_scenario"]
+        if overrides["max_average_model_calls_per_scenario"] is not None
+        else base.max_average_model_calls_per_scenario,
+        max_average_model_tokens_per_scenario=overrides["max_average_model_tokens_per_scenario"]
+        if overrides["max_average_model_tokens_per_scenario"] is not None
+        else base.max_average_model_tokens_per_scenario,
+        max_total_model_estimated_cost_micros=cost_override
+        if cost_override is not None
+        else base.max_total_model_estimated_cost_micros,
+    )
 
 
 def _local_evaluation_suite(name: str) -> EvaluationSuite:

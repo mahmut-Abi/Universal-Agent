@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 from universal_agent.core import (
@@ -14,6 +15,7 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.evaluation.harness import (
+    EvaluationQualityGate,
     EvaluationScenario,
     EvaluationScenarioKind,
     EvaluationSuite,
@@ -21,11 +23,31 @@ from universal_agent.evaluation.harness import (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class EvaluationSuiteConfig:
+    suite: EvaluationSuite
+    quality_gate: EvaluationQualityGate | None = None
+
+
 def load_evaluation_suite(path: str | Path) -> EvaluationSuite:
+    return load_evaluation_suite_config(path).suite
+
+
+def load_evaluation_suite_config(path: str | Path) -> EvaluationSuiteConfig:
     with Path(path).open("r", encoding="utf-8") as handle:
         loaded: object = json.load(handle)
-    return evaluation_suite_from_mapping(
+    return evaluation_suite_config_from_mapping(
         _object(_json_value(loaded, "evaluation suite file"), "evaluation suite file")
+    )
+
+
+def evaluation_suite_config_from_mapping(values: Mapping[str, JsonValue]) -> EvaluationSuiteConfig:
+    quality_gate = values.get("quality_gate")
+    return EvaluationSuiteConfig(
+        evaluation_suite_from_mapping(values),
+        None
+        if quality_gate is None
+        else _quality_gate_from_mapping(_object(quality_gate, "quality_gate")),
     )
 
 
@@ -142,6 +164,69 @@ def _expectations_from_mapping(values: Mapping[str, JsonValue]) -> ScenarioExpec
     )
 
 
+def _quality_gate_from_mapping(values: Mapping[str, JsonValue]) -> EvaluationQualityGate:
+    min_pass_rate = _optional_float(values.get("min_pass_rate"), "quality_gate.min_pass_rate")
+    return EvaluationQualityGate(
+        min_pass_rate=1.0 if min_pass_rate is None else min_pass_rate,
+        min_goal_completion_rate=_optional_float(
+            values.get("min_goal_completion_rate"),
+            "quality_gate.min_goal_completion_rate",
+        ),
+        min_task_success_rate=_optional_float(
+            values.get("min_task_success_rate"),
+            "quality_gate.min_task_success_rate",
+        ),
+        min_action_success_rate=_optional_float(
+            values.get("min_action_success_rate"),
+            "quality_gate.min_action_success_rate",
+        ),
+        max_tool_failure_rate=_optional_float(
+            values.get("max_tool_failure_rate"),
+            "quality_gate.max_tool_failure_rate",
+        ),
+        max_policy_denial_rate=_optional_float(
+            values.get("max_policy_denial_rate"),
+            "quality_gate.max_policy_denial_rate",
+        ),
+        max_average_recoveries_per_scenario=_optional_float(
+            values.get("max_average_recoveries_per_scenario"),
+            "quality_gate.max_average_recoveries_per_scenario",
+        ),
+        max_human_intervention_rate=_optional_float(
+            values.get("max_human_intervention_rate"),
+            "quality_gate.max_human_intervention_rate",
+        ),
+        max_resource_conflict_rate=_optional_float(
+            values.get("max_resource_conflict_rate"),
+            "quality_gate.max_resource_conflict_rate",
+        ),
+        max_average_active_resource_locks_per_scenario=_optional_float(
+            values.get("max_average_active_resource_locks_per_scenario"),
+            "quality_gate.max_average_active_resource_locks_per_scenario",
+        ),
+        max_average_actions_per_scenario=_optional_float(
+            values.get("max_average_actions_per_scenario"),
+            "quality_gate.max_average_actions_per_scenario",
+        ),
+        max_average_execution_duration_ms_per_scenario=_optional_float(
+            values.get("max_average_execution_duration_ms_per_scenario"),
+            "quality_gate.max_average_execution_duration_ms_per_scenario",
+        ),
+        max_average_model_calls_per_scenario=_optional_float(
+            values.get("max_average_model_calls_per_scenario"),
+            "quality_gate.max_average_model_calls_per_scenario",
+        ),
+        max_average_model_tokens_per_scenario=_optional_float(
+            values.get("max_average_model_tokens_per_scenario"),
+            "quality_gate.max_average_model_tokens_per_scenario",
+        ),
+        max_total_model_estimated_cost_micros=_optional_int(
+            values.get("max_total_model_estimated_cost_micros"),
+            "quality_gate.max_total_model_estimated_cost_micros",
+        ),
+    )
+
+
 def _success_criteria(value: JsonValue) -> tuple[SuccessCriterion, ...]:
     if isinstance(value, dict):
         return tuple(
@@ -170,6 +255,12 @@ def _optional_int(value: JsonValue, field: str) -> int | None:
     if value is None:
         return None
     return _int(value, field)
+
+
+def _optional_float(value: JsonValue, field: str) -> float | None:
+    if value is None:
+        return None
+    return _float(value, field)
 
 
 def _optional_string_tuple(value: JsonValue, field: str) -> tuple[str, ...] | None:
@@ -212,6 +303,12 @@ def _int(value: JsonValue, field: str) -> int:
     raise ValueError(f"{field} must be an integer")
 
 
+def _float(value: JsonValue, field: str) -> float:
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return float(value)
+    raise ValueError(f"{field} must be a number")
+
+
 def _json_value(value: object, field: str) -> JsonValue:
     if value is None or isinstance(value, bool | int | float | str):
         return value
@@ -222,4 +319,10 @@ def _json_value(value: object, field: str) -> JsonValue:
     raise ValueError(f"{field} must be JSON-compatible")
 
 
-__all__ = ["evaluation_suite_from_mapping", "load_evaluation_suite"]
+__all__ = [
+    "EvaluationSuiteConfig",
+    "evaluation_suite_config_from_mapping",
+    "evaluation_suite_from_mapping",
+    "load_evaluation_suite",
+    "load_evaluation_suite_config",
+]
