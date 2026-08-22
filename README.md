@@ -138,10 +138,13 @@ completion rates, intervention rates, action efficiency and model budget thresho
 `DeterministicReplayHarness` records a stable trace from those projections and replays later runs
 against it while ignoring dynamic IDs and timestamps.
 `FileReplayRecordingStore` persists those traces as JSON golden recordings for local regression tests.
+`DeterministicRuntimeMode` supplies mock clock and ID primitives for tests that need stable recorded
+events from the Runtime itself.
 The harnesses are intentionally outside the Kernel: Domain `Evaluator`s still decide task/goal
 semantics during execution, while the Harness decides whether a completed scenario satisfies
 regression, policy, recovery, token/cost budget and replay expectations. See
-`examples/p3_7_evaluation_harness.py` and `examples/p3_7_replay.py`.
+`examples/p3_7_evaluation_harness.py`, `examples/p3_7_replay.py` and
+`examples/p3_7_deterministic_mode.py`.
 
 `AgentProfile` is the first application-level Profile foundation. A Profile declares a selectable
 runtime identity — name, version, Domain identity and Runtime Configuration — for future CLI/agentd
@@ -193,6 +196,8 @@ not a database layer, event-sourcing model, or production migration system.
   pass/fail checks.
   Deterministic Replay can record stable behavior traces and detect later drift in event shape,
   actions, policy effects, audit entries and metrics without depending on runtime-generated IDs.
+  `DeterministicRuntimeMode` can also install stable runtime ID and clock primitives while building
+  golden fixtures.
   Replay recordings can be encoded as versioned JSON and saved through `FileReplayRecordingStore`
   for golden regression fixtures.
 
@@ -250,6 +255,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_6_traces.py
 .venv/bin/python examples/p3_7_evaluation_harness.py
 .venv/bin/python examples/p3_7_replay.py
+.venv/bin/python examples/p3_7_deterministic_mode.py
 .venv/bin/agent ready
 ```
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,7 @@ from universal_agent import (
 )
 from universal_agent.core import ExecutionStatus, JsonMapping
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.evaluation import DeterministicClock, DeterministicRuntimeMode
 from universal_agent.evaluation.harness import EvaluationScenario, ScenarioExpectations
 from universal_agent.evaluation.recording import FileReplayRecordingStore
 from universal_agent.evaluation.replay import DeterministicReplayHarness
@@ -98,6 +100,44 @@ def build_service(
     return RuntimeService(
         runtime_api=RuntimeAPI(runtime=runtime, session_store=store, event_reader=events),
         components=components,
+    )
+
+
+@pytest.mark.asyncio
+async def test_deterministic_runtime_mode_stabilizes_ids_and_event_clock() -> None:
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    step = timedelta(seconds=2)
+    with DeterministicRuntimeMode(
+        clock=DeterministicClock(
+            start=start,
+            step=step,
+        )
+    ):
+        goal = Goal("Verify workload health", (SuccessCriterion("healthy", True),))
+        task = Task("Inspect workload", ("healthy",))
+        service = build_service(ReplayBackend(), [inspect_workload(), finish()])
+
+        run = await service.run_goal(goal, task)
+        events = await service.list_events(run.result.session_id)
+
+    event_ids = [event.event_id for event in events]
+    action_ids = {
+        str(event.action_id) for event in events if event.action_id is not None
+    }
+    event_times = [event.occurred_at for event in events]
+    observation_event = next(event for event in events if event.type == "ObservationReceived")
+
+    assert str(goal.id) == "goal-0001"
+    assert str(task.id) == "task-0001"
+    assert str(run.result.session_id) == "session-0001"
+    assert event_ids == [f"event-{index:04d}" for index in range(1, len(events) + 1)]
+    assert action_ids == {"action-0001"}
+    assert observation_event.data["observation_id"] == "observation-0001"
+    assert event_times == sorted(event_times)
+    assert len(set(event_times)) == len(event_times)
+    assert all(
+        ((event_time - start).total_seconds() % step.total_seconds()) == 0
+        for event_time in event_times
     )
 
 

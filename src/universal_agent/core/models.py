@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -21,13 +23,45 @@ EventId = NewType("EventId", str)
 
 JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 JsonMapping = Mapping[str, JsonValue]
+RuntimeClock = Callable[[], datetime]
+RuntimeIdFactory = Callable[[str], str]
+
+_runtime_clock: ContextVar[RuntimeClock | None] = ContextVar(
+    "universal_agent_runtime_clock",
+    default=None,
+)
+_runtime_id_factory: ContextVar[RuntimeIdFactory | None] = ContextVar(
+    "universal_agent_runtime_id_factory",
+    default=None,
+)
+
+
+@contextmanager
+def runtime_primitives(
+    *,
+    clock: RuntimeClock | None = None,
+    id_factory: RuntimeIdFactory | None = None,
+) -> Iterator[None]:
+    clock_token = _runtime_clock.set(clock)
+    id_factory_token = _runtime_id_factory.set(id_factory)
+    try:
+        yield
+    finally:
+        _runtime_id_factory.reset(id_factory_token)
+        _runtime_clock.reset(clock_token)
 
 
 def utc_now() -> datetime:
+    clock = _runtime_clock.get()
+    if clock is not None:
+        return clock()
     return datetime.now(UTC)
 
 
 def _new_id(prefix: str) -> str:
+    id_factory = _runtime_id_factory.get()
+    if id_factory is not None:
+        return id_factory(prefix)
     return f"{prefix}-{uuid4()}"
 
 

@@ -45,6 +45,7 @@ from universal_agent.core.models import (
     new_action_id,
     new_observation_id,
     new_session_id,
+    runtime_primitives,
     utc_now,
 )
 
@@ -95,5 +96,6 @@ __all__ = [
     "new_action_id",
     "new_observation_id",
     "new_session_id",
+    "runtime_primitives",
     "utc_now",
 ]

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from universal_agent.context import BasicContextCompiler
@@ -14,6 +16,8 @@ from universal_agent.core import (
     Task,
     immutable_json,
     new_session_id,
+    runtime_primitives,
+    utc_now,
 )
 from universal_agent.memory import MemoryKind, MemoryRecord
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
@@ -34,6 +38,34 @@ def test_decision_contract_rejects_invalid_shapes() -> None:
         ).validate()
     with pytest.raises(ValueError, match="message"):
         Decision(type=DecisionType.ASK_USER, reason="need input").validate()
+
+
+def test_runtime_primitives_override_ids_and_clock_inside_context() -> None:
+    current = datetime(2026, 1, 1, tzinfo=UTC)
+    counters: dict[str, int] = {}
+
+    def clock() -> datetime:
+        nonlocal current
+        value = current
+        current = current + timedelta(seconds=5)
+        return value
+
+    def id_factory(prefix: str) -> str:
+        counters[prefix] = counters.get(prefix, 0) + 1
+        return f"{prefix}-fixed-{counters[prefix]}"
+
+    with runtime_primitives(clock=clock, id_factory=id_factory):
+        goal = Goal("Verify service", (SuccessCriterion("healthy", True),))
+        task = Task("Probe service", ("healthy",))
+
+        assert goal.id == "goal-fixed-1"
+        assert task.id == "task-fixed-1"
+        assert goal.created_at == datetime(2026, 1, 1, tzinfo=UTC)
+        assert task.created_at == datetime(2026, 1, 1, 0, 0, 5, tzinfo=UTC)
+        assert new_session_id() == "session-fixed-1"
+        assert utc_now() == datetime(2026, 1, 1, 0, 0, 10, tzinfo=UTC)
+
+    assert new_session_id() != "session-fixed-2"
 
 
 def test_basic_context_exposes_capabilities_not_tools() -> None:
