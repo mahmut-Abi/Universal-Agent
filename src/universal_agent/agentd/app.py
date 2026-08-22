@@ -269,6 +269,24 @@ class AgentdApp:
                 )
             except StateNotFoundError as exc:
                 return not_found(str(exc))
+        if session_id is not None and suffix == "evidence":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                return json_response(
+                    session_evidence_body(await self._service.session_explorer(session_id))
+                )
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
+        if session_id is not None and suffix == "world":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                return json_response(
+                    session_world_body(await self._service.session_explorer(session_id))
+                )
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
         if session_id is not None and suffix == "events":
             if method != "GET":
                 return method_not_allowed(("GET",))
@@ -883,6 +901,24 @@ def session_explorer_body(view: SessionExplorerView) -> JsonMapping:
         {
             "session": dict(session_body(view.session)),
             "evidence": [evidence_body(item) for item in view.evidence],
+            "world_facts": [world_fact_body(item) for item in view.world_facts],
+        }
+    )
+
+
+def session_evidence_body(view: SessionExplorerView) -> JsonMapping:
+    return immutable_json(
+        {
+            "session_id": str(view.session.session_id),
+            "evidence": [evidence_body(item) for item in view.evidence],
+        }
+    )
+
+
+def session_world_body(view: SessionExplorerView) -> JsonMapping:
+    return immutable_json(
+        {
+            "session_id": str(view.session.session_id),
             "world_facts": [world_fact_body(item) for item in view.world_facts],
         }
     )

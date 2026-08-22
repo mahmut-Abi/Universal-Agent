@@ -29,7 +29,9 @@ from universal_agent.agentd.app import (
     runtime_run_body,
     session_batch_body,
     session_body,
+    session_evidence_body,
     session_explorer_body,
+    session_world_body,
     sse_event_batch_text,
     tool_body,
     trace_spans_body,
@@ -379,6 +381,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     diagnostics = session_commands.add_parser("diagnostics")
     diagnostics.add_argument("session_id")
+
+    evidence = session_commands.add_parser("evidence")
+    evidence.add_argument("session_id")
+
+    world = session_commands.add_parser("world")
+    world.add_argument("session_id")
 
     events = session_commands.add_parser("events")
     events.add_argument("session_id")
@@ -962,6 +970,14 @@ async def _dispatch_session(
     if command == "diagnostics":
         session_id = SessionId(cast(str, args.session_id))
         _write_json(out, session_explorer_body(await service.session_explorer(session_id)))
+        return
+    if command == "evidence":
+        session_id = SessionId(cast(str, args.session_id))
+        _write_json(out, session_evidence_body(await service.session_explorer(session_id)))
+        return
+    if command == "world":
+        session_id = SessionId(cast(str, args.session_id))
+        _write_json(out, session_world_body(await service.session_explorer(session_id)))
         return
     if command == "events":
         session_id = SessionId(cast(str, args.session_id))

@@ -117,7 +117,8 @@ Policy/Evaluator/Memory catalog reads via `GET /v1/policies`, `GET /v1/evaluator
 `/v1/metrics/prometheus`, `/v1/cost`, `/v1/logs`, `/v1/traces`, `/v1/traces/otlp`,
 `/v1/doctor` and `/v1/audit`, per-session audit/cost/log/trace
 reads including `/v1/sessions/{id}/traces/otlp`, `GET /v1/sessions/{id}/diagnostics` for
-session/evidence/world fact inspection, and cursor session/event reads with `after` / `limit`
+session/evidence/world fact inspection, dedicated `GET /v1/sessions/{id}/evidence` and
+`GET /v1/sessions/{id}/world` explorer routes, and cursor session/event reads with `after` / `limit`
 query parameters. `GET /v1/sessions/{id}/events/stream`
 returns the same cursor batch as `text/event-stream` frames for SSE clients. `GET /console` returns a
 read-only HTML Web Console snapshot built from the same RuntimeService projections. `AgentdHttpServer`
@@ -125,8 +126,8 @@ is the standard-library HTTP bridge for this adapter: it owns socket/body/header
 does not touch Runtime internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
-Capability/Tool/Policy/Evaluator/Memory catalogs, `config show`, and session list/show/diagnostics/events/pause/resume/cancel
-commands through `RuntimeService`, with cursor flags and optional SSE text output for session event reads. It
+Capability/Tool/Policy/Evaluator/Memory catalogs, `config show`, and session
+list/show/diagnostics/evidence/world/events/pause/resume/cancel commands through `RuntimeService`, with cursor flags and optional SSE text output for session event reads. It
 can also load an
 `agent init` Profile JSON through `--profile-config` and assemble the service through
 `RuntimeHost`, so generated memory/file/SQLite store settings are used by subsequent CLI commands.
@@ -243,7 +244,8 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   reports and `render_evaluation_console` produces deterministic read-only HTML for CLI/CI review
   without coupling report visualization to Kernel or RuntimeService internals.
 - Session Explorer foundation: `RuntimeService.session_explorer` rebuilds read-only world facts from
-  persisted Evidence through Domain world updaters and exposes session diagnostics through agentd/CLI.
+  persisted Evidence through Domain world updaters and exposes combined diagnostics plus dedicated
+  Evidence and World Model Explorer routes through agentd/CLI.
 - TUI foundation: `build_tui_snapshot` consumes RuntimeService projections and `render_tui_snapshot`
   produces a deterministic text view for CLI/operator use, including Profile/Capability/Tool/Policy/Evaluator/Memory
   catalogs plus selected-session Evidence and World Facts without touching Kernel internals.

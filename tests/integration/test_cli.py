@@ -442,6 +442,8 @@ async def test_cli_session_diagnostics_renders_evidence_and_world_facts() -> Non
     service, backend = build_cli_service([inspect_workload(), finish()])
     run_output = StringIO()
     diagnostics_output = StringIO()
+    evidence_output = StringIO()
+    world_output = StringIO()
 
     run_status = await run_cli(
         ["run", "production-operator", "Verify workload health"],
@@ -457,13 +459,31 @@ async def test_cli_session_diagnostics_renders_evidence_and_world_facts() -> Non
         service=service,
         stdout=diagnostics_output,
     )
+    evidence_status = await run_cli(
+        ["session", "evidence", session_id],
+        service=service,
+        stdout=evidence_output,
+    )
+    world_status = await run_cli(
+        ["session", "world", session_id],
+        service=service,
+        stdout=world_output,
+    )
     diagnostics = read_json(diagnostics_output)
+    evidence = read_json(evidence_output)
+    world = read_json(world_output)
     evidence_claims = {item["claim"]: item for item in diagnostics["evidence"]}
     world_claims = {item["claim"]: item for item in diagnostics["world_facts"]}
 
     assert run_status == 0
     assert diagnostics_status == 0
+    assert evidence_status == 0
+    assert world_status == 0
     assert diagnostics["session"]["session_id"] == session_id
+    assert evidence["session_id"] == session_id
+    assert world["session_id"] == session_id
+    assert evidence["evidence"] == diagnostics["evidence"]
+    assert world["world_facts"] == diagnostics["world_facts"]
     assert evidence_claims["healthy"]["value"] is True
     assert world_claims["healthy"]["value"] is True
     assert backend.inspect_calls == 1
@@ -598,6 +618,8 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
     list_output = StringIO()
     pause_output = StringIO()
     events_output = StringIO()
+    evidence_output = StringIO()
+    world_output = StringIO()
     sse_events_output = StringIO()
     resume_output = StringIO()
 
@@ -616,6 +638,16 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
         service=service,
         stdout=events_output,
     )
+    evidence_status = await run_cli(
+        ["session", "evidence", session_id],
+        service=service,
+        stdout=evidence_output,
+    )
+    world_status = await run_cli(
+        ["session", "world", session_id],
+        service=service,
+        stdout=world_output,
+    )
     sse_events_status = await run_cli(
         ["session", "events", session_id, "--limit", "2", "--format", "sse"],
         service=service,
@@ -628,11 +660,15 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
     list_payload = read_json(list_output)
     pause_payload = read_json(pause_output)
     events_payload = read_json(events_output)
+    evidence_payload = read_json(evidence_output)
+    world_payload = read_json(world_output)
     sse_events = sse_events_output.getvalue()
     resume_payload = read_json(resume_output)
     assert list_status == 0
     assert pause_status == 0
     assert events_status == 0
+    assert evidence_status == 0
+    assert world_status == 0
     assert sse_events_status == 0
     assert resume_status == 0
     session_items = list_payload["sessions"]
@@ -646,6 +682,14 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
     assert pause_payload["result"]["status"] == "waiting"
     assert len(events_payload["events"]) == 2
     assert events_payload["next_cursor"] == events_payload["events"][-1]["event_id"]
+    assert evidence_payload["session_id"] == session_id
+    assert world_payload["session_id"] == session_id
+    evidence_items = evidence_payload["evidence"]
+    world_items = world_payload["world_facts"]
+    assert isinstance(evidence_items, list)
+    assert isinstance(world_items, list)
+    assert evidence_items == []
+    assert world_items == []
     assert "event: GoalCreated\n" in sse_events
     assert "data: " in sse_events
     assert ": next_cursor=" in sse_events

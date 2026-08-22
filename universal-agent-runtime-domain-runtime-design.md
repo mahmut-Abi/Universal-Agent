@@ -1782,6 +1782,9 @@ Core API:
 POST   /v1/sessions
 GET    /v1/sessions/{id}
 POST   /v1/sessions/{id}/goals
+GET    /v1/sessions/{id}/diagnostics
+GET    /v1/sessions/{id}/evidence
+GET    /v1/sessions/{id}/world
 GET    /v1/sessions/{id}/events
 POST   /v1/sessions/{id}/pause
 POST   /v1/sessions/{id}/resume
@@ -1823,6 +1826,9 @@ agent run <profile> "<goal>"
 
 agent session list
 agent session show <id>
+agent session diagnostics <id>
+agent session evidence <id>
+agent session world <id>
 agent session events <id>
 agent session pause <id>
 agent session resume <id>

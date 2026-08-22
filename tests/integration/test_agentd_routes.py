@@ -437,6 +437,8 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
     listed = await app.handle(HttpRequest("GET", "/v1/sessions"))
     events = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/events"))
     diagnostics = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/diagnostics"))
+    evidence = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/evidence"))
+    world = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/world"))
 
     assert fetched.status_code == 200
     assert fetched.body["session_id"] == session_id
@@ -454,6 +456,10 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
     assert listed_session["domain_name"] == "kubernetes"
     assert events.status_code == 200
     assert diagnostics.status_code == 200
+    assert evidence.status_code == 200
+    assert world.status_code == 200
+    assert evidence.body["session_id"] == session_id
+    assert world.body["session_id"] == session_id
     evidence_items = diagnostics.body["evidence"]
     world_items = diagnostics.body["world_facts"]
     assert isinstance(evidence_items, list)
@@ -462,6 +468,8 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
     world_claims = {item["claim"]: item for item in world_items if isinstance(item, dict)}
     assert evidence_claims["healthy"]["value"] is True
     assert world_claims["healthy"]["value"] is True
+    assert evidence.body["evidence"] == evidence_items
+    assert world.body["world_facts"] == world_items
     event_items = events.body["events"]
     assert isinstance(event_items, list)
     last_event = event_items[-1]
