@@ -146,10 +146,10 @@ async def run_cli(
     try:
         await _dispatch(args, runtime_service, out, server_runner=server_runner)
     except StateNotFoundError as exc:
-        err.write(f"{exc}\n")
+        _write_error(err, "not_found", str(exc))
         return 1
     except ValueError as exc:
-        err.write(f"{exc}\n")
+        _write_error(err, "bad_request", str(exc))
         return 2
     return 0
 
@@ -534,6 +534,10 @@ def _write_json(out: TextIO, payload: object) -> None:
 
 def _write_text(out: TextIO, payload: str) -> None:
     out.write(payload)
+
+
+def _write_error(out: TextIO, code: str, message: str) -> None:
+    _write_json(out, {"error": {"code": code, "message": message}})
 
 
 def _json_safe(value: object) -> object:
