@@ -7,11 +7,11 @@ The long-term architecture is defined in
 with fake-backed Kubernetes remediation, a P3 Multi-Domain composition foundation,
 and the first P3.5 productization foundation: a stable
 in-process Runtime API, immutable Session read models, cursor-readable Events, explicit
-pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter, a local CLI adapter,
-local file-backed session/event persistence, the first P3.6 operations surface with cost tracking
-and OpenTelemetry-shaped trace span projections, and a P3.7 Evaluation Harness / Replay foundation.
-The v3.0 design document also defines later productization layers such as real HTTP `agentd`,
-database persistence, SSE delivery, OpenTelemetry exporters,
+pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter, a standard-library
+HTTP bridge, a local CLI adapter, local file-backed session/event persistence, the first P3.6
+operations surface with cost tracking and OpenTelemetry-shaped trace span projections, and a P3.7
+Evaluation Harness / Replay foundation. The v3.0 design document also defines later productization
+layers such as database persistence, SSE delivery, OpenTelemetry exporters,
 optional Multi-Agent, UI, distributed runtime, and ecosystem packaging.
 
 ## Architectural boundaries
@@ -86,13 +86,14 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
 - `stream_events(session_id, after_event_id=..., limit=...)` returns a cursor batch for CLI/Web/SSE
   consumers.
 
-This is intentionally still in-process. Real HTTP `agentd`, database persistence and SSE delivery are
-later P3.5 work built on this interface, not replacements for it.
+This remains usable in-process, while the standard-library HTTP bridge now wraps the same
+`AgentdApp` route adapter for local `agentd` hosting. Database persistence and SSE delivery are later
+P3.5 work built on this interface, not replacements for it.
 
 `RuntimeService` is the first framework-free `agentd` foundation. It delegates execution, session and
 event reads to `RuntimeAPI`, and adds service-level health, readiness, Domain, Capability and Tool
-catalog views for future HTTP and CLI adapters. It does not start a daemon, open sockets, or access
-Kernel internals directly. `RuntimeHost` is the typed application assembly boundary for Runtime
+catalog views for HTTP and CLI adapters. It does not access Kernel internals directly. `RuntimeHost`
+is the typed application assembly boundary for Runtime
 Configuration: it validates the configured Domain identity, builds memory or file-backed stores,
 applies runtime limits/environment, optionally binds an application-level Agent Profile, and exposes
 both `RuntimeAPI` and `RuntimeService` without teaching applications Kernel internals. See
@@ -108,8 +109,8 @@ confirmation resume via
 `POST /v1/sessions/{id}/resume`, explicit pause via `POST /v1/sessions/{id}/pause`, cancellation via
 `POST /v1/sessions/{id}/cancel`, operations reads via `/v1/metrics`, `/v1/cost`, `/v1/logs`,
 `/v1/traces`, `/v1/doctor` and `/v1/audit`, per-session audit/cost/log/trace reads, and cursor event
-reads with `after` / `limit` query parameters. It still does not open sockets; a real HTTP server can wrap this adapter later without
-touching Runtime internals.
+reads with `after` / `limit` query parameters. `AgentdHttpServer` is the standard-library HTTP bridge
+for this adapter: it owns socket/body/header translation only and does not touch Runtime internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
 Capability/Tool catalogs, and session list/show/events/pause/resume/cancel commands through
@@ -161,8 +162,8 @@ not a database layer, event-sourcing model, or production migration system.
   `RuntimeService` now adds framework-free `agentd` foundation metadata: health, readiness, domains,
   capabilities, tools, delegated execution, runnable examples, an `AgentdApp` route adapter for
   HTTP-shaped goal submission, session listing, session/event reads, pause/resume/cancel routes,
-  Profile catalog reads, file-backed session/event stores for local recovery, a local CLI adapter,
-  and typed
+  Profile catalog reads, a standard-library `AgentdHttpServer` bridge, file-backed session/event
+  stores for local recovery, a local CLI adapter, and typed
   `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, store backend,
   Domain identity validation, and multi-Domain composition activation.
 - P3.6/P3.7 foundation: event-derived `metrics`, `cost`, `logs`, `traces`, `doctor` and `audit` projections exposed
