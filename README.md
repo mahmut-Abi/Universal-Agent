@@ -8,9 +8,9 @@ with fake-backed Kubernetes remediation plus the first P3.5 productization found
 in-process Runtime API, immutable Session read models, cursor-readable Events, explicit
 pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter, a local CLI adapter,
 local file-backed session/event persistence, the first P3.6 operations surface, and a P3.7
-Evaluation Harness foundation. The v3.0 design document also defines later productization layers such
-as real HTTP `agentd`, database persistence, SSE delivery, OpenTelemetry, cost tracking, optional
-Multi-Agent, UI, distributed runtime, and ecosystem packaging.
+Evaluation Harness / Replay foundation. The v3.0 design document also defines later productization
+layers such as real HTTP `agentd`, database persistence, SSE delivery, OpenTelemetry, cost tracking,
+optional Multi-Agent, UI, distributed runtime, and ecosystem packaging.
 
 ## Architectural boundaries
 
@@ -117,6 +117,8 @@ access Kernel internals directly and does not require a daemon process.
 `EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
 Session, Event, Metrics and Audit projections. `DeterministicReplayHarness` records a stable trace
 from those projections and replays later runs against it while ignoring dynamic IDs and timestamps.
+`FileReplayRecordingStore` persists those traces as JSON golden recordings for local regression
+tests.
 The harnesses are intentionally outside the Kernel: Domain `Evaluator`s still decide task/goal
 semantics during execution, while the Harness decides whether a completed scenario satisfies
 regression, policy, recovery and replay expectations. See `examples/p3_7_evaluation_harness.py` and
@@ -165,7 +167,8 @@ not a database layer, event-sourcing model, or production migration system.
   status, error codes, events, executed capabilities, audit coverage, policy denials, recovery plans,
   criteria, action counts and iteration budgets for behavior scenarios. Deterministic Replay can
   record stable behavior traces and detect later drift in event shape, actions, policy effects, audit
-  entries and metrics without depending on runtime-generated IDs.
+  entries and metrics without depending on runtime-generated IDs. Replay recordings can be encoded as
+  versioned JSON and saved through `FileReplayRecordingStore` for golden regression fixtures.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,

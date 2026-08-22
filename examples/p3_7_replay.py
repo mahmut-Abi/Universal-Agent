@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from tempfile import TemporaryDirectory
 
 from universal_agent import (
     AgentRuntime,
@@ -21,6 +22,7 @@ from universal_agent import (
 from universal_agent.core import ExecutionStatus, JsonMapping
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.harness import EvaluationScenario, ScenarioExpectations
+from universal_agent.evaluation.recording import FileReplayRecordingStore
 from universal_agent.evaluation.replay import DeterministicReplayHarness
 
 
@@ -93,10 +95,15 @@ def build_service(*, initial_timeout: bool = False) -> RuntimeService:
 
 async def main() -> None:
     recording = await DeterministicReplayHarness(build_service()).record(scenario())
-    matching = await DeterministicReplayHarness(build_service()).replay(scenario(), recording)
-    drifted = await DeterministicReplayHarness(
-        build_service(initial_timeout=True)
-    ).replay(scenario(), recording)
+    with TemporaryDirectory() as directory:
+        store = FileReplayRecordingStore(directory)
+        store.save(recording)
+        expected = store.load("healthy workload replay")
+
+        matching = await DeterministicReplayHarness(build_service()).replay(scenario(), expected)
+        drifted = await DeterministicReplayHarness(
+            build_service(initial_timeout=True)
+        ).replay(scenario(), expected)
 
     print(f"matching_replay={matching.passed}")
     print(

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from universal_agent import (
@@ -21,6 +23,7 @@ from universal_agent import (
 from universal_agent.core import ExecutionStatus, JsonMapping
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.harness import EvaluationScenario, ScenarioExpectations
+from universal_agent.evaluation.recording import FileReplayRecordingStore
 from universal_agent.evaluation.replay import DeterministicReplayHarness
 
 
@@ -128,3 +131,19 @@ async def test_deterministic_replay_detects_behavior_drift() -> None:
         "metrics",
     }
     assert replay.actual.metrics.recovery_planned_count == 1
+
+
+@pytest.mark.asyncio
+async def test_deterministic_replay_uses_persisted_golden_recording(tmp_path: Path) -> None:
+    store = FileReplayRecordingStore(tmp_path)
+    recording = await DeterministicReplayHarness(
+        build_service(ReplayBackend(), [inspect_workload(), finish()])
+    ).record(scenario())
+    store.save(recording)
+
+    replay = await DeterministicReplayHarness(
+        build_service(ReplayBackend(), [inspect_workload(), finish()])
+    ).replay(scenario(), store.load("healthy workload replay"))
+
+    assert replay.passed
+    assert store.list_recordings()[0].scenario_name == "healthy workload replay"
