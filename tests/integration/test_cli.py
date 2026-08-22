@@ -895,6 +895,68 @@ async def test_cli_eval_run_can_fail_process_on_gate_failure() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_eval_run_exposes_quality_gate_thresholds() -> None:
+    service, _ = build_cli_service(
+        [inspect_workload(), finish(), invalid_scale_workload()],
+        usage=[
+            ModelUsage(
+                "scripted",
+                "cli-gate-test",
+                input_tokens=80,
+                output_tokens=20,
+                estimated_cost_micros=18,
+            ),
+            ModelUsage(
+                "scripted",
+                "cli-gate-test",
+                input_tokens=40,
+                output_tokens=10,
+                estimated_cost_micros=9,
+            ),
+            ModelUsage("scripted", "cli-gate-test", input_tokens=10, output_tokens=5),
+        ],
+    )
+    output = StringIO()
+    error = StringIO()
+
+    status = await run_cli(
+        [
+            "eval",
+            "run",
+            "production-operator",
+            "--min-goal-completion-rate",
+            "1.0",
+            "--max-policy-denial-rate",
+            "0.0",
+            "--max-average-model-tokens",
+            "1.0",
+            "--max-total-model-cost-micros",
+            "1",
+            "--fail-on-fail",
+        ],
+        service=service,
+        stdout=output,
+        stderr=error,
+    )
+    payload = read_json(output)
+    failed_checks = {
+        item["name"]
+        for item in payload["gate"]["checks"]
+        if isinstance(item, dict) and not item["passed"]
+    }
+
+    assert status == 1
+    assert error.getvalue() == ""
+    assert payload["passed"] is False
+    assert failed_checks >= {
+        "goal_completion_rate",
+        "policy_denial_rate",
+        "average_model_tokens_per_scenario",
+        "total_model_estimated_cost_micros",
+    }
+
+
+@pytest.mark.asyncio
 async def test_cli_eval_compare_detects_report_drift(tmp_path: Path) -> None:
     service, _ = build_cli_service([inspect_workload(), finish(), invalid_scale_workload()])
     report_output = StringIO()

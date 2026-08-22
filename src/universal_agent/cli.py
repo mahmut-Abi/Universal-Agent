@@ -267,8 +267,15 @@ def build_parser() -> argparse.ArgumentParser:
     eval_run.add_argument("--suite", default="local evaluation suite")
     eval_run.add_argument("--report-dir")
     eval_run.add_argument("--min-pass-rate", type=float, default=1.0)
+    eval_run.add_argument("--min-goal-completion-rate", type=float)
+    eval_run.add_argument("--min-task-success-rate", type=float)
+    eval_run.add_argument("--max-policy-denial-rate", type=float)
+    eval_run.add_argument("--max-human-intervention-rate", type=float)
     eval_run.add_argument("--max-average-actions", type=float)
+    eval_run.add_argument("--max-average-active-resource-locks", type=float)
+    eval_run.add_argument("--max-average-model-tokens", type=float)
     eval_run.add_argument("--max-resource-conflict-rate", type=float)
+    eval_run.add_argument("--max-total-model-cost-micros", type=int)
     eval_run.add_argument("--fail-on-fail", action="store_true")
     _add_evaluation_selector_arguments(eval_run)
 
@@ -485,8 +492,30 @@ async def _dispatch_eval(
             selector=_evaluation_selector(args),
             gate=EvaluationQualityGate(
                 min_pass_rate=cast(float, args.min_pass_rate),
+                min_goal_completion_rate=cast(
+                    float | None,
+                    args.min_goal_completion_rate,
+                ),
+                min_task_success_rate=cast(float | None, args.min_task_success_rate),
+                max_policy_denial_rate=cast(float | None, args.max_policy_denial_rate),
+                max_human_intervention_rate=cast(
+                    float | None,
+                    args.max_human_intervention_rate,
+                ),
                 max_average_actions_per_scenario=cast(float | None, args.max_average_actions),
+                max_average_active_resource_locks_per_scenario=cast(
+                    float | None,
+                    args.max_average_active_resource_locks,
+                ),
+                max_average_model_tokens_per_scenario=cast(
+                    float | None,
+                    args.max_average_model_tokens,
+                ),
                 max_resource_conflict_rate=cast(float | None, args.max_resource_conflict_rate),
+                max_total_model_estimated_cost_micros=cast(
+                    int | None,
+                    args.max_total_model_cost_micros,
+                ),
             ),
         )
         _write_json(out, _evaluation_run_body(result, report_dir))
