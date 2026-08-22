@@ -303,6 +303,9 @@ def build_parser() -> argparse.ArgumentParser:
     eval_compare.add_argument("actual")
     eval_compare.add_argument("--fail-on-fail", action="store_true")
 
+    eval_reports = eval_commands.add_parser("reports")
+    eval_reports.add_argument("--report-dir", required=True)
+
     domain = commands.add_parser("domain")
     domain_commands = domain.add_subparsers(dest="domain_command", required=True)
     domain_commands.add_parser("list")
@@ -565,6 +568,11 @@ async def _dispatch_eval(
         _write_json(out, _evaluation_comparison_body(comparison))
         if cast(bool, args.fail_on_fail) and not comparison.passed:
             raise CliExit(1)
+        return
+    if command == "reports":
+        report_dir = cast(str, args.report_dir)
+        reports = FileEvaluationReportStore(report_dir).list_reports()
+        _write_json(out, _evaluation_reports_body(report_dir, reports))
         return
     raise ValueError(f"unknown eval command: {command}")
 
@@ -878,6 +886,34 @@ def _evaluation_run_body(
             None if result.recording.gate is None else _evaluation_gate_body(result.recording.gate)
         ),
         "report_dir": report_dir,
+    }
+
+
+def _evaluation_reports_body(
+    report_dir: str,
+    reports: tuple[EvaluationReportRecording, ...],
+) -> dict[str, object]:
+    return {
+        "report_dir": report_dir,
+        "report_count": len(reports),
+        "reports": [_evaluation_report_summary_body(item) for item in reports],
+    }
+
+
+def _evaluation_report_summary_body(recording: EvaluationReportRecording) -> dict[str, object]:
+    return {
+        "suite_name": recording.suite_name,
+        "passed": recording.passed,
+        "scenario_count": recording.summary.scenario_count,
+        "passed_count": recording.summary.passed_count,
+        "failed_count": recording.summary.failed_count,
+        "gate_passed": None if recording.gate is None else recording.gate.passed,
+        "failed_scenarios": [
+            scenario.scenario_name for scenario in recording.scenarios if not scenario.passed
+        ],
+        "execution_duration_ms": recording.summary.execution_duration_ms,
+        "model_total_token_count": recording.summary.model_total_token_count,
+        "model_estimated_cost_micros": recording.summary.model_estimated_cost_micros,
     }
 
 

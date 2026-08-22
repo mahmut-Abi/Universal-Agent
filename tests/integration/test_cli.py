@@ -971,6 +971,54 @@ async def test_cli_eval_run_can_emit_junit_xml() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_eval_reports_lists_persisted_reports(tmp_path: Path) -> None:
+    service, backend = build_cli_service([inspect_workload(), finish()])
+    report_dir = tmp_path / "reports"
+    run_output = StringIO()
+    reports_output = StringIO()
+
+    run_status = await run_cli(
+        [
+            "eval",
+            "run",
+            "production-operator",
+            "--suite",
+            "daily regression suite",
+            "--report-dir",
+            str(report_dir),
+            "--kind",
+            "regression",
+        ],
+        service=service,
+        stdout=run_output,
+    )
+    reports_status = await run_cli(
+        ["eval", "reports", "--report-dir", str(report_dir)],
+        service=service,
+        stdout=reports_output,
+    )
+    payload = read_json(reports_output)
+    reports = payload["reports"]
+    assert isinstance(reports, list)
+    report = reports[0]
+    assert isinstance(report, dict)
+
+    assert run_status == 0
+    assert reports_status == 0
+    assert payload["report_dir"] == str(report_dir)
+    assert payload["report_count"] == 1
+    assert report["suite_name"] == "daily regression suite"
+    assert report["passed"] is True
+    assert report["scenario_count"] == 1
+    assert report["passed_count"] == 1
+    assert report["failed_count"] == 0
+    assert report["gate_passed"] is True
+    assert report["failed_scenarios"] == []
+    assert report["model_total_token_count"] == 0
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_cli_eval_run_executes_suite_file_and_persists_report(tmp_path: Path) -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     suite_path = tmp_path / "suite.json"
