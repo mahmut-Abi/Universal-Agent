@@ -21,6 +21,7 @@ from universal_agent.agentd.app import (
     event_batch_body,
     health_body,
     log_records_body,
+    memory_body,
     metrics_body,
     policy_body,
     profile_body,
@@ -362,6 +363,10 @@ def build_parser() -> argparse.ArgumentParser:
     evaluators_commands = evaluators.add_subparsers(dest="evaluators_command", required=True)
     evaluators_commands.add_parser("list")
 
+    memory = commands.add_parser("memory")
+    memory_commands = memory.add_subparsers(dest="memory_command", required=True)
+    memory_commands.add_parser("list")
+
     session = commands.add_parser("session")
     session_commands = session.add_subparsers(dest="session_command", required=True)
 
@@ -508,6 +513,9 @@ async def _dispatch(
             out,
             {"evaluators": [evaluator_body(item) for item in service.evaluators()]},
         )
+        return
+    if command == "memory":
+        _write_json(out, {"memories": [memory_body(item) for item in service.memories()]})
         return
     if command == "session":
         await _dispatch_session(args, service, out)

@@ -10,6 +10,7 @@ from universal_agent.service import (
     DomainView,
     EvaluatorView,
     HealthView,
+    MemoryView,
     PolicyView,
     ProfileView,
     ReadyView,
@@ -31,6 +32,7 @@ class RuntimeConsoleSnapshot:
     tools: tuple[ToolView, ...]
     policies: tuple[PolicyView, ...]
     evaluators: tuple[EvaluatorView, ...]
+    memories: tuple[MemoryView, ...]
     metrics: RuntimeMetricsView
     cost: RuntimeCostView
     sessions: tuple[SessionSummaryView, ...]
@@ -79,6 +81,7 @@ async def build_runtime_console_snapshot(
         tools=service.tools(),
         policies=service.policies(),
         evaluators=service.evaluators(),
+        memories=service.memories(),
         metrics=await service.metrics(),
         cost=await service.cost(),
         sessions=session_batch.sessions,

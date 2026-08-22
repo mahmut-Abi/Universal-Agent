@@ -118,6 +118,7 @@ def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     tools = service.tools()
     policies = service.policies()
     evaluators = service.evaluators()
+    memories = service.memories()
 
     assert health.status == "ok"
     assert health.service == "universal-agent-runtime"
@@ -151,6 +152,10 @@ def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     evaluator = next(item for item in evaluators if item.name == "workload-health")
     assert evaluator.evaluator_type == "WorkloadHealthEvaluator"
     assert evaluator.domain_version == "0.2.0"
+
+    memory_subjects = {item.subject for item in memories}
+    assert "kubernetes readiness" in memory_subjects
+    assert "unhealthy workload triage" in memory_subjects
 
 
 @pytest.mark.asyncio

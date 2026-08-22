@@ -12,6 +12,7 @@ from universal_agent.runtime import RuntimeEventView, SessionSummaryView, Sessio
 from universal_agent.service import (
     CapabilityView,
     EvaluatorView,
+    MemoryView,
     PolicyView,
     ProfileView,
     RuntimeService,
@@ -68,6 +69,7 @@ def render_web_console(snapshot: WebConsoleSnapshot) -> str:
             _tools(snapshot.tools),
             _policies(snapshot.policies),
             _evaluators(snapshot.evaluators),
+            _memory(snapshot.memories),
             _sessions(snapshot.sessions),
             _selected_session(snapshot.selected_session),
             _world_facts(snapshot.session_explorer),
@@ -256,6 +258,34 @@ def _evaluators(evaluators: tuple[EvaluatorView, ...]) -> str:
     return _section(
         "Evaluator Catalog",
         _table(("Evaluator", "Type", "Domain"), tuple(rows)),
+    )
+
+
+def _memory(memories: tuple[MemoryView, ...]) -> str:
+    rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(memory.memory_id)}</td>",
+                f"<td>{_html(memory.kind.value)}</td>",
+                f"<td>{_html(memory.subject)}</td>",
+                f"<td>{_html(memory.scope or 'global')}</td>",
+                f"<td>{memory.confidence:.2f}</td>",
+                f"<td>{_html(memory.source_session_id or 'none')}</td>",
+                f"<td>{_html(memory.content)}</td>",
+                "</tr>",
+            )
+        )
+        for memory in memories
+    ]
+    if not rows:
+        rows.append('<tr><td colspan="7">No memory</td></tr>')
+    return _section(
+        "Memory Catalog",
+        _table(
+            ("Memory", "Kind", "Subject", "Scope", "Confidence", "Source Session", "Content"),
+            tuple(rows),
+        ),
     )
 
 

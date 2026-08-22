@@ -18,6 +18,7 @@ from universal_agent.core import (
     TaskStatus,
 )
 from universal_agent.evidence import EvidenceId
+from universal_agent.memory import MemoryKind
 from universal_agent.operations import AuditRecordView, RuntimeCostView, RuntimeMetricsView
 from universal_agent.runtime import (
     EvidenceView,
@@ -31,6 +32,7 @@ from universal_agent.service import (
     DomainView,
     EvaluatorView,
     HealthView,
+    MemoryView,
     PolicyView,
     ProfileView,
     ReadyView,
@@ -139,6 +141,18 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
         ),
         evaluators=(
             EvaluatorView("workload-health", "WorkloadHealthEvaluator", "kubernetes", "0.2.0"),
+        ),
+        memories=(
+            MemoryView(
+                "memory-1",
+                MemoryKind.SEMANTIC,
+                "kubernetes readiness",
+                "Ready replicas should match desired replicas.",
+                "kubernetes",
+                0.95,
+                None,
+                timestamp,
+            ),
         ),
         metrics=RuntimeMetricsView(
             session_count=1,
@@ -260,6 +274,8 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "allow-read" in rendered
     assert "Evaluator Catalog" in rendered
     assert "workload-health" in rendered
+    assert "Memory Catalog" in rendered
+    assert "kubernetes readiness" in rendered
     assert "World Facts" in rendered
     assert "Session Evidence" in rendered
     assert "deployment/example" in rendered

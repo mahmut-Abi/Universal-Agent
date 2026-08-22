@@ -537,16 +537,20 @@ async def test_cli_exposes_service_catalog_commands() -> None:
     payload = read_json(output)
     policies_output = StringIO()
     evaluators_output = StringIO()
+    memory_output = StringIO()
     policies_status = await run_cli(["policies", "list"], service=service, stdout=policies_output)
     evaluators_status = await run_cli(
         ["evaluators", "list"], service=service, stdout=evaluators_output
     )
+    memory_status = await run_cli(["memory", "list"], service=service, stdout=memory_output)
     policies_payload = read_json(policies_output)
     evaluators_payload = read_json(evaluators_output)
+    memory_payload = read_json(memory_output)
 
     assert status == 0
     assert policies_status == 0
     assert evaluators_status == 0
+    assert memory_status == 0
     capabilities = payload["capabilities"]
     assert isinstance(capabilities, list)
     assert {item["name"] for item in capabilities if isinstance(item, dict)} >= {
@@ -561,6 +565,11 @@ async def test_cli_exposes_service_catalog_commands() -> None:
     }
     assert {item["name"] for item in evaluators if isinstance(item, dict)} == {
         "workload-health"
+    }
+    memories = memory_payload["memories"]
+    assert {item["subject"] for item in memories if isinstance(item, dict)} >= {
+        "kubernetes readiness",
+        "unhealthy workload triage",
     }
 
 

@@ -12,6 +12,7 @@ from universal_agent.service import (
     CapabilityView,
     DomainView,
     EvaluatorView,
+    MemoryView,
     PolicyView,
     ProfileView,
     ReadyView,
@@ -82,6 +83,8 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
     lines.extend(_policy_lines(snapshot.policies))
     lines.extend(("", "Evaluators", _rule()))
     lines.extend(_evaluator_lines(snapshot.evaluators))
+    lines.extend(("", "Memory", _rule()))
+    lines.extend(_memory_lines(snapshot.memories))
     lines.extend(("", "Sessions", _rule()))
     lines.extend(_session_lines(snapshot.sessions))
     lines.extend(("", "Selected Session", _rule()))
@@ -185,6 +188,23 @@ def _evaluator_lines(evaluators: tuple[EvaluatorView, ...]) -> list[str]:
             f" domain={evaluator.domain_name}@{evaluator.domain_version}"
         )
         for evaluator in evaluators
+    ]
+
+
+def _memory_lines(memories: tuple[MemoryView, ...]) -> list[str]:
+    if not memories:
+        return ["- none"]
+    return [
+        (
+            f"- {memory.memory_id}"
+            f" kind={memory.kind.value}"
+            f" subject={memory.subject}"
+            f" scope={memory.scope or 'global'}"
+            f" confidence={memory.confidence:.2f}"
+            f" source_session={memory.source_session_id or 'none'}"
+            f" :: {memory.content}"
+        )
+        for memory in memories
     ]
 
 

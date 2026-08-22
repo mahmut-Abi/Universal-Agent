@@ -111,7 +111,7 @@ application-facing usage.
 `HttpRequest` objects and returns JSON-safe `HttpResponse` objects for `GET /health`, `GET /ready`,
 catalog routes, cursor session listing via `GET /v1/sessions`, route-level goal submission via
 `POST /v1/sessions`, session/event reads, Profile catalog/detail reads via `GET /v1/profiles`,
-Policy/Evaluator catalog reads via `GET /v1/policies` and `GET /v1/evaluators`, configuration reads via `GET /v1/config`, confirmation resume via
+Policy/Evaluator/Memory catalog reads via `GET /v1/policies`, `GET /v1/evaluators` and `GET /v1/memory`, configuration reads via `GET /v1/config`, confirmation resume via
 `POST /v1/sessions/{id}/resume`, explicit pause via `POST /v1/sessions/{id}/pause`, cancellation via
 `POST /v1/sessions/{id}/cancel`, operations reads via `/v1/metrics`,
 `/v1/metrics/prometheus`, `/v1/cost`, `/v1/logs`, `/v1/traces`, `/v1/traces/otlp`,
@@ -125,7 +125,7 @@ is the standard-library HTTP bridge for this adapter: it owns socket/body/header
 does not touch Runtime internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
-Capability/Tool/Policy/Evaluator catalogs, `config show`, and session list/show/diagnostics/events/pause/resume/cancel
+Capability/Tool/Policy/Evaluator/Memory catalogs, `config show`, and session list/show/diagnostics/events/pause/resume/cancel
 commands through `RuntimeService`, with cursor flags and optional SSE text output for session event reads. It
 can also load an
 `agent init` Profile JSON through `--profile-config` and assemble the service through
@@ -245,12 +245,12 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
 - Session Explorer foundation: `RuntimeService.session_explorer` rebuilds read-only world facts from
   persisted Evidence through Domain world updaters and exposes session diagnostics through agentd/CLI.
 - TUI foundation: `build_tui_snapshot` consumes RuntimeService projections and `render_tui_snapshot`
-  produces a deterministic text view for CLI/operator use, including Profile/Capability/Tool/Policy/Evaluator
+  produces a deterministic text view for CLI/operator use, including Profile/Capability/Tool/Policy/Evaluator/Memory
   catalogs plus selected-session Evidence and World Facts without touching Kernel internals.
 - Web Console foundation: `build_web_console_snapshot` consumes the shared console snapshot builder
   and `render_web_console` produces deterministic read-only HTML for `AgentdApp`, including
-  Profile/Domain/Capability/Tool/Policy/Evaluator catalogs plus session Evidence and World Facts
-  without a web framework dependency or Kernel access.
+  Profile/Domain/Capability/Tool/Policy/Evaluator/Memory catalogs plus session Evidence and
+  World Facts without a web framework dependency or Kernel access.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,

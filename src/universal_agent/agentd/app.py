@@ -39,6 +39,7 @@ from universal_agent.service import (
     DomainView,
     EvaluatorView,
     HealthView,
+    MemoryView,
     PolicyView,
     ProfileView,
     ReadyView,
@@ -164,6 +165,13 @@ class AgentdApp:
                             evaluator_body(item) for item in self._service.evaluators()
                         ]
                     }
+                ),
+            )
+        if path == "/v1/memory":
+            return self._get(
+                method,
+                immutable_json(
+                    {"memories": [memory_body(item) for item in self._service.memories()]}
                 ),
             )
         if path == "/v1/profiles":
@@ -816,6 +824,21 @@ def evaluator_body(view: EvaluatorView) -> dict[str, JsonValue]:
         "evaluator_type": view.evaluator_type,
         "domain_name": view.domain_name,
         "domain_version": view.domain_version,
+    }
+
+
+def memory_body(view: MemoryView) -> dict[str, JsonValue]:
+    return {
+        "memory_id": view.memory_id,
+        "kind": view.kind.value,
+        "subject": view.subject,
+        "content": view.content,
+        "scope": view.scope,
+        "confidence": view.confidence,
+        "source_session_id": None
+        if view.source_session_id is None
+        else str(view.source_session_id),
+        "created_at": view.created_at.isoformat(),
     }
 
 

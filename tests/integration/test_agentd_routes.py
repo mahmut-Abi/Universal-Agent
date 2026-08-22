@@ -267,6 +267,7 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     tools = await app.handle(HttpRequest("GET", "/v1/tools"))
     policies = await app.handle(HttpRequest("GET", "/v1/policies"))
     evaluators = await app.handle(HttpRequest("GET", "/v1/evaluators"))
+    memory = await app.handle(HttpRequest("GET", "/v1/memory"))
     config = await app.handle(HttpRequest("GET", "/v1/config"))
 
     assert health.status_code == 200
@@ -307,6 +308,13 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
 
     evaluator = find_named(evaluators.body["evaluators"], "workload-health")
     assert evaluator["evaluator_type"] == "WorkloadHealthEvaluator"
+
+    memories = memory.body["memories"]
+    assert isinstance(memories, list)
+    assert {item["subject"] for item in memories if isinstance(item, dict)} >= {
+        "kubernetes readiness",
+        "unhealthy workload triage",
+    }
     assert config.status_code == 200
     assert config.body == {
         "environment": {"environment": "staging"},

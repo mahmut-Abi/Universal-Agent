@@ -1793,6 +1793,7 @@ GET    /v1/capabilities
 GET    /v1/tools
 GET    /v1/policies
 GET    /v1/evaluators
+GET    /v1/memory
 ```
 
 Streaming:
@@ -1837,6 +1838,7 @@ agent capabilities list
 agent tools list
 agent policies list
 agent evaluators list
+agent memory list
 
 agent config show
 agent doctor

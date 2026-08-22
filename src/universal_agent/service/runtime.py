@@ -20,6 +20,7 @@ from universal_agent.core import (
 )
 from universal_agent.domain import ActiveDomain, RuntimeComponents
 from universal_agent.evidence import Evidence
+from universal_agent.memory import MemoryKind, MemoryRecord
 from universal_agent.operations import (
     AuditRecordView,
     DoctorReportView,
@@ -124,6 +125,18 @@ class EvaluatorView:
     evaluator_type: str
     domain_name: str
     domain_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryView:
+    memory_id: str
+    kind: MemoryKind
+    subject: str
+    content: str
+    scope: str
+    confidence: float
+    source_session_id: SessionId | None
+    created_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,6 +297,9 @@ class RuntimeService:
         for domain in self._components.domain_composition.domains:
             views.extend(evaluator_view(evaluator, domain) for evaluator in domain.evaluators)
         return tuple(sorted(views, key=lambda item: item.name))
+
+    def memories(self) -> tuple[MemoryView, ...]:
+        return tuple(memory_view(record) for record in self._components.memory_store.export())
 
     def profiles(self) -> tuple[ProfileView, ...]:
         return tuple(profile_view(profile) for profile in self._profiles.all())
@@ -555,6 +571,19 @@ def evaluator_view(evaluator: object, domain: ActiveDomain) -> EvaluatorView:
         evaluator_type=type(evaluator).__name__,
         domain_name=domain.identity.name,
         domain_version=domain.identity.version,
+    )
+
+
+def memory_view(record: MemoryRecord) -> MemoryView:
+    return MemoryView(
+        memory_id=str(record.id),
+        kind=record.kind,
+        subject=record.subject,
+        content=record.content,
+        scope=record.scope,
+        confidence=record.confidence,
+        source_session_id=record.source_session_id,
+        created_at=record.created_at,
     )
 
 
