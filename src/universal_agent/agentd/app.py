@@ -18,6 +18,7 @@ from universal_agent.core import (
     Task,
     immutable_json,
 )
+from universal_agent.profile import ProfileNotFoundError
 from universal_agent.runtime import (
     EvaluationView,
     PendingActionView,
@@ -124,6 +125,14 @@ class AgentdApp:
                     {"profiles": [profile_body(item) for item in self._service.profiles()]}
                 ),
             )
+        profile_name = _profile_route(path)
+        if profile_name is not None:
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                return json_response(profile_body(self._service.profile(profile_name)))
+            except ProfileNotFoundError as exc:
+                return not_found(str(exc))
         if path == "/v1/metrics":
             if method != "GET":
                 return method_not_allowed(("GET",))
@@ -750,3 +759,10 @@ def _session_route(path: str) -> tuple[SessionId | None, str]:
     if len(segments) == 4 and segments[:2] == ("v1", "sessions"):
         return SessionId(segments[2]), segments[3]
     return None, ""
+
+
+def _profile_route(path: str) -> str | None:
+    segments = tuple(segment for segment in path.split("/") if segment)
+    if len(segments) == 3 and segments[:2] == ("v1", "profiles") and segments[2].strip():
+        return segments[2]
+    return None

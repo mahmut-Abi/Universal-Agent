@@ -174,6 +174,8 @@ def build_parser() -> argparse.ArgumentParser:
     profile = commands.add_parser("profile")
     profile_commands = profile.add_subparsers(dest="profile_command", required=True)
     profile_commands.add_parser("list")
+    profile_show = profile_commands.add_parser("show")
+    profile_show.add_argument("profile")
 
     capabilities = commands.add_parser("capabilities")
     capabilities_commands = capabilities.add_subparsers(
@@ -260,7 +262,7 @@ async def _dispatch(
         _write_json(out, {"domains": [domain_body(item) for item in service.domains()]})
         return
     if command == "profile":
-        _write_json(out, {"profiles": [profile_body(item) for item in service.profiles()]})
+        _dispatch_profile(args, service, out)
         return
     if command == "capabilities":
         _write_json(
@@ -289,6 +291,24 @@ async def _dispatch_run(
     task = Task(cast(str, args.task), ("healthy",))
     run = await service.run_goal(goal, task)
     _write_json(out, runtime_run_body(run))
+
+
+def _dispatch_profile(
+    args: argparse.Namespace,
+    service: RuntimeService,
+    out: TextIO,
+) -> None:
+    command = cast(str, args.profile_command)
+    if command == "list":
+        _write_json(out, {"profiles": [profile_body(item) for item in service.profiles()]})
+        return
+    if command == "show":
+        profile = cast(str, args.profile)
+        if not service.accepts_profile(profile):
+            raise ValueError(f"unknown profile: {profile}")
+        _write_json(out, profile_body(service.profile(profile)))
+        return
+    raise ValueError(f"unknown profile command: {command}")
 
 
 async def _dispatch_session(

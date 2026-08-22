@@ -161,6 +161,47 @@ async def test_cli_run_rejects_unknown_profile() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_profile_show_exposes_one_profile() -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+
+    status = await run_cli(
+        ["profile", "show", "production-operator"],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload == {
+        "name": "production-operator",
+        "version": "1.0.0",
+        "description": "Production Kubernetes operator",
+        "domain_name": "kubernetes",
+        "domain_version": "0.2.0",
+        "domains": [{"name": "kubernetes", "version": "0.2.0"}],
+    }
+
+
+@pytest.mark.asyncio
+async def test_cli_profile_show_rejects_unknown_profile() -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+    error = StringIO()
+
+    status = await run_cli(
+        ["profile", "show", "missing-profile"],
+        service=service,
+        stdout=output,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert output.getvalue() == ""
+    assert "unknown profile: missing-profile" in error.getvalue()
+
+
+@pytest.mark.asyncio
 async def test_cli_exposes_service_catalog_commands() -> None:
     service, _ = build_cli_service([])
     output = StringIO()

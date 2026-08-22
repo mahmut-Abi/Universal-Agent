@@ -201,6 +201,9 @@ class RuntimeService:
     def profiles(self) -> tuple[ProfileView, ...]:
         return tuple(profile_view(profile) for profile in self._profiles.all())
 
+    def profile(self, name: str) -> ProfileView:
+        return profile_view(self._profiles.get(name))
+
     def accepts_profile(self, name: str) -> bool:
         return self._profiles.has(name)
 

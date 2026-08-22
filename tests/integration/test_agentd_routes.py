@@ -310,6 +310,38 @@ async def test_agentd_profile_route_exposes_profile_catalog() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agentd_profile_show_route_exposes_one_profile() -> None:
+    service, _ = build_profile_service([])
+    app = AgentdApp(service)
+
+    response = await app.handle(HttpRequest("GET", "/v1/profiles/production-operator"))
+
+    assert response.status_code == 200
+    assert response.body == {
+        "name": "production-operator",
+        "version": "1.0.0",
+        "description": "Production Kubernetes operator",
+        "domain_name": "kubernetes",
+        "domain_version": "0.2.0",
+        "domains": [{"name": "kubernetes", "version": "0.2.0"}],
+    }
+
+
+@pytest.mark.asyncio
+async def test_agentd_profile_show_route_returns_404_for_unknown_profile() -> None:
+    service, _ = build_profile_service([])
+    app = AgentdApp(service)
+
+    response = await app.handle(HttpRequest("GET", "/v1/profiles/missing-profile"))
+
+    assert response.status_code == 404
+    assert response.body["error"] == {
+        "code": "not_found",
+        "message": "profile not found: missing-profile",
+    }
+
+
+@pytest.mark.asyncio
 async def test_agentd_create_session_route_accepts_configured_profile() -> None:
     service, backend = build_profile_service([inspect_workload(), finish()])
     app = AgentdApp(service)
