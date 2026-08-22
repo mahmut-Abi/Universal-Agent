@@ -121,7 +121,8 @@ session/evidence/world fact inspection, dedicated `GET /v1/sessions/{id}/evidenc
 `GET /v1/sessions/{id}/world` explorer routes, and cursor session/event reads with `after` / `limit`
 query parameters. `GET /v1/sessions/{id}/events/stream`
 returns the same cursor batch as `text/event-stream` frames for SSE clients. `GET /console` returns a
-read-only HTML Web Console snapshot built from the same RuntimeService projections. `AgentdHttpServer`
+read-only HTML Web Console snapshot and `GET /console/sessions/{id}` returns a focused Session
+Detail page built from the same RuntimeService projections. `AgentdHttpServer`
 is the standard-library HTTP bridge for this adapter: it owns socket/body/header translation only and
 does not touch Runtime internals.
 
@@ -250,9 +251,10 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   produces a deterministic text view for CLI/operator use, including Profile/Capability/Tool/Policy/Evaluator/Memory
   catalogs plus selected-session Evidence and World Facts without touching Kernel internals.
 - Web Console foundation: `build_web_console_snapshot` consumes the shared console snapshot builder
-  and `render_web_console` produces deterministic read-only HTML for `AgentdApp`, including
-  Profile/Domain/Capability/Tool/Policy/Evaluator/Memory catalogs plus session Evidence and
-  World Facts without a web framework dependency or Kernel access.
+  and `render_web_console` / `render_web_session_detail` produce deterministic read-only HTML for
+  `AgentdApp`, including Profile/Domain/Capability/Tool/Policy/Evaluator/Memory catalogs plus a
+  focused Session Detail view over task timeline, Evidence, World Facts, Events and Audit without a
+  web framework dependency or Kernel access.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,

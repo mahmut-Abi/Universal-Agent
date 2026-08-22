@@ -54,7 +54,12 @@ from universal_agent.service import (
 from universal_agent.state import InMemoryStateStore, StateStore
 from universal_agent.tools import Tool
 from universal_agent.tui import TuiSnapshot, build_tui_snapshot, render_tui_snapshot
-from universal_agent.web import WebConsoleSnapshot, build_web_console_snapshot, render_web_console
+from universal_agent.web import (
+    WebConsoleSnapshot,
+    build_web_console_snapshot,
+    render_web_console,
+    render_web_session_detail,
+)
 
 __all__ = [
     "AgentProfile",
@@ -116,4 +121,5 @@ __all__ = [
     "immutable_json",
     "render_tui_snapshot",
     "render_web_console",
+    "render_web_session_detail",
 ]

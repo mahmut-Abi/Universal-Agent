@@ -121,11 +121,7 @@ def _reports(reports: tuple[EvaluationReportRecording, ...]) -> str:
 
 
 def _scenarios(reports: tuple[EvaluationReportRecording, ...]) -> str:
-    rows = [
-        _scenario_row(report, scenario)
-        for report in reports
-        for scenario in report.scenarios
-    ]
+    rows = [_scenario_row(report, scenario) for report in reports for scenario in report.scenarios]
     if not rows:
         rows.append('<tr><td colspan="9">No scenarios</td></tr>')
     return _section(

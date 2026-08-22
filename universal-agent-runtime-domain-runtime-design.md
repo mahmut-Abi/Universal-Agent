@@ -1927,6 +1927,15 @@ Settings
 
 The Session Detail view is the primary debugging/operations interface.
 
+Initial local `agentd` implementation may expose this as:
+
+```text
+GET /console
+GET /console/sessions/{id}
+```
+
+Both views should be read-only application adapters over Runtime API / RuntimeService projections.
+
 ---
 
 # 37. Framework API / SDK
@@ -3447,6 +3456,7 @@ Multi-Agent Evaluation
 ```text
 TUI
 Web Console
+Session Detail
 Session Explorer
 Domain Manager
 Evaluation Console

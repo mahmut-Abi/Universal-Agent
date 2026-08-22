@@ -493,8 +493,13 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     console = await app.handle(
         HttpRequest("GET", f"/console?session_id={session_id}&event_limit=20")
     )
+    detail = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}?event_limit=20"))
     missing = await app.handle(HttpRequest("GET", "/console?session_id=missing-session"))
+    missing_detail = await app.handle(HttpRequest("GET", "/console/sessions/missing-session"))
     invalid_limit = await app.handle(HttpRequest("GET", "/console?event_limit=0"))
+    invalid_detail_limit = await app.handle(
+        HttpRequest("GET", f"/console/sessions/{session_id}?event_limit=0")
+    )
 
     assert console.status_code == 200
     assert console.headers["content-type"] == "text/html; charset=utf-8"
@@ -509,8 +514,21 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert "kubernetes_inspect_workload" in console.text_body
     assert "ActionStarted" in console.text_body
     assert "capability=inspect_workload" in console.text_body
+    assert detail.status_code == 200
+    assert detail.headers["content-type"] == "text/html; charset=utf-8"
+    assert detail.text_body is not None
+    assert "Universal Agent Runtime Session Detail" in detail.text_body
+    assert "Session Detail" in detail.text_body
+    assert f"session={session_id}" in detail.text_body
+    assert "Task Timeline" in detail.text_body
+    assert "World Facts" in detail.text_body
+    assert "Session Evidence" in detail.text_body
+    assert "ActionStarted" in detail.text_body
+    assert "capability=inspect_workload" in detail.text_body
     assert missing.status_code == 404
+    assert missing_detail.status_code == 404
     assert invalid_limit.status_code == 400
+    assert invalid_detail_limit.status_code == 400
     assert backend.inspect_calls == 1
 
 

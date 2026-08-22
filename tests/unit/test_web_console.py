@@ -42,7 +42,7 @@ from universal_agent.service import (
     ToolView,
     WorldFactView,
 )
-from universal_agent.web import WebConsoleSnapshot, render_web_console
+from universal_agent.web import WebConsoleSnapshot, render_web_console, render_web_session_detail
 
 
 def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
@@ -276,6 +276,7 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "workload-health" in rendered
     assert "Memory Catalog" in rendered
     assert "kubernetes readiness" in rendered
+    assert 'href="/console/sessions/session-1"' in rendered
     assert "World Facts" in rendered
     assert "Session Evidence" in rendered
     assert "deployment/example" in rendered
@@ -283,3 +284,19 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "ActionStarted" in rendered
     assert "capability=inspect_workload" in rendered
     assert "allow:allow-read" in rendered
+
+    session_detail = render_web_session_detail(snapshot)
+
+    assert "Universal Agent Runtime Session Detail" in session_detail
+    assert "Session Detail" in session_detail
+    assert "session=session-1" in session_detail
+    assert "Verify &lt;script&gt;alert(1)&lt;/script&gt;" in session_detail
+    assert "<script>alert(1)</script>" not in session_detail
+    assert 'href="/console"' in session_detail
+    assert "Task Timeline" in session_detail
+    assert "task-1" in session_detail
+    assert "healthy" in session_detail
+    assert "World Facts" in session_detail
+    assert "Session Evidence" in session_detail
+    assert "ActionStarted" in session_detail
+    assert "allow:allow-read" in session_detail

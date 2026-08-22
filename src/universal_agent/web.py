@@ -83,6 +83,42 @@ def render_web_console(snapshot: WebConsoleSnapshot) -> str:
     )
 
 
+def render_web_session_detail(snapshot: WebConsoleSnapshot) -> str:
+    title = "Universal Agent Runtime Session Detail"
+    return "\n".join(
+        (
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f"<title>{_html(title)}</title>",
+            f"<style>{_stylesheet()}</style>",
+            "</head>",
+            "<body>",
+            '<main class="shell">',
+            _session_detail_hero(snapshot),
+            '<section class="grid cards" aria-label="Session summary">',
+            _metric_card("Iteration", _selected_iteration(snapshot.selected_session)),
+            _metric_card("Tasks", _selected_task_count(snapshot.selected_session)),
+            _metric_card("Events", len(snapshot.events)),
+            _metric_card("Evidence", _selected_evidence_count(snapshot.session_explorer)),
+            _metric_card("World Facts", _selected_world_fact_count(snapshot.session_explorer)),
+            _metric_card("Audit", len(snapshot.audit_records)),
+            "</section>",
+            _selected_session(snapshot.selected_session),
+            _task_timeline(snapshot.selected_session),
+            _world_facts(snapshot.session_explorer),
+            _evidence(snapshot.session_explorer),
+            _events(snapshot.events),
+            _audit(snapshot.audit_records),
+            "</main>",
+            "</body>",
+            "</html>",
+        )
+    )
+
+
 def _hero(snapshot: WebConsoleSnapshot) -> str:
     ready_class = "ok" if snapshot.ready.ready else "warn"
     return "\n".join(
@@ -100,6 +136,32 @@ def _hero(snapshot: WebConsoleSnapshot) -> str:
             ),
             "</div>",
             '<div class="status">',
+            f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
+            f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
+            "</div>",
+            "</section>",
+        )
+    )
+
+
+def _session_detail_hero(snapshot: WebConsoleSnapshot) -> str:
+    ready_class = "ok" if snapshot.ready.ready else "warn"
+    selected = snapshot.selected_session
+    session_text = "No selected session"
+    goal_text = "No selected goal"
+    if selected is not None:
+        session_text = str(selected.session_id)
+        goal_text = selected.goal_description
+    return "\n".join(
+        (
+            '<section class="hero">',
+            "<div>",
+            "<p>Universal Agent Runtime</p>",
+            "<h1>Session Detail</h1>",
+            (f"<span>session={_html(session_text)} goal={_html(goal_text)}</span>"),
+            "</div>",
+            '<div class="status">',
+            '<a class="pill link" href="/console">Console</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
             "</div>",
@@ -164,10 +226,7 @@ def _capabilities(capabilities: tuple[CapabilityView, ...]) -> str:
                 f"<td>{_html(capability.name)}</td>",
                 f"<td>{_html(capability.category.value)}</td>",
                 f"<td>{_html(capability.risk.value)}</td>",
-                (
-                    f"<td>{_html(capability.domain_name)}@"
-                    f"{_html(capability.domain_version)}</td>"
-                ),
+                (f"<td>{_html(capability.domain_name)}@{_html(capability.domain_version)}</td>"),
                 f"<td>{_html(', '.join(capability.tool_names))}</td>",
                 f"<td>{_html(capability.description)}</td>",
                 "</tr>",
@@ -295,7 +354,7 @@ def _sessions(sessions: tuple[SessionSummaryView, ...]) -> str:
             (
                 "<tr>",
                 (
-                    '<td><a href="/console?session_id='
+                    '<td><a href="/console/sessions/'
                     f'{_attr(session.session_id)}">{_html(session.session_id)}</a></td>'
                 ),
                 f"<td>{_html(session.goal_status.value)}</td>",
@@ -355,6 +414,31 @@ def _selected_session(session: SessionView | None) -> str:
         '<dl class="details">'
         + "".join(f"<dt>{_html(label)}</dt><dd>{_html(value)}</dd>" for label, value in items)
         + "</dl>",
+    )
+
+
+def _task_timeline(session: SessionView | None) -> str:
+    rows = []
+    if session is not None:
+        rows = [
+            "\n".join(
+                (
+                    "<tr>",
+                    f"<td>{_html(task.task_id)}</td>",
+                    f"<td>{_html(task.status.value)}</td>",
+                    f"<td>{_html(task.description)}</td>",
+                    f"<td>{_html(_string_tuple_text(task.required_criteria))}</td>",
+                    f"<td>{_html(_string_tuple_text(task.depends_on))}</td>",
+                    "</tr>",
+                )
+            )
+            for task in session.tasks
+        ]
+    if not rows:
+        rows.append('<tr><td colspan="5">No tasks</td></tr>')
+    return _section(
+        "Task Timeline",
+        _table(("Task", "Status", "Description", "Required Criteria", "Depends On"), tuple(rows)),
     )
 
 
@@ -521,6 +605,36 @@ def _mapping_text(values: Mapping[str, Any]) -> str:
     return ", ".join(f"{key}={values[key]}" for key in sorted(values))
 
 
+def _string_tuple_text(values: tuple[object, ...]) -> str:
+    if not values:
+        return "none"
+    return ", ".join(str(value) for value in values)
+
+
+def _selected_iteration(session: SessionView | None) -> str:
+    if session is None:
+        return "none"
+    return str(session.iteration)
+
+
+def _selected_task_count(session: SessionView | None) -> int:
+    if session is None:
+        return 0
+    return len(session.tasks)
+
+
+def _selected_evidence_count(explorer: SessionExplorerView | None) -> int:
+    if explorer is None:
+        return 0
+    return len(explorer.evidence)
+
+
+def _selected_world_fact_count(explorer: SessionExplorerView | None) -> int:
+    if explorer is None:
+        return 0
+    return len(explorer.world_facts)
+
+
 def _profile_domain_text(profile: ProfileView) -> str:
     if not profile.domains:
         return "none"
@@ -681,6 +795,10 @@ a {
   font-weight: 700;
   text-decoration: none;
 }
+.link {
+  background: #ecfeff;
+  color: #0f766e;
+}
 .details {
   display: grid;
   grid-template-columns: 170px minmax(0, 1fr);
@@ -720,4 +838,9 @@ a {
 """.strip()
 
 
-__all__ = ["WebConsoleSnapshot", "build_web_console_snapshot", "render_web_console"]
+__all__ = [
+    "WebConsoleSnapshot",
+    "build_web_console_snapshot",
+    "render_web_console",
+    "render_web_session_detail",
+]

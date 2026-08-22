@@ -583,9 +583,7 @@ async def test_cli_exposes_service_catalog_commands() -> None:
         "kubernetes-read-only",
         "kubernetes-scale-safety",
     }
-    assert {item["name"] for item in evaluators if isinstance(item, dict)} == {
-        "workload-health"
-    }
+    assert {item["name"] for item in evaluators if isinstance(item, dict)} == {"workload-health"}
     memories = memory_payload["memories"]
     assert {item["subject"] for item in memories if isinstance(item, dict)} >= {
         "kubernetes readiness",

@@ -54,7 +54,11 @@ from universal_agent.service import (
     WorldFactView,
 )
 from universal_agent.state import StateNotFoundError
-from universal_agent.web import build_web_console_snapshot, render_web_console
+from universal_agent.web import (
+    build_web_console_snapshot,
+    render_web_console,
+    render_web_session_detail,
+)
 
 
 def _empty_json() -> JsonMapping:
@@ -107,6 +111,25 @@ class AgentdApp:
             return self._get(method, health_body(self._service.health()))
         if path == "/ready":
             return self._get(method, ready_body(self._service.ready()))
+        console_session_id = _console_session_route(path)
+        if console_session_id is not None:
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                snapshot = await build_web_console_snapshot(
+                    self._service,
+                    session_id=console_session_id,
+                    session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
+                    event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
+                )
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
+            except ValueError as exc:
+                return bad_request(str(exc))
+            return text_response(
+                render_web_session_detail(snapshot),
+                content_type="text/html; charset=utf-8",
+            )
         if path in ("/", "/console"):
             if method != "GET":
                 return method_not_allowed(("GET",))
@@ -114,8 +137,7 @@ class AgentdApp:
                 snapshot = await build_web_console_snapshot(
                     self._service,
                     session_id=_optional_session_id_query(request.path),
-                    session_limit=_optional_positive_int_query(request.path, "session_limit")
-                    or 10,
+                    session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
                     event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
                 )
             except StateNotFoundError as exc:
@@ -160,11 +182,7 @@ class AgentdApp:
             return self._get(
                 method,
                 immutable_json(
-                    {
-                        "evaluators": [
-                            evaluator_body(item) for item in self._service.evaluators()
-                        ]
-                    }
+                    {"evaluators": [evaluator_body(item) for item in self._service.evaluators()]}
                 ),
             )
         if path == "/v1/memory":
@@ -1103,6 +1121,13 @@ def _session_route(path: str) -> tuple[SessionId | None, str]:
     if len(segments) == 5 and segments[:2] == ("v1", "sessions"):
         return SessionId(segments[2]), f"{segments[3]}/{segments[4]}"
     return None, ""
+
+
+def _console_session_route(path: str) -> SessionId | None:
+    segments = tuple(segment for segment in path.split("/") if segment)
+    if len(segments) == 3 and segments[:2] == ("console", "sessions") and segments[2].strip():
+        return SessionId(segments[2])
+    return None
 
 
 def _profile_route(path: str) -> str | None:
