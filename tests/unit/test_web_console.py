@@ -10,6 +10,7 @@ from universal_agent.core import (
     GoalId,
     GoalStatus,
     ObservationId,
+    PolicyEffect,
     RiskLevel,
     SessionId,
     SideEffect,
@@ -28,7 +29,9 @@ from universal_agent.runtime import (
 from universal_agent.service import (
     CapabilityView,
     DomainView,
+    EvaluatorView,
     HealthView,
+    PolicyView,
     ProfileView,
     ReadyView,
     RuntimeConfigDomainView,
@@ -120,6 +123,22 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
                 "kubernetes",
                 "0.2.0",
             ),
+        ),
+        policies=(
+            PolicyView(
+                "allow-read",
+                "read-only Kubernetes inspection allowed",
+                "PolicyRule",
+                PolicyEffect.ALLOW,
+                (),
+                (CapabilityCategory.OBSERVATION,),
+                (),
+                "kubernetes",
+                "0.2.0",
+            ),
+        ),
+        evaluators=(
+            EvaluatorView("workload-health", "WorkloadHealthEvaluator", "kubernetes", "0.2.0"),
         ),
         metrics=RuntimeMetricsView(
             session_count=1,
@@ -237,6 +256,10 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "inspect_workload" in rendered
     assert "Tool Catalog" in rendered
     assert "kubernetes_inspect_workload" in rendered
+    assert "Policy Catalog" in rendered
+    assert "allow-read" in rendered
+    assert "Evaluator Catalog" in rendered
+    assert "workload-health" in rendered
     assert "World Facts" in rendered
     assert "Session Evidence" in rendered
     assert "deployment/example" in rendered

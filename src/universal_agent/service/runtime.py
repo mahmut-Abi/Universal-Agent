@@ -11,6 +11,7 @@ from universal_agent.core import (
     Goal,
     JsonMapping,
     JsonValue,
+    PolicyEffect,
     RiskLevel,
     SessionId,
     SideEffect,
@@ -35,6 +36,7 @@ from universal_agent.operations import (
     build_runtime_metrics,
     build_runtime_trace_spans,
 )
+from universal_agent.policy import Policy, PolicyRule
 from universal_agent.profile import AgentProfile, ProfileRegistry
 from universal_agent.runtime import (
     EvidenceView,
@@ -99,6 +101,27 @@ class ToolView:
     risk: RiskLevel
     timeout_seconds: float
     priority: int
+    domain_name: str
+    domain_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyView:
+    name: str
+    description: str
+    policy_type: str
+    effect: PolicyEffect | None
+    capability_names: tuple[str, ...]
+    categories: tuple[CapabilityCategory, ...]
+    risks: tuple[RiskLevel, ...]
+    domain_name: str
+    domain_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluatorView:
+    name: str
+    evaluator_type: str
     domain_name: str
     domain_version: str
 
@@ -248,6 +271,18 @@ class RuntimeService:
                         domain_version=domain.identity.version,
                     )
                 )
+        return tuple(sorted(views, key=lambda item: item.name))
+
+    def policies(self) -> tuple[PolicyView, ...]:
+        views: list[PolicyView] = []
+        for domain in self._components.domain_composition.domains:
+            views.extend(policy_view(policy, domain) for policy in domain.policies)
+        return tuple(sorted(views, key=lambda item: item.name))
+
+    def evaluators(self) -> tuple[EvaluatorView, ...]:
+        views: list[EvaluatorView] = []
+        for domain in self._components.domain_composition.domains:
+            views.extend(evaluator_view(evaluator, domain) for evaluator in domain.evaluators)
         return tuple(sorted(views, key=lambda item: item.name))
 
     def profiles(self) -> tuple[ProfileView, ...]:
@@ -481,6 +516,45 @@ def profile_view(profile: AgentProfile) -> ProfileView:
         domain_name=profile.domain.name,
         domain_version=profile.domain.version,
         domains=tuple(domain.identity() for domain in profile.configured_domains()),
+    )
+
+
+def policy_view(policy: Policy, domain: ActiveDomain) -> PolicyView:
+    if isinstance(policy, PolicyRule):
+        return PolicyView(
+            name=policy.name,
+            description=policy.reason,
+            policy_type=type(policy).__name__,
+            effect=policy.effect,
+            capability_names=policy.capabilities,
+            categories=policy.categories,
+            risks=policy.risks,
+            domain_name=domain.identity.name,
+            domain_version=domain.identity.version,
+        )
+    description = getattr(policy, "description", "")
+    if not isinstance(description, str):
+        description = ""
+    return PolicyView(
+        name=policy.name,
+        description=description,
+        policy_type=type(policy).__name__,
+        effect=None,
+        capability_names=(),
+        categories=(),
+        risks=(),
+        domain_name=domain.identity.name,
+        domain_version=domain.identity.version,
+    )
+
+
+def evaluator_view(evaluator: object, domain: ActiveDomain) -> EvaluatorView:
+    name = getattr(evaluator, "name", "")
+    return EvaluatorView(
+        name=name if isinstance(name, str) else "",
+        evaluator_type=type(evaluator).__name__,
+        domain_name=domain.identity.name,
+        domain_version=domain.identity.version,
     )
 
 

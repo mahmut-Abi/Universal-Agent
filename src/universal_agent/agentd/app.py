@@ -37,7 +37,9 @@ from universal_agent.service import (
     CapabilityView,
     DoctorReportView,
     DomainView,
+    EvaluatorView,
     HealthView,
+    PolicyView,
     ProfileView,
     ReadyView,
     RuntimeConfigView,
@@ -145,6 +147,24 @@ class AgentdApp:
             return self._get(
                 method,
                 immutable_json({"tools": [tool_body(item) for item in self._service.tools()]}),
+            )
+        if path == "/v1/policies":
+            return self._get(
+                method,
+                immutable_json(
+                    {"policies": [policy_body(item) for item in self._service.policies()]}
+                ),
+            )
+        if path == "/v1/evaluators":
+            return self._get(
+                method,
+                immutable_json(
+                    {
+                        "evaluators": [
+                            evaluator_body(item) for item in self._service.evaluators()
+                        ]
+                    }
+                ),
             )
         if path == "/v1/profiles":
             return self._get(
@@ -771,6 +791,29 @@ def tool_body(view: ToolView) -> dict[str, JsonValue]:
         "risk": view.risk.value,
         "timeout_seconds": view.timeout_seconds,
         "priority": view.priority,
+        "domain_name": view.domain_name,
+        "domain_version": view.domain_version,
+    }
+
+
+def policy_body(view: PolicyView) -> dict[str, JsonValue]:
+    return {
+        "name": view.name,
+        "description": view.description,
+        "policy_type": view.policy_type,
+        "effect": None if view.effect is None else view.effect.value,
+        "capability_names": list(view.capability_names),
+        "categories": [item.value for item in view.categories],
+        "risks": [item.value for item in view.risks],
+        "domain_name": view.domain_name,
+        "domain_version": view.domain_version,
+    }
+
+
+def evaluator_body(view: EvaluatorView) -> dict[str, JsonValue]:
+    return {
+        "name": view.name,
+        "evaluator_type": view.evaluator_type,
         "domain_name": view.domain_name,
         "domain_version": view.domain_version,
     }

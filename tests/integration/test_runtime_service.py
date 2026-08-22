@@ -116,6 +116,8 @@ def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     domains = service.domains()
     capabilities = service.capabilities()
     tools = service.tools()
+    policies = service.policies()
+    evaluators = service.evaluators()
 
     assert health.status == "ok"
     assert health.service == "universal-agent-runtime"
@@ -140,6 +142,15 @@ def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     assert scale_tool.capabilities == ("scale_workload",)
     assert scale_tool.required_arguments == ("name", "namespace", "replicas")
     assert scale_tool.side_effect is SideEffect.REVERSIBLE
+
+    scale_policy = next(item for item in policies if item.name == "kubernetes-scale-safety")
+    assert scale_policy.domain_name == "kubernetes"
+    assert scale_policy.effect is None
+    assert scale_policy.policy_type == "KubernetesScalePolicy"
+
+    evaluator = next(item for item in evaluators if item.name == "workload-health")
+    assert evaluator.evaluator_type == "WorkloadHealthEvaluator"
+    assert evaluator.domain_version == "0.2.0"
 
 
 @pytest.mark.asyncio

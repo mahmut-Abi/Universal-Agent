@@ -10,6 +10,7 @@ from universal_agent.core import (
     GoalId,
     GoalStatus,
     ObservationId,
+    PolicyEffect,
     RiskLevel,
     SessionId,
     SideEffect,
@@ -28,7 +29,9 @@ from universal_agent.runtime import (
 from universal_agent.service import (
     CapabilityView,
     DomainView,
+    EvaluatorView,
     HealthView,
+    PolicyView,
     ProfileView,
     ReadyView,
     RuntimeConfigDomainView,
@@ -119,6 +122,22 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
                 "kubernetes",
                 "0.2.0",
             ),
+        ),
+        policies=(
+            PolicyView(
+                "allow-read",
+                "read-only Kubernetes inspection allowed",
+                "PolicyRule",
+                PolicyEffect.ALLOW,
+                (),
+                (CapabilityCategory.OBSERVATION,),
+                (),
+                "kubernetes",
+                "0.2.0",
+            ),
+        ),
+        evaluators=(
+            EvaluatorView("workload-health", "WorkloadHealthEvaluator", "kubernetes", "0.2.0"),
         ),
         metrics=RuntimeMetricsView(
             session_count=1,
@@ -232,6 +251,10 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
     assert "inspect_workload category=observation" in rendered
     assert "Tools" in rendered
     assert "kubernetes_inspect_workload side_effect=none" in rendered
+    assert "Policies" in rendered
+    assert "allow-read type=PolicyRule effect=allow" in rendered
+    assert "Evaluators" in rendered
+    assert "workload-health type=WorkloadHealthEvaluator" in rendered
     assert "Verify workload health" in rendered
     assert "Satisfied Criteria: healthy=True" in rendered
     assert "World Facts" in rendered

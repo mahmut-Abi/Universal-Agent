@@ -265,6 +265,8 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     domains = await app.handle(HttpRequest("GET", "/v1/domains"))
     capabilities = await app.handle(HttpRequest("GET", "/v1/capabilities"))
     tools = await app.handle(HttpRequest("GET", "/v1/tools"))
+    policies = await app.handle(HttpRequest("GET", "/v1/policies"))
+    evaluators = await app.handle(HttpRequest("GET", "/v1/evaluators"))
     config = await app.handle(HttpRequest("GET", "/v1/config"))
 
     assert health.status_code == 200
@@ -298,6 +300,13 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     scale_tool = find_named(tools.body["tools"], "kubernetes_scale_workload")
     assert scale_tool["side_effect"] == "reversible"
     assert scale_tool["required_arguments"] == ["name", "namespace", "replicas"]
+
+    scale_policy = find_named(policies.body["policies"], "kubernetes-scale-safety")
+    assert scale_policy["policy_type"] == "KubernetesScalePolicy"
+    assert scale_policy["effect"] is None
+
+    evaluator = find_named(evaluators.body["evaluators"], "workload-health")
+    assert evaluator["evaluator_type"] == "WorkloadHealthEvaluator"
     assert config.status_code == 200
     assert config.body == {
         "environment": {"environment": "staging"},

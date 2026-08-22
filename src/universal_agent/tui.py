@@ -11,6 +11,8 @@ from universal_agent.runtime import RuntimeEventView, SessionSummaryView, Sessio
 from universal_agent.service import (
     CapabilityView,
     DomainView,
+    EvaluatorView,
+    PolicyView,
     ProfileView,
     ReadyView,
     RuntimeService,
@@ -76,6 +78,10 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
     lines.extend(_capability_lines(snapshot.capabilities))
     lines.extend(("", "Tools", _rule()))
     lines.extend(_tool_lines(snapshot.tools))
+    lines.extend(("", "Policies", _rule()))
+    lines.extend(_policy_lines(snapshot.policies))
+    lines.extend(("", "Evaluators", _rule()))
+    lines.extend(_evaluator_lines(snapshot.evaluators))
     lines.extend(("", "Sessions", _rule()))
     lines.extend(_session_lines(snapshot.sessions))
     lines.extend(("", "Selected Session", _rule()))
@@ -148,6 +154,37 @@ def _tool_lines(tools: tuple[ToolView, ...]) -> list[str]:
             f" domain={tool.domain_name}@{tool.domain_version}"
         )
         for tool in tools
+    ]
+
+
+def _policy_lines(policies: tuple[PolicyView, ...]) -> list[str]:
+    if not policies:
+        return ["- none"]
+    return [
+        (
+            f"- {policy.name}"
+            f" type={policy.policy_type}"
+            f" effect={'n/a' if policy.effect is None else policy.effect.value}"
+            f" categories={_enum_tuple_text(policy.categories)}"
+            f" risks={_enum_tuple_text(policy.risks)}"
+            f" capabilities={_tuple_text(policy.capability_names)}"
+            f" domain={policy.domain_name}@{policy.domain_version}"
+            f" :: {policy.description}"
+        )
+        for policy in policies
+    ]
+
+
+def _evaluator_lines(evaluators: tuple[EvaluatorView, ...]) -> list[str]:
+    if not evaluators:
+        return ["- none"]
+    return [
+        (
+            f"- {evaluator.name}"
+            f" type={evaluator.evaluator_type}"
+            f" domain={evaluator.domain_name}@{evaluator.domain_version}"
+        )
+        for evaluator in evaluators
     ]
 
 
@@ -300,6 +337,12 @@ def _profile_domain_text(profile: ProfileView) -> str:
 
 def _tuple_text(values: tuple[str, ...]) -> str:
     return ", ".join(values) if values else "none"
+
+
+def _enum_tuple_text(values: tuple[Any, ...]) -> str:
+    if not values:
+        return "none"
+    return ", ".join(str(getattr(value, "value", value)) for value in values)
 
 
 def _value_text(value: object) -> str:

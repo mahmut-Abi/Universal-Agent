@@ -17,10 +17,12 @@ from universal_agent.agentd.app import (
     cost_body,
     doctor_body,
     domain_body,
+    evaluator_body,
     event_batch_body,
     health_body,
     log_records_body,
     metrics_body,
+    policy_body,
     profile_body,
     ready_body,
     runtime_run_body,
@@ -352,6 +354,14 @@ def build_parser() -> argparse.ArgumentParser:
     tools_commands = tools.add_subparsers(dest="tools_command", required=True)
     tools_commands.add_parser("list")
 
+    policies = commands.add_parser("policies")
+    policies_commands = policies.add_subparsers(dest="policies_command", required=True)
+    policies_commands.add_parser("list")
+
+    evaluators = commands.add_parser("evaluators")
+    evaluators_commands = evaluators.add_subparsers(dest="evaluators_command", required=True)
+    evaluators_commands.add_parser("list")
+
     session = commands.add_parser("session")
     session_commands = session.add_subparsers(dest="session_command", required=True)
 
@@ -489,6 +499,15 @@ async def _dispatch(
         return
     if command == "tools":
         _write_json(out, {"tools": [tool_body(item) for item in service.tools()]})
+        return
+    if command == "policies":
+        _write_json(out, {"policies": [policy_body(item) for item in service.policies()]})
+        return
+    if command == "evaluators":
+        _write_json(
+            out,
+            {"evaluators": [evaluator_body(item) for item in service.evaluators()]},
+        )
         return
     if command == "session":
         await _dispatch_session(args, service, out)

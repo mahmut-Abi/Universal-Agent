@@ -8,7 +8,9 @@ from universal_agent.runtime import RuntimeEventView, SessionSummaryView, Sessio
 from universal_agent.service import (
     CapabilityView,
     DomainView,
+    EvaluatorView,
     HealthView,
+    PolicyView,
     ProfileView,
     ReadyView,
     RuntimeConfigView,
@@ -27,6 +29,8 @@ class RuntimeConsoleSnapshot:
     profiles: tuple[ProfileView, ...]
     capabilities: tuple[CapabilityView, ...]
     tools: tuple[ToolView, ...]
+    policies: tuple[PolicyView, ...]
+    evaluators: tuple[EvaluatorView, ...]
     metrics: RuntimeMetricsView
     cost: RuntimeCostView
     sessions: tuple[SessionSummaryView, ...]
@@ -73,6 +77,8 @@ async def build_runtime_console_snapshot(
         profiles=service.profiles(),
         capabilities=service.capabilities(),
         tools=service.tools(),
+        policies=service.policies(),
+        evaluators=service.evaluators(),
         metrics=await service.metrics(),
         cost=await service.cost(),
         sessions=session_batch.sessions,

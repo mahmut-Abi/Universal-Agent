@@ -11,6 +11,8 @@ from universal_agent.operations import AuditRecordView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
 from universal_agent.service import (
     CapabilityView,
+    EvaluatorView,
+    PolicyView,
     ProfileView,
     RuntimeService,
     SessionExplorerView,
@@ -64,6 +66,8 @@ def render_web_console(snapshot: WebConsoleSnapshot) -> str:
             _profiles(snapshot.profiles),
             _capabilities(snapshot.capabilities),
             _tools(snapshot.tools),
+            _policies(snapshot.policies),
+            _evaluators(snapshot.evaluators),
             _sessions(snapshot.sessions),
             _selected_session(snapshot.selected_session),
             _world_facts(snapshot.session_explorer),
@@ -202,6 +206,56 @@ def _tools(tools: tuple[ToolView, ...]) -> str:
             ("Tool", "Side Effect", "Risk", "Capabilities", "Required Args", "Timeout", "Domain"),
             tuple(rows),
         ),
+    )
+
+
+def _policies(policies: tuple[PolicyView, ...]) -> str:
+    rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(policy.name)}</td>",
+                f"<td>{_html(policy.policy_type)}</td>",
+                f"<td>{_html('n/a' if policy.effect is None else policy.effect.value)}</td>",
+                f"<td>{_html(_enum_tuple_text(policy.categories))}</td>",
+                f"<td>{_html(_enum_tuple_text(policy.risks))}</td>",
+                f"<td>{_html(', '.join(policy.capability_names))}</td>",
+                f"<td>{_html(policy.domain_name)}@{_html(policy.domain_version)}</td>",
+                f"<td>{_html(policy.description)}</td>",
+                "</tr>",
+            )
+        )
+        for policy in policies
+    ]
+    if not rows:
+        rows.append('<tr><td colspan="8">No policies</td></tr>')
+    return _section(
+        "Policy Catalog",
+        _table(
+            ("Policy", "Type", "Effect", "Categories", "Risks", "Capabilities", "Domain", "Reason"),
+            tuple(rows),
+        ),
+    )
+
+
+def _evaluators(evaluators: tuple[EvaluatorView, ...]) -> str:
+    rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(evaluator.name)}</td>",
+                f"<td>{_html(evaluator.evaluator_type)}</td>",
+                f"<td>{_html(evaluator.domain_name)}@{_html(evaluator.domain_version)}</td>",
+                "</tr>",
+            )
+        )
+        for evaluator in evaluators
+    ]
+    if not rows:
+        rows.append('<tr><td colspan="3">No evaluators</td></tr>')
+    return _section(
+        "Evaluator Catalog",
+        _table(("Evaluator", "Type", "Domain"), tuple(rows)),
     )
 
 
@@ -441,6 +495,12 @@ def _profile_domain_text(profile: ProfileView) -> str:
     if not profile.domains:
         return "none"
     return ", ".join(f"{identity.name}@{identity.version}" for identity in profile.domains)
+
+
+def _enum_tuple_text(values: tuple[Any, ...]) -> str:
+    if not values:
+        return "none"
+    return ", ".join(str(getattr(value, "value", value)) for value in values)
 
 
 def _value_text(value: object) -> str:

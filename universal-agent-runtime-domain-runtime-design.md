@@ -1791,6 +1791,8 @@ GET    /v1/profiles
 GET    /v1/domains
 GET    /v1/capabilities
 GET    /v1/tools
+GET    /v1/policies
+GET    /v1/evaluators
 ```
 
 Streaming:
@@ -1833,6 +1835,8 @@ agent domain install <package>
 
 agent capabilities list
 agent tools list
+agent policies list
+agent evaluators list
 
 agent config show
 agent doctor
