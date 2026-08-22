@@ -464,6 +464,8 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
     session_cost = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/cost"))
     logs = await app.handle(HttpRequest("GET", "/v1/logs"))
     session_logs = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/logs"))
+    traces = await app.handle(HttpRequest("GET", "/v1/traces"))
+    session_traces = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/traces"))
 
     assert metrics.status_code == 200
     assert metrics.body["session_count"] == 1
@@ -490,6 +492,24 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
     last_log_item = log_items[-1]
     assert isinstance(last_log_item, dict)
     assert last_log_item["event_type"] == "GoalCompleted"
+    assert traces.status_code == 200
+    assert traces.body == session_traces.body
+    span_items = traces.body["spans"]
+    assert isinstance(span_items, list)
+    assert len(span_items) == 3
+    root_span = span_items[0]
+    assert isinstance(root_span, dict)
+    assert root_span["name"] == "runtime.session"
+    assert root_span["status"] == "ok"
+    action_span_names = [item["name"] for item in span_items[1:] if isinstance(item, dict)]
+    assert action_span_names == [
+        "runtime.action.scale_workload",
+        "runtime.action.inspect_workload",
+    ]
+    assert all(
+        isinstance(item, dict) and item["parent_span_id"] == root_span["span_id"]
+        for item in span_items[1:]
+    )
     assert audit.status_code == 200
     audit_items = audit.body["audit_records"]
     session_audit_items = session_audit.body["audit_records"]

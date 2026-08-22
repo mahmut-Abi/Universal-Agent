@@ -41,6 +41,7 @@ from universal_agent.service import (
     RuntimeLogRecordView,
     RuntimeMetricsView,
     RuntimeService,
+    RuntimeTraceSpanView,
     ToolView,
 )
 from universal_agent.state import StateNotFoundError
@@ -145,6 +146,10 @@ class AgentdApp:
             if method != "GET":
                 return method_not_allowed(("GET",))
             return json_response(log_records_body(await self._service.logs()))
+        if path == "/v1/traces":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            return json_response(trace_spans_body(await self._service.traces()))
         if path == "/v1/doctor":
             if method != "GET":
                 return method_not_allowed(("GET",))
@@ -221,6 +226,13 @@ class AgentdApp:
                 return method_not_allowed(("GET",))
             try:
                 return json_response(log_records_body(await self._service.logs(session_id)))
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
+        if session_id is not None and suffix == "traces":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                return json_response(trace_spans_body(await self._service.traces(session_id)))
             except StateNotFoundError as exc:
                 return not_found(str(exc))
         if session_id is not None and suffix == "pause":
@@ -516,6 +528,29 @@ def audit_records_body(records: tuple[AuditRecordView, ...]) -> JsonMapping:
 
 def log_records_body(records: tuple[RuntimeLogRecordView, ...]) -> JsonMapping:
     return immutable_json({"logs": [log_record_body(record) for record in records]})
+
+
+def trace_spans_body(spans: tuple[RuntimeTraceSpanView, ...]) -> JsonMapping:
+    return immutable_json({"spans": [trace_span_body(span) for span in spans]})
+
+
+def trace_span_body(view: RuntimeTraceSpanView) -> dict[str, JsonValue]:
+    return {
+        "trace_id": view.trace_id,
+        "span_id": view.span_id,
+        "parent_span_id": view.parent_span_id,
+        "name": view.name,
+        "kind": view.kind,
+        "status": view.status,
+        "session_id": str(view.session_id),
+        "goal_id": str(view.goal_id),
+        "task_id": str(view.task_id),
+        "action_id": str(view.action_id) if view.action_id is not None else None,
+        "start_time": view.start_time.isoformat(),
+        "end_time": view.end_time.isoformat(),
+        "duration_ms": view.duration_ms,
+        "attributes": _json_value(view.attributes),
+    }
 
 
 def log_record_body(view: RuntimeLogRecordView) -> dict[str, JsonValue]:

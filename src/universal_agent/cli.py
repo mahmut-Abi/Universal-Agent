@@ -24,6 +24,7 @@ from universal_agent.agentd.app import (
     session_body,
     session_summary_body,
     tool_body,
+    trace_spans_body,
 )
 from universal_agent.core import (
     Decision,
@@ -159,6 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("metrics")
     commands.add_parser("cost")
     commands.add_parser("logs")
+    commands.add_parser("traces")
     commands.add_parser("doctor")
     commands.add_parser("audit")
 
@@ -210,6 +212,9 @@ def build_parser() -> argparse.ArgumentParser:
     logs = session_commands.add_parser("logs")
     logs.add_argument("session_id")
 
+    traces = session_commands.add_parser("traces")
+    traces.add_argument("session_id")
+
     pause = session_commands.add_parser("pause")
     pause.add_argument("session_id")
     pause.add_argument("--reason", default="session paused from CLI")
@@ -248,6 +253,9 @@ async def _dispatch(
         return
     if command == "logs":
         _write_json(out, log_records_body(await service.logs()))
+        return
+    if command == "traces":
+        _write_json(out, trace_spans_body(await service.traces()))
         return
     if command == "doctor":
         _write_json(out, doctor_body(await service.doctor()))
@@ -353,6 +361,10 @@ async def _dispatch_session(
     if command == "logs":
         session_id = SessionId(cast(str, args.session_id))
         _write_json(out, log_records_body(await service.logs(session_id)))
+        return
+    if command == "traces":
+        session_id = SessionId(cast(str, args.session_id))
+        _write_json(out, trace_spans_body(await service.traces(session_id)))
         return
     if command == "pause":
         session_id = SessionId(cast(str, args.session_id))

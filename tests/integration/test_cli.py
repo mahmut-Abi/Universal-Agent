@@ -302,10 +302,13 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     session_cost_output = StringIO()
     logs_output = StringIO()
     session_logs_output = StringIO()
+    traces_output = StringIO()
+    session_traces_output = StringIO()
 
     metrics_status = await run_cli(["metrics"], service=service, stdout=metrics_output)
     cost_status = await run_cli(["cost"], service=service, stdout=cost_output)
     logs_status = await run_cli(["logs"], service=service, stdout=logs_output)
+    traces_status = await run_cli(["traces"], service=service, stdout=traces_output)
     doctor_status = await run_cli(["doctor"], service=service, stdout=doctor_output)
     audit_status = await run_cli(["audit"], service=service, stdout=audit_output)
     session_audit_status = await run_cli(
@@ -323,23 +326,32 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
         service=service,
         stdout=session_logs_output,
     )
+    session_traces_status = await run_cli(
+        ["session", "traces", session_id],
+        service=service,
+        stdout=session_traces_output,
+    )
 
     metrics = read_json(metrics_output)
     cost = read_json(cost_output)
     logs = read_json(logs_output)
+    traces = read_json(traces_output)
     doctor = read_json(doctor_output)
     audit = read_json(audit_output)
     session_audit = read_json(session_audit_output)
     session_cost = read_json(session_cost_output)
     session_logs = read_json(session_logs_output)
+    session_traces = read_json(session_traces_output)
     assert metrics_status == 0
     assert cost_status == 0
     assert logs_status == 0
+    assert traces_status == 0
     assert doctor_status == 0
     assert audit_status == 0
     assert session_audit_status == 0
     assert session_cost_status == 0
     assert session_logs_status == 0
+    assert session_traces_status == 0
     assert metrics["completed_goal_count"] == 1
     assert metrics["action_started_count"] == 2
     assert metrics["model_call_count"] == 3
@@ -352,6 +364,14 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     log_items = logs["logs"]
     assert isinstance(log_items, list)
     assert log_items[-1]["event_type"] == "GoalCompleted"
+    assert traces == session_traces
+    span_items = traces["spans"]
+    assert isinstance(span_items, list)
+    assert [item["name"] for item in span_items if isinstance(item, dict)] == [
+        "runtime.session",
+        "runtime.action.scale_workload",
+        "runtime.action.inspect_workload",
+    ]
     assert doctor["status"] == "ok"
     assert audit == session_audit
     audit_items = audit["audit_records"]

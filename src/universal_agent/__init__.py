@@ -36,6 +36,7 @@ from universal_agent.service import (
     RuntimeLogRecordView,
     RuntimeMetricsView,
     RuntimeService,
+    RuntimeTraceSpanView,
 )
 from universal_agent.state import InMemoryStateStore, StateStore
 from universal_agent.tools import Tool
@@ -72,6 +73,7 @@ __all__ = [
     "RuntimeLogRecordView",
     "RuntimeMetricsView",
     "RuntimeService",
+    "RuntimeTraceSpanView",
     "ScriptedModelAdapter",
     "SessionSummaryView",
     "StateStore",

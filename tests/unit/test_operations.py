@@ -17,6 +17,7 @@ from universal_agent.operations import (
     build_runtime_cost,
     build_runtime_logs,
     build_runtime_metrics,
+    build_runtime_trace_spans,
 )
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView
 
@@ -195,6 +196,76 @@ def test_runtime_logs_project_redacted_structured_records() -> None:
     nested = arguments["nested"]
     assert isinstance(nested, dict)
     assert nested["password"] == "[REDACTED]"
+
+
+def test_runtime_trace_spans_project_session_and_action_tree() -> None:
+    events = (
+        event(
+            "event-1",
+            "GoalCreated",
+            occurred_at=datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
+        ),
+        event(
+            "event-2",
+            "PolicyChecked",
+            action_id="action-1",
+            data={
+                "effect": "allow",
+                "policy": "allow-safe-read",
+                "capability": "inspect_workload",
+                "tool_name": "kubernetes_inspect_workload",
+                "arguments": {"name": "example", "api_token": "secret-token"},
+            },
+            occurred_at=datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC),
+        ),
+        event(
+            "event-3",
+            "ActionStarted",
+            action_id="action-1",
+            data={"capability": "inspect_workload", "tool_name": "kubernetes_inspect_workload"},
+            occurred_at=datetime(2026, 1, 1, 0, 0, 2, tzinfo=UTC),
+        ),
+        event(
+            "event-4",
+            "ActionCompleted",
+            action_id="action-1",
+            data={"status": "succeeded"},
+            occurred_at=datetime(2026, 1, 1, 0, 0, 3, tzinfo=UTC),
+        ),
+        event(
+            "event-5",
+            "GoalCompleted",
+            occurred_at=datetime(2026, 1, 1, 0, 0, 5, tzinfo=UTC),
+        ),
+    )
+
+    spans = build_runtime_trace_spans(events)
+
+    assert [span.name for span in spans] == [
+        "runtime.session",
+        "runtime.action.inspect_workload",
+    ]
+    root, action = spans
+    assert root.trace_id == "trace:session-1"
+    assert root.parent_span_id is None
+    assert root.status == "ok"
+    assert root.duration_ms == 5000
+    assert root.attributes["event_count"] == 5
+    assert action.trace_id == root.trace_id
+    assert action.parent_span_id == root.span_id
+    assert action.action_id == ActionId("action-1")
+    assert action.status == "ok"
+    assert action.duration_ms == 2000
+    assert action.attributes["policy"] == "allow-safe-read"
+    arguments = action.attributes["arguments"]
+    assert isinstance(arguments, dict)
+    assert arguments["name"] == "example"
+    assert arguments["api_token"] == "[REDACTED]"
+    assert action.attributes["event_types"] == [
+        "PolicyChecked",
+        "ActionStarted",
+        "ActionCompleted",
+    ]
 
 
 def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:

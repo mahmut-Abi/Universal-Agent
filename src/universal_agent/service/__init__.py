@@ -4,6 +4,7 @@ from universal_agent.operations import (
     RuntimeCostView,
     RuntimeLogRecordView,
     RuntimeMetricsView,
+    RuntimeTraceSpanView,
 )
 from universal_agent.service.runtime import (
     CapabilityView,
@@ -27,5 +28,6 @@ __all__ = [
     "RuntimeLogRecordView",
     "RuntimeMetricsView",
     "RuntimeService",
+    "RuntimeTraceSpanView",
     "ToolView",
 ]

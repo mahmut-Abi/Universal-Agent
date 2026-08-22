@@ -6,11 +6,13 @@ from universal_agent.operations.runtime import (
     RuntimeCostView,
     RuntimeLogRecordView,
     RuntimeMetricsView,
+    RuntimeTraceSpanView,
     build_audit_records,
     build_doctor_report,
     build_runtime_cost,
     build_runtime_logs,
     build_runtime_metrics,
+    build_runtime_trace_spans,
 )
 
 __all__ = [
@@ -21,9 +23,11 @@ __all__ = [
     "RuntimeCostView",
     "RuntimeLogRecordView",
     "RuntimeMetricsView",
+    "RuntimeTraceSpanView",
     "build_audit_records",
     "build_doctor_report",
     "build_runtime_cost",
     "build_runtime_logs",
     "build_runtime_metrics",
+    "build_runtime_trace_spans",
 ]

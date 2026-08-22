@@ -8,9 +8,10 @@ with fake-backed Kubernetes remediation, a P3 Multi-Domain composition foundatio
 and the first P3.5 productization foundation: a stable
 in-process Runtime API, immutable Session read models, cursor-readable Events, explicit
 pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter, a local CLI adapter,
-local file-backed session/event persistence, the first P3.6 operations surface with cost tracking,
-and a P3.7 Evaluation Harness / Replay foundation. The v3.0 design document also defines later
-productization layers such as real HTTP `agentd`, database persistence, SSE delivery, OpenTelemetry,
+local file-backed session/event persistence, the first P3.6 operations surface with cost tracking
+and OpenTelemetry-shaped trace span projections, and a P3.7 Evaluation Harness / Replay foundation.
+The v3.0 design document also defines later productization layers such as real HTTP `agentd`,
+database persistence, SSE delivery, OpenTelemetry exporters,
 optional Multi-Agent, UI, distributed runtime, and ecosystem packaging.
 
 ## Architectural boundaries
@@ -102,18 +103,18 @@ application-facing usage.
 `AgentdApp` is the framework-free route adapter foundation for `agentd`. It accepts small
 `HttpRequest` objects and returns JSON-safe `HttpResponse` objects for `GET /health`, `GET /ready`,
 catalog routes, session listing via `GET /v1/sessions`, route-level goal submission via
-`POST /v1/sessions`, session/event reads, and Profile catalog reads via `GET /v1/profiles`,
+`POST /v1/sessions`, session/event reads, and Profile catalog/detail reads via `GET /v1/profiles`,
 confirmation resume via
 `POST /v1/sessions/{id}/resume`, explicit pause via `POST /v1/sessions/{id}/pause`, cancellation via
-`POST /v1/sessions/{id}/cancel`, operations reads via `/v1/metrics`, `/v1/cost`, `/v1/logs`, `/v1/doctor` and
-`/v1/audit`, per-session audit/cost/log reads, and cursor event reads with `after` / `limit` query
-parameters. It still does not open sockets; a real HTTP server can wrap this adapter later without
+`POST /v1/sessions/{id}/cancel`, operations reads via `/v1/metrics`, `/v1/cost`, `/v1/logs`,
+`/v1/traces`, `/v1/doctor` and `/v1/audit`, per-session audit/cost/log/trace reads, and cursor event
+reads with `after` / `limit` query parameters. It still does not open sockets; a real HTTP server can wrap this adapter later without
 touching Runtime internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
 Capability/Tool catalogs, and session list/show/events/pause/resume/cancel commands through
-`RuntimeService`, plus operations commands for metrics, cost, logs, doctor and audit projections; it does
-not access Kernel internals directly and does not require a daemon process.
+`RuntimeService`, plus operations commands for metrics, cost, logs, traces, doctor and audit
+projections; it does not access Kernel internals directly and does not require a daemon process.
 
 `EvaluationHarness` is the first P3.7 behavior evaluation foundation. It runs explicit
 `EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
@@ -164,9 +165,9 @@ not a database layer, event-sourcing model, or production migration system.
   and typed
   `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, store backend,
   Domain identity validation, and multi-Domain composition activation.
-- P3.6/P3.7 foundation: event-derived `metrics`, `cost`, `logs`, `doctor` and `audit` projections exposed
+- P3.6/P3.7 foundation: event-derived `metrics`, `cost`, `logs`, `traces`, `doctor` and `audit` projections exposed
   through RuntimeService, agentd-shaped routes and CLI commands, plus optional
-  `ModelUsageRecorded` events from model adapters. Structured log projections preserve runtime identifiers, event types, severity and redacted event data for CLI/agentd consumers. The Evaluation Harness can assert status, error
+  `ModelUsageRecorded` events from model adapters. Structured log projections preserve runtime identifiers, event types, severity and redacted event data for CLI/agentd consumers. Trace span projections derive session/action trees from the same event stream with redacted attributes for OpenTelemetry-shaped consumers. The Evaluation Harness can assert status, error
   codes, events, executed capabilities, audit coverage, policy denials, recovery plans, criteria,
   action counts, iteration budgets and model token/cost budgets for behavior scenarios.
   Deterministic Replay can record stable behavior traces and detect later drift in event shape,
@@ -224,6 +225,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_cli_run.py
 .venv/bin/python examples/p3_6_cost_tracking.py
 .venv/bin/python examples/p3_6_structured_logs.py
+.venv/bin/python examples/p3_6_traces.py
 .venv/bin/python examples/p3_7_evaluation_harness.py
 .venv/bin/python examples/p3_7_replay.py
 .venv/bin/agent ready
