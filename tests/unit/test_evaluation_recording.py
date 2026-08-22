@@ -7,6 +7,7 @@ import pytest
 from universal_agent.core import ErrorCode, ExecutionStatus, immutable_json
 from universal_agent.evaluation.recording import (
     EvaluationCheckRecording,
+    EvaluationGateRecording,
     EvaluationReportNotFoundError,
     EvaluationReportRecording,
     EvaluationScenarioRecording,
@@ -97,6 +98,16 @@ def sample_report_recording(name: str = "nightly behavior suite") -> EvaluationR
                 ),
             ),
         ),
+        gate=EvaluationGateRecording(
+            passed=False,
+            checks=(
+                EvaluationCheckRecording(
+                    "pass_rate",
+                    False,
+                    "expected pass_rate >= 1.000, got 0.500",
+                ),
+            ),
+        ),
     )
 
 
@@ -113,6 +124,20 @@ def test_evaluation_report_codec_round_trips_stable_report() -> None:
     assert restored.scenarios[0].satisfied_criteria == {"healthy": True}
     assert restored.scenarios[1].error_code is ErrorCode.POLICY_DENIED
     assert restored.scenarios[1].audit_capabilities == ("scale_workload",)
+    assert restored.gate is not None
+    assert not restored.gate.passed
+    assert restored.gate.checks[0].name == "pass_rate"
+
+
+def test_evaluation_report_codec_decodes_v1_reports_without_gate() -> None:
+    payload = encode_evaluation_report(sample_report_recording())
+    payload["schema_version"] = 1
+    del payload["gate"]
+
+    restored = decode_evaluation_report(payload)
+
+    assert restored.suite_name == "nightly behavior suite"
+    assert restored.gate is None
 
 
 def test_evaluation_report_codec_rejects_unknown_schema_version() -> None:

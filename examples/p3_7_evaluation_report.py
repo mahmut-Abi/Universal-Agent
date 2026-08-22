@@ -23,9 +23,11 @@ from universal_agent.core import ErrorCode, ExecutionStatus, JsonMapping
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.harness import (
     EvaluationHarness,
+    EvaluationQualityGate,
     EvaluationScenario,
     EvaluationSuiteReport,
     ScenarioExpectations,
+    evaluate_quality_gate,
 )
 from universal_agent.evaluation.recording import (
     FileEvaluationReportStore,
@@ -128,9 +130,12 @@ async def main() -> None:
         )
     )
 
-    recording = record_evaluation_suite(
-        EvaluationSuiteReport((healthy_report, policy_report), "local behavior suite")
+    suite_report = EvaluationSuiteReport((healthy_report, policy_report), "local behavior suite")
+    gate_report = evaluate_quality_gate(
+        suite_report,
+        EvaluationQualityGate(min_pass_rate=1.0, max_policy_denial_rate=0.5),
     )
+    recording = record_evaluation_suite(suite_report, gate_report=gate_report)
     with TemporaryDirectory() as directory:
         store = FileEvaluationReportStore(directory)
         store.save(recording)
@@ -140,6 +145,8 @@ async def main() -> None:
         f"suite={loaded.suite_name} passed={loaded.passed} "
         f"scenarios={loaded.summary.scenario_count}"
     )
+    if loaded.gate is not None:
+        print(f"quality_gate={loaded.gate.passed} checks={len(loaded.gate.checks)}")
     for scenario in loaded.scenarios:
         print(
             f"{scenario.scenario_name}: passed={scenario.passed} events={len(scenario.event_types)}"
