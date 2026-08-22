@@ -291,6 +291,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_7_execution_replay.py
 .venv/bin/python examples/p3_7_replay.py
 .venv/bin/python examples/p3_7_cli_replay.py
+.venv/bin/python examples/p3_7_cli_artifacts.py
 .venv/bin/python examples/p3_7_cli_quality_gates.py
 .venv/bin/python examples/p3_7_suite_file.py
 .venv/bin/python examples/p3_7_deterministic_mode.py
@@ -299,7 +300,9 @@ Python 3.12 or newer is required.
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-profile.json config show
 .venv/bin/python -m universal_agent.cli eval list local-kubernetes --kind policy --tag kubernetes
 .venv/bin/python -m universal_agent.cli eval run local-kubernetes --kind regression --tag smoke --report-dir .tmp/eval-reports --fail-on-fail
+.venv/bin/python -m universal_agent.cli eval reports --report-dir .tmp/eval-reports
 .venv/bin/python -m universal_agent.cli eval replay local-kubernetes --recording-dir .tmp/replay-recordings --kind regression --update
+.venv/bin/python -m universal_agent.cli eval recordings --recording-dir .tmp/replay-recordings
 .venv/bin/python -m universal_agent.cli eval replay local-kubernetes --recording-dir .tmp/replay-recordings --kind regression --fail-on-fail
 ```
 
