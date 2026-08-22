@@ -174,6 +174,7 @@ class ErrorCode(StrEnum):
     CONFIRMATION_REJECTED = "confirmation_rejected"
     EVALUATION_FAILED = "evaluation_failed"
     DOMAIN_VALIDATION_FAILED = "domain_validation_failed"
+    RESOURCE_CONFLICT = "resource_conflict"
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,6 +263,8 @@ class ToolCall:
     idempotency_key: str = ""
     parameters_hash: str = ""
     attempt: int = 1
+    resource_key: str = ""
+    resource_version: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -379,6 +382,8 @@ class PendingAction:
     idempotency_key: str = ""
     parameters_hash: str = ""
     attempt: int = 1
+    resource_key: str = ""
+    resource_version: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

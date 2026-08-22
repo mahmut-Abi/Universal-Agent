@@ -324,6 +324,8 @@ def _encode_pending_action(action: PendingAction) -> JsonObject:
         "idempotency_key": action.idempotency_key,
         "parameters_hash": action.parameters_hash,
         "attempt": action.attempt,
+        "resource_key": action.resource_key,
+        "resource_version": action.resource_version,
     }
 
 
@@ -342,6 +344,8 @@ def _decode_optional_pending_action(value: JsonValue) -> PendingAction | None:
         _optional_string(payload.get("idempotency_key")) or "",
         _optional_string(payload.get("parameters_hash")) or "",
         _int(payload.get("attempt", 1), "pending_action.attempt"),
+        _optional_string(payload.get("resource_key")) or "",
+        _optional_string(payload.get("resource_version")),
     )
 
 

@@ -3,12 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from universal_agent.capability import (
     CapabilityUnavailableError,
     UnknownCapabilityError,
 )
+from universal_agent.coordination import ResourceConflictError, ResourceLock
 from universal_agent.core import (
     ActionId,
     Decision,
@@ -19,6 +20,7 @@ from universal_agent.core import (
     PendingAction,
     PolicyContext,
     PolicyEffect,
+    SideEffect,
     ToolCall,
     new_action_id,
 )
@@ -90,6 +92,17 @@ class ActionExecutor:
             resolution.capability_domain.version if resolution.capability_domain else ""
         )
         parameters_hash = _action_parameters_hash(decision)
+        resource_key, resource_version = _resource_metadata(
+            side_effect=tool.definition.side_effect,
+            capability=capability.name,
+            target=decision.target,
+            arguments=decision.arguments,
+        )
+        if tool.definition.side_effect is not SideEffect.NONE and not resource_key:
+            return ActionRejected(
+                ErrorCode.VALIDATION_ERROR,
+                "side-effecting action requires a resource identity",
+            )
         pending = PendingAction(
             action_id=new_action_id(),
             capability=capability.name,
@@ -105,6 +118,8 @@ class ActionExecutor:
             ),
             parameters_hash=parameters_hash,
             attempt=1,
+            resource_key=resource_key,
+            resource_version=resource_version,
         )
         await emit(
             "CapabilityResolved",
@@ -117,6 +132,8 @@ class ActionExecutor:
                 "idempotency_key": pending.idempotency_key,
                 "parameters_hash": pending.parameters_hash,
                 "attempt": pending.attempt,
+                "resource_key": pending.resource_key,
+                "resource_version": pending.resource_version,
             },
         )
         return await self.execute(session, pending, emit, confirmed=False)
@@ -149,6 +166,12 @@ class ActionExecutor:
                 ErrorCode.INVALID_STATE,
                 "pending action domain resolution changed",
             )
+        pending = _ensure_resource_metadata(pending, tool.definition.side_effect)
+        if tool.definition.side_effect is not SideEffect.NONE and not pending.resource_key:
+            return ActionRejected(
+                ErrorCode.VALIDATION_ERROR,
+                "side-effecting action requires a resource identity",
+            )
         policy_result = self.components.policy_engine.check(
             PolicyContext(
                 session_id=state.session_id,
@@ -178,10 +201,19 @@ class ActionExecutor:
         if policy_result.effect is PolicyEffect.DENY:
             return ActionRejected(ErrorCode.POLICY_DENIED, policy_result.reason)
         if policy_result.effect is PolicyEffect.REQUIRE_CONFIRMATION:
+            lock = await self._acquire_resource_lock(session, pending, emit)
+            if isinstance(lock, ActionRejected):
+                return lock
             state.pending_action = pending
             return ConfirmationRequired(pending, policy_result.reason)
         state.pending_action = None
-        return await self._invoke(session, pending, emit)
+        lock = await self._acquire_resource_lock(session, pending, emit)
+        if isinstance(lock, ActionRejected):
+            return lock
+        try:
+            return await self._invoke(session, pending, emit)
+        finally:
+            await self._release_resource_lock(lock, emit)
 
     async def _invoke(
         self,
@@ -202,6 +234,8 @@ class ActionExecutor:
             idempotency_key=pending.idempotency_key,
             parameters_hash=pending.parameters_hash,
             attempt=pending.attempt,
+            resource_key=pending.resource_key,
+            resource_version=pending.resource_version,
         )
         await emit(
             "ActionStarted",
@@ -216,6 +250,8 @@ class ActionExecutor:
                 "idempotency_key": call.idempotency_key,
                 "parameters_hash": call.parameters_hash,
                 "attempt": call.attempt,
+                "resource_key": call.resource_key,
+                "resource_version": call.resource_version,
             },
         )
         tool_result = await self._tool_runtime.execute(call)
@@ -242,6 +278,74 @@ class ActionExecutor:
         )
         return ActionObserved(pending, observation)
 
+    async def release_pending_resource(
+        self,
+        session: SessionRuntimeState,
+        pending: PendingAction,
+        emit: EmitFn,
+    ) -> None:
+        """Release a pending confirmation lock after rejection or cancellation."""
+
+        if not pending.resource_key:
+            return
+        lock = ResourceLock(
+            pending.resource_key,
+            pending.action_id,
+            session.state.session_id,
+            session.state.current_task.id,
+        )
+        await self._release_resource_lock(lock, emit)
+
+    async def _acquire_resource_lock(
+        self,
+        session: SessionRuntimeState,
+        pending: PendingAction,
+        emit: EmitFn,
+    ) -> ResourceLock | None | ActionRejected:
+        if not pending.resource_key:
+            return None
+        try:
+            lock = self.components.resource_locks.acquire(
+                resource_key=pending.resource_key,
+                action_id=pending.action_id,
+                session_id=session.state.session_id,
+                task_id=session.state.current_task.id,
+            )
+        except ResourceConflictError as exc:
+            await emit(
+                "ResourceConflictDetected",
+                pending.action_id,
+                {
+                    "resource_key": pending.resource_key,
+                    "resource_version": pending.resource_version,
+                    "reason": str(exc),
+                },
+            )
+            return ActionRejected(ErrorCode.RESOURCE_CONFLICT, str(exc))
+        await emit(
+            "ResourceLockAcquired",
+            pending.action_id,
+            {
+                "resource_key": lock.resource_key,
+                "resource_version": pending.resource_version,
+            },
+        )
+        return lock
+
+    async def _release_resource_lock(
+        self,
+        lock: ResourceLock | None,
+        emit: EmitFn,
+    ) -> None:
+        if lock is None:
+            return
+        self.components.resource_locks.release(lock)
+        await emit(
+            "ResourceLockReleased",
+            lock.action_id,
+            {"resource_key": lock.resource_key},
+        )
+
 
 def _action_parameters_hash(decision: Decision) -> str:
     payload = {
@@ -255,6 +359,68 @@ def _action_parameters_hash(decision: Decision) -> str:
 
 def _idempotency_key(session_id: object, task_id: object, parameters_hash: str) -> str:
     return f"{session_id}:{task_id}:{parameters_hash[:16]}"
+
+
+def _ensure_resource_metadata(
+    pending: PendingAction,
+    side_effect: SideEffect,
+) -> PendingAction:
+    if side_effect is SideEffect.NONE or pending.resource_key:
+        return pending
+    resource_key, resource_version = _resource_metadata(
+        side_effect=side_effect,
+        capability=pending.capability,
+        target=pending.target,
+        arguments=pending.arguments,
+    )
+    if not resource_key and resource_version is None:
+        return pending
+    return replace(pending, resource_key=resource_key, resource_version=resource_version)
+
+
+def _resource_metadata(
+    *,
+    side_effect: SideEffect,
+    capability: str,
+    target: str | None,
+    arguments: JsonMapping,
+) -> tuple[str, str | None]:
+    if side_effect is SideEffect.NONE:
+        return "", None
+
+    resource_key = _resource_key(capability, target, arguments)
+    resource_version = _resource_version(arguments)
+    return resource_key, resource_version
+
+
+def _resource_key(
+    capability: str,
+    target: str | None,
+    arguments: JsonMapping,
+) -> str:
+    if isinstance(target, str) and target.strip():
+        return target.strip()
+    for key in ("resource_key", "resource", "target", "id"):
+        value = arguments.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    namespace = arguments.get("namespace")
+    name = arguments.get("name")
+    if isinstance(namespace, str) and namespace.strip() and isinstance(name, str) and name.strip():
+        return f"{namespace.strip()}/{name.strip()}"
+    if isinstance(name, str) and name.strip():
+        return f"{capability}:{name.strip()}"
+    return ""
+
+
+def _resource_version(arguments: JsonMapping) -> str | None:
+    for key in ("resource_version", "resourceVersion", "version", "revision"):
+        value = arguments.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, int) and not isinstance(value, bool):
+            return str(value)
+    return None
 
 
 def _canonical_json(value: JsonValue | object) -> JsonValue:

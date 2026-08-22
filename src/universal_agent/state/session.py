@@ -193,6 +193,8 @@ def _copy_pending_action(action: PendingAction | None) -> PendingAction | None:
         action.idempotency_key,
         action.parameters_hash,
         action.attempt,
+        action.resource_key,
+        action.resource_version,
     )
 
 

@@ -41,6 +41,8 @@ class PendingActionView:
     idempotency_key: str
     parameters_hash: str
     attempt: int
+    resource_key: str
+    resource_version: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,6 +332,8 @@ def pending_action_view(pending: PendingAction | None) -> PendingActionView | No
         pending.idempotency_key,
         pending.parameters_hash,
         pending.attempt,
+        pending.resource_key,
+        pending.resource_version,
     )
 
 

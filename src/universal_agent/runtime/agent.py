@@ -143,7 +143,6 @@ class AgentRuntime:
                 ),
             )
         if pending is not None and not confirmed:
-            state.pending_action = None
             return await self._settle(
                 session,
                 fail(session, ErrorCode.CONFIRMATION_REJECTED, "user rejected pending action"),
@@ -484,6 +483,18 @@ class AgentRuntime:
         session: SessionRuntimeState,
         transition: Transition,
     ) -> ExecutionResult:
+        if (
+            transition.result.status
+            in {ExecutionStatus.COMPLETED, ExecutionStatus.FAILED, ExecutionStatus.CANCELLED}
+            and session.state.pending_action is not None
+        ):
+            pending = session.state.pending_action
+            session.state.pending_action = None
+            await self._actions.release_pending_resource(
+                session,
+                pending,
+                self._emitter(session),
+            )
         self._record_episodic(session, transition)
         await self._save(session)
         await self._emit(

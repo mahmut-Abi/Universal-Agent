@@ -820,6 +820,8 @@ def pending_action_body(view: PendingActionView | None) -> JsonValue:
         "idempotency_key": view.idempotency_key,
         "parameters_hash": view.parameters_hash,
         "attempt": view.attempt,
+        "resource_key": view.resource_key,
+        "resource_version": view.resource_version,
     }
 
 
