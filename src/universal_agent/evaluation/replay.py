@@ -167,6 +167,9 @@ class ReplayRecording:
     audit_entries: tuple[ReplayAuditEntry, ...] = ()
     metrics: ReplayMetrics = field(default_factory=lambda: ReplayMetrics(0, 0, 0, 0, 0, 0, 0, 0, 0))
 
+    def __post_init__(self) -> None:
+        _validate_non_empty_name("replay recording scenario name", self.scenario_name)
+
 
 @dataclass(frozen=True, slots=True)
 class ReplayCheck:
@@ -430,6 +433,11 @@ def _optional_error_code(value: str | None) -> ErrorCode | None:
         return ErrorCode(value)
     except ValueError:
         return None
+
+
+def _validate_non_empty_name(field: str, value: str) -> None:
+    if not value.strip():
+        raise ValueError(f"{field} must not be empty")
 
 
 def _same(name: str, expected: object, actual: object) -> ReplayCheck:

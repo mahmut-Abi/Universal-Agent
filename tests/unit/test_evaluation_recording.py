@@ -152,6 +152,32 @@ def test_evaluation_report_codec_round_trips_stable_report() -> None:
     assert restored.gate.checks[0].name == "pass_rate"
 
 
+def test_evaluation_report_recording_rejects_ambiguous_scenario_keys() -> None:
+    recording = sample_report_recording()
+    first = recording.scenarios[0]
+
+    with pytest.raises(ValueError, match="evaluation report suite name must not be empty"):
+        replace(recording, suite_name=" ")
+
+    with pytest.raises(ValueError, match="evaluation scenario recording name must not be empty"):
+        replace(first, scenario_name="")
+
+    with pytest.raises(
+        ValueError,
+        match="evaluation scenario recording tags must not contain empty values",
+    ):
+        replace(first, tags=("smoke", " "))
+
+    with pytest.raises(ValueError, match="duplicate evaluation scenario recording tags: smoke"):
+        replace(first, tags=("smoke", "smoke"))
+
+    with pytest.raises(
+        ValueError,
+        match="duplicate evaluation scenario recording names: healthy workload",
+    ):
+        replace(recording, scenarios=(first, first))
+
+
 def test_evaluation_report_codec_decodes_v1_reports_without_gate() -> None:
     payload = encode_evaluation_report(sample_report_recording())
     payload["schema_version"] = 1
@@ -300,6 +326,11 @@ def test_replay_recording_codec_round_trips_stable_trace() -> None:
     assert restored.event_types == recording.event_types
     assert restored.audit_entries == recording.audit_entries
     assert restored.metrics == recording.metrics
+
+
+def test_replay_recording_rejects_empty_scenario_key() -> None:
+    with pytest.raises(ValueError, match="replay recording scenario name must not be empty"):
+        sample_recording(" ")
 
 
 def test_replay_recording_codec_defaults_missing_model_metrics() -> None:
