@@ -137,6 +137,8 @@ contracts for local CI-style runs. `EvaluationQualityGate` evaluates suite-level
 completion rates, intervention rates, resource lock safety, action efficiency and model budget
 thresholds after execution. `EvaluationRunner` composes suite execution, quality gates and optional
 `EvaluationReportStore` persistence into one reusable application-facing module.
+`replay_execution` reconstructs execution history from recorded runtime events without calling a
+model, tool or Domain backend.
 `DeterministicReplayHarness` records a stable trace from those projections and replays later runs
 against it while ignoring dynamic IDs and timestamps.
 `FileReplayRecordingStore` persists those traces as JSON golden recordings for local regression tests.
@@ -146,7 +148,8 @@ The harnesses are intentionally outside the Kernel: Domain `Evaluator`s still de
 semantics during execution, while the Harness decides whether a completed scenario satisfies
 regression, policy, recovery, token/cost budget and replay expectations. See
 `examples/p3_7_evaluation_harness.py`, `examples/p3_7_evaluation_runner.py`,
-`examples/p3_7_replay.py` and `examples/p3_7_deterministic_mode.py`.
+`examples/p3_7_execution_replay.py`, `examples/p3_7_replay.py` and
+`examples/p3_7_deterministic_mode.py`.
 
 `AgentProfile` is the first application-level Profile foundation. A Profile declares a selectable
 runtime identity — name, version, Domain identity and Runtime Configuration — for future CLI/agentd
@@ -202,6 +205,8 @@ not a database layer, event-sourcing model, or production migration system.
   can be selected without changing Kernel code, and quality gates turn suite metrics into CI-ready
   pass/fail checks. `EvaluationRunner` packages suite execution, gate evaluation and optional
   stable report persistence behind one interface for future CLI/CI adapters.
+  Execution replay can reconstruct decisions, actions, observations, evidence references and
+  terminal status from recorded Runtime events without re-executing side effects.
   Deterministic Replay can record stable behavior traces and detect later drift in event shape,
   actions, policy effects, audit entries and metrics without depending on runtime-generated IDs.
   `DeterministicRuntimeMode` can also install stable runtime ID and clock primitives while building
@@ -262,6 +267,8 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_6_structured_logs.py
 .venv/bin/python examples/p3_6_traces.py
 .venv/bin/python examples/p3_7_evaluation_harness.py
+.venv/bin/python examples/p3_7_evaluation_runner.py
+.venv/bin/python examples/p3_7_execution_replay.py
 .venv/bin/python examples/p3_7_replay.py
 .venv/bin/python examples/p3_7_deterministic_mode.py
 .venv/bin/agent ready

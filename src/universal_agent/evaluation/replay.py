@@ -15,6 +15,106 @@ from universal_agent.evaluation.harness import (
     EvaluationScenario,
     ScenarioReport,
 )
+from universal_agent.runtime import RuntimeEventView
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayedDecision:
+    event_id: str
+    task_id: str
+    decision_type: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayedAction:
+    action_id: str
+    event_types: tuple[str, ...] = ()
+    capability: str | None = None
+    tool_name: str | None = None
+    domain_name: str | None = None
+    domain_version: str | None = None
+    policy_effect: str | None = None
+    policy_name: str | None = None
+    status: str | None = None
+    error_code: str | None = None
+    resource_key: str | None = None
+    resource_version: str | None = None
+    observation_ids: tuple[str, ...] = ()
+    evidence_ids: tuple[str, ...] = ()
+    evidence_claims: tuple[str, ...] = ()
+    evaluation_status: str | None = None
+    evaluator_name: str | None = None
+    recovery_strategy: str | None = None
+    recovery_rule: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionReplay:
+    """Reconstructed execution history from recorded runtime events.
+
+    This is execution replay, not re-execution: it never calls a model, a tool
+    or a Domain backend.
+    """
+
+    session_id: str
+    goal_id: str
+    task_ids: tuple[str, ...]
+    event_count: int
+    event_types: tuple[str, ...]
+    decisions: tuple[ReplayedDecision, ...]
+    actions: tuple[ReplayedAction, ...]
+    observation_ids: tuple[str, ...]
+    evidence_ids: tuple[str, ...]
+    terminal_status: ExecutionStatus | None
+    terminal_error_code: ErrorCode | None
+    terminal_reason: str | None
+
+
+@dataclass(slots=True)
+class _ActionReplayBuilder:
+    action_id: str
+    event_types: list[str] = field(default_factory=list)
+    capability: str | None = None
+    tool_name: str | None = None
+    domain_name: str | None = None
+    domain_version: str | None = None
+    policy_effect: str | None = None
+    policy_name: str | None = None
+    status: str | None = None
+    error_code: str | None = None
+    resource_key: str | None = None
+    resource_version: str | None = None
+    observation_ids: list[str] = field(default_factory=list)
+    evidence_ids: list[str] = field(default_factory=list)
+    evidence_claims: list[str] = field(default_factory=list)
+    evaluation_status: str | None = None
+    evaluator_name: str | None = None
+    recovery_strategy: str | None = None
+    recovery_rule: str | None = None
+
+    def build(self) -> ReplayedAction:
+        return ReplayedAction(
+            action_id=self.action_id,
+            event_types=tuple(self.event_types),
+            capability=self.capability,
+            tool_name=self.tool_name,
+            domain_name=self.domain_name,
+            domain_version=self.domain_version,
+            policy_effect=self.policy_effect,
+            policy_name=self.policy_name,
+            status=self.status,
+            error_code=self.error_code,
+            resource_key=self.resource_key,
+            resource_version=self.resource_version,
+            observation_ids=tuple(self.observation_ids),
+            evidence_ids=tuple(self.evidence_ids),
+            evidence_claims=tuple(self.evidence_claims),
+            evaluation_status=self.evaluation_status,
+            evaluator_name=self.evaluator_name,
+            recovery_strategy=self.recovery_strategy,
+            recovery_rule=self.recovery_rule,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +209,89 @@ class DeterministicReplayHarness:
         return compare_recording(expected, report)
 
 
+def replay_execution(events: tuple[RuntimeEventView, ...]) -> ExecutionReplay:
+    if not events:
+        raise ValueError("execution replay requires at least one event")
+    session_ids = {str(event.session_id) for event in events}
+    if len(session_ids) != 1:
+        raise ValueError("execution replay requires events from exactly one session")
+
+    first = events[0]
+    task_ids: list[str] = []
+    observation_ids: list[str] = []
+    evidence_ids: list[str] = []
+    decisions: list[ReplayedDecision] = []
+    actions: dict[str, _ActionReplayBuilder] = {}
+    terminal_status: ExecutionStatus | None = None
+    terminal_error_code: ErrorCode | None = None
+    terminal_reason: str | None = None
+
+    for event in events:
+        _append_unique(task_ids, str(event.task_id))
+        created_task_id = _string_data(event, "created_task_id")
+        if created_task_id is not None:
+            _append_unique(task_ids, created_task_id)
+        started_task_id = _string_data(event, "started_task_id")
+        if started_task_id is not None:
+            _append_unique(task_ids, started_task_id)
+
+        if event.type == "DecisionGenerated":
+            decisions.append(
+                ReplayedDecision(
+                    event_id=event.event_id,
+                    task_id=str(event.task_id),
+                    decision_type=_string_data(event, "decision_type") or "",
+                    reason=_string_data(event, "reason") or "",
+                )
+            )
+
+        if event.action_id is not None:
+            action = actions.setdefault(
+                str(event.action_id),
+                _ActionReplayBuilder(str(event.action_id)),
+            )
+            _apply_action_event(action, event)
+
+        observation_id = _string_data(event, "observation_id")
+        if observation_id is not None:
+            _append_unique(observation_ids, observation_id)
+        evidence_id = _string_data(event, "evidence_id")
+        if evidence_id is not None:
+            _append_unique(evidence_ids, evidence_id)
+
+        if event.type == "GoalCompleted":
+            terminal_status = ExecutionStatus.COMPLETED
+            terminal_error_code = None
+            terminal_reason = _string_data(event, "reason")
+        elif event.type == "GoalFailed":
+            terminal_status = ExecutionStatus.FAILED
+            terminal_error_code = _optional_error_code(_string_data(event, "error_code"))
+            terminal_reason = _string_data(event, "reason")
+        elif event.type == "GoalCancelled":
+            terminal_status = ExecutionStatus.CANCELLED
+            terminal_error_code = None
+            terminal_reason = _string_data(event, "reason")
+        elif event.type in {"GoalWaiting", "ConfirmationRequired"}:
+            terminal_status = ExecutionStatus.WAITING
+            terminal_error_code = None
+            terminal_reason = _string_data(event, "reason")
+
+    return ExecutionReplay(
+        session_id=str(first.session_id),
+        goal_id=str(first.goal_id),
+        task_ids=tuple(task_ids),
+        event_count=len(events),
+        event_types=tuple(event.type for event in events),
+        decisions=tuple(decisions),
+        actions=tuple(action.build() for action in actions.values()),
+        observation_ids=tuple(observation_ids),
+        evidence_ids=tuple(evidence_ids),
+        terminal_status=terminal_status,
+        terminal_error_code=terminal_error_code,
+        terminal_reason=terminal_reason,
+    )
+
+
 def record_report(report: ScenarioReport) -> ReplayRecording:
     return ReplayRecording(
         scenario_name=report.scenario_name,
@@ -171,6 +354,48 @@ def compare_recording(expected: ReplayRecording, actual_report: ScenarioReport) 
     return ReplayReport(expected, actual, checks, actual_report)
 
 
+def _apply_action_event(action: _ActionReplayBuilder, event: RuntimeEventView) -> None:
+    action.event_types.append(event.type)
+    if event.type in {"CapabilityResolved", "ActionStarted"}:
+        action.capability = _string_data(event, "capability") or action.capability
+        action.tool_name = _string_data(event, "tool_name") or action.tool_name
+        action.domain_name = _string_data(event, "domain") or action.domain_name
+        action.domain_version = _string_data(event, "domain_version") or action.domain_version
+        action.resource_key = _string_data(event, "resource_key") or action.resource_key
+        action.resource_version = _string_data(event, "resource_version") or action.resource_version
+    elif event.type == "PolicyChecked":
+        action.policy_effect = _string_data(event, "effect") or action.policy_effect
+        action.policy_name = _string_data(event, "policy") or action.policy_name
+        action.capability = _string_data(event, "capability") or action.capability
+        action.tool_name = _string_data(event, "tool_name") or action.tool_name
+    elif event.type == "ActionCompleted":
+        action.status = _string_data(event, "status") or action.status
+        action.error_code = _string_data(event, "error_code") or action.error_code
+    elif event.type == "ObservationReceived":
+        observation_id = _string_data(event, "observation_id")
+        if observation_id is not None:
+            _append_unique(action.observation_ids, observation_id)
+        action.status = _string_data(event, "status") or action.status
+    elif event.type == "EvidenceRecorded":
+        evidence_id = _string_data(event, "evidence_id")
+        if evidence_id is not None:
+            _append_unique(action.evidence_ids, evidence_id)
+        claim = _string_data(event, "claim")
+        if claim is not None:
+            _append_unique(action.evidence_claims, claim)
+    elif event.type == "EvaluationCompleted":
+        action.evaluation_status = _string_data(event, "status") or action.evaluation_status
+        action.evaluator_name = _string_data(event, "evaluator") or action.evaluator_name
+    elif event.type in {"RecoveryPlanned", "RecoveryExhausted"}:
+        action.recovery_strategy = _string_data(event, "strategy") or action.recovery_strategy
+        action.recovery_rule = _string_data(event, "rule") or action.recovery_rule
+    elif event.type in {"ResourceLockAcquired", "ResourceLockReleased", "ResourceConflictDetected"}:
+        action.resource_key = _string_data(event, "resource_key") or action.resource_key
+        action.resource_version = _string_data(event, "resource_version") or action.resource_version
+        if event.type == "ResourceConflictDetected":
+            action.error_code = ErrorCode.RESOURCE_CONFLICT.value
+
+
 def _event_values(
     report: ScenarioReport,
     event_type: str,
@@ -184,6 +409,27 @@ def _event_values(
         if isinstance(value, str):
             values.append(value)
     return tuple(values)
+
+
+def _append_unique(values: list[str], value: str) -> None:
+    if value not in values:
+        values.append(value)
+
+
+def _string_data(event: RuntimeEventView, key: str) -> str | None:
+    value = event.data.get(key)
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _optional_error_code(value: str | None) -> ErrorCode | None:
+    if value is None:
+        return None
+    try:
+        return ErrorCode(value)
+    except ValueError:
+        return None
 
 
 def _same(name: str, expected: object, actual: object) -> ReplayCheck:
