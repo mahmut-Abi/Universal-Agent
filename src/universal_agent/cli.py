@@ -33,6 +33,7 @@ from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
 from universal_agent.core import (
     Decision,
     DecisionType,
+    ErrorCode,
     EventId,
     ExecutionStatus,
     Goal,
@@ -97,6 +98,14 @@ def _default_decisions() -> tuple[Decision, ...]:
             expected_observations=("healthy",),
         ),
         Decision(DecisionType.FINISH, "Local CLI profile verified workload health"),
+        Decision(
+            DecisionType.EXECUTE,
+            "Attempt invalid scale from local CLI evaluation profile",
+            capability="scale_workload",
+            target="deployment/example",
+            arguments=immutable_json({"name": "example", "namespace": "default", "replicas": 0}),
+            expected_observations=("mutation_applied",),
+        ),
     )
 
 
@@ -475,6 +484,21 @@ def _local_evaluation_suite(name: str) -> EvaluationSuite:
                 ),
                 kind=EvaluationScenarioKind.REGRESSION,
                 tags=("smoke", "kubernetes"),
+            ),
+            EvaluationScenario(
+                "invalid scale policy",
+                goal,
+                task,
+                ScenarioExpectations(
+                    expected_status=ExecutionStatus.FAILED,
+                    expected_error_code=ErrorCode.POLICY_DENIED,
+                    forbidden_events=("ActionStarted",),
+                    required_audit_capabilities=("scale_workload",),
+                    policy_denial_count=1,
+                    max_actions=0,
+                ),
+                kind=EvaluationScenarioKind.POLICY,
+                tags=("policy", "kubernetes"),
             ),
         ),
         tags=("local", "kubernetes"),

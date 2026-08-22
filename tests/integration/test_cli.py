@@ -77,6 +77,17 @@ def scale_workload() -> Decision:
     )
 
 
+def invalid_scale_workload() -> Decision:
+    return Decision(
+        DecisionType.EXECUTE,
+        "Invalid scale through CLI test service",
+        capability="scale_workload",
+        target="deployment/example",
+        arguments=immutable_json({"name": "example", "namespace": "default", "replicas": 0}),
+        expected_observations=("mutation_applied",),
+    )
+
+
 def wait() -> Decision:
     return Decision(DecisionType.WAIT, "CLI test waiting point")
 
@@ -677,7 +688,7 @@ async def test_cli_eval_run_executes_suite_and_persists_report(tmp_path: Path) -
 
 @pytest.mark.asyncio
 async def test_cli_eval_run_can_fail_process_on_gate_failure() -> None:
-    service, _ = build_cli_service([inspect_workload(), finish()])
+    service, _ = build_cli_service([inspect_workload(), finish(), invalid_scale_workload()])
     output = StringIO()
     error = StringIO()
 
@@ -704,7 +715,7 @@ async def test_cli_eval_run_can_fail_process_on_gate_failure() -> None:
 
 @pytest.mark.asyncio
 async def test_cli_eval_compare_detects_report_drift(tmp_path: Path) -> None:
-    service, _ = build_cli_service([inspect_workload(), finish()])
+    service, _ = build_cli_service([inspect_workload(), finish(), invalid_scale_workload()])
     report_output = StringIO()
     report_dir = tmp_path / "reports"
     await run_cli(
