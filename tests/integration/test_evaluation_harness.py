@@ -343,13 +343,19 @@ async def test_evaluation_harness_records_stable_suite_report() -> None:
             ),
         )
     )
-    recording = record_evaluation_suite(
-        EvaluationSuiteReport((*suite.reports, policy_report), "nightly behavior suite")
+    suite_report = EvaluationSuiteReport((*suite.reports, policy_report), "nightly behavior suite")
+    gate_report = evaluate_quality_gate(
+        suite_report,
+        EvaluationQualityGate(min_pass_rate=1.0, max_policy_denial_rate=0.5),
     )
+    recording = record_evaluation_suite(suite_report, gate_report=gate_report)
 
     assert recording.suite_name == "nightly behavior suite"
     assert recording.summary.scenario_count == 2
     assert recording.summary.passed_count == 2
+    assert recording.gate is not None
+    assert recording.gate.passed
+    assert recording.gate.checks[0].name == "pass_rate"
     assert recording.scenarios[0].action_capabilities == ("inspect_workload",)
     assert recording.scenarios[1].audit_capabilities == ("scale_workload",)
     assert all(
