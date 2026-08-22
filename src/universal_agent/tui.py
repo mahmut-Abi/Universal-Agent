@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -7,7 +8,15 @@ from universal_agent.console import RuntimeConsoleSnapshot, build_runtime_consol
 from universal_agent.core import SessionId
 from universal_agent.operations import AuditRecordView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
-from universal_agent.service import DomainView, ReadyView, RuntimeService
+from universal_agent.service import (
+    CapabilityView,
+    DomainView,
+    ProfileView,
+    ReadyView,
+    RuntimeService,
+    SessionExplorerView,
+    ToolView,
+)
 
 TuiSnapshot = RuntimeConsoleSnapshot
 
@@ -61,10 +70,20 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
         _rule(),
     ]
     lines.extend(_domain_lines(snapshot.domains))
+    lines.extend(("", "Agent Profiles", _rule()))
+    lines.extend(_profile_lines(snapshot.profiles))
+    lines.extend(("", "Capabilities", _rule()))
+    lines.extend(_capability_lines(snapshot.capabilities))
+    lines.extend(("", "Tools", _rule()))
+    lines.extend(_tool_lines(snapshot.tools))
     lines.extend(("", "Sessions", _rule()))
     lines.extend(_session_lines(snapshot.sessions))
     lines.extend(("", "Selected Session", _rule()))
     lines.extend(_selected_session_lines(snapshot.selected_session))
+    lines.extend(("", "World Facts", _rule()))
+    lines.extend(_world_fact_lines(snapshot.session_explorer))
+    lines.extend(("", "Session Evidence", _rule()))
+    lines.extend(_evidence_lines(snapshot.session_explorer))
     lines.extend(("", "Recent Events", _rule()))
     lines.extend(_event_lines(snapshot.events))
     lines.extend(("", "Audit", _rule()))
@@ -82,6 +101,53 @@ def _domain_lines(domains: tuple[DomainView, ...]) -> list[str]:
             f" evaluators={len(domain.evaluator_names)}"
         )
         for domain in domains
+    ]
+
+
+def _profile_lines(profiles: tuple[ProfileView, ...]) -> list[str]:
+    if not profiles:
+        return ["- none"]
+    return [
+        (
+            f"- {profile.name}@{profile.version}"
+            f" primary={profile.domain_name}@{profile.domain_version}"
+            f" domains={_profile_domain_text(profile)}"
+            f" :: {profile.description}"
+        )
+        for profile in profiles
+    ]
+
+
+def _capability_lines(capabilities: tuple[CapabilityView, ...]) -> list[str]:
+    if not capabilities:
+        return ["- none"]
+    return [
+        (
+            f"- {capability.name}"
+            f" category={capability.category.value}"
+            f" risk={capability.risk.value}"
+            f" domain={capability.domain_name}@{capability.domain_version}"
+            f" tools={_tuple_text(capability.tool_names)}"
+            f" :: {capability.description}"
+        )
+        for capability in capabilities
+    ]
+
+
+def _tool_lines(tools: tuple[ToolView, ...]) -> list[str]:
+    if not tools:
+        return ["- none"]
+    return [
+        (
+            f"- {tool.name}"
+            f" side_effect={tool.side_effect.value}"
+            f" risk={tool.risk.value}"
+            f" capabilities={_tuple_text(tool.capabilities)}"
+            f" required_args={_tuple_text(tool.required_arguments)}"
+            f" timeout={tool.timeout_seconds:g}s"
+            f" domain={tool.domain_name}@{tool.domain_version}"
+        )
+        for tool in tools
     ]
 
 
@@ -119,6 +185,35 @@ def _selected_session_lines(session: SessionView | None) -> list[str]:
     if session.error_code is not None:
         lines.append(f"Error: {session.error_code.value}")
     return lines
+
+
+def _world_fact_lines(explorer: SessionExplorerView | None) -> list[str]:
+    if explorer is None or not explorer.world_facts:
+        return ["- none"]
+    return [
+        (
+            f"- {fact.subject} {fact.claim}={_value_text(fact.value)}"
+            f" confidence={fact.confidence:.2f}"
+            f" evidence={_tuple_text(fact.evidence_ids)}"
+        )
+        for fact in explorer.world_facts
+    ]
+
+
+def _evidence_lines(explorer: SessionExplorerView | None) -> list[str]:
+    if explorer is None or not explorer.evidence:
+        return ["- none"]
+    return [
+        (
+            f"- {item.evidence_id}"
+            f" subject={item.subject}"
+            f" claim={item.claim}"
+            f" value={_value_text(item.value)}"
+            f" source={item.source}"
+            f" confidence={item.confidence:.2f}"
+        )
+        for item in explorer.evidence
+    ]
 
 
 def _event_lines(events: tuple[RuntimeEventView, ...]) -> list[str]:
@@ -195,6 +290,22 @@ def _mapping_text(values: Mapping[str, Any]) -> str:
     if not values:
         return "none"
     return ", ".join(f"{key}={values[key]}" for key in sorted(values))
+
+
+def _profile_domain_text(profile: ProfileView) -> str:
+    if not profile.domains:
+        return "none"
+    return ", ".join(f"{identity.name}@{identity.version}" for identity in profile.domains)
+
+
+def _tuple_text(values: tuple[str, ...]) -> str:
+    return ", ".join(values) if values else "none"
+
+
+def _value_text(value: object) -> str:
+    if isinstance(value, dict | list):
+        return json.dumps(value, sort_keys=True)
+    return str(value)
 
 
 def _ready_text(ready: ReadyView) -> str:
