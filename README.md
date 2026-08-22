@@ -87,7 +87,8 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
   consumers.
 
 This remains usable in-process, while the standard-library HTTP bridge now wraps the same
-`AgentdApp` route adapter for local `agentd` hosting. Database persistence and SSE delivery are later
+`AgentdApp` route adapter for local `agentd` hosting. SSE-formatted event batches now share the same
+cursor semantics as JSON event reads; database persistence and long-lived push delivery are later
 P3.5 work built on this interface, not replacements for it.
 
 `RuntimeService` is the first framework-free `agentd` foundation. It delegates execution, session and
@@ -109,8 +110,10 @@ confirmation resume via
 `POST /v1/sessions/{id}/resume`, explicit pause via `POST /v1/sessions/{id}/pause`, cancellation via
 `POST /v1/sessions/{id}/cancel`, operations reads via `/v1/metrics`, `/v1/cost`, `/v1/logs`,
 `/v1/traces`, `/v1/doctor` and `/v1/audit`, per-session audit/cost/log/trace reads, and cursor event
-reads with `after` / `limit` query parameters. `AgentdHttpServer` is the standard-library HTTP bridge
-for this adapter: it owns socket/body/header translation only and does not touch Runtime internals.
+reads with `after` / `limit` query parameters. `GET /v1/sessions/{id}/events/stream` returns the same
+cursor batch as `text/event-stream` frames for SSE clients. `AgentdHttpServer` is the standard-library
+HTTP bridge for this adapter: it owns socket/body/header translation only and does not touch Runtime
+internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
 Capability/Tool catalogs, and session list/show/events/pause/resume/cancel commands through
@@ -162,7 +165,8 @@ not a database layer, event-sourcing model, or production migration system.
   non-confirmation resume, confirmation resume and cancellation.
   `RuntimeService` now adds framework-free `agentd` foundation metadata: health, readiness, domains,
   capabilities, tools, delegated execution, runnable examples, an `AgentdApp` route adapter for
-  HTTP-shaped goal submission, session listing, session/event reads, pause/resume/cancel routes,
+  HTTP-shaped goal submission, session listing, JSON and SSE-formatted session/event reads,
+  pause/resume/cancel routes,
   Profile catalog reads, a standard-library `AgentdHttpServer` bridge, file-backed session/event
   stores for local recovery, a local CLI adapter, and typed
   `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, store backend,

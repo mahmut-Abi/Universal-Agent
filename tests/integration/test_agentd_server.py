@@ -103,12 +103,12 @@ def running_server(app: AgentdApp) -> Generator[str, None, None]:
         server.server_close()
 
 
-def request_json(
+def request(
     base_url: str,
     method: str,
     path: str,
     body: dict[str, JsonValue] | str | None = None,
-) -> tuple[int, dict[str, JsonValue]]:
+) -> tuple[int, str, dict[str, str]]:
     data: bytes | None = None
     headers: dict[str, str] = {}
     if isinstance(body, dict):
@@ -120,13 +120,21 @@ def request_json(
     request = Request(f"{base_url}{path}", data=data, headers=headers, method=method)
     try:
         with urlopen(request, timeout=5) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-            assert isinstance(payload, dict)
-            return response.status, payload
+            return response.status, response.read().decode("utf-8"), dict(response.headers.items())
     except HTTPError as exc:
-        payload = json.loads(exc.read().decode("utf-8"))
-        assert isinstance(payload, dict)
-        return exc.code, payload
+        return exc.code, exc.read().decode("utf-8"), dict(exc.headers.items())
+
+
+def request_json(
+    base_url: str,
+    method: str,
+    path: str,
+    body: dict[str, JsonValue] | str | None = None,
+) -> tuple[int, dict[str, JsonValue]]:
+    status, text, _ = request(base_url, method, path, body)
+    payload = json.loads(text)
+    assert isinstance(payload, dict)
+    return status, payload
 
 
 def test_agentd_http_server_serves_health_goal_and_event_routes() -> None:
@@ -177,3 +185,25 @@ def test_agentd_http_server_returns_json_errors_before_runtime_routing() -> None
         "code": "method_not_allowed",
         "message": "method is not allowed for this route",
     }
+
+
+def test_agentd_http_server_serves_sse_event_stream_batches() -> None:
+    app, _ = build_app([inspect_workload(), finish()])
+
+    with running_server(app) as base_url:
+        _, created = request_json(base_url, "POST", "/v1/sessions", goal_submission_body())
+        result = created["result"]
+        assert isinstance(result, dict)
+        session_id = result["session_id"]
+        assert isinstance(session_id, str)
+        status, text, headers = request(
+            base_url,
+            "GET",
+            f"/v1/sessions/{session_id}/events/stream?limit=1",
+        )
+
+    assert status == 200
+    assert headers["content-type"] == "text/event-stream"
+    assert "event: GoalCreated\n" in text
+    assert "data: " in text
+    assert ": next_cursor=" in text

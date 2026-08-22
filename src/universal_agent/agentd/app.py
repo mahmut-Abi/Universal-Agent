@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -68,6 +69,7 @@ class HttpResponse:
     status_code: int
     body: JsonMapping
     headers: Mapping[str, str] = field(default_factory=_default_headers)
+    text_body: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,6 +203,20 @@ class AgentdApp:
                     limit=_optional_positive_int_query(request.path, "limit"),
                 )
                 return json_response(event_batch_body(batch))
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
+            except ValueError as exc:
+                return bad_request(str(exc))
+        if session_id is not None and suffix == "events/stream":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                batch = await self._service.stream_events(
+                    session_id,
+                    after_event_id=_optional_event_cursor(request.path),
+                    limit=_optional_positive_int_query(request.path, "limit"),
+                )
+                return sse_event_batch_response(batch)
             except StateNotFoundError as exc:
                 return not_found(str(exc))
             except ValueError as exc:
@@ -422,6 +438,33 @@ def event_batch_body(batch: RuntimeEventBatch) -> JsonMapping:
             "next_cursor": batch.next_cursor,
         }
     )
+
+
+def sse_event_batch_response(batch: RuntimeEventBatch) -> HttpResponse:
+    return HttpResponse(
+        status_code=200,
+        body=event_batch_body(batch),
+        headers=MappingProxyType(
+            {
+                "content-type": "text/event-stream",
+                "cache-control": "no-cache",
+            }
+        ),
+        text_body=sse_event_batch_text(batch),
+    )
+
+
+def sse_event_batch_text(batch: RuntimeEventBatch) -> str:
+    chunks: list[str] = []
+    for event in batch.events:
+        chunks.append(f"id: {event.event_id}\n")
+        chunks.append(f"event: {event.type}\n")
+        chunks.append("data: ")
+        chunks.append(json.dumps(event_body(event), sort_keys=True))
+        chunks.append("\n\n")
+    if batch.next_cursor is not None:
+        chunks.append(f": next_cursor={batch.next_cursor}\n\n")
+    return "".join(chunks)
 
 
 def execution_result_body(result: ExecutionResult) -> dict[str, JsonValue]:
@@ -793,6 +836,8 @@ def _session_route(path: str) -> tuple[SessionId | None, str]:
         return SessionId(segments[2]), ""
     if len(segments) == 4 and segments[:2] == ("v1", "sessions"):
         return SessionId(segments[2]), segments[3]
+    if len(segments) == 5 and segments[:2] == ("v1", "sessions"):
+        return SessionId(segments[2]), f"{segments[3]}/{segments[4]}"
     return None, ""
 
 

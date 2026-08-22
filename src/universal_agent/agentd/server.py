@@ -110,7 +110,7 @@ def agentd_request_handler() -> type[BaseHTTPRequestHandler]:
                 return _error_response(400, "bad_request", str(exc))
 
         def _write_response(self, response: HttpResponse) -> None:
-            body = json.dumps(_to_json(response.body), sort_keys=True).encode("utf-8")
+            body = _response_body(response)
             self.send_response(response.status_code)
             headers = dict(response.headers)
             if "content-type" not in {key.lower() for key in headers}:
@@ -129,6 +129,12 @@ def _error_response(status_code: int, code: str, message: str) -> HttpResponse:
         status_code=status_code,
         body=immutable_json({"error": {"code": code, "message": message}}),
     )
+
+
+def _response_body(response: HttpResponse) -> bytes:
+    if response.text_body is not None:
+        return response.text_body.encode("utf-8")
+    return json.dumps(_to_json(response.body), sort_keys=True).encode("utf-8")
 
 
 def _json_mapping(value: object) -> JsonMapping:

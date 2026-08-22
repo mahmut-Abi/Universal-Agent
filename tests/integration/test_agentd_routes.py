@@ -559,6 +559,30 @@ async def test_agentd_events_route_supports_cursor_and_limit() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agentd_events_stream_route_projects_cursor_batch_as_sse() -> None:
+    service, _ = build_service([inspect_workload(), finish()])
+    app = AgentdApp(service)
+    created = await app.handle(HttpRequest("POST", "/v1/sessions", goal_submission_body()))
+    result = created.body["result"]
+    assert isinstance(result, dict)
+    session_id = result["session_id"]
+    assert isinstance(session_id, str)
+
+    response = await app.handle(
+        HttpRequest("GET", f"/v1/sessions/{session_id}/events/stream?limit=2")
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/event-stream"
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.text_body is not None
+    assert response.text_body.count("\n\n") == 3
+    assert "event: GoalCreated\n" in response.text_body
+    assert "data: " in response.text_body
+    assert f": next_cursor={response.body['next_cursor']}\n\n" in response.text_body
+
+
+@pytest.mark.asyncio
 async def test_agentd_pause_and_resume_routes_continue_waiting_session_without_pending_action() -> (
     None
 ):
