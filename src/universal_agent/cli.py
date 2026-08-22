@@ -16,6 +16,7 @@ from universal_agent.agentd.app import (
     domain_body,
     event_batch_body,
     health_body,
+    log_records_body,
     metrics_body,
     profile_body,
     ready_body,
@@ -112,6 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("ready")
     commands.add_parser("metrics")
     commands.add_parser("cost")
+    commands.add_parser("logs")
     commands.add_parser("doctor")
     commands.add_parser("audit")
 
@@ -153,6 +155,9 @@ def build_parser() -> argparse.ArgumentParser:
     cost = session_commands.add_parser("cost")
     cost.add_argument("session_id")
 
+    logs = session_commands.add_parser("logs")
+    logs.add_argument("session_id")
+
     pause = session_commands.add_parser("pause")
     pause.add_argument("session_id")
     pause.add_argument("--reason", default="session paused from CLI")
@@ -188,6 +193,9 @@ async def _dispatch(
         return
     if command == "cost":
         _write_json(out, cost_body(await service.cost()))
+        return
+    if command == "logs":
+        _write_json(out, log_records_body(await service.logs()))
         return
     if command == "doctor":
         _write_json(out, doctor_body(await service.doctor()))
@@ -254,6 +262,10 @@ async def _dispatch_session(
     if command == "cost":
         session_id = SessionId(cast(str, args.session_id))
         _write_json(out, cost_body(await service.cost(session_id)))
+        return
+    if command == "logs":
+        session_id = SessionId(cast(str, args.session_id))
+        _write_json(out, log_records_body(await service.logs(session_id)))
         return
     if command == "pause":
         session_id = SessionId(cast(str, args.session_id))

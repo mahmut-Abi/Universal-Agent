@@ -429,6 +429,8 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
     audit = await app.handle(HttpRequest("GET", "/v1/audit"))
     session_audit = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/audit"))
     session_cost = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/cost"))
+    logs = await app.handle(HttpRequest("GET", "/v1/logs"))
+    session_logs = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/logs"))
 
     assert metrics.status_code == 200
     assert metrics.body["session_count"] == 1
@@ -448,6 +450,13 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
     assert first_cost_item["model"] == "agentd-test"
     assert doctor.status_code == 200
     assert doctor.body["status"] == "ok"
+    assert logs.status_code == 200
+    assert logs.body == session_logs.body
+    log_items = logs.body["logs"]
+    assert isinstance(log_items, list)
+    last_log_item = log_items[-1]
+    assert isinstance(last_log_item, dict)
+    assert last_log_item["event_type"] == "GoalCompleted"
     assert audit.status_code == 200
     audit_items = audit.body["audit_records"]
     session_audit_items = session_audit.body["audit_records"]

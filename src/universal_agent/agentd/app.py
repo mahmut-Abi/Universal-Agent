@@ -37,6 +37,7 @@ from universal_agent.service import (
     ProfileView,
     ReadyView,
     RuntimeCostView,
+    RuntimeLogRecordView,
     RuntimeMetricsView,
     RuntimeService,
     ToolView,
@@ -131,6 +132,10 @@ class AgentdApp:
             if method != "GET":
                 return method_not_allowed(("GET",))
             return json_response(cost_body(await self._service.cost()))
+        if path == "/v1/logs":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            return json_response(log_records_body(await self._service.logs()))
         if path == "/v1/doctor":
             if method != "GET":
                 return method_not_allowed(("GET",))
@@ -200,6 +205,13 @@ class AgentdApp:
                 return method_not_allowed(("GET",))
             try:
                 return json_response(cost_body(await self._service.cost(session_id)))
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
+        if session_id is not None and suffix == "logs":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                return json_response(log_records_body(await self._service.logs(session_id)))
             except StateNotFoundError as exc:
                 return not_found(str(exc))
         if session_id is not None and suffix == "pause":
@@ -491,6 +503,25 @@ def doctor_body(view: DoctorReportView) -> JsonMapping:
 
 def audit_records_body(records: tuple[AuditRecordView, ...]) -> JsonMapping:
     return immutable_json({"audit_records": [audit_record_body(record) for record in records]})
+
+
+def log_records_body(records: tuple[RuntimeLogRecordView, ...]) -> JsonMapping:
+    return immutable_json({"logs": [log_record_body(record) for record in records]})
+
+
+def log_record_body(view: RuntimeLogRecordView) -> dict[str, JsonValue]:
+    return {
+        "log_id": view.log_id,
+        "level": view.level,
+        "message": view.message,
+        "event_type": view.event_type,
+        "session_id": str(view.session_id),
+        "goal_id": str(view.goal_id),
+        "task_id": str(view.task_id),
+        "action_id": str(view.action_id) if view.action_id is not None else None,
+        "data": _json_value(view.data),
+        "occurred_at": view.occurred_at.isoformat(),
+    }
 
 
 def audit_record_body(view: AuditRecordView) -> dict[str, JsonValue]:

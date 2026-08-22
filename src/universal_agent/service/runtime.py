@@ -16,10 +16,12 @@ from universal_agent.operations import (
     AuditRecordView,
     DoctorReportView,
     RuntimeCostView,
+    RuntimeLogRecordView,
     RuntimeMetricsView,
     build_audit_records,
     build_doctor_report,
     build_runtime_cost,
+    build_runtime_logs,
     build_runtime_metrics,
 )
 from universal_agent.profile import AgentProfile, ProfileRegistry
@@ -245,6 +247,15 @@ class RuntimeService:
             return build_runtime_cost(await self.list_events(session_id))
         sessions = await self.list_sessions()
         return build_runtime_cost(await self._list_all_events(sessions))
+
+    async def logs(
+        self,
+        session_id: SessionId | None = None,
+    ) -> tuple[RuntimeLogRecordView, ...]:
+        if session_id is not None:
+            return build_runtime_logs(await self.list_events(session_id), session_id=session_id)
+        sessions = await self.list_sessions()
+        return build_runtime_logs(await self._list_all_events(sessions))
 
     async def doctor(self) -> DoctorReportView:
         health = self.health()

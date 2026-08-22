@@ -15,6 +15,7 @@ from universal_agent.operations import (
     build_audit_records,
     build_doctor_report,
     build_runtime_cost,
+    build_runtime_logs,
     build_runtime_metrics,
 )
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView
@@ -155,6 +156,47 @@ def test_runtime_cost_is_grouped_by_model_usage_events() -> None:
     assert cost.by_model[1].total_tokens == 185
 
 
+def test_runtime_logs_project_redacted_structured_records() -> None:
+    events = (
+        event(
+            "event-1",
+            "PolicyChecked",
+            action_id="action-1",
+            data={
+                "effect": "deny",
+                "arguments": {
+                    "name": "example",
+                    "api_token": "secret-token",
+                    "nested": {"password": "secret-password"},
+                },
+            },
+            occurred_at=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        ),
+        event(
+            "event-2",
+            "ActionStarted",
+            action_id="action-2",
+            data={"capability": "inspect_workload", "tool_name": "kubernetes_inspect"},
+            occurred_at=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+        ),
+    )
+
+    logs = build_runtime_logs(events)
+
+    assert [record.log_id for record in logs] == ["event-2", "event-1"]
+    assert logs[0].level == "info"
+    assert logs[0].message == "action started: inspect_workload via kubernetes_inspect"
+    assert logs[1].level == "error"
+    assert logs[1].message == "policy checked: deny"
+    arguments = logs[1].data["arguments"]
+    assert isinstance(arguments, dict)
+    assert arguments["name"] == "example"
+    assert arguments["api_token"] == "[REDACTED]"
+    nested = arguments["nested"]
+    assert isinstance(nested, dict)
+    assert nested["password"] == "[REDACTED]"
+
+
 def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -174,6 +216,7 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
         "catalog",
         "session_store",
         "event_stream",
+        "structured_logs",
         "policy_denials",
         "recovery",
         "cost_tracking",

@@ -8,9 +8,11 @@ from universal_agent.core import (
     ErrorCode,
     GoalId,
     GoalStatus,
+    JsonMapping,
     JsonValue,
     SessionId,
     TaskId,
+    immutable_json,
 )
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView
 
@@ -92,6 +94,20 @@ class AuditRecordView:
     occurred_at: datetime
     completed_at: datetime | None = None
     error_code: ErrorCode | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeLogRecordView:
+    log_id: str
+    level: str
+    message: str
+    event_type: str
+    session_id: SessionId
+    goal_id: GoalId
+    task_id: TaskId
+    action_id: ActionId | None
+    data: JsonMapping
+    occurred_at: datetime
 
 
 def build_runtime_metrics(
@@ -192,6 +208,7 @@ def build_doctor_report(
 ) -> DoctorReportView:
     metrics = build_runtime_metrics(sessions, events)
     cost = build_runtime_cost(events)
+    logs = build_runtime_logs(events)
     checks = (
         _check(
             "service_health",
@@ -206,6 +223,7 @@ def build_doctor_report(
         ),
         DoctorCheckView("session_store", "ok", f"sessions listed: {len(sessions)}"),
         _event_stream_check(sessions, events),
+        DoctorCheckView("structured_logs", "ok", f"log records projected: {len(logs)}"),
         _policy_denial_check(metrics.policy_denial_count),
         _recovery_check(metrics.recovery_exhausted_count),
         DoctorCheckView(
@@ -243,6 +261,31 @@ def build_audit_records(
     return tuple(sorted(records, key=lambda record: record.occurred_at, reverse=True))
 
 
+def build_runtime_logs(
+    events: tuple[RuntimeEventView, ...],
+    *,
+    session_id: SessionId | None = None,
+) -> tuple[RuntimeLogRecordView, ...]:
+    scoped = tuple(
+        event for event in events if session_id is None or event.session_id == session_id
+    )
+    return tuple(
+        RuntimeLogRecordView(
+            log_id=event.event_id,
+            level=_log_level(event),
+            message=_log_message(event),
+            event_type=event.type,
+            session_id=event.session_id,
+            goal_id=event.goal_id,
+            task_id=event.task_id,
+            action_id=event.action_id,
+            data=_redacted_mapping(event.data),
+            occurred_at=event.occurred_at,
+        )
+        for event in sorted(scoped, key=lambda item: item.occurred_at)
+    )
+
+
 def _audit_record(
     event: RuntimeEventView,
     completed: RuntimeEventView | None,
@@ -277,6 +320,50 @@ def _audit_status(policy_effect: str, completed_status: str) -> str:
     if completed_status:
         return completed_status
     return "allowed"
+
+
+def _log_level(event: RuntimeEventView) -> str:
+    if event.type == "PolicyChecked" and _string(event.data.get("effect")) == "deny":
+        return "error"
+    if (
+        event.type == "ActionCompleted"
+        and _string(event.data.get("status"))
+        and _string(event.data.get("status")) != "succeeded"
+    ):
+        return "error"
+    if event.type in {"GoalFailed", "RecoveryExhausted"}:
+        return "error"
+    if event.type in {"ConfirmationRequired", "GoalWaiting", "SessionPaused"}:
+        return "warn"
+    if event.type == "PolicyChecked" and _string(event.data.get("effect")):
+        effect = _string(event.data.get("effect"))
+        if effect != "allow":
+            return "warn"
+    if event.type == "RecoveryPlanned":
+        return "warn"
+    return "info"
+
+
+def _log_message(event: RuntimeEventView) -> str:
+    if event.type == "DecisionGenerated":
+        return f"decision generated: {_string(event.data.get('decision_type')) or 'unknown'}"
+    if event.type == "PolicyChecked":
+        return f"policy checked: {_string(event.data.get('effect')) or 'unknown'}"
+    if event.type == "ActionStarted":
+        capability = _string(event.data.get("capability")) or "unknown capability"
+        tool_name = _string(event.data.get("tool_name")) or "unknown tool"
+        return f"action started: {capability} via {tool_name}"
+    if event.type == "ActionCompleted":
+        return f"action completed: {_string(event.data.get('status')) or 'unknown'}"
+    if event.type == "ModelUsageRecorded":
+        provider = _string(event.data.get("provider")) or "unknown"
+        model = _string(event.data.get("model")) or "unknown"
+        return f"model usage recorded: {provider}/{model}"
+    if event.type == "EvidenceRecorded":
+        return f"evidence recorded: {_string(event.data.get('claim')) or 'unknown claim'}"
+    if event.type == "EvaluationCompleted":
+        return f"evaluation completed: {_string(event.data.get('status')) or 'unknown'}"
+    return _event_words(event.type)
 
 
 def _event_stream_check(
@@ -346,6 +433,53 @@ def _aggregate_currency(currencies: tuple[str, ...]) -> str:
     if len(unique) == 1:
         return currencies[0]
     return "mixed"
+
+
+def _redacted_mapping(values: JsonMapping) -> JsonMapping:
+    return immutable_json({key: _redacted_value(key, value) for key, value in values.items()})
+
+
+def _redacted_value(key: str, value: object) -> JsonValue:
+    if _sensitive_key(key):
+        return "[REDACTED]"
+    if value is None or isinstance(value, bool | int | float | str):
+        return value
+    if isinstance(value, dict):
+        return {
+            str(item_key): _redacted_value(str(item_key), item) for item_key, item in value.items()
+        }
+    if isinstance(value, list | tuple):
+        return [_redacted_value(key, item) for item in value]
+    return str(value)
+
+
+def _sensitive_key(key: str) -> bool:
+    normalized = key.lower().replace("-", "_")
+    return any(
+        marker in normalized
+        for marker in (
+            "api_key",
+            "authorization",
+            "credential",
+            "password",
+            "secret",
+            "token",
+        )
+    )
+
+
+def _event_words(event_type: str) -> str:
+    words: list[str] = []
+    current = ""
+    for character in event_type:
+        if character.isupper() and current:
+            words.append(current.lower())
+            current = character
+            continue
+        current += character
+    if current:
+        words.append(current.lower())
+    return " ".join(words) or event_type
 
 
 @dataclass(slots=True)

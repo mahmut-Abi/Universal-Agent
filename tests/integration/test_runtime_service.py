@@ -184,6 +184,7 @@ async def test_runtime_service_derives_metrics_doctor_and_audit_from_events() ->
     metrics = await service.metrics()
     cost = await service.cost(run.result.session_id)
     doctor = await service.doctor()
+    logs = await service.logs(run.result.session_id)
     audit = await service.audit_records(run.result.session_id)
 
     assert run.result.status is ExecutionStatus.COMPLETED
@@ -204,8 +205,11 @@ async def test_runtime_service_derives_metrics_doctor_and_audit_from_events() ->
         "service_health",
         "readiness",
         "event_stream",
+        "structured_logs",
         "cost_tracking",
     }
+    assert logs[-1].event_type == "GoalCompleted"
+    assert any(record.event_type == "ModelUsageRecorded" for record in logs)
     assert len(audit) == 1
     assert audit[0].capability == "scale_workload"
     assert audit[0].tool_name == "kubernetes_scale_workload"

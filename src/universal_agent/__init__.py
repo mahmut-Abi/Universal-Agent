@@ -33,6 +33,7 @@ from universal_agent.service import (
     AuditRecordView,
     DoctorReportView,
     RuntimeCostView,
+    RuntimeLogRecordView,
     RuntimeMetricsView,
     RuntimeService,
 )
@@ -68,6 +69,7 @@ __all__ = [
     "RuntimeEventBatch",
     "RuntimeHost",
     "RuntimeLimitsConfig",
+    "RuntimeLogRecordView",
     "RuntimeMetricsView",
     "RuntimeService",
     "ScriptedModelAdapter",
