@@ -38,6 +38,8 @@ class ScenarioExpectations:
     expected_criteria: JsonMapping = field(default_factory=immutable_json)
     required_events: tuple[str, ...] = ()
     forbidden_events: tuple[str, ...] = ()
+    required_evidence_claims: tuple[str, ...] = ()
+    forbidden_evidence_claims: tuple[str, ...] = ()
     required_capabilities: tuple[str, ...] = ()
     allowed_capabilities: tuple[str, ...] | None = None
     required_audit_capabilities: tuple[str, ...] = ()
@@ -109,6 +111,8 @@ class ScenarioCheck:
 @dataclass(frozen=True, slots=True)
 class ScenarioReport:
     scenario_name: str
+    kind: EvaluationScenarioKind
+    tags: tuple[str, ...]
     result: ExecutionResult
     session: SessionView
     events: tuple[RuntimeEventView, ...]
@@ -294,6 +298,8 @@ class EvaluationHarness:
         metrics = build_runtime_metrics((summary,), events)
         return ScenarioReport(
             scenario.name,
+            scenario.kind,
+            scenario.tags,
             run.result,
             session,
             events,
@@ -468,6 +474,7 @@ def _evaluate_expectations(
     metrics: RuntimeMetricsView,
 ) -> tuple[ScenarioCheck, ...]:
     event_types = tuple(event.type for event in events)
+    evidence_claims = _evidence_claims(events)
     action_capabilities = _action_capabilities(events)
     audit_capabilities = tuple(record.capability for record in audit_records)
     checks = [
@@ -508,6 +515,26 @@ def _evaluate_expectations(
             not forbidden_events,
             "no forbidden events were observed",
             "forbidden events observed: " + ", ".join(forbidden_events),
+        )
+    )
+
+    missing_evidence = _missing(expectations.required_evidence_claims, evidence_claims)
+    checks.append(
+        _check(
+            "required_evidence_claims",
+            not missing_evidence,
+            "all required evidence claims were recorded",
+            "missing evidence claims: " + ", ".join(missing_evidence),
+        )
+    )
+
+    forbidden_evidence = _present(expectations.forbidden_evidence_claims, evidence_claims)
+    checks.append(
+        _check(
+            "forbidden_evidence_claims",
+            not forbidden_evidence,
+            "no forbidden evidence claims were recorded",
+            "forbidden evidence claims recorded: " + ", ".join(forbidden_evidence),
         )
     )
 
@@ -649,6 +676,17 @@ def _evaluate_expectations(
         )
 
     return tuple(checks)
+
+
+def _evidence_claims(events: tuple[RuntimeEventView, ...]) -> tuple[str, ...]:
+    claims: list[str] = []
+    for event in events:
+        if event.type != "EvidenceRecorded":
+            continue
+        claim = event.data.get("claim")
+        if isinstance(claim, str):
+            claims.append(claim)
+    return tuple(claims)
 
 
 def _action_capabilities(events: tuple[RuntimeEventView, ...]) -> tuple[str, ...]:

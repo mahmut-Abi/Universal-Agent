@@ -48,6 +48,7 @@ from universal_agent.evaluation.harness import (
     EvaluationQualityGate,
     EvaluationScenario,
     EvaluationScenarioKind,
+    EvaluationScenarioSelector,
     EvaluationSuite,
     ScenarioExpectations,
 )
@@ -234,6 +235,13 @@ def build_parser() -> argparse.ArgumentParser:
     eval_run.add_argument("--max-average-actions", type=float)
     eval_run.add_argument("--max-resource-conflict-rate", type=float)
     eval_run.add_argument("--fail-on-fail", action="store_true")
+    eval_run.add_argument(
+        "--kind",
+        action="append",
+        choices=tuple(item.value for item in EvaluationScenarioKind),
+    )
+    eval_run.add_argument("--tag", action="append")
+    eval_run.add_argument("--exclude-tag", action="append")
 
     eval_compare = eval_commands.add_parser("compare")
     eval_compare.add_argument("expected")
@@ -411,6 +419,7 @@ async def _dispatch_eval(
             report_store=None if report_dir is None else FileEvaluationReportStore(report_dir),
         ).run_suite(
             _local_evaluation_suite(cast(str, args.suite)),
+            selector=_evaluation_selector(args),
             gate=EvaluationQualityGate(
                 min_pass_rate=cast(float, args.min_pass_rate),
                 max_average_actions_per_scenario=cast(float | None, args.max_average_actions),
@@ -433,6 +442,19 @@ async def _dispatch_eval(
     raise ValueError(f"unknown eval command: {command}")
 
 
+def _evaluation_selector(args: argparse.Namespace) -> EvaluationScenarioSelector | None:
+    kinds = cast(list[str] | None, args.kind)
+    tags = cast(list[str] | None, args.tag)
+    exclude_tags = cast(list[str] | None, args.exclude_tag)
+    if kinds is None and tags is None and exclude_tags is None:
+        return None
+    return EvaluationScenarioSelector(
+        kinds=None if kinds is None else tuple(EvaluationScenarioKind(item) for item in kinds),
+        tags=tuple(tags or ()),
+        exclude_tags=tuple(exclude_tags or ()),
+    )
+
+
 def _local_evaluation_suite(name: str) -> EvaluationSuite:
     goal = Goal("Evaluate workload health", (SuccessCriterion("healthy", True),))
     task = Task("Inspect workload", ("healthy",))
@@ -447,6 +469,7 @@ def _local_evaluation_suite(name: str) -> EvaluationSuite:
                     expected_status=ExecutionStatus.COMPLETED,
                     expected_criteria=immutable_json({"healthy": True}),
                     required_events=("GoalCompleted", "EvaluationCompleted"),
+                    required_evidence_claims=("healthy",),
                     required_capabilities=("inspect_workload",),
                     max_actions=1,
                 ),
@@ -691,6 +714,8 @@ def _evaluation_summary_body(summary: EvaluationSummaryRecording) -> dict[str, o
 def _evaluation_scenario_body(scenario: EvaluationScenarioRecording) -> dict[str, object]:
     return {
         "scenario_name": scenario.scenario_name,
+        "kind": scenario.kind.value,
+        "tags": list(scenario.tags),
         "passed": scenario.passed,
         "result_status": scenario.result_status.value,
         "error_code": None if scenario.error_code is None else scenario.error_code.value,
@@ -699,6 +724,7 @@ def _evaluation_scenario_body(scenario: EvaluationScenarioRecording) -> dict[str
         "event_types": list(scenario.event_types),
         "action_capabilities": list(scenario.action_capabilities),
         "audit_capabilities": list(scenario.audit_capabilities),
+        "evidence_claims": list(scenario.evidence_claims),
     }
 
 

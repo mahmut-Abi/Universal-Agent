@@ -91,6 +91,7 @@ def suite() -> EvaluationSuite:
                     expected_status=ExecutionStatus.COMPLETED,
                     expected_criteria=immutable_json({"healthy": True}),
                     required_events=("GoalCompleted", "EvaluationCompleted"),
+                    required_evidence_claims=("healthy",),
                     required_capabilities=("inspect_workload",),
                     max_actions=1,
                 ),

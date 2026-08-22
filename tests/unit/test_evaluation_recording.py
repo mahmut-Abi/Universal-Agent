@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from universal_agent.core import ErrorCode, ExecutionStatus, immutable_json
+from universal_agent.evaluation.harness import EvaluationScenarioKind
 from universal_agent.evaluation.recording import (
     EvaluationCheckRecording,
     EvaluationGateRecording,
@@ -59,11 +60,14 @@ def sample_report_recording(name: str = "nightly behavior suite") -> EvaluationR
                 passed=True,
                 result_status=ExecutionStatus.COMPLETED,
                 error_code=None,
+                kind=EvaluationScenarioKind.REGRESSION,
+                tags=("smoke", "kubernetes"),
                 satisfied_criteria=immutable_json({"healthy": True}),
                 checks=(EvaluationCheckRecording("status", True, "status=completed"),),
                 event_types=("GoalCreated", "ActionStarted", "GoalCompleted"),
                 action_capabilities=("inspect_workload",),
                 audit_capabilities=(),
+                evidence_claims=("resource", "healthy"),
                 metrics=ReplayMetrics(
                     event_count=3,
                     action_started_count=1,
@@ -84,10 +88,13 @@ def sample_report_recording(name: str = "nightly behavior suite") -> EvaluationR
                 passed=False,
                 result_status=ExecutionStatus.FAILED,
                 error_code=ErrorCode.POLICY_DENIED,
+                kind=EvaluationScenarioKind.POLICY,
+                tags=("policy", "kubernetes"),
                 checks=(EvaluationCheckRecording("status", False, "expected completed"),),
                 event_types=("GoalCreated", "PolicyChecked", "GoalFailed"),
                 action_capabilities=(),
                 audit_capabilities=("scale_workload",),
+                evidence_claims=(),
                 metrics=ReplayMetrics(
                     event_count=3,
                     action_started_count=0,
@@ -132,8 +139,12 @@ def test_evaluation_report_codec_round_trips_stable_report() -> None:
     assert restored.summary.model_total_token_count == 215
     assert restored.summary.resource_conflict_count == 1
     assert restored.scenarios[0].passed
+    assert restored.scenarios[0].kind is EvaluationScenarioKind.REGRESSION
+    assert restored.scenarios[0].tags == ("smoke", "kubernetes")
     assert restored.scenarios[0].satisfied_criteria == {"healthy": True}
+    assert restored.scenarios[0].evidence_claims == ("resource", "healthy")
     assert restored.scenarios[1].error_code is ErrorCode.POLICY_DENIED
+    assert restored.scenarios[1].kind is EvaluationScenarioKind.POLICY
     assert restored.scenarios[1].audit_capabilities == ("scale_workload",)
     assert restored.scenarios[1].metrics.resource_conflict_count == 1
     assert restored.gate is not None
@@ -145,11 +156,21 @@ def test_evaluation_report_codec_decodes_v1_reports_without_gate() -> None:
     payload = encode_evaluation_report(sample_report_recording())
     payload["schema_version"] = 1
     del payload["gate"]
+    scenarios = payload["scenarios"]
+    assert isinstance(scenarios, list)
+    for scenario in scenarios:
+        assert isinstance(scenario, dict)
+        del scenario["kind"]
+        del scenario["tags"]
+        del scenario["evidence_claims"]
 
     restored = decode_evaluation_report(payload)
 
     assert restored.suite_name == "nightly behavior suite"
     assert restored.gate is None
+    assert restored.scenarios[0].kind is EvaluationScenarioKind.SCENARIO
+    assert restored.scenarios[0].tags == ()
+    assert restored.scenarios[0].evidence_claims == ()
 
 
 def test_evaluation_report_codec_rejects_unknown_schema_version() -> None:
@@ -177,6 +198,8 @@ def test_evaluation_report_comparison_detects_behavior_drift() -> None:
     drifted_healthy = replace(
         expected.scenarios[0],
         action_capabilities=("query_metrics",),
+        evidence_claims=("resource",),
+        tags=("smoke",),
     )
     drifted_gate = replace(
         expected.gate,
@@ -194,7 +217,9 @@ def test_evaluation_report_comparison_detects_behavior_drift() -> None:
     assert not comparison.passed
     assert {
         "summary",
+        "scenario:healthy workload:tags",
         "scenario:healthy workload:action_capabilities",
+        "scenario:healthy workload:evidence_claims",
         "gate:checks",
     } <= {check.name for check in comparison.failed_checks}
 

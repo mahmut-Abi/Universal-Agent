@@ -298,6 +298,8 @@ async def test_evaluation_harness_passes_a_normal_scenario() -> None:
             expected_status=ExecutionStatus.COMPLETED,
             expected_criteria=immutable_json({"healthy": True}),
             required_events=("GoalCompleted", "EvaluationCompleted"),
+            required_evidence_claims=("healthy",),
+            forbidden_evidence_claims=("root_cause",),
             required_capabilities=("inspect_workload",),
             allowed_capabilities=("inspect_workload",),
             max_actions=1,
@@ -317,6 +319,33 @@ async def test_evaluation_harness_passes_a_normal_scenario() -> None:
     assert report.metrics.model_estimated_cost_micros == 15
     assert backend.inspect_calls == ["inspect_workload"]
     assert backend.mutation_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_evaluation_harness_reports_missing_expected_evidence_claims() -> None:
+    backend = HarnessBackend()
+    service = build_service(backend, [inspect_workload(), finish()])
+    goal, task = goal_task()
+    scenario = EvaluationScenario(
+        "healthy workload missing root cause evidence",
+        goal,
+        task,
+        ScenarioExpectations(
+            expected_status=ExecutionStatus.COMPLETED,
+            required_evidence_claims=("root_cause",),
+            forbidden_evidence_claims=("healthy",),
+            required_capabilities=("inspect_workload",),
+        ),
+    )
+
+    report = await EvaluationHarness(service).run(scenario)
+
+    assert not report.passed
+    assert {
+        "required_evidence_claims",
+        "forbidden_evidence_claims",
+    } <= {check.name for check in report.failed_checks}
+    assert backend.inspect_calls == ["inspect_workload"]
 
 
 @pytest.mark.asyncio
@@ -396,6 +425,8 @@ async def test_evaluation_harness_records_stable_suite_report() -> None:
     assert recording.gate is not None
     assert recording.gate.passed
     assert recording.gate.checks[0].name == "pass_rate"
+    assert recording.scenarios[0].kind is EvaluationScenarioKind.SCENARIO
+    assert recording.scenarios[0].tags == ()
     assert recording.scenarios[0].action_capabilities == ("inspect_workload",)
     assert recording.scenarios[1].audit_capabilities == ("scale_workload",)
     assert all(

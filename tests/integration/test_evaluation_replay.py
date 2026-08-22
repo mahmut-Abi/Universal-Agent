@@ -73,6 +73,7 @@ def scenario() -> EvaluationScenario:
             expected_status=ExecutionStatus.COMPLETED,
             expected_criteria=immutable_json({"healthy": True}),
             required_events=("GoalCompleted", "EvaluationCompleted"),
+            required_evidence_claims=("healthy",),
             required_capabilities=("inspect_workload",),
             max_actions=2,
         ),
@@ -121,9 +122,7 @@ async def test_deterministic_runtime_mode_stabilizes_ids_and_event_clock() -> No
         events = await service.list_events(run.result.session_id)
 
     event_ids = [event.event_id for event in events]
-    action_ids = {
-        str(event.action_id) for event in events if event.action_id is not None
-    }
+    action_ids = {str(event.action_id) for event in events if event.action_id is not None}
     event_times = [event.occurred_at for event in events]
     observation_event = next(event for event in events if event.type == "ObservationReceived")
 

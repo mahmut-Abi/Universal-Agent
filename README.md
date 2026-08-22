@@ -128,7 +128,9 @@ projections; `agent metrics --format prometheus` emits Prometheus text expositio
 JSON-compatible trace payloads from the same event-derived span projection. `agent serve` starts the
 standard-library `AgentdHttpServer` around the same service; `agent eval run` executes the
 local evaluation suite through `EvaluationRunner`, and `agent eval compare` compares persisted golden
-reports for CLI/CI regression checks. Both eval commands support `--fail-on-fail` to preserve JSON output while returning a non-zero process status. The CLI does not access Kernel internals directly.
+reports for CLI/CI regression checks. `agent eval run` supports kind/tag subset filters, and both
+eval commands support `--fail-on-fail` to preserve JSON output while returning a non-zero process
+status. The CLI does not access Kernel internals directly.
 
 `EvaluationHarness` is the first P3.7 behavior evaluation foundation. It runs explicit
 `EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
@@ -200,16 +202,16 @@ not a database layer, event-sourcing model, or production migration system.
   `traces`, OTLP trace export, `doctor` and `audit` projections exposed through RuntimeService,
   agentd-shaped routes and CLI commands, plus optional
   `ModelUsageRecorded` events from model adapters. Structured log projections preserve runtime identifiers, event types, severity and redacted event data for CLI/agentd consumers. Trace span projections derive session/action trees plus decision, model usage, policy, observation, resource lock, resource conflict and evaluation phase spans from the same event stream with redacted attributes for OpenTelemetry-shaped consumers, and the OTLP adapter projects those spans into dependency-free collector payloads. Resource lock metrics and doctor checks report acquired/released locks, conflicts and active locks derived from runtime events. The Evaluation Harness can assert status, error
-  codes, events, executed capabilities, audit coverage, policy denials, recovery plans, criteria,
+  codes, events, Evidence claims, executed capabilities, audit coverage, policy denials, recovery plans, criteria,
   resource lock conflicts, active resource locks, action counts, iteration budgets and model
   token/cost budgets for behavior scenarios.
   Evaluation suites classify scenarios by kind and tags so regression, policy and recovery subsets
   can be selected without changing Kernel code, and quality gates turn suite metrics into CI-ready
   pass/fail checks. `EvaluationRunner` packages suite execution, gate evaluation and optional
   stable report persistence behind one interface for future CLI/CI adapters. Stable evaluation
-  report recordings can be compared to detect suite, scenario, gate and metric drift. The local CLI
-  exposes these through `agent eval run` and `agent eval compare` without adding Kernel-specific
-  evaluation branches.
+  report recordings preserve scenario kind/tags and Evidence claim summaries, so comparisons can
+  detect suite, scenario, gate, evidence and metric drift. The local CLI exposes these through
+  `agent eval run` and `agent eval compare` without adding Kernel-specific evaluation branches.
   Execution replay can reconstruct decisions, actions, observations, evidence references and
   terminal status from recorded Runtime events without re-executing side effects.
   Deterministic Replay can record stable behavior traces and detect later drift in event shape,
@@ -277,7 +279,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_7_replay.py
 .venv/bin/python examples/p3_7_deterministic_mode.py
 .venv/bin/python -m universal_agent.cli ready
-.venv/bin/python -m universal_agent.cli eval run local-kubernetes --report-dir .tmp/eval-reports --fail-on-fail
+.venv/bin/python -m universal_agent.cli eval run local-kubernetes --kind regression --tag smoke --report-dir .tmp/eval-reports --fail-on-fail
 ```
 
 `mypy` runs in strict mode over `src`, `tests` and `examples`, and passes with no `type: ignore`

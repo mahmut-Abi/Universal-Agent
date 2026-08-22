@@ -11,12 +11,13 @@ from urllib.parse import quote
 from universal_agent.core import ErrorCode, ExecutionStatus, JsonMapping, JsonValue, immutable_json
 from universal_agent.evaluation.harness import (
     EvaluationGateReport,
+    EvaluationScenarioKind,
     EvaluationSuiteReport,
     ScenarioReport,
 )
 from universal_agent.evaluation.replay import ReplayAuditEntry, ReplayMetrics, ReplayRecording
 
-EVALUATION_REPORT_SCHEMA_VERSION = 2
+EVALUATION_REPORT_SCHEMA_VERSION = 3
 REPLAY_RECORDING_SCHEMA_VERSION = 1
 JsonObject = dict[str, JsonValue]
 
@@ -56,11 +57,14 @@ class EvaluationScenarioRecording:
     passed: bool
     result_status: ExecutionStatus
     error_code: ErrorCode | None
+    kind: EvaluationScenarioKind = EvaluationScenarioKind.SCENARIO
+    tags: tuple[str, ...] = ()
     satisfied_criteria: JsonMapping = field(default_factory=immutable_json)
     checks: tuple[EvaluationCheckRecording, ...] = ()
     event_types: tuple[str, ...] = ()
     action_capabilities: tuple[str, ...] = ()
     audit_capabilities: tuple[str, ...] = ()
+    evidence_claims: tuple[str, ...] = ()
     metrics: ReplayMetrics = field(default_factory=lambda: ReplayMetrics(0, 0, 0, 0, 0, 0, 0, 0, 0))
 
 
@@ -243,6 +247,8 @@ def record_evaluation_gate(report: EvaluationGateReport) -> EvaluationGateRecord
 def record_evaluation_scenario(report: ScenarioReport) -> EvaluationScenarioRecording:
     return EvaluationScenarioRecording(
         scenario_name=report.scenario_name,
+        kind=report.kind,
+        tags=report.tags,
         passed=report.passed,
         result_status=report.result.status,
         error_code=report.result.error_code,
@@ -254,6 +260,7 @@ def record_evaluation_scenario(report: ScenarioReport) -> EvaluationScenarioReco
         event_types=tuple(event.type for event in report.events),
         action_capabilities=_event_values(report, "ActionStarted", "capability"),
         audit_capabilities=tuple(record.capability for record in report.audit_records),
+        evidence_claims=_event_values(report, "EvidenceRecorded", "claim"),
         metrics=ReplayMetrics(
             event_count=report.metrics.event_count,
             action_started_count=report.metrics.action_started_count,
@@ -323,6 +330,8 @@ def _compare_scenario(
             dict(expected.satisfied_criteria),
             dict(actual.satisfied_criteria),
         ),
+        _comparison_check(f"{prefix}:kind", expected.kind, actual.kind),
+        _comparison_check(f"{prefix}:tags", expected.tags, actual.tags),
         _comparison_check(f"{prefix}:event_types", expected.event_types, actual.event_types),
         _comparison_check(
             f"{prefix}:action_capabilities",
@@ -333,6 +342,11 @@ def _compare_scenario(
             f"{prefix}:audit_capabilities",
             expected.audit_capabilities,
             actual.audit_capabilities,
+        ),
+        _comparison_check(
+            f"{prefix}:evidence_claims",
+            expected.evidence_claims,
+            actual.evidence_claims,
         ),
         _comparison_check(f"{prefix}:metrics", expected.metrics, actual.metrics),
     )
@@ -390,7 +404,7 @@ def encode_evaluation_report(recording: EvaluationReportRecording) -> JsonObject
 
 def decode_evaluation_report(payload: Mapping[str, JsonValue]) -> EvaluationReportRecording:
     version = _int(_required(payload, "schema_version"), "schema_version")
-    if version not in (1, EVALUATION_REPORT_SCHEMA_VERSION):
+    if version not in (1, 2, EVALUATION_REPORT_SCHEMA_VERSION):
         raise ValueError(f"unsupported evaluation report schema version: {version}")
     gate = payload.get("gate")
     return EvaluationReportRecording(
@@ -561,6 +575,8 @@ def _decode_evaluation_summary(payload: JsonObject) -> EvaluationSummaryRecordin
 def _encode_evaluation_scenario(scenario: EvaluationScenarioRecording) -> JsonObject:
     return {
         "scenario_name": scenario.scenario_name,
+        "kind": scenario.kind.value,
+        "tags": list(scenario.tags),
         "passed": scenario.passed,
         "result_status": scenario.result_status.value,
         "error_code": None if scenario.error_code is None else scenario.error_code.value,
@@ -569,6 +585,7 @@ def _encode_evaluation_scenario(scenario: EvaluationScenarioRecording) -> JsonOb
         "event_types": list(scenario.event_types),
         "action_capabilities": list(scenario.action_capabilities),
         "audit_capabilities": list(scenario.audit_capabilities),
+        "evidence_claims": list(scenario.evidence_claims),
         "metrics": _encode_metrics(scenario.metrics),
     }
 
@@ -576,6 +593,10 @@ def _encode_evaluation_scenario(scenario: EvaluationScenarioRecording) -> JsonOb
 def _decode_evaluation_scenario(payload: JsonObject) -> EvaluationScenarioRecording:
     return EvaluationScenarioRecording(
         scenario_name=_string(_required(payload, "scenario_name"), "scenario.scenario_name"),
+        kind=EvaluationScenarioKind(
+            _string(payload.get("kind", EvaluationScenarioKind.SCENARIO.value), "scenario.kind")
+        ),
+        tags=_optional_string_tuple(payload, "tags", "scenario.tags"),
         passed=_bool(_required(payload, "passed"), "scenario.passed"),
         result_status=ExecutionStatus(
             _string(_required(payload, "result_status"), "scenario.result_status")
@@ -596,6 +617,11 @@ def _decode_evaluation_scenario(payload: JsonObject) -> EvaluationScenarioRecord
         audit_capabilities=_string_tuple(
             _required(payload, "audit_capabilities"),
             "scenario.audit_capabilities",
+        ),
+        evidence_claims=_optional_string_tuple(
+            payload,
+            "evidence_claims",
+            "scenario.evidence_claims",
         ),
         metrics=_decode_metrics(_object(_required(payload, "metrics"), "scenario.metrics")),
     )
@@ -773,6 +799,17 @@ def _string(value: JsonValue, field: str) -> str:
 
 def _string_tuple(value: JsonValue, field: str) -> tuple[str, ...]:
     return tuple(_string(item, f"{field}[]") for item in _list(value, field))
+
+
+def _optional_string_tuple(
+    payload: Mapping[str, JsonValue],
+    key: str,
+    field: str,
+) -> tuple[str, ...]:
+    value = payload.get(key)
+    if value is None:
+        return ()
+    return _string_tuple(value, field)
 
 
 def _int(value: JsonValue, field: str) -> int:

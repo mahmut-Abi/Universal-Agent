@@ -644,6 +644,12 @@ async def test_cli_eval_run_executes_suite_and_persists_report(tmp_path: Path) -
             str(report_dir),
             "--max-average-actions",
             "1.0",
+            "--kind",
+            "regression",
+            "--tag",
+            "smoke",
+            "--exclude-tag",
+            "slow",
         ],
         service=service,
         stdout=output,
@@ -655,9 +661,17 @@ async def test_cli_eval_run_executes_suite_and_persists_report(tmp_path: Path) -
     assert payload["passed"] is True
     assert payload["suite"]["summary"]["scenario_count"] == 1
     assert payload["suite"]["summary"]["action_started_count"] == 1
+    scenario_payload = payload["suite"]["scenarios"][0]
+    assert scenario_payload["kind"] == "regression"
+    assert scenario_payload["tags"] == ["smoke", "kubernetes"]
+    assert scenario_payload["evidence_claims"] == ["resource", "healthy"]
     assert payload["gate"]["passed"] is True
     assert payload["report_dir"] == str(report_dir)
     assert stored.suite_name == "local evaluation suite"
+    assert stored.scenarios[0].kind is not None
+    assert stored.scenarios[0].kind.value == "regression"
+    assert stored.scenarios[0].tags == ("smoke", "kubernetes")
+    assert stored.scenarios[0].evidence_claims == ("resource", "healthy")
     assert backend.inspect_calls == 1
 
 
