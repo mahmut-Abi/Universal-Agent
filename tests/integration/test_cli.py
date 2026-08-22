@@ -452,6 +452,7 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     run = await service.run_goal(*goal_task())
     session_id = str(run.result.session_id)
     metrics_output = StringIO()
+    prometheus_metrics_output = StringIO()
     cost_output = StringIO()
     doctor_output = StringIO()
     audit_output = StringIO()
@@ -465,6 +466,11 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     session_otlp_traces_output = StringIO()
 
     metrics_status = await run_cli(["metrics"], service=service, stdout=metrics_output)
+    prometheus_metrics_status = await run_cli(
+        ["metrics", "--format", "prometheus"],
+        service=service,
+        stdout=prometheus_metrics_output,
+    )
     cost_status = await run_cli(["cost"], service=service, stdout=cost_output)
     logs_status = await run_cli(["logs"], service=service, stdout=logs_output)
     traces_status = await run_cli(["traces"], service=service, stdout=traces_output)
@@ -514,6 +520,7 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     session_traces = read_json(session_traces_output)
     session_otlp_traces = read_json(session_otlp_traces_output)
     assert metrics_status == 0
+    assert prometheus_metrics_status == 0
     assert cost_status == 0
     assert logs_status == 0
     assert traces_status == 0
@@ -529,6 +536,11 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     assert metrics["action_started_count"] == 2
     assert metrics["model_call_count"] == 3
     assert metrics["model_total_token_count"] == 165
+    prometheus_metrics = prometheus_metrics_output.getvalue()
+    assert "universal_agent_runtime_completed_goals 1\n" in prometheus_metrics
+    assert "universal_agent_runtime_action_started_count" not in prometheus_metrics
+    assert "universal_agent_runtime_actions_started 2\n" in prometheus_metrics
+    assert "universal_agent_runtime_model_total_tokens 165\n" in prometheus_metrics
     assert cost == session_cost
     assert cost["model_call_count"] == 3
     assert cost["total_tokens"] == 165

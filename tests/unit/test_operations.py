@@ -15,6 +15,7 @@ from universal_agent.operations import (
     build_audit_records,
     build_doctor_report,
     build_opentelemetry_trace_export,
+    build_prometheus_metrics_export,
     build_runtime_cost,
     build_runtime_logs,
     build_runtime_metrics,
@@ -101,6 +102,45 @@ def test_runtime_metrics_are_derived_from_sessions_and_events() -> None:
     assert metrics.model_output_token_count == 25
     assert metrics.model_total_token_count == 125
     assert metrics.model_estimated_cost_micros == 42
+
+
+def test_prometheus_metrics_export_projects_runtime_metrics_text() -> None:
+    metrics = build_runtime_metrics(
+        (session(), session(GoalStatus.WAITING)),
+        (
+            event("event-1", "ActionStarted", action_id="action-1"),
+            event("event-2", "ActionCompleted", action_id="action-1"),
+            event(
+                "event-3",
+                "ModelUsageRecorded",
+                data={
+                    "provider": "scripted",
+                    "model": "fixture-model",
+                    "input_tokens": 100,
+                    "output_tokens": 25,
+                    "estimated_cost_micros": 42,
+                },
+            ),
+        ),
+    )
+
+    exported = build_prometheus_metrics_export(metrics)
+
+    assert exported.endswith("\n")
+    assert "# TYPE universal_agent_runtime_sessions gauge\n" in exported
+    assert "universal_agent_runtime_sessions 2\n" in exported
+    assert "universal_agent_runtime_waiting_sessions 1\n" in exported
+    assert "universal_agent_runtime_actions_completed 1\n" in exported
+    assert "universal_agent_runtime_model_total_tokens 125\n" in exported
+    assert "universal_agent_runtime_model_estimated_cost_micros 42\n" in exported
+
+
+def test_prometheus_metrics_export_sanitizes_metric_prefix() -> None:
+    metrics = build_runtime_metrics((), ())
+
+    exported = build_prometheus_metrics_export(metrics, prefix="123 bad-prefix")
+
+    assert "_123_bad_prefix_sessions 0\n" in exported
 
 
 def test_runtime_cost_is_grouped_by_model_usage_events() -> None:

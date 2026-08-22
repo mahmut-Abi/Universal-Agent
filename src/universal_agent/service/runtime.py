@@ -26,6 +26,7 @@ from universal_agent.operations import (
     build_audit_records,
     build_doctor_report,
     build_opentelemetry_trace_export,
+    build_prometheus_metrics_export,
     build_runtime_cost,
     build_runtime_logs,
     build_runtime_metrics,
@@ -319,6 +320,9 @@ class RuntimeService:
     async def metrics(self) -> RuntimeMetricsView:
         sessions = await self.list_sessions()
         return build_runtime_metrics(sessions, await self._list_all_events(sessions))
+
+    async def prometheus_metrics(self) -> str:
+        return build_prometheus_metrics_export(await self.metrics())
 
     async def cost(self, session_id: SessionId | None = None) -> RuntimeCostView:
         if session_id is not None:

@@ -165,7 +165,8 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("version")
     commands.add_parser("health")
     commands.add_parser("ready")
-    commands.add_parser("metrics")
+    metrics = commands.add_parser("metrics")
+    metrics.add_argument("--format", choices=("json", "prometheus"), default="json")
     commands.add_parser("cost")
     commands.add_parser("logs")
     traces = commands.add_parser("traces")
@@ -275,6 +276,9 @@ async def _dispatch(
         _write_json(out, ready_body(service.ready()))
         return
     if command == "metrics":
+        if cast(str, args.format) == "prometheus":
+            _write_text(out, await service.prometheus_metrics())
+            return
         _write_json(out, metrics_body(await service.metrics()))
         return
     if command == "cost":
@@ -526,6 +530,10 @@ async def _dispatch_session(
 def _write_json(out: TextIO, payload: object) -> None:
     json.dump(_json_safe(payload), out, indent=2, sort_keys=True)
     out.write("\n")
+
+
+def _write_text(out: TextIO, payload: str) -> None:
+    out.write(payload)
 
 
 def _json_safe(value: object) -> object:

@@ -523,6 +523,7 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
     assert isinstance(session_id, str)
 
     metrics = await app.handle(HttpRequest("GET", "/v1/metrics"))
+    prometheus_metrics = await app.handle(HttpRequest("GET", "/v1/metrics/prometheus"))
     cost = await app.handle(HttpRequest("GET", "/v1/cost"))
     doctor = await app.handle(HttpRequest("GET", "/v1/doctor"))
     audit = await app.handle(HttpRequest("GET", "/v1/audit"))
@@ -543,6 +544,13 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
     assert metrics.body["action_started_count"] == 2
     assert metrics.body["model_call_count"] == 3
     assert metrics.body["model_total_token_count"] == 215
+    assert prometheus_metrics.status_code == 200
+    assert prometheus_metrics.headers["content-type"] == (
+        "text/plain; version=0.0.4; charset=utf-8"
+    )
+    assert prometheus_metrics.text_body is not None
+    assert "universal_agent_runtime_completed_goals 1\n" in prometheus_metrics.text_body
+    assert "universal_agent_runtime_model_total_tokens 215\n" in prometheus_metrics.text_body
     assert cost.status_code == 200
     assert cost.body == session_cost.body
     assert cost.body["model_call_count"] == 3

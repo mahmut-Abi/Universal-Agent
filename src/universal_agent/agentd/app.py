@@ -144,6 +144,13 @@ class AgentdApp:
             if method != "GET":
                 return method_not_allowed(("GET",))
             return json_response(metrics_body(await self._service.metrics()))
+        if path == "/v1/metrics/prometheus":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            return text_response(
+                await self._service.prometheus_metrics(),
+                content_type="text/plain; version=0.0.4; charset=utf-8",
+            )
         if path == "/v1/cost":
             if method != "GET":
                 return method_not_allowed(("GET",))
@@ -314,6 +321,20 @@ class AgentdApp:
 
 def json_response(body: JsonMapping, *, status_code: int = 200) -> HttpResponse:
     return HttpResponse(status_code=status_code, body=body)
+
+
+def text_response(
+    text_body: str,
+    *,
+    status_code: int = 200,
+    content_type: str = "text/plain; charset=utf-8",
+) -> HttpResponse:
+    return HttpResponse(
+        status_code=status_code,
+        body=immutable_json(),
+        headers=MappingProxyType({"content-type": content_type}),
+        text_body=text_body,
+    )
 
 
 def not_found(message: str) -> HttpResponse:
