@@ -402,6 +402,42 @@ async def test_cli_run_submits_goal_through_service() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_tui_renders_runtime_service_snapshot() -> None:
+    service, backend = build_cli_service([inspect_workload(), finish()])
+    run_output = StringIO()
+    tui_output = StringIO()
+
+    run_status = await run_cli(
+        ["run", "production-operator", "Verify workload health"],
+        service=service,
+        stdout=run_output,
+    )
+    run_payload = read_json(run_output)
+    session_id = run_payload["result"]["session_id"]
+    assert isinstance(session_id, str)
+
+    tui_status = await run_cli(
+        ["tui", "--session-id", session_id, "--event-limit", "20"],
+        service=service,
+        stdout=tui_output,
+    )
+    rendered = tui_output.getvalue()
+
+    assert run_status == 0
+    assert tui_status == 0
+    assert "Universal Agent Runtime TUI" in rendered
+    assert "Health: ok | Ready: yes" in rendered
+    assert "Active Domains" in rendered
+    assert "kubernetes@0.2.0" in rendered
+    assert "Selected Session" in rendered
+    assert "Verify workload health" in rendered
+    assert "Recent Events" in rendered
+    assert "ActionStarted" in rendered
+    assert "capability=inspect_workload" in rendered
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_cli_run_rejects_unknown_profile() -> None:
     service, _ = build_cli_service([])
     output = StringIO()

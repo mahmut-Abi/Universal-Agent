@@ -9,8 +9,8 @@ and the first P3.5 productization foundation: a stable
 in-process Runtime API, immutable Session read models, cursor-readable Events, explicit
 pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter, a standard-library
 HTTP bridge, a local CLI adapter, local file-backed session/event persistence, the first P3.6
-operations surface with cost tracking and OpenTelemetry-shaped trace span projections, and a P3.7
-Evaluation Harness / Replay foundation. The v3.0 design document also defines later productization
+operations surface with cost tracking and OpenTelemetry-shaped trace span projections, a P3.7
+Evaluation Harness / Replay foundation, and the first read-only TUI snapshot foundation. The v3.0 design document also defines later productization
 layers such as production database persistence, SSE delivery, OpenTelemetry exporters,
 optional Multi-Agent, UI, distributed runtime, and ecosystem packaging.
 
@@ -135,7 +135,9 @@ persisted golden reports for CLI/CI regression checks. `agent eval replay` recor
 deterministic golden replay recordings through the same suite selector. `agent eval list`,
 `agent eval run` and `agent eval replay` support `--suite-file` plus kind/tag subset filters, and
 all eval gate commands support `--fail-on-fail` to preserve JSON output while returning a non-zero
-process status. The CLI does not access Kernel internals directly.
+process status. `agent tui` renders a read-only RuntimeService snapshot covering health, readiness,
+metrics, domains, sessions, selected session details, recent events and audit records. The CLI does
+not access Kernel internals directly.
 
 `EvaluationHarness` is the first P3.7 behavior evaluation foundation. It runs explicit
 `EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
@@ -231,6 +233,8 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   golden fixtures.
   Replay recordings can be encoded as versioned JSON and saved through `FileReplayRecordingStore`
   for golden regression fixtures.
+- TUI foundation: `build_tui_snapshot` consumes RuntimeService projections and `render_tui_snapshot`
+  produces a deterministic text view for CLI/operator use without touching Kernel internals.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
@@ -295,6 +299,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_7_cli_quality_gates.py
 .venv/bin/python examples/p3_7_suite_file.py
 .venv/bin/python examples/p3_7_deterministic_mode.py
+.venv/bin/python examples/p5_tui.py
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-profile.json --store-backend sqlite --store-path .tmp/runtime.sqlite3 --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-profile.json config show

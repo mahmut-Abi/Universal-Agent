@@ -88,6 +88,7 @@ from universal_agent.profile import AgentProfile, ProfileConfig
 from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
+from universal_agent.tui import build_tui_snapshot, render_tui_snapshot
 
 LOCAL_PROFILE_NAME = "local-kubernetes"
 ServerRunner = Callable[[AgentdHttpServer], None]
@@ -263,6 +264,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("profile")
     run.add_argument("goal")
     run.add_argument("--task", default="Run goal")
+
+    tui = commands.add_parser("tui")
+    tui.add_argument("--session-id")
+    tui.add_argument("--session-limit", type=int, default=5)
+    tui.add_argument("--event-limit", type=int, default=12)
 
     evaluate = commands.add_parser("eval")
     eval_commands = evaluate.add_subparsers(dest="eval_command", required=True)
@@ -452,6 +458,9 @@ async def _dispatch(
     if command == "run":
         await _dispatch_run(args, service, out)
         return
+    if command == "tui":
+        await _dispatch_tui(args, service, out)
+        return
     if command == "eval":
         await _dispatch_eval(args, service, out)
         return
@@ -488,6 +497,21 @@ async def _dispatch_run(
     task = Task(cast(str, args.task), ("healthy",))
     run = await service.run_goal(goal, task)
     _write_json(out, runtime_run_body(run))
+
+
+async def _dispatch_tui(
+    args: argparse.Namespace,
+    service: RuntimeService,
+    out: TextIO,
+) -> None:
+    session_id = cast(str | None, args.session_id)
+    snapshot = await build_tui_snapshot(
+        service,
+        session_id=None if session_id is None else SessionId(session_id),
+        session_limit=cast(int, args.session_limit),
+        event_limit=cast(int, args.event_limit),
+    )
+    _write_text(out, render_tui_snapshot(snapshot))
 
 
 async def _dispatch_eval(
