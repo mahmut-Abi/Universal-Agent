@@ -281,6 +281,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_7_cli_replay.py
 .venv/bin/python examples/p3_7_deterministic_mode.py
 .venv/bin/python -m universal_agent.cli ready
+.venv/bin/python -m universal_agent.cli eval list local-kubernetes --kind policy --tag kubernetes
 .venv/bin/python -m universal_agent.cli eval run local-kubernetes --kind regression --tag smoke --report-dir .tmp/eval-reports --fail-on-fail
 .venv/bin/python -m universal_agent.cli eval replay local-kubernetes --recording-dir .tmp/replay-recordings --kind regression --update
 .venv/bin/python -m universal_agent.cli eval replay local-kubernetes --recording-dir .tmp/replay-recordings --kind regression --fail-on-fail

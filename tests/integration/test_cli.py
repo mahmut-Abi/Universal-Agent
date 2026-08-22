@@ -642,6 +642,47 @@ async def test_cli_serve_starts_agentd_http_server_with_injected_runner() -> Non
 
 
 @pytest.mark.asyncio
+async def test_cli_eval_list_applies_kind_and_tag_filters() -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "eval",
+            "list",
+            "production-operator",
+            "--kind",
+            "policy",
+            "--tag",
+            "kubernetes",
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["suite_name"] == "local evaluation suite"
+    assert payload["suite_tags"] == ["local", "kubernetes"]
+    assert payload["scenario_count"] == 1
+    assert payload["scenarios"] == [
+        {
+            "scenario_name": "invalid scale policy",
+            "kind": "policy",
+            "tags": ["policy", "kubernetes"],
+            "goal": {
+                "description": "Evaluate workload health",
+                "success_criteria": ["healthy"],
+            },
+            "task": {
+                "description": "Inspect workload",
+                "required_criteria": ["healthy"],
+            },
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_cli_eval_run_executes_suite_and_persists_report(tmp_path: Path) -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     output = StringIO()

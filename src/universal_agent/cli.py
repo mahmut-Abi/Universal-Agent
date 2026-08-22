@@ -240,6 +240,11 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate = commands.add_parser("eval")
     eval_commands = evaluate.add_subparsers(dest="eval_command", required=True)
 
+    eval_list = eval_commands.add_parser("list")
+    eval_list.add_argument("profile")
+    eval_list.add_argument("--suite", default="local evaluation suite")
+    _add_evaluation_selector_arguments(eval_list)
+
     eval_run = eval_commands.add_parser("run")
     eval_run.add_argument("profile")
     eval_run.add_argument("--suite", default="local evaluation suite")
@@ -434,6 +439,14 @@ async def _dispatch_eval(
     out: TextIO,
 ) -> None:
     command = cast(str, args.eval_command)
+    if command == "list":
+        profile = cast(str, args.profile)
+        if not service.accepts_profile(profile):
+            raise ValueError(f"unknown profile: {profile}")
+        suite = _local_evaluation_suite(cast(str, args.suite))
+        scenarios = suite.select(_evaluation_selector(args))
+        _write_json(out, _evaluation_list_body(suite, scenarios))
+        return
     if command == "run":
         profile = cast(str, args.profile)
         if not service.accepts_profile(profile):
@@ -771,6 +784,34 @@ def _evaluation_run_body(
             None if result.recording.gate is None else _evaluation_gate_body(result.recording.gate)
         ),
         "report_dir": report_dir,
+    }
+
+
+def _evaluation_list_body(
+    suite: EvaluationSuite,
+    scenarios: tuple[EvaluationScenario, ...],
+) -> dict[str, object]:
+    return {
+        "suite_name": suite.name,
+        "suite_tags": list(suite.tags),
+        "scenario_count": len(scenarios),
+        "scenarios": [_evaluation_scenario_definition_body(item) for item in scenarios],
+    }
+
+
+def _evaluation_scenario_definition_body(scenario: EvaluationScenario) -> dict[str, object]:
+    return {
+        "scenario_name": scenario.name,
+        "kind": scenario.kind.value,
+        "tags": list(scenario.tags),
+        "goal": {
+            "description": scenario.goal.description,
+            "success_criteria": [item.key for item in scenario.goal.success_criteria],
+        },
+        "task": {
+            "description": scenario.task.description,
+            "required_criteria": list(scenario.task.required_criteria),
+        },
     }
 
 
