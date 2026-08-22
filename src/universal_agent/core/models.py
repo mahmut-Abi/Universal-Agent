@@ -122,6 +122,7 @@ class ObservationStatus(StrEnum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     TIMED_OUT = "timed_out"
+    UNKNOWN = "unknown"
 
 
 class ExecutionStatus(StrEnum):
@@ -166,6 +167,7 @@ class ErrorCode(StrEnum):
     NO_CAPABILITY_TOOL = "no_capability_tool"
     UNKNOWN_TOOL = "unknown_tool"
     TOOL_FAILURE = "tool_failure"
+    UNKNOWN_EXECUTION = "unknown_execution"
     TIMEOUT = "timeout"
     INVALID_STATE = "invalid_state"
     ITERATION_LIMIT = "iteration_limit"

@@ -193,6 +193,7 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   projections, lightweight cursor-aware `SessionSummaryView` listing, cursor-aware `EventReader`,
   `RuntimeSessionBatch` / `RuntimeEventBatch`, action idempotency metadata (`idempotency_key`,
   `parameters_hash`, `attempt`) carried through pending-action views, events and persistence,
+  explicit `UNKNOWN_EXECUTION` observations for uncertain tool outcomes,
   runtime-owned resource locking for side-effecting actions (`resource_key`, optional
   `resource_version`, conflict detection and lock lifecycle events), and
   integration tests covering run/list/get/events plus explicit pause, non-confirmation resume,

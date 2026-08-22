@@ -66,6 +66,10 @@ def test_recovery_manager_enforces_attempt_budget() -> None:
     assert second.exhausted
 
 
+def test_unknown_execution_classifies_as_unknown_failure() -> None:
+    assert classify_failure(ErrorCode.UNKNOWN_EXECUTION) is FailureCategory.UNKNOWN
+
+
 def test_recovery_rules_can_match_specific_capabilities() -> None:
     task = Task("Execute", ())
     manager = RecoveryManager(

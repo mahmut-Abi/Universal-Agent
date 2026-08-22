@@ -31,6 +31,10 @@ class UnknownToolError(LookupError):
     pass
 
 
+class UncertainToolExecutionError(RuntimeError):
+    """Raised by tools when the external action outcome cannot be known."""
+
+
 @dataclass(frozen=True, slots=True)
 class ToolRegistration:
     tool: Tool
@@ -132,6 +136,12 @@ class ToolRuntime:
                 status=ObservationStatus.TIMED_OUT,
                 error=f"tool timed out: {call.tool_name}",
                 error_code=ErrorCode.TIMEOUT,
+            )
+        except UncertainToolExecutionError as exc:
+            return ToolResult(
+                status=ObservationStatus.UNKNOWN,
+                error=f"tool outcome unknown: {exc}",
+                error_code=ErrorCode.UNKNOWN_EXECUTION,
             )
         except Exception as exc:
             return ToolResult(

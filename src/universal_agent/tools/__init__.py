@@ -4,6 +4,7 @@ from universal_agent.tools.runtime import (
     ToolRegistration,
     ToolRegistry,
     ToolRuntime,
+    UncertainToolExecutionError,
     UnknownToolError,
 )
 
@@ -13,5 +14,6 @@ __all__ = [
     "ToolRegistration",
     "ToolRegistry",
     "ToolRuntime",
+    "UncertainToolExecutionError",
     "UnknownToolError",
 ]

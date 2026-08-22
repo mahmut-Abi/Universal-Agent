@@ -30,6 +30,8 @@ def classify_failure(error_code: ErrorCode) -> FailureCategory:
         return FailureCategory.EVALUATION_FAILED
     if error_code is ErrorCode.TOOL_FAILURE:
         return FailureCategory.TOOL_FAILURE
+    if error_code is ErrorCode.UNKNOWN_EXECUTION:
+        return FailureCategory.UNKNOWN
     return FailureCategory.UNKNOWN
 
 

@@ -14,7 +14,12 @@ from universal_agent.core import (
     immutable_json,
     new_action_id,
 )
-from universal_agent.tools import DuplicateToolError, ToolRegistry, ToolRuntime
+from universal_agent.tools import (
+    DuplicateToolError,
+    ToolRegistry,
+    ToolRuntime,
+    UncertainToolExecutionError,
+)
 
 
 class EchoTool:
@@ -43,6 +48,13 @@ class SlowTool:
     async def execute(self, arguments: JsonMapping) -> JsonMapping:
         await asyncio.sleep(0.02)
         return immutable_json()
+
+
+class UncertainTool:
+    definition = ToolDefinition("uncertain", "Unknown outcome", ("mutate",))
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        raise UncertainToolExecutionError("connection closed after dispatch")
 
 
 def call(tool: str, capability: str, arguments: JsonMapping | None = None) -> ToolCall:
@@ -103,10 +115,16 @@ async def test_tool_runtime_normalizes_unknown_failure_and_timeout() -> None:
     registry = ToolRegistry()
     registry.register(BrokenTool())
     registry.register(SlowTool())
+    registry.register(UncertainTool())
     runtime = ToolRuntime(registry)
     unknown = await runtime.execute(call("missing", "missing"))
     broken = await runtime.execute(call("broken", "break"))
     slow = await runtime.execute(call("slow", "wait"))
+    uncertain = await runtime.execute(call("uncertain", "mutate"))
     assert unknown.error_code is ErrorCode.UNKNOWN_TOOL
     assert broken.error_code is ErrorCode.TOOL_FAILURE
     assert slow.error_code is ErrorCode.TIMEOUT
+    assert uncertain.status is ObservationStatus.UNKNOWN
+    assert uncertain.error_code is ErrorCode.UNKNOWN_EXECUTION
+    assert uncertain.error is not None
+    assert "connection closed after dispatch" in uncertain.error

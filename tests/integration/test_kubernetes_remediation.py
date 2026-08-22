@@ -18,6 +18,7 @@ from universal_agent import (
 )
 from universal_agent.core import ErrorCode, ExecutionStatus, JsonMapping
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.tools import UncertainToolExecutionError
 
 
 class RemediationBackend:
@@ -26,10 +27,12 @@ class RemediationBackend:
         *,
         verification_healthy: bool = True,
         mutation_timeout: bool = False,
+        mutation_uncertain: bool = False,
         initial_inspection_timeout: bool = False,
     ) -> None:
         self.verification_healthy = verification_healthy
         self.mutation_timeout = mutation_timeout
+        self.mutation_uncertain = mutation_uncertain
         self.initial_inspection_timeout = initial_inspection_timeout
         self.inspect_calls: list[str] = []
         self.mutation_calls = 0
@@ -85,6 +88,8 @@ class RemediationBackend:
         self.mutation_calls += 1
         if self.mutation_timeout:
             raise TimeoutError("scale mutation timed out")
+        if self.mutation_uncertain:
+            raise UncertainToolExecutionError("network closed after scale dispatch")
         self._scaled = True
         return immutable_json(
             {
@@ -226,6 +231,28 @@ async def test_mutation_timeout_stops_without_retry() -> None:
     assert result.error_code is ErrorCode.TIMEOUT
     assert backend.mutation_calls == 1
     assert event_types.count("ActionStarted") == 3
+
+
+@pytest.mark.asyncio
+async def test_uncertain_mutation_stops_without_retrying_side_effect() -> None:
+    backend = RemediationBackend(mutation_uncertain=True)
+    runtime, _, events = build_runtime(
+        backend,
+        [
+            inspect_decision("inspect_workload", "healthy"),
+            inspect_decision("inspect_pod", "root_cause"),
+            scale_decision(),
+        ],
+    )
+
+    result = await runtime.run(*goal_task())
+    action_completed = [event for event in events.events if event.type == "ActionCompleted"]
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error_code is ErrorCode.UNKNOWN_EXECUTION
+    assert backend.mutation_calls == 1
+    assert action_completed[-1].data["status"] == "unknown"
+    assert action_completed[-1].data["error_code"] == "unknown_execution"
 
 
 @pytest.mark.asyncio
