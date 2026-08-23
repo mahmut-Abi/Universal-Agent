@@ -10,6 +10,8 @@ from universal_agent.distributed.health import (
 )
 from universal_agent.distributed.locks import (
     DistributedLockLease,
+    DistributedLockLeaseId,
+    DistributedLockOwnerId,
     InMemoryDistributedLockRegistry,
 )
 from universal_agent.distributed.queue import InMemoryWorkQueue, WorkerId, WorkItem, WorkItemId
@@ -48,6 +50,13 @@ class DistributedSchedulingResult:
 @dataclass(frozen=True, slots=True)
 class DistributedWorkerLifecycleResult:
     worker: WorkerRecord
+    snapshot: DistributedRuntimeSnapshot
+    health: DistributedHealthReport
+
+
+@dataclass(frozen=True, slots=True)
+class DistributedLockLifecycleResult:
+    lock: DistributedLockLease
     snapshot: DistributedRuntimeSnapshot
     health: DistributedHealthReport
 
@@ -240,6 +249,86 @@ class DistributedRuntimeCoordinator:
             min_online_workers=min_online_workers,
         )
         return DistributedWorkerLifecycleResult(worker=worker, snapshot=snapshot, health=health)
+
+    def acquire_lock(
+        self,
+        *,
+        lock_key: str,
+        owner_id: DistributedLockOwnerId,
+        ttl_seconds: float = 30.0,
+        metadata: JsonMapping | None = None,
+        now: datetime | None = None,
+        queued_backlog_warn_threshold: int = 100,
+        lease_expiry_warn_seconds: float = 10.0,
+        min_online_workers: int = 1,
+    ) -> DistributedLockLifecycleResult:
+        timestamp = now or utc_now()
+        lock = self._locks.acquire(
+            lock_key=lock_key,
+            owner_id=owner_id,
+            ttl_seconds=ttl_seconds,
+            metadata=metadata,
+            now=timestamp,
+        )
+        snapshot = self.snapshot()
+        health = build_distributed_health_report(
+            snapshot,
+            now=timestamp,
+            queued_backlog_warn_threshold=queued_backlog_warn_threshold,
+            lease_expiry_warn_seconds=lease_expiry_warn_seconds,
+            min_online_workers=min_online_workers,
+        )
+        return DistributedLockLifecycleResult(lock=lock, snapshot=snapshot, health=health)
+
+    def heartbeat_lock(
+        self,
+        lease_id: DistributedLockLeaseId,
+        *,
+        owner_id: DistributedLockOwnerId,
+        ttl_seconds: float = 30.0,
+        now: datetime | None = None,
+        queued_backlog_warn_threshold: int = 100,
+        lease_expiry_warn_seconds: float = 10.0,
+        min_online_workers: int = 1,
+    ) -> DistributedLockLifecycleResult:
+        timestamp = now or utc_now()
+        lock = self._locks.heartbeat(
+            lease_id,
+            owner_id=owner_id,
+            ttl_seconds=ttl_seconds,
+            now=timestamp,
+        )
+        snapshot = self.snapshot()
+        health = build_distributed_health_report(
+            snapshot,
+            now=timestamp,
+            queued_backlog_warn_threshold=queued_backlog_warn_threshold,
+            lease_expiry_warn_seconds=lease_expiry_warn_seconds,
+            min_online_workers=min_online_workers,
+        )
+        return DistributedLockLifecycleResult(lock=lock, snapshot=snapshot, health=health)
+
+    def release_lock(
+        self,
+        lease_id: DistributedLockLeaseId,
+        *,
+        owner_id: DistributedLockOwnerId,
+        now: datetime | None = None,
+        queued_backlog_warn_threshold: int = 100,
+        lease_expiry_warn_seconds: float = 10.0,
+        min_online_workers: int = 1,
+    ) -> DistributedLockLifecycleResult:
+        timestamp = now or utc_now()
+        lock = self._locks.release(lease_id, owner_id=owner_id, now=timestamp)
+        snapshot = self.snapshot()
+        health = build_distributed_health_report(
+            snapshot,
+            now=timestamp,
+            queued_backlog_warn_threshold=queued_backlog_warn_threshold,
+            lease_expiry_warn_seconds=lease_expiry_warn_seconds,
+            min_online_workers=min_online_workers,
+        )
+        return DistributedLockLifecycleResult(lock=lock, snapshot=snapshot, health=health)
 
     def expire(
         self,

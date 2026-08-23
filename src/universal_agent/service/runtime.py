@@ -21,6 +21,9 @@ from universal_agent.core import (
 from universal_agent.distributed import (
     DistributedCancellationResult,
     DistributedHealthReport,
+    DistributedLockLeaseId,
+    DistributedLockLifecycleResult,
+    DistributedLockOwnerId,
     DistributedMaintenanceResult,
     DistributedRuntimeCoordinator,
     DistributedRuntimeSnapshot,
@@ -439,6 +442,57 @@ class RuntimeService:
         return self._distributed_coordinator.mark_worker_offline(
             worker_id,
             reason=reason,
+            now=now,
+        )
+
+    def distributed_acquire_lock(
+        self,
+        *,
+        lock_key: str,
+        owner_id: DistributedLockOwnerId,
+        ttl_seconds: float = 30.0,
+        metadata: JsonMapping | None = None,
+        now: datetime | None = None,
+    ) -> DistributedLockLifecycleResult | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.acquire_lock(
+            lock_key=lock_key,
+            owner_id=owner_id,
+            ttl_seconds=ttl_seconds,
+            metadata=metadata,
+            now=now,
+        )
+
+    def distributed_heartbeat_lock(
+        self,
+        lease_id: DistributedLockLeaseId,
+        *,
+        owner_id: DistributedLockOwnerId,
+        ttl_seconds: float = 30.0,
+        now: datetime | None = None,
+    ) -> DistributedLockLifecycleResult | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.heartbeat_lock(
+            lease_id,
+            owner_id=owner_id,
+            ttl_seconds=ttl_seconds,
+            now=now,
+        )
+
+    def distributed_release_lock(
+        self,
+        lease_id: DistributedLockLeaseId,
+        *,
+        owner_id: DistributedLockOwnerId,
+        now: datetime | None = None,
+    ) -> DistributedLockLifecycleResult | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.release_lock(
+            lease_id,
+            owner_id=owner_id,
             now=now,
         )
 

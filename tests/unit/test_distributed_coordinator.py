@@ -99,6 +99,41 @@ def test_distributed_runtime_coordinator_manages_worker_lifecycle() -> None:
     assert offline.snapshot.workers.offline_count == 1
 
 
+def test_distributed_runtime_coordinator_manages_lock_lifecycle() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.register_worker(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=30,
+        now=now,
+    )
+
+    acquired = coordinator.acquire_lock(
+        lock_key="session/session-1",
+        owner_id=DistributedLockOwnerId("worker-a"),
+        ttl_seconds=30,
+        now=now,
+    )
+    renewed = coordinator.heartbeat_lock(
+        acquired.lock.lease_id,
+        owner_id=DistributedLockOwnerId("worker-a"),
+        ttl_seconds=60,
+        now=now + timedelta(seconds=5),
+    )
+    released = coordinator.release_lock(
+        renewed.lock.lease_id,
+        owner_id=DistributedLockOwnerId("worker-a"),
+        now=now + timedelta(seconds=6),
+    )
+
+    assert acquired.lock.lock_key == "session/session-1"
+    assert acquired.snapshot.locks[0].lock_key == "session/session-1"
+    assert renewed.lock.lease_expires_at == now + timedelta(seconds=65)
+    assert released.lock.lease_id == acquired.lock.lease_id
+    assert released.snapshot.locks == ()
+
+
 def test_distributed_runtime_coordinator_runs_expiry_sweep_with_one_timestamp() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()

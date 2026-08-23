@@ -1,5 +1,6 @@
 from universal_agent.distributed.coordinator import (
     DistributedCancellationResult,
+    DistributedLockLifecycleResult,
     DistributedMaintenanceResult,
     DistributedRuntimeCoordinator,
     DistributedSchedulingResult,
@@ -69,6 +70,7 @@ __all__ = [
     "DistributedLockLease",
     "DistributedLockLeaseId",
     "DistributedLockLeaseLostError",
+    "DistributedLockLifecycleResult",
     "DistributedLockOwnerId",
     "DistributedLockSnapshot",
     "DistributedMaintenanceResult",

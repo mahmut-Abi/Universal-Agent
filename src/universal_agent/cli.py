@@ -17,6 +17,7 @@ from universal_agent.agentd.app import (
     cost_body,
     distributed_cancellation_body,
     distributed_health_body,
+    distributed_lock_lifecycle_body,
     distributed_maintenance_body,
     distributed_scheduling_body,
     distributed_snapshot_body,
@@ -57,6 +58,10 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.distributed import (
+    DistributedLockConflictError,
+    DistributedLockLeaseId,
+    DistributedLockLeaseLostError,
+    DistributedLockOwnerId,
     DistributedRuntimeCoordinator,
     WorkerId,
     WorkerNotFoundError,
@@ -233,12 +238,17 @@ async def run_cli(
 
     try:
         await _dispatch(args, runtime_service, out, server_runner=server_runner)
-    except (StateNotFoundError, WorkItemNotFoundError, WorkerNotFoundError) as exc:
+    except (
+        StateNotFoundError,
+        WorkItemNotFoundError,
+        WorkerNotFoundError,
+        DistributedLockLeaseLostError,
+    ) as exc:
         _write_error(err, "not_found", str(exc))
         return 1
     except CliExit as exc:
         return exc.status
-    except ValueError as exc:
+    except (ValueError, DistributedLockConflictError) as exc:
         _write_error(err, "bad_request", str(exc))
         return 2
     return 0
@@ -302,6 +312,20 @@ def build_parser() -> argparse.ArgumentParser:
     distributed_offline = distributed_commands.add_parser("worker-offline")
     distributed_offline.add_argument("worker_id")
     distributed_offline.add_argument("--reason", default="worker offline from CLI")
+
+    distributed_lock_acquire = distributed_commands.add_parser("lock-acquire")
+    distributed_lock_acquire.add_argument("lock_key")
+    distributed_lock_acquire.add_argument("--owner-id", required=True)
+    distributed_lock_acquire.add_argument("--ttl-seconds", type=float, default=30.0)
+
+    distributed_lock_heartbeat = distributed_commands.add_parser("lock-heartbeat")
+    distributed_lock_heartbeat.add_argument("lease_id")
+    distributed_lock_heartbeat.add_argument("--owner-id", required=True)
+    distributed_lock_heartbeat.add_argument("--ttl-seconds", type=float, default=30.0)
+
+    distributed_lock_release = distributed_commands.add_parser("lock-release")
+    distributed_lock_release.add_argument("lease_id")
+    distributed_lock_release.add_argument("--owner-id", required=True)
 
     init = commands.add_parser("init")
     init.add_argument("--output", default="profile.json")
@@ -604,6 +628,35 @@ async def _dispatch(
             if lifecycle is None:
                 raise ValueError("distributed runtime coordinator is not configured")
             _write_json(out, distributed_worker_lifecycle_body(lifecycle))
+            return
+        if distributed_command == "lock-acquire":
+            lifecycle = service.distributed_acquire_lock(
+                lock_key=cast(str, args.lock_key),
+                owner_id=DistributedLockOwnerId(cast(str, args.owner_id)),
+                ttl_seconds=cast(float, args.ttl_seconds),
+            )
+            if lifecycle is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_lock_lifecycle_body(lifecycle))
+            return
+        if distributed_command == "lock-heartbeat":
+            lifecycle = service.distributed_heartbeat_lock(
+                DistributedLockLeaseId(cast(str, args.lease_id)),
+                owner_id=DistributedLockOwnerId(cast(str, args.owner_id)),
+                ttl_seconds=cast(float, args.ttl_seconds),
+            )
+            if lifecycle is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_lock_lifecycle_body(lifecycle))
+            return
+        if distributed_command == "lock-release":
+            lifecycle = service.distributed_release_lock(
+                DistributedLockLeaseId(cast(str, args.lease_id)),
+                owner_id=DistributedLockOwnerId(cast(str, args.owner_id)),
+            )
+            if lifecycle is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_lock_lifecycle_body(lifecycle))
             return
         raise ValueError(f"unknown distributed command: {distributed_command}")
     if command == "init":

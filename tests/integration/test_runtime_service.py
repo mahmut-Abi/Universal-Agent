@@ -8,6 +8,7 @@ from universal_agent import (
     AgentRuntime,
     Decision,
     DecisionType,
+    DistributedLockOwnerId,
     DistributedRuntimeCoordinator,
     DomainLoader,
     Goal,
@@ -224,6 +225,49 @@ def test_runtime_service_exposes_distributed_worker_lifecycle() -> None:
     assert draining.worker.status is WorkerStatus.DRAINING
     assert offline.worker.status is WorkerStatus.OFFLINE
     assert offline.snapshot.workers.offline_count == 1
+
+
+def test_runtime_service_exposes_distributed_lock_lifecycle() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    service, _ = build_service([])
+    coordinator = DistributedRuntimeCoordinator()
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    distributed_service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+        distributed_coordinator=coordinator,
+    )
+
+    acquired = distributed_service.distributed_acquire_lock(
+        lock_key="session/session-1",
+        owner_id=DistributedLockOwnerId("worker-a"),
+        ttl_seconds=30,
+        metadata=immutable_json({"reason": "run session"}),
+        now=now,
+    )
+    assert acquired is not None
+    renewed = distributed_service.distributed_heartbeat_lock(
+        acquired.lock.lease_id,
+        owner_id=DistributedLockOwnerId("worker-a"),
+        ttl_seconds=60,
+        now=now + timedelta(seconds=5),
+    )
+    released = distributed_service.distributed_release_lock(
+        acquired.lock.lease_id,
+        owner_id=DistributedLockOwnerId("worker-a"),
+        now=now + timedelta(seconds=6),
+    )
+
+    assert service.distributed_acquire_lock(
+        lock_key="session/session-1",
+        owner_id=DistributedLockOwnerId("worker-a"),
+    ) is None
+    assert renewed is not None
+    assert released is not None
+    assert acquired.lock.metadata["reason"] == "run session"
+    assert renewed.lock.lease_expires_at == now + timedelta(seconds=65)
+    assert released.snapshot.locks == ()
 
 
 def test_runtime_service_exposes_distributed_expiry_sweep() -> None:

@@ -706,6 +706,64 @@ async def test_cli_distributed_schedule_session_command() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_distributed_lock_lifecycle_commands() -> None:
+    service, _ = build_cli_service([], distributed_coordinator=DistributedRuntimeCoordinator())
+    acquire_output = StringIO()
+    heartbeat_output = StringIO()
+    release_output = StringIO()
+
+    acquire_status = await run_cli(
+        [
+            "distributed",
+            "lock-acquire",
+            "session/session-1",
+            "--owner-id",
+            "worker-a",
+            "--ttl-seconds",
+            "30",
+        ],
+        service=service,
+        stdout=acquire_output,
+    )
+    acquired = read_json(acquire_output)
+    lease_id = acquired["lock"]["lease_id"]
+    heartbeat_status = await run_cli(
+        [
+            "distributed",
+            "lock-heartbeat",
+            lease_id,
+            "--owner-id",
+            "worker-a",
+            "--ttl-seconds",
+            "60",
+        ],
+        service=service,
+        stdout=heartbeat_output,
+    )
+    release_status = await run_cli(
+        [
+            "distributed",
+            "lock-release",
+            lease_id,
+            "--owner-id",
+            "worker-a",
+        ],
+        service=service,
+        stdout=release_output,
+    )
+
+    heartbeat = read_json(heartbeat_output)
+    released = read_json(release_output)
+
+    assert acquire_status == 0
+    assert heartbeat_status == 0
+    assert release_status == 0
+    assert acquired["lock"]["lock_key"] == "session/session-1"
+    assert heartbeat["lock"]["lease_id"] == lease_id
+    assert released["snapshot"]["locks"] == []
+
+
+@pytest.mark.asyncio
 async def test_cli_distributed_worker_lifecycle_commands() -> None:
     service, _ = build_cli_service([], distributed_coordinator=DistributedRuntimeCoordinator())
     register_output = StringIO()

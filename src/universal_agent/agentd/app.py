@@ -22,6 +22,12 @@ from universal_agent.core import (
 from universal_agent.distributed import (
     DistributedCancellationResult,
     DistributedHealthReport,
+    DistributedLockConflictError,
+    DistributedLockLease,
+    DistributedLockLeaseId,
+    DistributedLockLeaseLostError,
+    DistributedLockLifecycleResult,
+    DistributedLockOwnerId,
     DistributedMaintenanceResult,
     DistributedRuntimeSnapshot,
     DistributedSchedulingResult,
@@ -332,6 +338,55 @@ class AgentdApp:
             if lifecycle is None:
                 return not_found("distributed runtime coordinator is not configured")
             return json_response(distributed_worker_lifecycle_body(lifecycle))
+        if path == "/v1/distributed/locks/acquire":
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            metadata = request.body.get("metadata")
+            if metadata is not None and not isinstance(metadata, Mapping):
+                return bad_request("distributed lock metadata must be an object")
+            try:
+                lifecycle = self._service.distributed_acquire_lock(
+                    lock_key=_distributed_required_string(
+                        request.body,
+                        key="lock_key",
+                        field_name="distributed lock key",
+                    ),
+                    owner_id=_distributed_lock_owner_id(request.body),
+                    ttl_seconds=_distributed_lock_ttl_seconds(request.body),
+                    metadata=None if metadata is None else immutable_json(metadata),
+                )
+            except DistributedLockConflictError as exc:
+                return conflict(str(exc))
+            except ValueError as exc:
+                return bad_request(str(exc))
+            if lifecycle is None:
+                return not_found("distributed runtime coordinator is not configured")
+            return json_response(distributed_lock_lifecycle_body(lifecycle))
+        distributed_lock_lease_id, distributed_lock_action = _distributed_lock_lease_route(path)
+        if distributed_lock_lease_id is not None:
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            try:
+                if distributed_lock_action == "heartbeat":
+                    lifecycle = self._service.distributed_heartbeat_lock(
+                        distributed_lock_lease_id,
+                        owner_id=_distributed_lock_owner_id(request.body),
+                        ttl_seconds=_distributed_lock_ttl_seconds(request.body),
+                    )
+                elif distributed_lock_action == "release":
+                    lifecycle = self._service.distributed_release_lock(
+                        distributed_lock_lease_id,
+                        owner_id=_distributed_lock_owner_id(request.body),
+                    )
+                else:
+                    return not_found(f"unknown route: {path}")
+            except DistributedLockLeaseLostError as exc:
+                return not_found(str(exc))
+            except ValueError as exc:
+                return bad_request(str(exc))
+            if lifecycle is None:
+                return not_found("distributed runtime coordinator is not configured")
+            return json_response(distributed_lock_lifecycle_body(lifecycle))
         distributed_schedule_session_id = _distributed_schedule_session_route(path)
         if distributed_schedule_session_id is not None:
             if method != "POST":
@@ -618,6 +673,10 @@ def bad_request(message: str) -> HttpResponse:
     return json_response(error_body("bad_request", message), status_code=400)
 
 
+def conflict(message: str) -> HttpResponse:
+    return json_response(error_body("conflict", message), status_code=409)
+
+
 def method_not_allowed(allowed: tuple[str, ...]) -> HttpResponse:
     headers = MappingProxyType(
         {
@@ -897,6 +956,28 @@ def distributed_maintenance_body(view: DistributedMaintenanceResult) -> JsonMapp
             "health": dict(distributed_health_body(view.health)),
         }
     )
+
+
+def distributed_lock_lifecycle_body(view: DistributedLockLifecycleResult) -> JsonMapping:
+    return immutable_json(
+        {
+            "lock": distributed_lock_lease_summary_body(view.lock),
+            "snapshot": dict(distributed_snapshot_body(view.snapshot)),
+            "health": dict(distributed_health_body(view.health)),
+        }
+    )
+
+
+def distributed_lock_lease_summary_body(lock: DistributedLockLease) -> dict[str, JsonValue]:
+    return {
+        "lock_key": lock.lock_key,
+        "owner_id": str(lock.owner_id),
+        "lease_id": str(lock.lease_id),
+        "acquired_at": lock.acquired_at.isoformat(),
+        "heartbeat_at": lock.heartbeat_at.isoformat(),
+        "lease_expires_at": lock.lease_expires_at.isoformat(),
+        "metadata": _json_value(lock.metadata),
+    }
 
 
 def distributed_worker_lifecycle_body(view: DistributedWorkerLifecycleResult) -> JsonMapping:
@@ -1509,6 +1590,52 @@ def _console_domain_route(path: str) -> tuple[str | None, str | None]:
     ):
         return segments[2], segments[3]
     return None, None
+
+
+def _distributed_lock_lease_route(path: str) -> tuple[DistributedLockLeaseId | None, str]:
+    segments = tuple(segment for segment in path.split("/") if segment)
+    if (
+        len(segments) == 5
+        and segments[:3] == ("v1", "distributed", "lock-leases")
+        and segments[3].strip()
+        and segments[4].strip()
+    ):
+        return DistributedLockLeaseId(segments[3]), segments[4]
+    return None, ""
+
+
+def _distributed_lock_owner_id(body: JsonMapping) -> DistributedLockOwnerId:
+    return DistributedLockOwnerId(
+        _distributed_required_string(
+            body,
+            key="owner_id",
+            field_name="distributed lock owner_id",
+        )
+    )
+
+
+def _distributed_lock_ttl_seconds(body: JsonMapping) -> float:
+    value = body.get("ttl_seconds", 30.0)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError("distributed lock ttl_seconds must be a positive number")
+    ttl_seconds = float(value)
+    if ttl_seconds <= 0:
+        raise ValueError("distributed lock ttl_seconds must be a positive number")
+    return ttl_seconds
+
+
+def _distributed_required_string(
+    body: JsonMapping,
+    *,
+    key: str,
+    field_name: str,
+) -> str:
+    value = body.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    if not value.strip():
+        raise ValueError(f"{field_name} must not be empty")
+    return value
 
 
 def _distributed_worker_action_route(path: str) -> tuple[WorkerId | None, str]:

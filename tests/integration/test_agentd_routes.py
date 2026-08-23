@@ -692,6 +692,108 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agentd_distributed_lock_lifecycle_routes() -> None:
+    service, _ = build_service([], distributed_coordinator=DistributedRuntimeCoordinator())
+    app = AgentdApp(service)
+
+    acquired = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/locks/acquire",
+            immutable_json(
+                {
+                    "lock_key": "session/session-1",
+                    "owner_id": "worker-a",
+                    "ttl_seconds": 30,
+                    "metadata": {"reason": "run session"},
+                }
+            ),
+        )
+    )
+    lease_id = acquired.body["lock"]["lease_id"]
+    conflict = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/locks/acquire",
+            immutable_json(
+                {
+                    "lock_key": "session/session-1",
+                    "owner_id": "worker-b",
+                }
+            ),
+        )
+    )
+    heartbeat = await app.handle(
+        HttpRequest(
+            "POST",
+            f"/v1/distributed/lock-leases/{lease_id}/heartbeat",
+            immutable_json({"owner_id": "worker-a", "ttl_seconds": 60}),
+        )
+    )
+    released = await app.handle(
+        HttpRequest(
+            "POST",
+            f"/v1/distributed/lock-leases/{lease_id}/release",
+            immutable_json({"owner_id": "worker-a"}),
+        )
+    )
+    missing_lease = await app.handle(
+        HttpRequest(
+            "POST",
+            f"/v1/distributed/lock-leases/{lease_id}/heartbeat",
+            immutable_json({"owner_id": "worker-a"}),
+        )
+    )
+    invalid_ttl = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/locks/acquire",
+            immutable_json(
+                {
+                    "lock_key": "session/session-2",
+                    "owner_id": "worker-a",
+                    "ttl_seconds": 0,
+                }
+            ),
+        )
+    )
+    missing_service, _ = build_service([])
+    missing_coordinator = await AgentdApp(missing_service).handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/locks/acquire",
+            immutable_json({"lock_key": "session/session-1", "owner_id": "worker-a"}),
+        )
+    )
+
+    assert acquired.status_code == 200
+    assert acquired.body["lock"]["lock_key"] == "session/session-1"
+    assert acquired.body["lock"]["metadata"] == {"reason": "run session"}
+    assert acquired.body["snapshot"]["locks"][0]["lock_key"] == "session/session-1"
+    assert conflict.status_code == 409
+    assert conflict.body["error"]["code"] == "conflict"
+    assert heartbeat.status_code == 200
+    assert heartbeat.body["lock"]["lease_id"] == lease_id
+    assert released.status_code == 200
+    assert released.body["snapshot"]["locks"] == []
+    assert missing_lease.status_code == 404
+    assert missing_lease.body["error"] == {
+        "code": "not_found",
+        "message": f"lock lease not found: {lease_id}",
+    }
+    assert invalid_ttl.status_code == 400
+    assert invalid_ttl.body["error"] == {
+        "code": "bad_request",
+        "message": "distributed lock ttl_seconds must be a positive number",
+    }
+    assert missing_coordinator.status_code == 404
+    assert missing_coordinator.body["error"] == {
+        "code": "not_found",
+        "message": "distributed runtime coordinator is not configured",
+    }
+
+
+@pytest.mark.asyncio
 async def test_agentd_distributed_worker_lifecycle_routes() -> None:
     service, _ = build_service([], distributed_coordinator=DistributedRuntimeCoordinator())
     app = AgentdApp(service)
