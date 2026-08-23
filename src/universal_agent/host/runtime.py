@@ -6,7 +6,9 @@ from typing import Protocol
 from universal_agent.core import DomainIdentity
 from universal_agent.distributed import (
     DistributedRuntimeCoordinator,
+    FileDistributedLockRegistry,
     FileWorkQueue,
+    InMemoryDistributedLockRegistry,
     InMemoryWorkQueue,
 )
 from universal_agent.domain import (
@@ -110,7 +112,10 @@ class RuntimeHost:
             session_store=session_store,
             event_reader=event_store,
         )
-        distributed_coordinator = DistributedRuntimeCoordinator(queue=_build_work_queue(config))
+        distributed_coordinator = DistributedRuntimeCoordinator(
+            queue=_build_work_queue(config),
+            locks=_build_distributed_locks(config),
+        )
         return cls(
             config=config,
             runtime_api=api,
@@ -235,6 +240,15 @@ def _build_work_queue(config: RuntimeConfig) -> InMemoryWorkQueue:
         assert config.distributed_queue.path is not None
         return FileWorkQueue(config.distributed_queue.path)
     raise ValueError(f"unsupported distributed queue backend: {config.distributed_queue.backend}")
+
+
+def _build_distributed_locks(config: RuntimeConfig) -> InMemoryDistributedLockRegistry:
+    if config.distributed_locks.backend is StoreBackend.MEMORY:
+        return InMemoryDistributedLockRegistry()
+    if config.distributed_locks.backend is StoreBackend.FILE:
+        assert config.distributed_locks.path is not None
+        return FileDistributedLockRegistry(config.distributed_locks.path)
+    raise ValueError(f"unsupported distributed locks backend: {config.distributed_locks.backend}")
 
 
 def _format_identities(identities: tuple[DomainIdentity, ...]) -> str:

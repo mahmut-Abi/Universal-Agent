@@ -49,6 +49,7 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
         (
             f"Runtime: store={snapshot.config.store_backend}"
             f" queue={snapshot.config.distributed_queue_backend}"
+            f" locks={snapshot.config.distributed_locks_backend}"
             f" max_iterations={snapshot.config.max_iterations}"
             f" max_recovery_steps={snapshot.config.max_recovery_steps}"
         ),

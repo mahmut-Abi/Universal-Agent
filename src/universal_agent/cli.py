@@ -404,6 +404,8 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--store-path", default=".universal-agent/store")
     init.add_argument("--distributed-queue-backend", choices=("memory", "file"), default="memory")
     init.add_argument("--distributed-queue-path", default=".universal-agent/work-queue.json")
+    init.add_argument("--distributed-locks-backend", choices=("memory", "file"), default="memory")
+    init.add_argument("--distributed-locks-path", default=".universal-agent/distributed-locks.json")
     init.add_argument("--force", action="store_true")
 
     config = commands.add_parser("config")
@@ -1422,6 +1424,8 @@ def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
         store_path=cast(str, args.store_path),
         distributed_queue_backend=cast(str, args.distributed_queue_backend),
         distributed_queue_path=cast(str, args.distributed_queue_path),
+        distributed_locks_backend=cast(str, args.distributed_locks_backend),
+        distributed_locks_path=cast(str, args.distributed_locks_path),
     )
     tmp_path = output.with_name(output.name + ".tmp")
     with tmp_path.open("w", encoding="utf-8") as handle:
@@ -1439,6 +1443,8 @@ def _profile_config_payload(
     store_path: str,
     distributed_queue_backend: str,
     distributed_queue_path: str,
+    distributed_locks_backend: str,
+    distributed_locks_path: str,
 ) -> dict[str, object]:
     domain = {"name": "kubernetes", "version": "0.2.0"}
     store: dict[str, str] = {"backend": store_backend}
@@ -1447,6 +1453,9 @@ def _profile_config_payload(
     distributed_queue: dict[str, str] = {"backend": distributed_queue_backend}
     if distributed_queue_backend != "memory":
         distributed_queue["path"] = distributed_queue_path
+    distributed_locks: dict[str, str] = {"backend": distributed_locks_backend}
+    if distributed_locks_backend != "memory":
+        distributed_locks["path"] = distributed_locks_path
     return {
         "name": profile_name,
         "version": "0.1.0",
@@ -1456,6 +1465,7 @@ def _profile_config_payload(
             "environment": {"environment": environment},
             "store": store,
             "distributed_queue": distributed_queue,
+            "distributed_locks": distributed_locks,
             "limits": {"max_iterations": 20, "max_recovery_steps": 8},
             "domain": domain,
         },

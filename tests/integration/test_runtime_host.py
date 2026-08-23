@@ -20,7 +20,7 @@ from universal_agent import (
     immutable_json,
 )
 from universal_agent.core import ExecutionStatus, GoalStatus, JsonMapping, SessionId
-from universal_agent.distributed import WorkItemStatus
+from universal_agent.distributed import DistributedLockOwnerId, WorkItemStatus
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 
 
@@ -261,6 +261,38 @@ def test_runtime_host_uses_configured_file_backed_distributed_queue(tmp_path: Pa
     assert snapshot.work_queue.items[0].status is WorkItemStatus.QUEUED
     assert snapshot.work_queue.items[0].session_id == SessionId("session-1")
     assert snapshot.work_queue.items[0].priority == 7
+
+
+def test_runtime_host_uses_configured_file_backed_distributed_locks(tmp_path: Path) -> None:
+    backend = HostRemediationBackend()
+    locks_path = tmp_path / "coordination" / "distributed-locks.json"
+    config = RuntimeConfig(
+        environment=immutable_json({"environment": "production"}),
+        distributed_locks=StoreConfig.file(str(locks_path)),
+        domain=DomainConfig("kubernetes", "0.2.0"),
+    )
+    first = RuntimeHost.build(
+        config=config,
+        model=ScriptedModelAdapter([]),
+        domain=KubernetesRemediationDomain(backend, backend),
+    )
+
+    first.distributed_coordinator.acquire_lock(
+        lock_key="session/session-1",
+        owner_id=DistributedLockOwnerId("worker-a"),
+    )
+    second = RuntimeHost.build(
+        config=config,
+        model=ScriptedModelAdapter([]),
+        domain=KubernetesRemediationDomain(backend, backend),
+    )
+    snapshot = second.service.distributed_snapshot()
+
+    assert locks_path.exists()
+    assert snapshot is not None
+    assert len(snapshot.locks) == 1
+    assert snapshot.locks[0].lock_key == "session/session-1"
+    assert snapshot.locks[0].owner_id == DistributedLockOwnerId("worker-a")
 
 
 def test_runtime_host_from_profile_exposes_profile_catalog(tmp_path: Path) -> None:

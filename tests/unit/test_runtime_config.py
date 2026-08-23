@@ -22,6 +22,10 @@ def test_runtime_config_from_mapping_parses_typed_values() -> None:
                 "backend": "file",
                 "path": "/tmp/universal-agent/work-queue.json",
             },
+            "distributed_locks": {
+                "backend": "file",
+                "path": "/tmp/universal-agent/distributed-locks.json",
+            },
             "limits": {"max_iterations": 7, "max_recovery_steps": 3},
             "domain": {"name": "kubernetes", "version": "0.2.0"},
         }
@@ -30,6 +34,9 @@ def test_runtime_config_from_mapping_parses_typed_values() -> None:
     assert config.environment["environment"] == "production"
     assert config.store == StoreConfig.file("/tmp/universal-agent")
     assert config.distributed_queue == StoreConfig.file("/tmp/universal-agent/work-queue.json")
+    assert config.distributed_locks == StoreConfig.file(
+        "/tmp/universal-agent/distributed-locks.json"
+    )
     assert config.store.backend is StoreBackend.FILE
     assert config.limits == RuntimeLimitsConfig(max_iterations=7, max_recovery_steps=3)
     assert config.domain == DomainConfig("kubernetes", "0.2.0")
@@ -102,6 +109,16 @@ def test_runtime_config_rejects_invalid_store_and_limits() -> None:
                 "distributed_queue": {
                     "backend": "sqlite",
                     "path": "/tmp/universal-agent/work-queue.sqlite3",
+                }
+            }
+        )
+
+    with pytest.raises(ValueError, match="distributed locks sqlite backend is not supported"):
+        RuntimeConfig.from_mapping(
+            {
+                "distributed_locks": {
+                    "backend": "sqlite",
+                    "path": "/tmp/universal-agent/distributed-locks.sqlite3",
                 }
             }
         )

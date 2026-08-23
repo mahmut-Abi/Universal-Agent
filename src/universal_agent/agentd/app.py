@@ -1091,6 +1091,10 @@ def config_body(view: RuntimeConfigView) -> JsonMapping:
                 "backend": view.distributed_queue_backend,
                 "path": view.distributed_queue_path,
             },
+            "distributed_locks": {
+                "backend": view.distributed_locks_backend,
+                "path": view.distributed_locks_path,
+            },
             "limits": {
                 "max_iterations": view.max_iterations,
                 "max_recovery_steps": view.max_recovery_steps,
