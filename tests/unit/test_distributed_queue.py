@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -119,6 +120,28 @@ def test_file_work_queue_restores_sequence_and_idempotency(tmp_path: Path) -> No
     assert duplicate.work_item_id == first.work_item_id
     assert second.work_item_id == WorkItemId("work-2")
     assert len(FileWorkQueue(path).queued()) == 2
+
+
+def test_file_work_queue_rejects_unsupported_file_version(tmp_path: Path) -> None:
+    path = tmp_path / "work-queue.json"
+    path.write_text(json.dumps({"version": 2, "items": []}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unsupported file work queue version: 2"):
+        FileWorkQueue(path)
+
+
+def test_file_work_queue_rejects_duplicate_persisted_work_item_ids(tmp_path: Path) -> None:
+    path = tmp_path / "work-queue.json"
+    FileWorkQueue(path).enqueue(kind="agent_session")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    items = payload["items"]
+    assert isinstance(items, list)
+    items.append(items[0])
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="duplicate file work queue item: work-1"):
+        FileWorkQueue(path)
 
 
 def test_file_work_queue_persists_completion_and_expiry(tmp_path: Path) -> None:

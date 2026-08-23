@@ -493,6 +493,11 @@ class FileWorkQueue(InMemoryWorkQueue):
             payload = json.load(handle)
         if not isinstance(payload, dict):
             raise ValueError("file work queue payload must be an object")
+        version = payload.get("version")
+        if isinstance(version, bool) or not isinstance(version, int):
+            raise ValueError("file work queue version must be an integer")
+        if version != 1:
+            raise ValueError(f"unsupported file work queue version: {version}")
         items = payload.get("items", [])
         if not isinstance(items, list):
             raise ValueError("file work queue items must be a list")
@@ -501,6 +506,8 @@ class FileWorkQueue(InMemoryWorkQueue):
             if not isinstance(item_payload, dict):
                 raise ValueError(f"file work queue items[{index}] must be an object")
             item = _decode_work_item(item_payload)
+            if item.work_item_id in loaded:
+                raise ValueError(f"duplicate file work queue item: {item.work_item_id}")
             loaded[item.work_item_id] = item
         self._items = loaded
         self._sequence = max(
