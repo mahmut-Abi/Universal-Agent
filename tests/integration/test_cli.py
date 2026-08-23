@@ -777,6 +777,7 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
     write_profile_config_file(profile_root / "kubernetes.profile.json")
     inline_output = StringIO()
     write_output = StringIO()
+    registry_output = StringIO()
     duplicate_output = StringIO()
     duplicate_error = StringIO()
     force_output = StringIO()
@@ -815,6 +816,11 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
         service=service,
         stdout=write_output,
     )
+    registry_status = await run_cli(
+        ["ecosystem", "registry", str(output_path)],
+        service=service,
+        stdout=registry_output,
+    )
     duplicate_status = await run_cli(
         [
             "ecosystem",
@@ -843,11 +849,13 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
     )
     inline = read_json(inline_output)
     written = read_json(write_output)
+    registry = read_json(registry_output)
     forced = read_json(force_output)
     loaded = load_ecosystem_registry_manifest(output_path)
 
     assert inline_status == 0
     assert write_status == 0
+    assert registry_status == 0
     assert duplicate_status == 2
     assert force_status == 0
     assert inline["kind"] == "EcosystemRegistry"
@@ -859,6 +867,8 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
     assert written["status"] == "created"
     assert written["path"] == str(output_path)
     assert written["manifest"]["summary"]["total_items"] == 3
+    assert registry["kind"] == "EcosystemRegistry"
+    assert registry["summary"]["total_items"] == 3
     assert duplicate_output.getvalue() == ""
     assert "ecosystem registry manifest already exists" in duplicate_error.getvalue()
     assert forced["status"] == "updated"

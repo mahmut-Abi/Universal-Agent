@@ -88,8 +88,10 @@ from universal_agent.domain import (
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.ecosystem import (
     EcosystemCatalog,
+    EcosystemRegistryNotFoundError,
     encode_ecosystem_registry_manifest,
     load_ecosystem_catalog,
+    load_ecosystem_registry_index,
     write_ecosystem_registry_manifest,
 )
 from universal_agent.evaluation.console import (
@@ -275,6 +277,7 @@ async def run_cli(
         StateNotFoundError,
         DomainPackageNotFoundError,
         EvaluationDatasetNotFoundError,
+        EcosystemRegistryNotFoundError,
         ProfileConfigNotFoundError,
         WorkItemNotFoundError,
         WorkerNotFoundError,
@@ -465,6 +468,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ecosystem_export.add_argument("--output")
     ecosystem_export.add_argument("--force", action="store_true")
+    ecosystem_registry = ecosystem_commands.add_parser("registry")
+    ecosystem_registry.add_argument("manifest")
 
     evaluate = commands.add_parser("eval")
     eval_commands = evaluate.add_subparsers(dest="eval_command", required=True)
@@ -1022,6 +1027,10 @@ def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:
                 "manifest": encode_ecosystem_registry_manifest(result.manifest),
             },
         )
+        return
+    if command == "registry":
+        index = load_ecosystem_registry_index(cast(str, args.manifest))
+        _write_json(out, encode_ecosystem_registry_manifest(index.manifest))
         return
     raise ValueError(f"unknown ecosystem command: {command}")
 
