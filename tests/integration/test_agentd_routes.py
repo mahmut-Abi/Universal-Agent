@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from universal_agent import (
     AgentRuntime,
     Decision,
     DecisionType,
+    DistributedLockOwnerId,
+    DistributedRuntimeCoordinator,
     DomainConfig,
     DomainLoader,
     Goal,
@@ -22,10 +26,11 @@ from universal_agent import (
     StoreConfig,
     SuccessCriterion,
     Task,
+    WorkerId,
     immutable_json,
 )
 from universal_agent.agentd import AgentdApp, HttpRequest
-from universal_agent.core import ExecutionStatus, JsonMapping, JsonValue
+from universal_agent.core import ExecutionStatus, JsonMapping, JsonValue, SessionId
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 
 
@@ -162,6 +167,7 @@ def build_service(
     decisions: list[Decision],
     *,
     usage: list[ModelUsage] | None = None,
+    distributed_coordinator: DistributedRuntimeCoordinator | None = None,
 ) -> tuple[RuntimeService, AgentdBackend]:
     backend = AgentdBackend()
     store = InMemoryStateStore()
@@ -183,7 +189,12 @@ def build_service(
         limits=RuntimeLimitsConfig(max_iterations=12, max_recovery_steps=4),
         domain=DomainConfig("kubernetes", "0.2.0"),
     )
-    return RuntimeService(runtime_api=api, components=components, config=config), backend
+    return RuntimeService(
+        runtime_api=api,
+        components=components,
+        config=config,
+        distributed_coordinator=distributed_coordinator,
+    ), backend
 
 
 def build_profile_service(decisions: list[Decision]) -> tuple[RuntimeService, AgentdBackend]:
@@ -611,6 +622,58 @@ async def test_agentd_session_list_route_supports_cursor_and_limit() -> None:
     error = missing_cursor.body["error"]
     assert isinstance(error, dict)
     assert error["message"] == "session cursor not found: missing-session"
+
+
+@pytest.mark.asyncio
+async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.scheduler.schedule_session(SessionId("session-1"), available_at=now)
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=999_999_999,
+        now=now,
+    )
+    coordinator.locks.acquire(
+        lock_key="session/session-1",
+        owner_id=DistributedLockOwnerId("worker-a"),
+        ttl_seconds=999_999_999,
+        now=now,
+    )
+    service, _ = build_service([], distributed_coordinator=coordinator)
+    app = AgentdApp(service)
+
+    snapshot = await app.handle(HttpRequest("GET", "/v1/distributed/snapshot"))
+    health = await app.handle(HttpRequest("GET", "/v1/distributed/health"))
+    missing_service, _ = build_service([])
+    missing = await AgentdApp(missing_service).handle(
+        HttpRequest("GET", "/v1/distributed/health")
+    )
+
+    assert snapshot.status_code == 200
+    work_queue = snapshot.body["work_queue"]
+    workers = snapshot.body["workers"]
+    locks = snapshot.body["locks"]
+    assert isinstance(work_queue, dict)
+    assert isinstance(workers, dict)
+    assert isinstance(locks, list)
+    first_lock = locks[0]
+    assert isinstance(first_lock, dict)
+    assert work_queue["queued_count"] == 1
+    assert workers["online_count"] == 1
+    assert first_lock["lock_key"] == "session/session-1"
+    assert health.status_code == 200
+    checks = health.body["checks"]
+    assert isinstance(checks, list)
+    first_check = checks[0]
+    assert isinstance(first_check, dict)
+    assert health.body["status"] == "ok"
+    assert first_check["name"] == "worker_pool"
+    assert missing.status_code == 404
+    error = missing.body["error"]
+    assert isinstance(error, dict)
+    assert error["message"] == "distributed runtime coordinator is not configured"
 
 
 @pytest.mark.asyncio

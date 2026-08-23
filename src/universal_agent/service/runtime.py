@@ -18,6 +18,11 @@ from universal_agent.core import (
     Task,
     immutable_json,
 )
+from universal_agent.distributed import (
+    DistributedHealthReport,
+    DistributedRuntimeCoordinator,
+    DistributedRuntimeSnapshot,
+)
 from universal_agent.domain import ActiveDomain, RuntimeComponents
 from universal_agent.evidence import Evidence
 from universal_agent.memory import MemoryKind, MemoryRecord
@@ -197,11 +202,13 @@ class RuntimeService:
         components: RuntimeComponents,
         profiles: tuple[AgentProfile, ...] = (),
         config: RuntimeConfig | None = None,
+        distributed_coordinator: DistributedRuntimeCoordinator | None = None,
     ) -> None:
         self._runtime_api = runtime_api
         self._components = components
         self._profiles = ProfileRegistry(profiles)
         self._config = config
+        self._distributed_coordinator = distributed_coordinator
 
     def health(self) -> HealthView:
         return HealthView(status="ok", service="universal-agent-runtime")
@@ -334,6 +341,17 @@ class RuntimeService:
             max_recovery_steps=self._config.limits.max_recovery_steps,
             domains=runtime_config_domain_views(configured or identities),
         )
+
+
+    def distributed_snapshot(self) -> DistributedRuntimeSnapshot | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.snapshot()
+
+    def distributed_health(self, *, now: datetime | None = None) -> DistributedHealthReport | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.health(now=now)
 
     async def run_goal(self, goal: Goal, task: Task) -> RuntimeRun:
         return await self._runtime_api.run_goal(goal, task)

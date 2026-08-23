@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from universal_agent import (
     AgentRuntime,
     Decision,
     DecisionType,
+    DistributedRuntimeCoordinator,
     DomainLoader,
     Goal,
     InMemoryEventSink,
@@ -17,12 +20,14 @@ from universal_agent import (
     ScriptedModelAdapter,
     SuccessCriterion,
     Task,
+    WorkerId,
     immutable_json,
 )
 from universal_agent.core import (
     ExecutionStatus,
     JsonMapping,
     RiskLevel,
+    SessionId,
     SideEffect,
 )
 from universal_agent.domain import RuntimeComponents
@@ -106,6 +111,36 @@ def build_api(
         environment=immutable_json({"environment": "staging"}),
     )
     return RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
+
+
+def test_runtime_service_exposes_optional_distributed_runtime_views() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    service, _ = build_service([])
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.scheduler.schedule_session(SessionId("session-1"), available_at=now)
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=30,
+        now=now,
+    )
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    distributed_service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+        distributed_coordinator=coordinator,
+    )
+
+    assert service.distributed_snapshot() is None
+    assert service.distributed_health(now=now) is None
+    snapshot = distributed_service.distributed_snapshot()
+    health = distributed_service.distributed_health(now=now)
+
+    assert snapshot is not None
+    assert health is not None
+    assert snapshot.work_queue.queued_count == 1
+    assert health.status.value == "ok"
 
 
 def test_runtime_service_exposes_agentd_foundation_metadata() -> None:

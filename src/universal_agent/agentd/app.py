@@ -19,6 +19,10 @@ from universal_agent.core import (
     Task,
     immutable_json,
 )
+from universal_agent.distributed import (
+    DistributedHealthReport,
+    DistributedRuntimeSnapshot,
+)
 from universal_agent.profile import ProfileNotFoundError
 from universal_agent.runtime import (
     EvaluationView,
@@ -257,6 +261,20 @@ class AgentdApp:
                 return json_response(profile_body(self._service.profile(profile_name)))
             except ProfileNotFoundError as exc:
                 return not_found(str(exc))
+        if path == "/v1/distributed/snapshot":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            distributed_snapshot = self._service.distributed_snapshot()
+            if distributed_snapshot is None:
+                return not_found("distributed runtime coordinator is not configured")
+            return json_response(distributed_snapshot_body(distributed_snapshot))
+        if path == "/v1/distributed/health":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            health = self._service.distributed_health()
+            if health is None:
+                return not_found("distributed runtime coordinator is not configured")
+            return json_response(distributed_health_body(health))
         if path == "/v1/metrics":
             if method != "GET":
                 return method_not_allowed(("GET",))
@@ -740,6 +758,109 @@ def metrics_body(view: RuntimeMetricsView) -> JsonMapping:
         }
     )
 
+
+
+def distributed_snapshot_body(view: DistributedRuntimeSnapshot) -> JsonMapping:
+    return immutable_json(
+        {
+            "work_queue": {
+                "total_count": view.work_queue.total_count,
+                "queued_count": view.work_queue.queued_count,
+                "leased_count": view.work_queue.leased_count,
+                "completed_count": view.work_queue.completed_count,
+                "failed_count": view.work_queue.failed_count,
+                "cancelled_count": view.work_queue.cancelled_count,
+                "items": [
+                    {
+                        "work_item_id": str(item.work_item_id),
+                        "kind": item.kind,
+                        "status": item.status.value,
+                        "session_id": None
+                        if item.session_id is None
+                        else str(item.session_id),
+                        "task_id": None if item.task_id is None else str(item.task_id),
+                        "action_id": None if item.action_id is None else str(item.action_id),
+                        "priority": item.priority,
+                        "attempts": item.attempts,
+                        "max_attempts": item.max_attempts,
+                        "available_at": item.available_at.isoformat(),
+                        "worker_id": None if item.worker_id is None else str(item.worker_id),
+                        "lease_expires_at": None
+                        if item.lease_expires_at is None
+                        else item.lease_expires_at.isoformat(),
+                        "last_error": item.last_error,
+                    }
+                    for item in view.work_queue.items
+                ],
+            },
+            "locks": [
+                {
+                    "lock_key": lock.lock_key,
+                    "owner_id": str(lock.owner_id),
+                    "lease_id": str(lock.lease_id),
+                    "acquired_at": lock.acquired_at.isoformat(),
+                    "heartbeat_at": lock.heartbeat_at.isoformat(),
+                    "lease_expires_at": lock.lease_expires_at.isoformat(),
+                    "metadata": _json_value(lock.metadata),
+                }
+                for lock in view.locks
+            ],
+            "workers": {
+                "total_count": view.workers.total_count,
+                "online_count": view.workers.online_count,
+                "draining_count": view.workers.draining_count,
+                "offline_count": view.workers.offline_count,
+                "lost_count": view.workers.lost_count,
+                "workers": [
+                    {
+                        "worker_id": str(worker.worker_id),
+                        "status": worker.status.value,
+                        "registered_at": worker.registered_at.isoformat(),
+                        "heartbeat_at": worker.heartbeat_at.isoformat(),
+                        "lease_expires_at": worker.lease_expires_at.isoformat(),
+                        "capabilities": list(worker.capabilities),
+                        "metadata": _json_value(worker.metadata),
+                        "last_error": worker.last_error,
+                    }
+                    for worker in view.workers.workers
+                ],
+            },
+        }
+    )
+
+
+def distributed_health_body(view: DistributedHealthReport) -> JsonMapping:
+    return immutable_json(
+        {
+            "status": view.status.value,
+            "checks": [
+                {
+                    "name": check.name,
+                    "status": check.status.value,
+                    "message": check.message,
+                }
+                for check in view.checks
+            ],
+            "capacity_gaps": [
+                {
+                    "kind": gap.kind,
+                    "queued_count": gap.queued_count,
+                    "capable_online_workers": gap.capable_online_workers,
+                }
+                for gap in view.capacity_gaps
+            ],
+            "expiring_leases": [
+                {
+                    "lease_type": lease.lease_type,
+                    "key": lease.key,
+                    "owner_id": lease.owner_id,
+                    "lease_expires_at": lease.lease_expires_at.isoformat(),
+                    "seconds_remaining": lease.seconds_remaining,
+                }
+                for lease in view.expiring_leases
+            ],
+        }
+    )
 
 def cost_body(view: RuntimeCostView) -> JsonMapping:
     return immutable_json(
