@@ -89,19 +89,19 @@ from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.ecosystem import (
     EcosystemCatalog,
     EcosystemCatalogVerificationReport,
-    EcosystemDomainPackageInstallPlan,
-    EcosystemDomainPackageInstallResult,
+    EcosystemInstallPlan,
+    EcosystemInstallResult,
     EcosystemRegistryIndex,
     EcosystemRegistryManifest,
     EcosystemRegistryNotFoundError,
     EcosystemRegistryStoreNotFoundError,
     FileEcosystemRegistryStore,
     encode_ecosystem_registry_manifest,
-    install_ecosystem_domain_packages,
+    install_ecosystem,
     load_ecosystem_catalog,
     load_ecosystem_registry_index,
     load_ecosystem_registry_manifest,
-    plan_ecosystem_domain_package_install,
+    plan_ecosystem_install,
     write_ecosystem_registry_manifest,
 )
 from universal_agent.evaluation.console import (
@@ -1073,10 +1073,10 @@ def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:
         base_path = cast(str | None, args.base_path)
         verify = not cast(bool, args.no_verify)
         if cast(bool, args.plan_only):
-            plan = plan_ecosystem_domain_package_install(index, base_path=base_path, verify=verify)
+            plan = plan_ecosystem_install(index, base_path=base_path, verify=verify)
             _write_json(out, _ecosystem_install_plan_body(plan))
             return
-        install_result = install_ecosystem_domain_packages(
+        install_result = install_ecosystem(
             index,
             base_path=base_path,
             verify=verify,
@@ -1869,28 +1869,44 @@ def _ecosystem_registry_summary_body(manifest: EcosystemRegistryManifest) -> dic
     }
 
 
-def _ecosystem_install_plan_body(
-    plan: EcosystemDomainPackageInstallPlan,
-) -> dict[str, object]:
+def _ecosystem_install_plan_body(plan: EcosystemInstallPlan) -> dict[str, object]:
     return {
         "status": "planned",
-        "domain_package_count": len(plan.candidates),
+        "domain_package_count": len(plan.domain_packages.candidates),
+        "evaluation_dataset_count": len(plan.evaluation_datasets),
+        "profile_count": len(plan.profiles),
         "domain_packages": [
-            _ecosystem_domain_package_body(candidate.package) for candidate in plan.candidates
+            _ecosystem_domain_package_body(candidate.package)
+            for candidate in plan.domain_packages.candidates
         ],
+        "evaluation_datasets": [
+            _evaluation_dataset_body(candidate.dataset)
+            for candidate in plan.evaluation_datasets
+        ],
+        "profiles": [_ecosystem_profile_body(candidate.entry) for candidate in plan.profiles],
     }
 
 
-def _ecosystem_install_result_body(
-    result: EcosystemDomainPackageInstallResult,
-) -> dict[str, object]:
+def _ecosystem_install_result_body(result: EcosystemInstallResult) -> dict[str, object]:
+    domain_package_registry_count = len(result.domain_packages.identities())
     return {
         "status": "installed",
-        "domain_package_count": len(result.installed_packages),
-        "registry_count": len(result.registry.identities()),
+        "domain_package_count": len(result.installed_domain_packages),
+        "evaluation_dataset_count": len(result.installed_evaluation_datasets),
+        "profile_count": len(result.installed_profiles),
+        "registry_count": domain_package_registry_count,
+        "domain_package_registry_count": domain_package_registry_count,
+        "evaluation_dataset_registry_count": len(result.evaluation_datasets.identities()),
+        "profile_registry_count": len(result.profiles.all()),
         "domain_packages": [
-            _ecosystem_domain_package_body(package) for package in result.installed_packages
+            _ecosystem_domain_package_body(package)
+            for package in result.installed_domain_packages
         ],
+        "evaluation_datasets": [
+            _evaluation_dataset_body(dataset)
+            for dataset in result.installed_evaluation_datasets
+        ],
+        "profiles": [_ecosystem_profile_body(entry) for entry in result.installed_profiles],
     }
 
 

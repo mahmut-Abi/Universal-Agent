@@ -907,9 +907,22 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
     assert registry_verify["failed_check_count"] == 0
     assert install["status"] == "installed"
     assert install["registry_count"] == 1
+    assert install["domain_package_count"] == 1
+    assert install["evaluation_dataset_count"] == 1
+    assert install["profile_count"] == 1
+    assert install["domain_package_registry_count"] == 1
+    assert install["evaluation_dataset_registry_count"] == 1
+    assert install["profile_registry_count"] == 1
     assert install["domain_packages"][0]["name"] == "kubernetes"
+    assert install["evaluation_datasets"][0]["name"] == "kubernetes-remediation"
+    assert install["profiles"][0]["name"] == "kubernetes-operator"
     assert install_plan["status"] == "planned"
     assert install_plan["domain_package_count"] == 1
+    assert install_plan["evaluation_dataset_count"] == 1
+    assert install_plan["profile_count"] == 1
+    assert install_plan["domain_packages"][0]["name"] == "kubernetes"
+    assert install_plan["evaluation_datasets"][0]["name"] == "kubernetes-remediation"
+    assert install_plan["profiles"][0]["name"] == "kubernetes-operator"
     assert duplicate_output.getvalue() == ""
     assert "ecosystem registry manifest already exists" in duplicate_error.getvalue()
     assert forced["status"] == "updated"

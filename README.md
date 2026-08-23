@@ -304,7 +304,8 @@ event-sourcing model or production migration system.
   with Domain package compatibility/security metadata, a read-only query index, file-backed registry
   store, local Domain Package install plan and full ecosystem install plan/result that validates
   referenced package manifests, evaluation datasets and Profile configs before registering metadata
-  for CLI/CI and future package-registry adapters.
+  for CLI/CI and future package-registry adapters. `agent ecosystem install` now exposes that full
+  package/dataset/Profile metadata install surface from registry manifests.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
