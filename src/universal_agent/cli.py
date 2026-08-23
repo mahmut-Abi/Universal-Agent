@@ -82,6 +82,7 @@ from universal_agent.domain import (
     DomainPackageNotFoundError,
     DomainPackageScaffoldResult,
     DomainPackageScaffoldSpec,
+    DomainPackageVerificationReport,
     RuntimeBuilder,
     scaffold_domain_package,
 )
@@ -584,6 +585,7 @@ def build_parser() -> argparse.ArgumentParser:
     domain_package_show = domain_package_commands.add_parser("show")
     domain_package_show.add_argument("name")
     domain_package_show.add_argument("version", nargs="?")
+    domain_package_commands.add_parser("verify")
     domain_package_scaffold = domain_package_commands.add_parser("scaffold")
     domain_package_scaffold.add_argument("name")
     domain_package_scaffold.add_argument("--description", required=True)
@@ -1485,6 +1487,9 @@ def _dispatch_domain_packages(
             ),
         )
         return
+    if command == "verify":
+        _write_json(out, domain_package_verification_body(service.domain_package_verification()))
+        return
     if command == "scaffold":
         result = scaffold_domain_package(
             Path(cast(str, args.output)),
@@ -1927,6 +1932,23 @@ def _ecosystem_domain_package_body(package: DomainPackage) -> dict[str, object]:
         "security": dict(manifest.security),
         "root_path": str(package.root_path),
         "manifest_path": str(package.manifest_path),
+    }
+
+
+def domain_package_verification_body(
+    report: DomainPackageVerificationReport,
+) -> dict[str, object]:
+    return {
+        "passed": report.passed,
+        "failed_check_count": len(report.failed_checks),
+        "checks": [
+            {
+                "name": check.name,
+                "passed": check.passed,
+                "message": check.message,
+            }
+            for check in report.checks
+        ],
     }
 
 

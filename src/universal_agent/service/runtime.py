@@ -53,6 +53,7 @@ from universal_agent.domain import (
     ActiveDomain,
     DomainPackage,
     DomainPackageRegistry,
+    DomainPackageVerificationReport,
     RuntimeComponents,
 )
 from universal_agent.evidence import Evidence
@@ -336,6 +337,9 @@ class RuntimeService:
             else self._domain_packages.get(DomainIdentity(name, version))
         )
         return domain_package_view(package)
+
+    def domain_package_verification(self) -> DomainPackageVerificationReport:
+        return self._domain_packages.verify()
 
     def capabilities(self) -> tuple[CapabilityView, ...]:
         views: list[CapabilityView] = []

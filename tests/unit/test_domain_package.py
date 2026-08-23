@@ -17,6 +17,7 @@ from universal_agent.domain import (
     decode_domain_package_manifest,
     encode_domain_package_manifest,
     scaffold_domain_package,
+    verify_domain_package,
 )
 
 
@@ -151,6 +152,47 @@ def test_domain_package_registry_reports_duplicate_missing_and_ambiguous_package
 def test_domain_package_registry_refuses_missing_manifest(tmp_path: Path) -> None:
     with pytest.raises(DomainPackageNotFoundError, match="manifest not found"):
         DomainPackageRegistry().install(tmp_path / "missing-domain")
+
+
+def test_domain_package_verification_checks_local_package_paths_and_manifest_identity(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "kubernetes-domain"
+    write_manifest(root, package_payload())
+    package = DomainPackageRegistry().install(root)
+
+    passing = verify_domain_package(package)
+    write_manifest(root, package_payload("database"))
+    failing = verify_domain_package(package)
+    failed_checks = {check.name: check.message for check in failing.failed_checks}
+
+    assert passing.passed is True
+    assert {check.name for check in passing.checks} == {
+        "package_root_exists",
+        "package_manifest_exists",
+        "package_manifest_matches_identity",
+    }
+    assert failing.passed is False
+    assert "package_manifest_matches_identity" in failed_checks
+    assert "identity mismatch" in failed_checks["package_manifest_matches_identity"]
+
+
+def test_domain_package_registry_verification_checks_dependency_closure(
+    tmp_path: Path,
+) -> None:
+    registry = DomainPackageRegistry()
+    registry.install(write_manifest(tmp_path / "kubernetes-domain", package_payload()))
+    missing = registry.verify()
+
+    observability = package_payload("observability", "2.0.0", tags=("observability",))
+    observability["dependencies"] = []
+    registry.install(write_manifest(tmp_path / "observability-domain", observability))
+    passing = registry.verify()
+
+    assert missing.passed is False
+    assert missing.failed_checks[0].name == "package_dependencies_registered"
+    assert "observability@2.0.0" in missing.failed_checks[0].message
+    assert passing.passed is True
 
 
 def test_build_domain_package_manifest_encodes_sdk_spec_with_default_entrypoint() -> None:

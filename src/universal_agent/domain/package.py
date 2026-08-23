@@ -104,6 +104,26 @@ class DomainPackage:
 
 
 @dataclass(frozen=True, slots=True)
+class DomainPackageCheck:
+    name: str
+    passed: bool
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class DomainPackageVerificationReport:
+    checks: tuple[DomainPackageCheck, ...]
+
+    @property
+    def passed(self) -> bool:
+        return all(check.passed for check in self.checks)
+
+    @property
+    def failed_checks(self) -> tuple[DomainPackageCheck, ...]:
+        return tuple(check for check in self.checks if not check.passed)
+
+
+@dataclass(frozen=True, slots=True)
 class DomainPackageScaffoldSpec:
     """SDK input for generating a package-shaped Domain Runtime directory."""
 
@@ -224,6 +244,9 @@ class DomainPackageRegistry:
                 f"domain package {name} has multiple registered versions: {versions}"
             )
         return matches[0]
+
+    def verify(self) -> DomainPackageVerificationReport:
+        return verify_domain_package_registry(self)
 
 
 def load_domain_package(path: Path) -> DomainPackage:
@@ -364,6 +387,26 @@ def scaffold_domain_package(
     )
 
 
+def verify_domain_package(package: DomainPackage) -> DomainPackageVerificationReport:
+    return DomainPackageVerificationReport(
+        (
+            _package_root_exists(package),
+            _package_manifest_exists(package),
+            _package_manifest_matches_identity(package),
+        )
+    )
+
+
+def verify_domain_package_registry(
+    registry: DomainPackageRegistry,
+) -> DomainPackageVerificationReport:
+    packages = registry.list()
+    registered_domains = frozenset(package.identity for package in packages)
+    return DomainPackageVerificationReport(
+        (_package_dependencies_registered(packages, registered_domains),)
+    )
+
+
 def decode_domain_package_manifest(payload: JsonMapping) -> DomainPackageManifest:
     metadata = _mapping(payload, "metadata")
     compatibility = _optional_mapping(payload, "compatibility")
@@ -432,6 +475,81 @@ def _load_json_object(path: Path) -> JsonMapping:
     if not isinstance(loaded, dict):
         raise DomainPackageValidationError("domain package manifest must be a JSON object")
     return immutable_json(loaded)
+
+
+def _package_root_exists(package: DomainPackage) -> DomainPackageCheck:
+    if package.root_path.is_dir():
+        return DomainPackageCheck(
+            "package_root_exists",
+            True,
+            "domain package root exists",
+        )
+    return DomainPackageCheck(
+        "package_root_exists",
+        False,
+        f"domain package root missing or not a directory: {package.root_path}",
+    )
+
+
+def _package_manifest_exists(package: DomainPackage) -> DomainPackageCheck:
+    if package.manifest_path.is_file():
+        return DomainPackageCheck(
+            "package_manifest_exists",
+            True,
+            "domain package manifest exists",
+        )
+    return DomainPackageCheck(
+        "package_manifest_exists",
+        False,
+        f"domain package manifest missing or not a file: {package.manifest_path}",
+    )
+
+
+def _package_manifest_matches_identity(package: DomainPackage) -> DomainPackageCheck:
+    try:
+        loaded = load_domain_package(package.manifest_path)
+    except (DomainPackageNotFoundError, DomainPackageValidationError) as exc:
+        return DomainPackageCheck(
+            "package_manifest_matches_identity",
+            False,
+            f"domain package manifest could not be loaded: {exc}",
+        )
+    if loaded.identity == package.identity:
+        return DomainPackageCheck(
+            "package_manifest_matches_identity",
+            True,
+            "domain package manifest identity matches loaded package",
+        )
+    return DomainPackageCheck(
+        "package_manifest_matches_identity",
+        False,
+        "domain package identity mismatch: "
+        f"expected {_format_identity(package.identity)}, "
+        f"loaded {_format_identity(loaded.identity)}",
+    )
+
+
+def _package_dependencies_registered(
+    packages: tuple[DomainPackage, ...],
+    registered_domains: frozenset[DomainIdentity],
+) -> DomainPackageCheck:
+    missing = tuple(
+        f"{package.identity.name}:{dependency.name}@{dependency.version}"
+        for package in packages
+        for dependency in package.manifest.dependencies
+        if dependency not in registered_domains
+    )
+    if not missing:
+        return DomainPackageCheck(
+            "package_dependencies_registered",
+            True,
+            "all Domain package dependencies are registered",
+        )
+    return DomainPackageCheck(
+        "package_dependencies_registered",
+        False,
+        "Domain packages reference missing dependencies: " + ", ".join(missing),
+    )
 
 
 def _write_json_manifest(path: Path, payload: JsonMapping) -> None:

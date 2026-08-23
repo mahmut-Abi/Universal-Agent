@@ -9,6 +9,7 @@ from universal_agent.domain.manager import (
 from universal_agent.domain.package import (
     AmbiguousDomainPackageError,
     DomainPackage,
+    DomainPackageCheck,
     DomainPackageCompatibility,
     DomainPackageManifest,
     DomainPackageNotFoundError,
@@ -16,11 +17,14 @@ from universal_agent.domain.package import (
     DomainPackageScaffoldResult,
     DomainPackageScaffoldSpec,
     DomainPackageValidationError,
+    DomainPackageVerificationReport,
     build_domain_package_manifest,
     decode_domain_package_manifest,
     encode_domain_package_manifest,
     load_domain_package,
     scaffold_domain_package,
+    verify_domain_package,
+    verify_domain_package_registry,
 )
 from universal_agent.domain.runtime import (
     ActiveDomain,
@@ -41,6 +45,7 @@ __all__ = [
     "DomainManager",
     "DomainNotFoundError",
     "DomainPackage",
+    "DomainPackageCheck",
     "DomainPackageCompatibility",
     "DomainPackageManifest",
     "DomainPackageNotFoundError",
@@ -48,6 +53,7 @@ __all__ = [
     "DomainPackageScaffoldResult",
     "DomainPackageScaffoldSpec",
     "DomainPackageValidationError",
+    "DomainPackageVerificationReport",
     "DomainRuntime",
     "DomainValidationError",
     "RuntimeBuilder",
@@ -57,4 +63,6 @@ __all__ = [
     "encode_domain_package_manifest",
     "load_domain_package",
     "scaffold_domain_package",
+    "verify_domain_package",
+    "verify_domain_package_registry",
 ]

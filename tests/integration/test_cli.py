@@ -1205,6 +1205,7 @@ async def test_cli_exposes_domain_package_catalog_commands() -> None:
     list_output = StringIO()
     filtered_output = StringIO()
     show_output = StringIO()
+    verify_output = StringIO()
     missing_output = StringIO()
     missing_error = StringIO()
 
@@ -1223,6 +1224,11 @@ async def test_cli_exposes_domain_package_catalog_commands() -> None:
         service=service,
         stdout=show_output,
     )
+    verify_status = await run_cli(
+        ["domain-packages", "verify"],
+        service=service,
+        stdout=verify_output,
+    )
     missing_status = await run_cli(
         ["domain-packages", "show", "database"],
         service=service,
@@ -1233,10 +1239,12 @@ async def test_cli_exposes_domain_package_catalog_commands() -> None:
     listed = read_json(list_output)
     filtered = read_json(filtered_output)
     shown = read_json(show_output)
+    verification = read_json(verify_output)
     packages = listed["domain_packages"]
     assert list_status == 0
     assert filtered_status == 0
     assert show_status == 0
+    assert verify_status == 0
     assert missing_status == 1
     assert missing_output.getvalue() == ""
     assert "domain package not registered: database" in missing_error.getvalue()
@@ -1251,6 +1259,10 @@ async def test_cli_exposes_domain_package_catalog_commands() -> None:
     assert package["security"] == {"side_effects": "reversible"}
     assert filtered == listed
     assert shown == package
+    assert verification["passed"] is False
+    assert verification["failed_check_count"] == 1
+    assert verification["checks"][0]["name"] == "package_dependencies_registered"
+    assert "observability@1.0.0" in verification["checks"][0]["message"]
 
 
 @pytest.mark.asyncio
