@@ -27,6 +27,12 @@ from universal_agent.distributed.worker import (
     WorkHandlerStatus,
     WorkQueueWorker,
 )
+from universal_agent.distributed.worker_state import (
+    InMemoryWorkerRegistry,
+    WorkerNotFoundError,
+    WorkerRecord,
+    WorkerStatus,
+)
 
 __all__ = [
     "DistributedLockConflictError",
@@ -36,6 +42,7 @@ __all__ = [
     "DistributedLockOwnerId",
     "InMemoryDistributedLockRegistry",
     "InMemoryWorkQueue",
+    "InMemoryWorkerRegistry",
     "LeaseId",
     "LeaseLostError",
     "NoWorkAvailable",
@@ -51,6 +58,9 @@ __all__ = [
     "WorkScheduler",
     "WorkerId",
     "WorkerLease",
+    "WorkerNotFoundError",
+    "WorkerRecord",
     "WorkerRunResult",
     "WorkerRunStatus",
+    "WorkerStatus",
 ]
