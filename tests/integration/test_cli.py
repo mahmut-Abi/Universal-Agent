@@ -290,6 +290,11 @@ def write_domain_package_file(root: Path) -> None:
                 },
                 "capabilities": ["inspect_workload", "scale_workload"],
                 "required_tools": ["kubernetes_api"],
+                "compatibility": {
+                    "runtime_api": ">=0.1,<1",
+                    "domain_api": "agent.nantian.dev/v1alpha1",
+                },
+                "security": {"side_effects": "reversible"},
             }
         ),
         encoding="utf-8",
@@ -709,6 +714,11 @@ async def test_cli_ecosystem_catalog_indexes_local_artifacts(tmp_path: Path) -> 
         "inspect_workload",
         "scale_workload",
     ]
+    assert payload["domain_packages"][0]["compatibility"] == {
+        "runtime_api": ">=0.1,<1",
+        "domain_api": "agent.nantian.dev/v1alpha1",
+    }
+    assert payload["domain_packages"][0]["security"] == {"side_effects": "reversible"}
     assert payload["evaluation_datasets"][0]["name"] == "kubernetes-remediation"
     assert payload["profiles"][0]["name"] == "kubernetes-operator"
 

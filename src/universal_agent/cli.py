@@ -1904,6 +1904,11 @@ def _ecosystem_domain_package_body(package: DomainPackage) -> dict[str, object]:
         "tags": list(manifest.tags),
         "capability_names": list(manifest.capabilities),
         "required_tools": list(manifest.required_tools),
+        "compatibility": {
+            "runtime_api": manifest.compatibility.runtime_api,
+            "domain_api": manifest.compatibility.domain_api,
+        },
+        "security": dict(manifest.security),
         "root_path": str(package.root_path),
         "manifest_path": str(package.manifest_path),
     }
