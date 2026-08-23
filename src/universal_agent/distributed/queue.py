@@ -162,11 +162,10 @@ class InMemoryWorkQueue:
         now: datetime | None = None,
     ) -> WorkItem:
         timestamp = now or utc_now()
-        item = self._leased_item(lease_id, worker_id)
+        item = self._leased_item(lease_id, worker_id, now=timestamp)
         lease = item.lease
-        if lease is None or lease.lease_expires_at <= timestamp:
-            self.expire(now=timestamp)
-            raise LeaseLostError(f"lease expired: {lease_id}")
+        if lease is None:
+            raise LeaseLostError(f"lease not found: {lease_id}")
         renewed = replace(
             item,
             lease=replace(
@@ -186,7 +185,7 @@ class InMemoryWorkQueue:
         now: datetime | None = None,
     ) -> WorkItem:
         timestamp = now or utc_now()
-        item = self._leased_item(lease_id, worker_id)
+        item = self._leased_item(lease_id, worker_id, now=timestamp)
         completed = replace(
             item,
             status=WorkItemStatus.COMPLETED,
@@ -208,7 +207,7 @@ class InMemoryWorkQueue:
         if not reason.strip():
             raise ValueError("failure reason must not be empty")
         timestamp = now or utc_now()
-        item = self._leased_item(lease_id, worker_id)
+        item = self._leased_item(lease_id, worker_id, now=timestamp)
         if retry and item.attempts < item.max_attempts:
             failed = replace(
                 item,
@@ -316,7 +315,14 @@ class InMemoryWorkQueue:
             return None
         return sorted(candidates, key=_sort_key)[0]
 
-    def _leased_item(self, lease_id: LeaseId, worker_id: WorkerId) -> WorkItem:
+    def _leased_item(
+        self,
+        lease_id: LeaseId,
+        worker_id: WorkerId,
+        *,
+        now: datetime | None = None,
+    ) -> WorkItem:
+        found: WorkItem | None = None
         for item in self._items.values():
             lease = item.lease
             if (
@@ -326,8 +332,15 @@ class InMemoryWorkQueue:
             ):
                 if lease.worker_id != worker_id:
                     raise LeaseLostError(f"lease is owned by another worker: {lease_id}")
-                return item
-        raise LeaseLostError(f"lease not found: {lease_id}")
+                found = item
+                break
+        if found is None:
+            raise LeaseLostError(f"lease not found: {lease_id}")
+        lease = found.lease
+        if lease is not None and now is not None and lease.lease_expires_at <= now:
+            self.expire(now=now)
+            raise LeaseLostError(f"lease expired: {lease_id}")
+        return found
 
     def _next_work_item_id(self) -> WorkItemId:
         self._sequence += 1

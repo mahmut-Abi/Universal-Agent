@@ -4,14 +4,18 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from universal_agent.core import ActionId, SessionId, TaskId, immutable_json
+from universal_agent.core import ActionId, SessionId, TaskId, immutable_json, runtime_primitives
 from universal_agent.distributed import (
     InMemoryWorkQueue,
     LeaseLostError,
     NoWorkAvailable,
     WorkerId,
+    WorkerRunStatus,
+    WorkHandlerResult,
+    WorkItem,
     WorkItemId,
     WorkItemStatus,
+    WorkQueueWorker,
 )
 
 
@@ -155,6 +159,27 @@ def test_work_queue_cancel_removes_pending_or_leased_work_from_execution() -> No
         queue.lease(worker_id=WorkerId("worker-b"), now=now)
 
 
+def test_work_queue_rejects_completion_after_lease_expiry() -> None:
+    queue = InMemoryWorkQueue()
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    queue.enqueue(kind="agent_session", max_attempts=2, available_at=now)
+    leased = queue.lease(worker_id=WorkerId("worker-a"), ttl_seconds=5, now=now)
+    assert leased.lease is not None
+
+    with pytest.raises(LeaseLostError, match="lease expired"):
+        queue.complete(
+            leased.lease.lease_id,
+            worker_id=WorkerId("worker-a"),
+            now=now + timedelta(seconds=6),
+        )
+
+    item = queue.get(leased.work_item_id)
+    assert item.status is WorkItemStatus.QUEUED
+    assert item.lease is None
+    assert item.last_error is not None
+    assert "lease expired" in item.last_error
+
+
 def test_work_queue_validates_inputs() -> None:
     queue = InMemoryWorkQueue()
 
@@ -165,3 +190,136 @@ def test_work_queue_validates_inputs() -> None:
     queue.enqueue(kind="agent_session")
     with pytest.raises(ValueError, match="ttl_seconds"):
         queue.lease(worker_id=WorkerId("worker-a"), ttl_seconds=0)
+
+
+@pytest.mark.asyncio
+async def test_work_queue_worker_completes_handled_work() -> None:
+    queue = InMemoryWorkQueue()
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    queue.enqueue(
+        kind="agent_session",
+        payload=immutable_json({"goal": "inspect"}),
+        available_at=now,
+    )
+
+    worker = WorkQueueWorker(
+        queue=queue,
+        worker_id=WorkerId("worker-a"),
+        handlers={
+            "agent_session": lambda item: WorkHandlerResult.completed(
+                f"handled {item.kind}"
+            )
+        },
+    )
+    result = await worker.run_once()
+
+    assert result.status is WorkerRunStatus.COMPLETED
+    assert result.work_item is not None
+    assert result.work_item.status is WorkItemStatus.COMPLETED
+    assert result.reason == "handled agent_session"
+
+
+@pytest.mark.asyncio
+async def test_work_queue_worker_rejects_completion_after_lease_expiry() -> None:
+    queue = InMemoryWorkQueue()
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    current_time = now
+
+    def clock() -> datetime:
+        return current_time
+
+    def handler(item: WorkItem) -> WorkHandlerResult:
+        nonlocal current_time
+        current_time = now + timedelta(seconds=6)
+        return WorkHandlerResult.completed("late success")
+
+    queue.enqueue(kind="agent_session", max_attempts=2, available_at=now)
+    worker = WorkQueueWorker(
+        queue=queue,
+        worker_id=WorkerId("worker-a"),
+        handlers={"agent_session": handler},
+        lease_ttl_seconds=5,
+    )
+
+    with runtime_primitives(clock=clock):
+        result = await worker.run_once()
+
+    assert result.status is WorkerRunStatus.LEASE_LOST
+    assert result.work_item is not None
+    assert result.work_item.status is WorkItemStatus.QUEUED
+    assert result.reason.startswith("lease expired:")
+
+
+@pytest.mark.asyncio
+async def test_work_queue_worker_retries_handler_failures_until_terminal() -> None:
+    queue = InMemoryWorkQueue()
+    queue.enqueue(kind="agent_session", max_attempts=2)
+    worker = WorkQueueWorker(
+        queue=queue,
+        worker_id=WorkerId("worker-a"),
+        handlers={"agent_session": lambda item: WorkHandlerResult.failed("transient")},
+    )
+
+    retry = await worker.run_once()
+    failed = await worker.run_once()
+
+    assert retry.status is WorkerRunStatus.RETRYING
+    assert retry.work_item is not None
+    assert retry.work_item.status is WorkItemStatus.QUEUED
+    assert failed.status is WorkerRunStatus.FAILED
+    assert failed.work_item is not None
+    assert failed.work_item.status is WorkItemStatus.FAILED
+    assert failed.work_item.attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_work_queue_worker_fails_unhandled_work_without_retry_loop() -> None:
+    queue = InMemoryWorkQueue()
+    queue.enqueue(kind="missing_handler")
+    worker = WorkQueueWorker(queue=queue, worker_id=WorkerId("worker-a"), handlers={})
+
+    result = await worker.run_once()
+
+    assert result.status is WorkerRunStatus.FAILED
+    assert result.work_item is not None
+    assert result.work_item.status is WorkItemStatus.FAILED
+    assert result.work_item.attempts == 1
+    assert result.reason == "no handler registered for work kind: missing_handler"
+
+
+@pytest.mark.asyncio
+async def test_work_queue_worker_can_cancel_work() -> None:
+    queue = InMemoryWorkQueue()
+    queue.enqueue(kind="agent_session")
+    worker = WorkQueueWorker(
+        queue=queue,
+        worker_id=WorkerId("worker-a"),
+        handlers={"agent_session": lambda item: WorkHandlerResult.cancelled("session cancelled")},
+    )
+
+    result = await worker.run_once()
+
+    assert result.status is WorkerRunStatus.CANCELLED
+    assert result.work_item is not None
+    assert result.work_item.status is WorkItemStatus.CANCELLED
+    assert result.reason == "session cancelled"
+
+
+@pytest.mark.asyncio
+async def test_work_queue_worker_runs_until_idle() -> None:
+    queue = InMemoryWorkQueue()
+    queue.enqueue(kind="agent_session")
+    queue.enqueue(kind="agent_session")
+    worker = WorkQueueWorker(
+        queue=queue,
+        worker_id=WorkerId("worker-a"),
+        handlers={"agent_session": lambda item: WorkHandlerResult.completed()},
+    )
+
+    results = await worker.run_until_idle(max_items=5)
+
+    assert [result.status for result in results] == [
+        WorkerRunStatus.COMPLETED,
+        WorkerRunStatus.COMPLETED,
+        WorkerRunStatus.NO_WORK,
+    ]
