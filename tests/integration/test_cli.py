@@ -411,6 +411,30 @@ async def test_cli_init_can_write_file_backed_distributed_queue_config(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_cli_init_can_write_sqlite_backed_distributed_queue_config(tmp_path: Path) -> None:
+    output = StringIO()
+    profile_path = tmp_path / "profile.json"
+    queue_path = tmp_path / "work-queue.sqlite3"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--distributed-queue-backend",
+            "sqlite",
+            "--distributed-queue-path",
+            str(queue_path),
+        ],
+        stdout=output,
+    )
+    profile = ProfileConfig.from_json_file(profile_path).to_profile()
+
+    assert status == 0
+    assert profile.runtime.distributed_queue == StoreConfig.sqlite(str(queue_path))
+
+
+@pytest.mark.asyncio
 async def test_cli_init_can_write_memory_profile_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "memory-profile.json"

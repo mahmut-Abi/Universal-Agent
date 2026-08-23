@@ -98,6 +98,20 @@ def test_runtime_config_parses_sqlite_store() -> None:
     assert config.store.backend is StoreBackend.SQLITE
 
 
+def test_runtime_config_parses_sqlite_distributed_queue() -> None:
+    config = RuntimeConfig.from_mapping(
+        {
+            "distributed_queue": {
+                "backend": "sqlite",
+                "path": "/tmp/universal-agent/work-queue.sqlite3",
+            },
+        }
+    )
+
+    assert config.distributed_queue == StoreConfig.sqlite("/tmp/universal-agent/work-queue.sqlite3")
+    assert config.distributed_queue.backend is StoreBackend.SQLITE
+
+
 def test_runtime_config_rejects_invalid_store_and_limits() -> None:
     with pytest.raises(ValueError, match="file store requires path"):
         StoreConfig.from_mapping({"backend": "file"})
@@ -107,16 +121,6 @@ def test_runtime_config_rejects_invalid_store_and_limits() -> None:
 
     with pytest.raises(ValueError, match="sqlite store requires path"):
         StoreConfig.from_mapping({"backend": "sqlite"})
-
-    with pytest.raises(ValueError, match="distributed queue sqlite backend is not supported"):
-        RuntimeConfig.from_mapping(
-            {
-                "distributed_queue": {
-                    "backend": "sqlite",
-                    "path": "/tmp/universal-agent/work-queue.sqlite3",
-                }
-            }
-        )
 
     with pytest.raises(ValueError, match="distributed locks sqlite backend is not supported"):
         RuntimeConfig.from_mapping(

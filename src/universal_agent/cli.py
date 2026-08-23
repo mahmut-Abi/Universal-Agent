@@ -402,7 +402,11 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--environment", default="local")
     init.add_argument("--store-backend", choices=("memory", "file", "sqlite"), default="file")
     init.add_argument("--store-path", default=".universal-agent/store")
-    init.add_argument("--distributed-queue-backend", choices=("memory", "file"), default="memory")
+    init.add_argument(
+        "--distributed-queue-backend",
+        choices=("memory", "file", "sqlite"),
+        default="memory",
+    )
     init.add_argument("--distributed-queue-path", default=".universal-agent/work-queue.json")
     init.add_argument("--distributed-locks-backend", choices=("memory", "file"), default="memory")
     init.add_argument("--distributed-locks-path", default=".universal-agent/distributed-locks.json")

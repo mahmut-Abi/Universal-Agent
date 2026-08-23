@@ -12,6 +12,7 @@ from universal_agent.distributed import (
     InMemoryDistributedLockRegistry,
     InMemoryWorkerRegistry,
     InMemoryWorkQueue,
+    SQLiteWorkQueue,
 )
 from universal_agent.domain import (
     DomainComposition,
@@ -242,6 +243,9 @@ def _build_work_queue(config: RuntimeConfig) -> InMemoryWorkQueue:
     if config.distributed_queue.backend is StoreBackend.FILE:
         assert config.distributed_queue.path is not None
         return FileWorkQueue(config.distributed_queue.path)
+    if config.distributed_queue.backend is StoreBackend.SQLITE:
+        assert config.distributed_queue.path is not None
+        return SQLiteWorkQueue(config.distributed_queue.path)
     raise ValueError(f"unsupported distributed queue backend: {config.distributed_queue.backend}")
 
 

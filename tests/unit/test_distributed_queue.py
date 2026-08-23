@@ -17,6 +17,7 @@ from universal_agent.distributed import (
     InMemoryWorkQueue,
     LeaseLostError,
     NoWorkAvailable,
+    SQLiteWorkQueue,
     WorkerId,
     WorkerRunStatus,
     WorkerStatus,
@@ -321,6 +322,118 @@ def test_file_work_queue_persists_completion_and_expiry(tmp_path: Path) -> None:
     assert reloaded.get(completed.work_item_id).status is WorkItemStatus.COMPLETED
     assert expired == (reloaded.get(expired_lease.work_item_id),)
     assert reloaded.get(expired_lease.work_item_id).status is WorkItemStatus.FAILED
+
+
+def test_sqlite_work_queue_persists_items_and_lease_state(tmp_path: Path) -> None:
+    path = tmp_path / "runtime.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    queue = SQLiteWorkQueue(path)
+
+    enqueued = queue.enqueue(
+        kind="agent_session",
+        payload=immutable_json({"goal": "verify workload"}),
+        session_id=SessionId("session-1"),
+        priority=5,
+        available_at=now,
+        idempotency_key="session:session-1",
+    )
+    leased = queue.lease(worker_id=WorkerId("worker-a"), ttl_seconds=10, now=now)
+    assert leased.lease is not None
+    renewed = queue.heartbeat(
+        leased.lease.lease_id,
+        worker_id=WorkerId("worker-a"),
+        ttl_seconds=20,
+        now=now + timedelta(seconds=5),
+    )
+
+    reloaded = SQLiteWorkQueue(path)
+    persisted = reloaded.get(enqueued.work_item_id)
+
+    assert path.exists()
+    assert persisted.status is WorkItemStatus.LEASED
+    assert persisted.payload["goal"] == "verify workload"
+    assert persisted.session_id == SessionId("session-1")
+    assert persisted.lease is not None
+    assert renewed.lease is not None
+    assert persisted.lease.lease_id == renewed.lease.lease_id
+    assert persisted.lease.heartbeat_at == now + timedelta(seconds=5)
+    assert persisted.lease.lease_expires_at == now + timedelta(seconds=25)
+
+
+def test_sqlite_work_queue_restores_sequence_and_idempotency(tmp_path: Path) -> None:
+    path = tmp_path / "runtime.sqlite3"
+    queue = SQLiteWorkQueue(path)
+    first = queue.enqueue(kind="agent_session", idempotency_key="session:session-1")
+    duplicate = SQLiteWorkQueue(path).enqueue(
+        kind="agent_session",
+        idempotency_key="session:session-1",
+    )
+    second = SQLiteWorkQueue(path).enqueue(kind="agent_session")
+
+    assert duplicate.work_item_id == first.work_item_id
+    assert second.work_item_id == WorkItemId("work-2")
+    assert len(SQLiteWorkQueue(path).queued()) == 2
+
+
+def test_sqlite_work_queue_reloads_before_stale_writer_mutates(tmp_path: Path) -> None:
+    path = tmp_path / "runtime.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    owner = SQLiteWorkQueue(path)
+    owner.enqueue(kind="agent_session", available_at=now)
+    stale_writer = SQLiteWorkQueue(path)
+
+    leased = owner.lease(worker_id=WorkerId("worker-a"), ttl_seconds=30, now=now)
+    enqueued = stale_writer.enqueue(kind="task", available_at=now)
+    reloaded = SQLiteWorkQueue(path)
+
+    assert leased.lease is not None
+    assert enqueued.work_item_id == WorkItemId("work-2")
+    assert reloaded.get(leased.work_item_id).status is WorkItemStatus.LEASED
+    assert reloaded.get(enqueued.work_item_id).kind == "task"
+
+
+def test_sqlite_work_queue_persists_completion_and_expiry(tmp_path: Path) -> None:
+    path = tmp_path / "runtime.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    queue = SQLiteWorkQueue(path)
+    queue.enqueue(kind="complete", max_attempts=2, available_at=now)
+    queue.enqueue(kind="expire", max_attempts=1, available_at=now)
+
+    completed_lease = queue.lease(worker_id=WorkerId("worker-a"), ttl_seconds=10, now=now)
+    assert completed_lease.lease is not None
+    completed = queue.complete(
+        completed_lease.lease.lease_id,
+        worker_id=WorkerId("worker-a"),
+        now=now + timedelta(seconds=1),
+    )
+    expired_lease = queue.lease(worker_id=WorkerId("worker-b"), ttl_seconds=5, now=now)
+    assert expired_lease.lease is not None
+    expired = queue.expire(now=now + timedelta(seconds=6))
+
+    reloaded = SQLiteWorkQueue(path)
+
+    assert reloaded.get(completed.work_item_id).status is WorkItemStatus.COMPLETED
+    assert expired == (reloaded.get(expired_lease.work_item_id),)
+    assert reloaded.get(expired_lease.work_item_id).status is WorkItemStatus.FAILED
+
+
+def test_sqlite_work_queue_lease_persists_expiry_when_no_work_is_available(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "runtime.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    queue = SQLiteWorkQueue(path)
+    queue.enqueue(kind="terminal", max_attempts=1, available_at=now)
+    leased = queue.lease(worker_id=WorkerId("worker-a"), ttl_seconds=5, now=now)
+    assert leased.lease is not None
+
+    with pytest.raises(NoWorkAvailable):
+        queue.lease(worker_id=WorkerId("worker-b"), now=now + timedelta(seconds=6))
+
+    reloaded = SQLiteWorkQueue(path)
+    persisted = reloaded.get(leased.work_item_id)
+    assert persisted.status is WorkItemStatus.FAILED
+    assert persisted.last_error == f"lease expired: {leased.lease.lease_id}"
 
 
 def test_work_queue_heartbeat_extends_active_lease_and_rejects_wrong_worker() -> None:

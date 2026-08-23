@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import sqlite3
 from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -574,6 +575,259 @@ class FileWorkQueue(InMemoryWorkQueue):
         tmp_path.replace(self._path)
 
 
+class SQLiteWorkQueue(InMemoryWorkQueue):
+    """SQLite-backed local WorkQueue adapter.
+
+    This preserves the WorkQueue interface used by the scheduler, worker and
+    coordinator while giving local deployments a durable queue that can share
+    the runtime SQLite file. Mutations run under ``BEGIN IMMEDIATE`` so lease
+    acquisition, retries, cancellation and idempotent enqueue observe one
+    serialized queue state.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        super().__init__()
+        self._path = Path(path)
+        self._transaction_connection: sqlite3.Connection | None = None
+        with self._connect() as connection:
+            _ensure_sqlite_work_queue_schema(connection)
+            self._load(connection)
+
+    def enqueue(
+        self,
+        *,
+        kind: str,
+        payload: JsonMapping | None = None,
+        session_id: SessionId | None = None,
+        task_id: TaskId | None = None,
+        action_id: ActionId | None = None,
+        priority: int = 0,
+        max_attempts: int = 3,
+        available_at: datetime | None = None,
+        idempotency_key: str | None = None,
+        work_item_id: WorkItemId | None = None,
+    ) -> WorkItem:
+        with self._transaction() as connection:
+            self._load(connection)
+            item = super().enqueue(
+                kind=kind,
+                payload=payload,
+                session_id=session_id,
+                task_id=task_id,
+                action_id=action_id,
+                priority=priority,
+                max_attempts=max_attempts,
+                available_at=available_at,
+                idempotency_key=idempotency_key,
+                work_item_id=work_item_id,
+            )
+            self._save(connection)
+            return item
+
+    def lease(
+        self,
+        *,
+        worker_id: WorkerId,
+        ttl_seconds: float = 30.0,
+        now: datetime | None = None,
+        accepted_kinds: Collection[str] | None = None,
+    ) -> WorkItem:
+        with self._transaction(commit_on=(NoWorkAvailable,)) as connection:
+            self._load(connection)
+            timestamp = now or utc_now()
+            kind_filter = _normalize_accepted_kinds(accepted_kinds)
+            expired = InMemoryWorkQueue.expire(self, now=timestamp)
+            item = self._next_leaseable(timestamp, accepted_kinds=kind_filter)
+            if item is None:
+                if expired:
+                    self._save(connection)
+                raise NoWorkAvailable("no work available")
+            lease = WorkerLease(
+                lease_id=self._next_lease_id(item),
+                worker_id=worker_id,
+                leased_at=timestamp,
+                lease_expires_at=_lease_deadline(timestamp, ttl_seconds),
+                heartbeat_at=timestamp,
+            )
+            leased = replace(
+                item,
+                status=WorkItemStatus.LEASED,
+                attempts=item.attempts + 1,
+                lease=lease,
+                last_error=None,
+            )
+            self._items[item.work_item_id] = leased
+            self._save(connection)
+            return leased
+
+    def heartbeat(
+        self,
+        lease_id: LeaseId,
+        *,
+        worker_id: WorkerId,
+        ttl_seconds: float = 30.0,
+        now: datetime | None = None,
+    ) -> WorkItem:
+        with self._transaction() as connection:
+            self._load(connection)
+            item = super().heartbeat(
+                lease_id,
+                worker_id=worker_id,
+                ttl_seconds=ttl_seconds,
+                now=now,
+            )
+            self._save(connection)
+            return item
+
+    def complete(
+        self,
+        lease_id: LeaseId,
+        *,
+        worker_id: WorkerId,
+        now: datetime | None = None,
+    ) -> WorkItem:
+        with self._transaction() as connection:
+            self._load(connection)
+            item = super().complete(lease_id, worker_id=worker_id, now=now)
+            self._save(connection)
+            return item
+
+    def fail(
+        self,
+        lease_id: LeaseId,
+        *,
+        worker_id: WorkerId,
+        reason: str,
+        retry: bool = True,
+        now: datetime | None = None,
+    ) -> WorkItem:
+        with self._transaction() as connection:
+            self._load(connection)
+            item = super().fail(
+                lease_id,
+                worker_id=worker_id,
+                reason=reason,
+                retry=retry,
+                now=now,
+            )
+            self._save(connection)
+            return item
+
+    def cancel(
+        self,
+        work_item_id: WorkItemId,
+        *,
+        reason: str = "cancelled",
+        now: datetime | None = None,
+    ) -> WorkItem:
+        with self._transaction() as connection:
+            self._load(connection)
+            item = super().cancel(work_item_id, reason=reason, now=now)
+            self._save(connection)
+            return item
+
+    def expire(self, *, now: datetime | None = None) -> tuple[WorkItem, ...]:
+        with self._transaction() as connection:
+            self._load(connection)
+            expired = super().expire(now=now)
+            if expired:
+                self._save(connection)
+            return expired
+
+    def get(self, work_item_id: WorkItemId) -> WorkItem:
+        connection = self._transaction_connection
+        if connection is not None:
+            self._load(connection)
+            return super().get(work_item_id)
+        with self._connect() as fresh_connection:
+            self._load(fresh_connection)
+            return super().get(work_item_id)
+
+    def list(self, *, status: WorkItemStatus | None = None) -> tuple[WorkItem, ...]:
+        connection = self._transaction_connection
+        if connection is not None:
+            self._load(connection)
+            return super().list(status=status)
+        with self._connect() as fresh_connection:
+            self._load(fresh_connection)
+            return super().list(status=status)
+
+    @contextmanager
+    def _transaction(
+        self,
+        *,
+        commit_on: tuple[type[Exception], ...] = (),
+    ) -> Iterator[sqlite3.Connection]:
+        active = self._transaction_connection
+        if active is not None:
+            yield active
+            return
+        with self._connect() as connection:
+            _ensure_sqlite_work_queue_schema(connection)
+            connection.execute("BEGIN IMMEDIATE")
+            self._transaction_connection = connection
+            try:
+                yield connection
+            except Exception as exc:
+                if isinstance(exc, commit_on):
+                    connection.commit()
+                else:
+                    connection.rollback()
+                raise
+            else:
+                connection.commit()
+            finally:
+                self._transaction_connection = None
+
+    def _connect(self) -> sqlite3.Connection:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        return sqlite3.connect(self._path, timeout=30.0, isolation_level=None)
+
+    def _load(self, connection: sqlite3.Connection) -> None:
+        _ensure_sqlite_work_queue_schema(connection)
+        rows = connection.execute(
+            """
+            SELECT payload
+            FROM work_queue_items
+            ORDER BY priority DESC, available_at ASC, work_item_id ASC
+            """
+        ).fetchall()
+        loaded: dict[WorkItemId, WorkItem] = {}
+        for row in rows:
+            payload: object = json.loads(row[0])
+            if not isinstance(payload, dict):
+                raise ValueError("sqlite work queue item payload must be an object")
+            item = _decode_work_item(payload)
+            if item.work_item_id in loaded:
+                raise ValueError(f"duplicate sqlite work queue item: {item.work_item_id}")
+            loaded[item.work_item_id] = item
+        self._items = loaded
+        self._sequence = max(
+            (_sequence_from_work_item_id(item_id) for item_id in loaded), default=0
+        )
+
+    def _save(self, connection: sqlite3.Connection) -> None:
+        connection.execute("DELETE FROM work_queue_items")
+        connection.executemany(
+            """
+            INSERT INTO work_queue_items(
+                work_item_id,
+                kind,
+                status,
+                priority,
+                attempts,
+                max_attempts,
+                available_at,
+                lease_expires_at,
+                idempotency_key,
+                payload
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (_sqlite_work_item_row(item) for item in super().list()),
+        )
+
+
 @contextmanager
 def _file_queue_lock(lock_path: Path) -> Iterator[None]:
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -750,3 +1004,52 @@ def _sequence_from_work_item_id(work_item_id: WorkItemId) -> int:
     if not suffix.isdecimal():
         return 0
     return int(suffix)
+
+
+def _ensure_sqlite_work_queue_schema(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS work_queue_items (
+            work_item_id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            priority INTEGER NOT NULL,
+            attempts INTEGER NOT NULL,
+            max_attempts INTEGER NOT NULL,
+            available_at TEXT NOT NULL,
+            lease_expires_at TEXT,
+            idempotency_key TEXT,
+            payload TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_work_queue_items_leaseable
+        ON work_queue_items(status, priority DESC, available_at ASC, work_item_id ASC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_work_queue_items_idempotency
+        ON work_queue_items(idempotency_key)
+        """
+    )
+
+
+def _sqlite_work_item_row(
+    item: WorkItem,
+) -> tuple[str, str, str, int, int, int, str, str | None, str | None, str]:
+    lease = item.lease
+    return (
+        str(item.work_item_id),
+        item.kind,
+        item.status.value,
+        item.priority,
+        item.attempts,
+        item.max_attempts,
+        item.available_at.isoformat(),
+        None if lease is None else lease.lease_expires_at.isoformat(),
+        item.idempotency_key,
+        json.dumps(_encode_work_item(item), sort_keys=True, separators=(",", ":")),
+    )

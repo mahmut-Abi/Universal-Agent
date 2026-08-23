@@ -268,6 +268,36 @@ def test_runtime_host_uses_configured_file_backed_distributed_queue(tmp_path: Pa
     assert snapshot.work_queue.items[0].priority == 7
 
 
+def test_runtime_host_uses_configured_sqlite_backed_distributed_queue(tmp_path: Path) -> None:
+    backend = HostRemediationBackend()
+    queue_path = tmp_path / "coordination" / "runtime.sqlite3"
+    config = RuntimeConfig(
+        environment=immutable_json({"environment": "production"}),
+        distributed_queue=StoreConfig.sqlite(str(queue_path)),
+        domain=DomainConfig("kubernetes", "0.2.0"),
+    )
+    first = RuntimeHost.build(
+        config=config,
+        model=ScriptedModelAdapter([]),
+        domain=KubernetesRemediationDomain(backend, backend),
+    )
+
+    first.service.distributed_schedule_session(SessionId("session-1"), priority=7)
+    second = RuntimeHost.build(
+        config=config,
+        model=ScriptedModelAdapter([]),
+        domain=KubernetesRemediationDomain(backend, backend),
+    )
+    snapshot = second.service.distributed_snapshot()
+
+    assert queue_path.exists()
+    assert snapshot is not None
+    assert snapshot.work_queue.queued_count == 1
+    assert snapshot.work_queue.items[0].status is WorkItemStatus.QUEUED
+    assert snapshot.work_queue.items[0].session_id == SessionId("session-1")
+    assert snapshot.work_queue.items[0].priority == 7
+
+
 def test_runtime_host_uses_configured_file_backed_distributed_locks(tmp_path: Path) -> None:
     backend = HostRemediationBackend()
     locks_path = tmp_path / "coordination" / "distributed-locks.json"

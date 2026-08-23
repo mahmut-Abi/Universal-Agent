@@ -144,8 +144,6 @@ class RuntimeConfig:
     def validate(self) -> None:
         self.store.validate()
         self.distributed_queue.validate()
-        if self.distributed_queue.backend is StoreBackend.SQLITE:
-            raise ValueError("distributed queue sqlite backend is not supported")
         self.distributed_locks.validate()
         if self.distributed_locks.backend is StoreBackend.SQLITE:
             raise ValueError("distributed locks sqlite backend is not supported")
