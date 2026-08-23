@@ -59,7 +59,8 @@ Goal
 - Runtime API、RuntimeService、agentd route adapter 和标准库 HTTP bridge；
 - CLI、pause/resume/cancel、cursor event reads 和有限批次 SSE 格式输出；
 - memory/file/SQLite session 与 event store，且 session snapshot save 具备 version/CAS；
-- metrics、Prometheus、cost、logs、traces、OTLP-shaped output、audit、doctor；
+- metrics、Prometheus、cost、logs、traces、OTLP-shaped output、audit、doctor，
+  以及 Doctor state/event consistency 检查；
 - Evaluation Harness、suite file、quality gate、report recording、execution replay；
 - deterministic runtime mode、golden replay、TUI、Web Console、Session Explorer。
 
@@ -105,8 +106,9 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
    增加 secrets 分离、脱敏、认证和授权。
 8. **真实外部集成尚未接入。** Kubernetes 使用注入的 fake backend，Model 层只有 Protocol/
    scripted boundary，运行时没有绑定具体模型 SDK。
-9. **状态和事件没有跨 Store 原子提交。** 进程在 Snapshot 保存与 Event 写入之间崩溃时，
-   需要依靠后续一致性策略恢复。
+9. **状态和事件没有跨 Store 原子提交。** Doctor 已能检测 orphan events 与终态 Session
+   缺少匹配终态 Event 的断裂；但进程在 Snapshot 保存与 Event 写入之间崩溃时，仍需要后续
+   transaction/outbox 策略恢复。
 10. **取消与并发仍需强化。** 当前 cancellation 主要改变 Runtime 状态；in-flight tool cancellation、
     Session CAS/version、lease-aware resume 和重复 Worker 执行还需要完整测试与实现。
 
@@ -115,7 +117,7 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
 在本次审计环境中执行的结果：
 
 ```text
-pytest --disable-warnings      347 passed, 5 skipped
+pytest --disable-warnings      349 passed, 5 skipped
 ruff format --check           passed, 198 files checked
 ruff check                    passed
 mypy (strict)                 passed, 198 source files
@@ -132,7 +134,7 @@ pytest-asyncio event loop 弃用警告；这些警告尚未影响当前测试结
 
 ### P1：完成单 Agent Runtime 的可靠性
 
-- 定义 State/Event 原子性策略（transaction、outbox 或可验证的事件一致性模型）；
+- 继续定义 State/Event 原子性策略（transaction、outbox 或恢复流程）；
 - 覆盖 pause/resume/cancel、lease expiry、unknown execution 和重复执行场景。
 
 ### P2：再接通 P6 执行闭环

@@ -53,6 +53,7 @@ def event(
     event_id: str,
     event_type: str,
     *,
+    session_id: str = "session-1",
     action_id: str | None = None,
     data: dict[str, object] | None = None,
     occurred_at: datetime | None = None,
@@ -60,7 +61,7 @@ def event(
     return RuntimeEventView(
         event_id=event_id,
         type=event_type,
-        session_id=SessionId("session-1"),
+        session_id=SessionId(session_id),
         goal_id=GoalId("goal-1"),
         task_id=TaskId("task-1"),
         action_id=None if action_id is None else ActionId(action_id),
@@ -568,6 +569,7 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
         "runtime_config",
         "session_store",
         "event_stream",
+        "state_event_consistency",
         "structured_logs",
         "traces",
         "audit",
@@ -578,9 +580,54 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
         "cost_tracking",
     ]
     assert next(check for check in report.checks if check.name == "event_stream").status == "warn"
+    assert (
+        next(check for check in report.checks if check.name == "state_event_consistency").status
+        == "warn"
+    )
     assert next(check for check in report.checks if check.name == "traces").status == "warn"
     assert next(check for check in report.checks if check.name == "resource_locks").status == "ok"
     assert next(check for check in report.checks if check.name == "runtime_config").status == "ok"
+
+
+def test_doctor_report_errors_on_state_event_consistency_gaps() -> None:
+    report = build_doctor_report(
+        health_status="ok",
+        ready=True,
+        ready_reason="ready",
+        domain_count=1,
+        capability_count=2,
+        tool_count=2,
+        sessions=(session(GoalStatus.COMPLETED),),
+        events=(
+            event("event-1", "GoalCreated"),
+            event("event-2", "GoalCreated", session_id="orphan-session"),
+        ),
+    )
+
+    consistency = next(check for check in report.checks if check.name == "state_event_consistency")
+
+    assert report.status == "error"
+    assert consistency.status == "error"
+    assert "orphan_events=1" in consistency.message
+    assert "terminal_event_gaps=1" in consistency.message
+
+
+def test_doctor_report_accepts_consistent_terminal_session_events() -> None:
+    report = build_doctor_report(
+        health_status="ok",
+        ready=True,
+        ready_reason="ready",
+        domain_count=1,
+        capability_count=2,
+        tool_count=2,
+        sessions=(session(GoalStatus.COMPLETED),),
+        events=(event("event-1", "GoalCreated"), event("event-2", "GoalCompleted")),
+    )
+
+    consistency = next(check for check in report.checks if check.name == "state_event_consistency")
+
+    assert consistency.status == "ok"
+    assert "terminal_events_verified" in consistency.message
 
 
 def test_doctor_report_errors_on_invalid_runtime_config_projection() -> None:

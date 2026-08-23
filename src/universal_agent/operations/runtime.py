@@ -17,6 +17,12 @@ from universal_agent.core import (
 )
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView
 
+_TERMINAL_EVENT_BY_GOAL_STATUS = {
+    GoalStatus.COMPLETED: "GoalCompleted",
+    GoalStatus.FAILED: "GoalFailed",
+    GoalStatus.CANCELLED: "GoalCancelled",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class RuntimeMetricsView:
@@ -376,6 +382,7 @@ def build_doctor_report(
         ),
         DoctorCheckView("session_store", "ok", f"sessions listed: {len(sessions)}"),
         _event_stream_check(sessions, events),
+        _state_event_consistency_check(sessions, events),
         DoctorCheckView("structured_logs", "ok", f"log records projected: {len(logs)}"),
         _trace_projection_check(sessions, events, trace_spans),
         _audit_projection_check(events, audit_records),
@@ -865,6 +872,55 @@ def _event_stream_check(
     if events:
         return DoctorCheckView("event_stream", "ok", f"events listed: {len(events)}")
     return DoctorCheckView("event_stream", "warn", "sessions exist but no events were listed")
+
+
+def _state_event_consistency_check(
+    sessions: tuple[SessionSummaryView, ...],
+    events: tuple[RuntimeEventView, ...],
+) -> DoctorCheckView:
+    if not sessions and not events:
+        return DoctorCheckView("state_event_consistency", "ok", "no sessions or events recorded")
+    if sessions and not events:
+        return DoctorCheckView(
+            "state_event_consistency",
+            "warn",
+            "sessions exist but no events were available for consistency checks",
+        )
+
+    session_ids = frozenset(session.session_id for session in sessions)
+    orphan_event_count = sum(1 for event in events if event.session_id not in session_ids)
+    events_by_session: dict[SessionId, set[str]] = {}
+    for event in events:
+        events_by_session.setdefault(event.session_id, set()).add(event.type)
+
+    missing_event_history_count = sum(
+        1 for session in sessions if session.session_id not in events_by_session
+    )
+    terminal_event_gap_count = sum(
+        1
+        for session in sessions
+        if (expected := _TERMINAL_EVENT_BY_GOAL_STATUS.get(session.goal_status)) is not None
+        and expected not in events_by_session.get(session.session_id, set())
+    )
+    if orphan_event_count or terminal_event_gap_count:
+        return DoctorCheckView(
+            "state_event_consistency",
+            "error",
+            "orphan_events="
+            f"{orphan_event_count} terminal_event_gaps={terminal_event_gap_count} "
+            f"missing_event_histories={missing_event_history_count}",
+        )
+    if missing_event_history_count:
+        return DoctorCheckView(
+            "state_event_consistency",
+            "warn",
+            f"sessions missing event history: {missing_event_history_count}",
+        )
+    return DoctorCheckView(
+        "state_event_consistency",
+        "ok",
+        f"sessions={len(sessions)} events={len(events)} terminal_events_verified",
+    )
 
 
 def _trace_projection_check(
