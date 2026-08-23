@@ -10,6 +10,7 @@ from universal_agent.distributed.queue import (
     WorkItemNotFoundError,
     WorkItemStatus,
 )
+from universal_agent.distributed.scheduler import WorkKind, WorkScheduler
 from universal_agent.distributed.worker import (
     WorkerRunResult,
     WorkerRunStatus,
@@ -31,7 +32,9 @@ __all__ = [
     "WorkItemId",
     "WorkItemNotFoundError",
     "WorkItemStatus",
+    "WorkKind",
     "WorkQueueWorker",
+    "WorkScheduler",
     "WorkerId",
     "WorkerLease",
     "WorkerRunResult",

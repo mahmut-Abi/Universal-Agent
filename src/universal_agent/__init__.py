@@ -26,7 +26,9 @@ from universal_agent.distributed import (
     WorkItemId,
     WorkItemNotFoundError,
     WorkItemStatus,
+    WorkKind,
     WorkQueueWorker,
+    WorkScheduler,
 )
 from universal_agent.domain import DomainLoader, RuntimeBuilder
 from universal_agent.host import (
@@ -147,7 +149,9 @@ __all__ = [
     "WorkItemId",
     "WorkItemNotFoundError",
     "WorkItemStatus",
+    "WorkKind",
     "WorkQueueWorker",
+    "WorkScheduler",
     "WorkerId",
     "WorkerLease",
     "WorkerRunResult",

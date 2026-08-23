@@ -260,11 +260,12 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   Profile/Domain/Capability/Tool/Policy/Evaluator/Memory catalogs plus focused Session Detail,
   Evidence, World Model, Domain Manager and Settings views without a web framework dependency or
   Kernel access.
-- P6 Distributed Runtime foundation: `InMemoryWorkQueue` provides typed `WorkItem`, `WorkerLease` and
+- P6 Distributed Runtime foundation: `WorkScheduler` maps session/task/action identity into stable local
+  work kinds and idempotency keys; `InMemoryWorkQueue` provides typed `WorkItem`, `WorkerLease` and
   status contracts for local scheduler/worker adapters, including priority ordering, idempotent enqueue,
   lease acquisition, heartbeat renewal, retry-aware failure, cancellation and lease expiry; `WorkQueueWorker`
   consumes those leases through per-kind handlers and maps handler completion, retry, failure and cancellation
-  back into queue state without changing AgentRuntime session/task/action semantics.
+  back into queue state without changing AgentRuntime semantics.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
@@ -287,8 +288,8 @@ The design roadmap now separates semantic runtime maturity from productization:
 - P3.6-P3.7: Operations and Evaluation — OpenTelemetry, metrics, audit, cost tracking, runtime
   doctor, evaluation suites, quality gates, replay, and deterministic test mode.
 - P5: Read-only TUI/Web application views for runtime, session, evidence, world, domain and settings inspection.
-- P6: Distributed Runtime foundations — typed local Work Queue, Worker Lease, Worker handler execution,
-  Heartbeat, retry, cancellation and lease expiry primitives.
+- P6: Distributed Runtime foundations — typed local Scheduler, Work Queue, Worker Lease, Worker handler
+  execution, Heartbeat, retry, cancellation and lease expiry primitives.
 - P7: Ecosystem packaging and registry work.
 
 `PROMPT.md` is intentionally not kept as a project authority. Development instructions live in
@@ -338,6 +339,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p5_session_diagnostics.py
 .venv/bin/python examples/p6_distributed_queue.py
 .venv/bin/python examples/p6_distributed_worker.py
+.venv/bin/python examples/p6_distributed_scheduler.py
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-profile.json --store-backend sqlite --store-path .tmp/runtime.sqlite3 --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-profile.json config show
