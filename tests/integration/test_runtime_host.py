@@ -19,7 +19,8 @@ from universal_agent import (
     Task,
     immutable_json,
 )
-from universal_agent.core import ExecutionStatus, GoalStatus, JsonMapping
+from universal_agent.core import ExecutionStatus, GoalStatus, JsonMapping, SessionId
+from universal_agent.distributed import WorkItemStatus
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 
 
@@ -230,6 +231,36 @@ def test_runtime_host_rejects_configured_domain_mismatch(tmp_path: Path) -> None
             model=ScriptedModelAdapter([]),
             domain=KubernetesRemediationDomain(backend, backend),
         )
+
+
+def test_runtime_host_uses_configured_file_backed_distributed_queue(tmp_path: Path) -> None:
+    backend = HostRemediationBackend()
+    queue_path = tmp_path / "coordination" / "work-queue.json"
+    config = RuntimeConfig(
+        environment=immutable_json({"environment": "production"}),
+        distributed_queue=StoreConfig.file(str(queue_path)),
+        domain=DomainConfig("kubernetes", "0.2.0"),
+    )
+    first = RuntimeHost.build(
+        config=config,
+        model=ScriptedModelAdapter([]),
+        domain=KubernetesRemediationDomain(backend, backend),
+    )
+
+    first.service.distributed_schedule_session(SessionId("session-1"), priority=7)
+    second = RuntimeHost.build(
+        config=config,
+        model=ScriptedModelAdapter([]),
+        domain=KubernetesRemediationDomain(backend, backend),
+    )
+    snapshot = second.service.distributed_snapshot()
+
+    assert queue_path.exists()
+    assert snapshot is not None
+    assert snapshot.work_queue.queued_count == 1
+    assert snapshot.work_queue.items[0].status is WorkItemStatus.QUEUED
+    assert snapshot.work_queue.items[0].session_id == SessionId("session-1")
+    assert snapshot.work_queue.items[0].priority == 7
 
 
 def test_runtime_host_from_profile_exposes_profile_catalog(tmp_path: Path) -> None:

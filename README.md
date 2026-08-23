@@ -276,6 +276,8 @@ event-sourcing model or production migration system.
   and cancellation back into queue state; `InMemoryDistributedLockRegistry` adds leased lock acquisition, heartbeat,
   conflict rejection, expiry and release; `InMemoryWorkerRegistry` tracks worker registration,
   heartbeat, draining, offline and lost states; `DistributedRuntimeCoordinator` exposes session scheduling, worker lifecycle, lock lifecycle, snapshot, health, expiry sweep and work-item cancellation over the queue, lock and worker primitives without changing AgentRuntime semantics; `RuntimeService.distributed_run_worker_once` provides the first local queue → worker → RuntimeAPI resume path for existing non-confirmation waiting sessions; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view; `build_distributed_health_report` projects that snapshot into HA-oriented checks for worker capacity, backlog, lease freshness, leased-work owners and worker registry health.
+  `RuntimeConfig.distributed_queue` lets `RuntimeHost` assemble either an in-memory queue or a local
+  file-backed queue for CLI/agentd deployments that need queue state to survive host rebuilds.
 - P7 Domain Package foundation: `DomainPackageManifest` defines package metadata for independently
   packaged Domain runtimes, including entrypoint, resources, dependencies, required tools,
   compatibility and security metadata. `DomainPackageRegistry` can validate, install and discover
@@ -384,6 +386,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p6_distributed_coordinator.py
 .venv/bin/python examples/p6_distributed_cancel.py
 .venv/bin/python examples/p6_distributed_schedule.py
+.venv/bin/python examples/p6_runtime_host_file_queue.py
 .venv/bin/python examples/p6_worker_lifecycle.py
 .venv/bin/python examples/p6_distributed_lock_lifecycle.py
 .venv/bin/python examples/p7_domain_package_registry.py
@@ -407,6 +410,8 @@ Python 3.12 or newer is required.
 .venv/bin/python -m universal_agent.cli distributed cancel work-1 --reason "operator cancelled queued work"
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-profile.json --store-backend sqlite --store-path .tmp/runtime.sqlite3 --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-profile.json config show
+.venv/bin/python -m universal_agent.cli init --output .tmp/file-queue-profile.json --distributed-queue-backend file --distributed-queue-path .tmp/work-queue.json --force
+.venv/bin/python -m universal_agent.cli --profile-config .tmp/file-queue-profile.json config show
 .venv/bin/python -m universal_agent.cli eval list local-kubernetes --kind policy --tag kubernetes
 .venv/bin/python -m universal_agent.cli eval run local-kubernetes --kind regression --tag smoke --report-dir .tmp/eval-reports --fail-on-fail
 .venv/bin/python -m universal_agent.cli eval reports --report-dir .tmp/eval-reports

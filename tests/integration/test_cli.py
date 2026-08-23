@@ -368,6 +368,34 @@ async def test_cli_init_can_write_sqlite_profile_config(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_init_can_write_file_backed_distributed_queue_config(tmp_path: Path) -> None:
+    output = StringIO()
+    profile_path = tmp_path / "profile.json"
+    store_path = tmp_path / "runtime-store"
+    queue_path = tmp_path / "work-queue.json"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--store-path",
+            str(store_path),
+            "--distributed-queue-backend",
+            "file",
+            "--distributed-queue-path",
+            str(queue_path),
+        ],
+        stdout=output,
+    )
+    profile = ProfileConfig.from_json_file(profile_path).to_profile()
+
+    assert status == 0
+    assert profile.runtime.store == StoreConfig.file(str(store_path))
+    assert profile.runtime.distributed_queue == StoreConfig.file(str(queue_path))
+
+
+@pytest.mark.asyncio
 async def test_cli_init_can_write_memory_profile_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "memory-profile.json"
@@ -493,6 +521,7 @@ async def test_cli_profile_config_drives_run_and_persisted_session_reads(tmp_pat
     assert list_payload["sessions"][0]["session_id"] == session_id
     assert config_payload["environment"] == {"environment": "production"}
     assert config_payload["store"] == {"backend": "file", "path": str(store_path)}
+    assert config_payload["distributed_queue"] == {"backend": "memory", "path": None}
     assert list((store_path / "sessions").glob("*.json"))
     assert (store_path / "events.jsonl").exists()
 
@@ -1246,6 +1275,7 @@ async def test_cli_config_show_exposes_runtime_configuration() -> None:
     assert payload == {
         "environment": {"environment": "staging"},
         "store": {"backend": "memory", "path": None},
+        "distributed_queue": {"backend": "memory", "path": None},
         "limits": {"max_iterations": 12, "max_recovery_steps": 4},
         "domains": [{"name": "kubernetes", "version": "0.2.0", "primary": True}],
     }

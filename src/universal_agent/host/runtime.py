@@ -4,7 +4,11 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from universal_agent.core import DomainIdentity
-from universal_agent.distributed import DistributedRuntimeCoordinator
+from universal_agent.distributed import (
+    DistributedRuntimeCoordinator,
+    FileWorkQueue,
+    InMemoryWorkQueue,
+)
 from universal_agent.domain import (
     DomainComposition,
     DomainManager,
@@ -106,7 +110,7 @@ class RuntimeHost:
             session_store=session_store,
             event_reader=event_store,
         )
-        distributed_coordinator = DistributedRuntimeCoordinator()
+        distributed_coordinator = DistributedRuntimeCoordinator(queue=_build_work_queue(config))
         return cls(
             config=config,
             runtime_api=api,
@@ -222,6 +226,15 @@ def _build_stores(config: RuntimeConfig) -> tuple[SessionStore, _EventStore]:
         assert config.store.path is not None
         return SQLiteSessionStore(config.store.path), SQLiteEventStore(config.store.path)
     raise ValueError(f"unsupported store backend: {config.store.backend}")
+
+
+def _build_work_queue(config: RuntimeConfig) -> InMemoryWorkQueue:
+    if config.distributed_queue.backend is StoreBackend.MEMORY:
+        return InMemoryWorkQueue()
+    if config.distributed_queue.backend is StoreBackend.FILE:
+        assert config.distributed_queue.path is not None
+        return FileWorkQueue(config.distributed_queue.path)
+    raise ValueError(f"unsupported distributed queue backend: {config.distributed_queue.backend}")
 
 
 def _format_identities(identities: tuple[DomainIdentity, ...]) -> str:

@@ -100,6 +100,7 @@ class DomainConfig:
 class RuntimeConfig:
     environment: JsonMapping = field(default_factory=immutable_json)
     store: StoreConfig = field(default_factory=StoreConfig.memory)
+    distributed_queue: StoreConfig = field(default_factory=StoreConfig.memory)
     limits: RuntimeLimitsConfig = field(default_factory=RuntimeLimitsConfig)
     domain: DomainConfig = field(default_factory=DomainConfig)
     domains: tuple[DomainConfig, ...] = ()
@@ -122,6 +123,9 @@ class RuntimeConfig:
         config = cls(
             environment=immutable_json(_object(values.get("environment", {}), "environment")),
             store=StoreConfig.from_mapping(_object(values.get("store", {}), "store")),
+            distributed_queue=StoreConfig.from_mapping(
+                _object(values.get("distributed_queue", {}), "distributed_queue")
+            ),
             limits=RuntimeLimitsConfig.from_mapping(_object(values.get("limits", {}), "limits")),
             domain=domain,
             domains=domains,
@@ -131,6 +135,9 @@ class RuntimeConfig:
 
     def validate(self) -> None:
         self.store.validate()
+        self.distributed_queue.validate()
+        if self.distributed_queue.backend is StoreBackend.SQLITE:
+            raise ValueError("distributed queue sqlite backend is not supported")
         self.limits.validate()
         self.domain.validate()
         for domain in self.domains:

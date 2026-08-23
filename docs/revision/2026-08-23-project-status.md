@@ -71,6 +71,7 @@ Goal
 当前已有本地内存实现：
 
 - WorkScheduler、InMemory/File WorkQueue、WorkerLease、heartbeat、retry、expiry；
+- RuntimeConfig.distributed_queue 与 RuntimeHost 组装 memory/file work queue；
 - capability-aware Worker leasing，以及长异步 handler 的 queue/worker lease heartbeat；
 - RuntimeService 本地 queue → worker → RuntimeAPI resume 闭环，用于已存在且无需确认的 waiting session；
 - Worker Registry 以及 online/draining/offline/lost 状态；

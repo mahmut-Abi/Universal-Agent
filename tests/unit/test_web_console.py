@@ -84,6 +84,8 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
             environment={},
             store_backend="memory",
             store_path=None,
+            distributed_queue_backend="memory",
+            distributed_queue_path=None,
             max_iterations=20,
             max_recovery_steps=8,
             domains=(RuntimeConfigDomainView("kubernetes", "0.2.0", True),),

@@ -243,6 +243,7 @@ def render_web_settings(snapshot: WebConsoleSnapshot) -> str:
             _settings_hero(snapshot),
             '<section class="grid cards" aria-label="Settings summary">',
             _metric_card("Store", snapshot.config.store_backend),
+            _metric_card("Queue", snapshot.config.distributed_queue_backend),
             _metric_card("Domains", len(snapshot.config.domains)),
             _metric_card("Max Iterations", snapshot.config.max_iterations),
             _metric_card("Recovery Steps", snapshot.config.max_recovery_steps),
@@ -268,6 +269,7 @@ def _hero(snapshot: WebConsoleSnapshot) -> str:
             (
                 "<span>"
                 f"store={_html(snapshot.config.store_backend)} "
+                f"queue={_html(snapshot.config.distributed_queue_backend)} "
                 f"max_iterations={snapshot.config.max_iterations} "
                 f"max_recovery_steps={snapshot.config.max_recovery_steps}"
                 "</span>"
@@ -294,7 +296,8 @@ def _settings_hero(snapshot: WebConsoleSnapshot) -> str:
             (
                 "<span>"
                 f"store={_html(snapshot.config.store_backend)} "
-                f"path={_html(snapshot.config.store_path or 'memory')}"
+                f"path={_html(snapshot.config.store_path or 'memory')} "
+                f"queue={_html(snapshot.config.distributed_queue_backend)}"
                 "</span>"
             ),
             "</div>",
@@ -423,6 +426,8 @@ def _runtime_settings(snapshot: WebConsoleSnapshot) -> str:
     items = (
         ("Store Backend", snapshot.config.store_backend),
         ("Store Path", snapshot.config.store_path or "memory"),
+        ("Distributed Queue Backend", snapshot.config.distributed_queue_backend),
+        ("Distributed Queue Path", snapshot.config.distributed_queue_path or "memory"),
         ("Max Iterations", str(snapshot.config.max_iterations)),
         ("Max Recovery Steps", str(snapshot.config.max_recovery_steps)),
         ("Health", snapshot.health.status),

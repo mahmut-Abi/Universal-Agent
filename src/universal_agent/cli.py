@@ -366,6 +366,8 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--environment", default="local")
     init.add_argument("--store-backend", choices=("memory", "file", "sqlite"), default="file")
     init.add_argument("--store-path", default=".universal-agent/store")
+    init.add_argument("--distributed-queue-backend", choices=("memory", "file"), default="memory")
+    init.add_argument("--distributed-queue-path", default=".universal-agent/work-queue.json")
     init.add_argument("--force", action="store_true")
 
     config = commands.add_parser("config")
@@ -1313,6 +1315,8 @@ def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
         environment=cast(str, args.environment),
         store_backend=cast(str, args.store_backend),
         store_path=cast(str, args.store_path),
+        distributed_queue_backend=cast(str, args.distributed_queue_backend),
+        distributed_queue_path=cast(str, args.distributed_queue_path),
     )
     tmp_path = output.with_name(output.name + ".tmp")
     with tmp_path.open("w", encoding="utf-8") as handle:
@@ -1328,11 +1332,16 @@ def _profile_config_payload(
     environment: str,
     store_backend: str,
     store_path: str,
+    distributed_queue_backend: str,
+    distributed_queue_path: str,
 ) -> dict[str, object]:
     domain = {"name": "kubernetes", "version": "0.2.0"}
     store: dict[str, str] = {"backend": store_backend}
     if store_backend != "memory":
         store["path"] = store_path
+    distributed_queue: dict[str, str] = {"backend": distributed_queue_backend}
+    if distributed_queue_backend != "memory":
+        distributed_queue["path"] = distributed_queue_path
     return {
         "name": profile_name,
         "version": "0.1.0",
@@ -1341,6 +1350,7 @@ def _profile_config_payload(
         "runtime": {
             "environment": {"environment": environment},
             "store": store,
+            "distributed_queue": distributed_queue,
             "limits": {"max_iterations": 20, "max_recovery_steps": 8},
             "domain": domain,
         },
