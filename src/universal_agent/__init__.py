@@ -79,7 +79,9 @@ from universal_agent.domain import (
 )
 from universal_agent.ecosystem import (
     EcosystemCatalog,
+    EcosystemCatalogCheck,
     EcosystemCatalogSummary,
+    EcosystemCatalogVerificationReport,
     load_ecosystem_catalog,
 )
 from universal_agent.evaluation.dataset import (
@@ -197,7 +199,9 @@ __all__ = [
     "DomainPackageValidationError",
     "DomainPackageView",
     "EcosystemCatalog",
+    "EcosystemCatalogCheck",
     "EcosystemCatalogSummary",
+    "EcosystemCatalogVerificationReport",
     "EvaluationDataset",
     "EvaluationDatasetIdentity",
     "EvaluationDatasetManifest",

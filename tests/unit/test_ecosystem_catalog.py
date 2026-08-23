@@ -99,6 +99,7 @@ def test_ecosystem_catalog_discovers_all_local_ecosystem_artifacts(tmp_path: Pat
     assert catalog.domain_packages[0].identity.name == "kubernetes"
     assert catalog.evaluation_datasets[0].identity.name == "kubernetes-remediation"
     assert catalog.profiles[0].profile.name == "kubernetes-operator"
+    assert catalog.verify().passed is True
 
 
 def test_ecosystem_catalog_can_be_empty_or_partial(tmp_path: Path) -> None:
@@ -112,3 +113,24 @@ def test_ecosystem_catalog_can_be_empty_or_partial(tmp_path: Path) -> None:
     assert partial.summary.profile_count == 1
     assert partial.domain_packages == ()
     assert partial.evaluation_datasets == ()
+
+
+def test_ecosystem_catalog_verification_reports_missing_domain_references(
+    tmp_path: Path,
+) -> None:
+    profile_root = tmp_path / "profiles"
+    dataset_root = tmp_path / "datasets"
+    write_profile(profile_root / "profile.json")
+    write_evaluation_dataset(dataset_root / "kubernetes")
+
+    catalog = EcosystemCatalog.discover(
+        evaluation_dataset_root=dataset_root,
+        profile_root=profile_root,
+    )
+    report = catalog.verify()
+    failed = {check.name: check.message for check in report.failed_checks}
+
+    assert report.passed is False
+    assert "profile_domains_registered" in failed
+    assert "dataset_domains_registered" in failed
+    assert "kubernetes@1.0.0" in failed["profile_domains_registered"]

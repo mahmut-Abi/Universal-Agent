@@ -287,6 +287,8 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
 - P7 Ecosystem Catalog foundation: `EcosystemCatalog` composes Domain Package, Evaluation Dataset
   and Profile catalogs into one local read-only index with counts and typed entries. It remains a
   metadata surface only: it does not activate Domains, run scenarios or assemble RuntimeHost objects.
+  `EcosystemCatalog.verify()` adds an ecosystem integrity check for missing Profile Domain,
+  Evaluation Dataset Domain and Domain Package dependency references.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,

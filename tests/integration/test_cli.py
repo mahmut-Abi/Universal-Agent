@@ -595,6 +595,58 @@ async def test_cli_ecosystem_catalog_indexes_local_artifacts(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+async def test_cli_ecosystem_verify_reports_reference_integrity(tmp_path: Path) -> None:
+    service, _ = build_cli_service([])
+    domain_root = tmp_path / "domains"
+    dataset_root = tmp_path / "datasets"
+    profile_root = tmp_path / "profiles"
+    write_domain_package_file(domain_root / "kubernetes")
+    write_evaluation_dataset_file(dataset_root / "kubernetes")
+    write_profile_config_file(profile_root / "kubernetes.profile.json")
+    passing_output = StringIO()
+    failing_output = StringIO()
+
+    passing_status = await run_cli(
+        [
+            "ecosystem",
+            "verify",
+            "--domain-package-dir",
+            str(domain_root),
+            "--dataset-dir",
+            str(dataset_root),
+            "--profile-dir",
+            str(profile_root),
+        ],
+        service=service,
+        stdout=passing_output,
+    )
+    failing_status = await run_cli(
+        [
+            "ecosystem",
+            "verify",
+            "--dataset-dir",
+            str(dataset_root),
+            "--profile-dir",
+            str(profile_root),
+        ],
+        service=service,
+        stdout=failing_output,
+    )
+    passing = read_json(passing_output)
+    failing = read_json(failing_output)
+    failed_checks = {item["name"]: item for item in failing["checks"]}
+
+    assert passing_status == 0
+    assert failing_status == 0
+    assert passing["passed"] is True
+    assert passing["failed_check_count"] == 0
+    assert failing["passed"] is False
+    assert failing["failed_check_count"] == 2
+    assert failed_checks["profile_domains_registered"]["passed"] is False
+    assert failed_checks["dataset_domains_registered"]["passed"] is False
+
+
+@pytest.mark.asyncio
 async def test_cli_session_diagnostics_renders_evidence_and_world_facts() -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     run_output = StringIO()

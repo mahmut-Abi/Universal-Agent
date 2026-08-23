@@ -96,6 +96,7 @@ def main() -> None:
         print(f"domain_packages={catalog.summary.domain_package_count}")
         print(f"datasets={catalog.summary.evaluation_dataset_count}")
         print(f"profiles={catalog.summary.profile_count}")
+        print(f"verified={catalog.verify().passed}")
 
 
 if __name__ == "__main__":

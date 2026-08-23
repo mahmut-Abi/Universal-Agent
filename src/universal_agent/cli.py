@@ -385,6 +385,10 @@ def build_parser() -> argparse.ArgumentParser:
     ecosystem_catalog.add_argument("--domain-package-dir")
     ecosystem_catalog.add_argument("--dataset-dir")
     ecosystem_catalog.add_argument("--profile-dir")
+    ecosystem_verify = ecosystem_commands.add_parser("verify")
+    ecosystem_verify.add_argument("--domain-package-dir")
+    ecosystem_verify.add_argument("--dataset-dir")
+    ecosystem_verify.add_argument("--profile-dir")
 
     evaluate = commands.add_parser("eval")
     eval_commands = evaluate.add_subparsers(dest="eval_command", required=True)
@@ -831,14 +835,22 @@ async def _dispatch_tui(
 def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:
     command = cast(str, args.ecosystem_command)
     if command == "catalog":
-        catalog = load_ecosystem_catalog(
-            domain_package_root=cast(str | None, args.domain_package_dir),
-            evaluation_dataset_root=cast(str | None, args.dataset_dir),
-            profile_root=cast(str | None, args.profile_dir),
-        )
+        catalog = _load_ecosystem_catalog_from_args(args)
         _write_json(out, _ecosystem_catalog_body(catalog))
         return
+    if command == "verify":
+        catalog = _load_ecosystem_catalog_from_args(args)
+        _write_json(out, _ecosystem_verification_body(catalog))
+        return
     raise ValueError(f"unknown ecosystem command: {command}")
+
+
+def _load_ecosystem_catalog_from_args(args: argparse.Namespace) -> EcosystemCatalog:
+    return load_ecosystem_catalog(
+        domain_package_root=cast(str | None, args.domain_package_dir),
+        evaluation_dataset_root=cast(str | None, args.dataset_dir),
+        profile_root=cast(str | None, args.profile_dir),
+    )
 
 
 async def _dispatch_eval(
@@ -1514,6 +1526,22 @@ def _ecosystem_catalog_body(catalog: EcosystemCatalog) -> dict[str, object]:
             _evaluation_dataset_body(dataset) for dataset in catalog.evaluation_datasets
         ],
         "profiles": [_ecosystem_profile_body(entry) for entry in catalog.profiles],
+    }
+
+
+def _ecosystem_verification_body(catalog: EcosystemCatalog) -> dict[str, object]:
+    report = catalog.verify()
+    return {
+        "passed": report.passed,
+        "failed_check_count": len(report.failed_checks),
+        "checks": [
+            {
+                "name": check.name,
+                "passed": check.passed,
+                "message": check.message,
+            }
+            for check in report.checks
+        ],
     }
 
 
