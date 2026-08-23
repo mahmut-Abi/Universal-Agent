@@ -117,7 +117,7 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
 在本次审计环境中执行的结果：
 
 ```text
-pytest --disable-warnings      349 passed, 5 skipped
+pytest --disable-warnings      350 passed, 5 skipped
 ruff format --check           passed, 198 files checked
 ruff check                    passed
 mypy (strict)                 passed, 198 source files

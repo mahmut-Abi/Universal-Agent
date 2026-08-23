@@ -243,6 +243,10 @@ class RuntimeAPI:
     async def list_events(self, session_id: SessionId) -> tuple[RuntimeEventView, ...]:
         return (await self.stream_events(session_id)).events
 
+    async def list_all_events(self) -> tuple[RuntimeEventView, ...]:
+        events = await self._event_reader.list_events()
+        return tuple(event_view(event) for event in events)
+
     async def stream_events(
         self,
         session_id: SessionId,

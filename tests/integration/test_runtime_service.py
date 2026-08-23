@@ -30,10 +30,13 @@ from universal_agent import (
 from universal_agent.core import (
     DomainIdentity,
     ExecutionStatus,
+    GoalId,
     JsonMapping,
     RiskLevel,
+    RuntimeEvent,
     SessionId,
     SideEffect,
+    TaskId,
 )
 from universal_agent.domain import (
     DomainPackage,
@@ -160,6 +163,24 @@ def build_api(
         environment=immutable_json({"environment": "staging"}),
     )
     return RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
+
+
+def build_api_with_stores(
+    components: RuntimeComponents,
+    decisions: list[Decision],
+    *,
+    usage: list[ModelUsage] | None = None,
+) -> tuple[RuntimeAPI, InMemoryStateStore, InMemoryEventSink]:
+    store = InMemoryStateStore()
+    events = InMemoryEventSink()
+    runtime = AgentRuntime(
+        model=ScriptedModelAdapter(decisions, usage=usage or ()),
+        state_store=store,
+        components=components,
+        event_sink=events,
+        environment=immutable_json({"environment": "staging"}),
+    )
+    return RuntimeAPI(runtime=runtime, session_store=store, event_reader=events), store, events
 
 
 def test_runtime_service_exposes_optional_distributed_runtime_views() -> None:
@@ -393,6 +414,31 @@ async def test_runtime_service_doctor_includes_distributed_health() -> None:
     assert report.status == "error"
     assert distributed.status == "error"
     assert "capacity_gaps=1" in distributed.message
+
+
+@pytest.mark.asyncio
+async def test_runtime_service_doctor_detects_orphan_events_from_full_event_stream() -> None:
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    api, _, events = build_api_with_stores(components, [inspect_workload(), finish()])
+    service = RuntimeService(runtime_api=api, components=components)
+
+    await service.run_goal(*goal_task())
+    await events.emit(
+        RuntimeEvent(
+            "GoalCreated",
+            SessionId("orphan-session"),
+            GoalId("orphan-goal"),
+            TaskId("orphan-task"),
+        )
+    )
+
+    report = await service.doctor()
+    consistency = next(check for check in report.checks if check.name == "state_event_consistency")
+
+    assert report.status == "error"
+    assert consistency.status == "error"
+    assert "orphan_events=1" in consistency.message
 
 
 def test_runtime_service_exposes_agentd_foundation_metadata() -> None:

@@ -747,7 +747,12 @@ class RuntimeService:
         self,
         sessions: tuple[SessionSummaryView, ...],
     ) -> tuple[RuntimeEventView, ...]:
-        events: list[RuntimeEventView] = []
+        events = list(await self._runtime_api.list_all_events())
+        if events:
+            return tuple(sorted(events, key=lambda event: event.occurred_at))
+        if not sessions:
+            return ()
+        events = []
         for session in sessions:
             events.extend(await self.list_events(session.session_id))
         return tuple(sorted(events, key=lambda event: event.occurred_at))
