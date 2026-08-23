@@ -11,6 +11,11 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.distributed import (
+    DistributedCapacityGap,
+    DistributedExpiringLease,
+    DistributedHealthCheck,
+    DistributedHealthReport,
+    DistributedHealthStatus,
     DistributedLockConflictError,
     DistributedLockLease,
     DistributedLockLeaseId,
@@ -45,6 +50,7 @@ from universal_agent.distributed import (
     WorkQueueSnapshot,
     WorkQueueWorker,
     WorkScheduler,
+    build_distributed_health_report,
     build_distributed_runtime_snapshot,
 )
 from universal_agent.domain import DomainLoader, RuntimeBuilder
@@ -108,6 +114,11 @@ __all__ = [
     "AuditRecordView",
     "Decision",
     "DecisionType",
+    "DistributedCapacityGap",
+    "DistributedExpiringLease",
+    "DistributedHealthCheck",
+    "DistributedHealthReport",
+    "DistributedHealthStatus",
     "DistributedLockConflictError",
     "DistributedLockLease",
     "DistributedLockLeaseId",
@@ -190,6 +201,7 @@ __all__ = [
     "WorkerSnapshot",
     "WorkerStatus",
     "WorldFactView",
+    "build_distributed_health_report",
     "build_distributed_runtime_snapshot",
     "build_runtime_console_snapshot",
     "build_tui_snapshot",

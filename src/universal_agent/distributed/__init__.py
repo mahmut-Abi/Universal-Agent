@@ -1,3 +1,11 @@
+from universal_agent.distributed.health import (
+    DistributedCapacityGap,
+    DistributedExpiringLease,
+    DistributedHealthCheck,
+    DistributedHealthReport,
+    DistributedHealthStatus,
+    build_distributed_health_report,
+)
 from universal_agent.distributed.locks import (
     DistributedLockConflictError,
     DistributedLockLease,
@@ -44,6 +52,11 @@ from universal_agent.distributed.worker_state import (
 )
 
 __all__ = [
+    "DistributedCapacityGap",
+    "DistributedExpiringLease",
+    "DistributedHealthCheck",
+    "DistributedHealthReport",
+    "DistributedHealthStatus",
     "DistributedLockConflictError",
     "DistributedLockLease",
     "DistributedLockLeaseId",
@@ -78,5 +91,6 @@ __all__ = [
     "WorkerRunStatus",
     "WorkerSnapshot",
     "WorkerStatus",
+    "build_distributed_health_report",
     "build_distributed_runtime_snapshot",
 ]

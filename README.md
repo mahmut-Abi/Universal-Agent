@@ -268,7 +268,7 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   stops leasing when draining/offline/lost, and maps handler completion, retry, failure and cancellation
   back into queue state; `InMemoryDistributedLockRegistry` adds leased lock acquisition, heartbeat,
   conflict rejection, expiry and release; `InMemoryWorkerRegistry` tracks worker registration,
-  heartbeat, draining, offline and lost states; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view without changing AgentRuntime semantics.
+  heartbeat, draining, offline and lost states; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view without changing AgentRuntime semantics; `build_distributed_health_report` projects that snapshot into HA-oriented checks for worker capacity, backlog, lease freshness, leased-work owners and worker registry health.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
@@ -292,7 +292,7 @@ The design roadmap now separates semantic runtime maturity from productization:
   doctor, evaluation suites, quality gates, replay, and deterministic test mode.
 - P5: Read-only TUI/Web application views for runtime, session, evidence, world, domain and settings inspection.
 - P6: Distributed Runtime foundations — typed local Scheduler, Work Queue, Worker Registry, Worker Lease, Worker handler
-  execution, leased lock, Runtime Snapshot, Heartbeat, retry, cancellation and lease expiry primitives.
+  execution, leased lock, Runtime Snapshot, Health Report, Heartbeat, retry, cancellation and lease expiry primitives.
 - P7: Ecosystem packaging and registry work.
 
 `PROMPT.md` is intentionally not kept as a project authority. Development instructions live in
