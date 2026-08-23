@@ -15,6 +15,10 @@ class StateNotFoundError(LookupError):
     pass
 
 
+class SessionVersionConflictError(RuntimeError):
+    pass
+
+
 class StateStore(Protocol):
     async def create(self, state: AgentState) -> None: ...
 
@@ -41,7 +45,10 @@ class InMemorySessionStore:
         session_id = snapshot.state.session_id
         if session_id in self._sessions:
             raise ValueError(f"session already exists: {session_id}")
-        self._sessions[session_id] = copy_session(snapshot)
+        created = copy_session(snapshot)
+        created.version = 0
+        snapshot.version = created.version
+        self._sessions[session_id] = created
 
     async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
         snapshots = tuple(copy_session(snapshot) for snapshot in self._sessions.values())
@@ -67,7 +74,16 @@ class InMemorySessionStore:
         session_id = snapshot.state.session_id
         if session_id not in self._sessions:
             raise StateNotFoundError(f"session not found: {session_id}")
-        self._sessions[session_id] = copy_session(snapshot)
+        stored = self._sessions[session_id]
+        if snapshot.version != stored.version:
+            raise SessionVersionConflictError(
+                f"session version conflict: {session_id} expected {stored.version}, "
+                f"got {snapshot.version}"
+            )
+        saved = copy_session(snapshot)
+        saved.version = stored.version + 1
+        snapshot.version = saved.version
+        self._sessions[session_id] = saved
 
     async def create(self, state: AgentState) -> None:
         await self.create_session(session_from_state(state))

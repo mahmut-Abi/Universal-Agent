@@ -566,14 +566,14 @@ class AgentRuntime:
         state.tasks = [state.current_task]
         state.termination_reason = reason
         state.error_code = ErrorCode.INVALID_STATE
-        await self._state_store.save_session(
-            session_from_state(
-                state,
-                domain_name=snapshot.domain_name,
-                domain_version=snapshot.domain_version,
-                domain_identities=snapshot.domains,
-            )
+        failed_snapshot = session_from_state(
+            state,
+            domain_name=snapshot.domain_name,
+            domain_version=snapshot.domain_version,
+            domain_identities=snapshot.domains,
         )
+        failed_snapshot.version = snapshot.version
+        await self._state_store.save_session(failed_snapshot)
         await self._emit(
             state,
             "GoalFailed",
@@ -587,7 +587,9 @@ class AgentRuntime:
         )
 
     async def _save(self, session: SessionRuntimeState) -> None:
-        await self._state_store.save_session(session.snapshot())
+        snapshot = session.snapshot()
+        await self._state_store.save_session(snapshot)
+        session.version = snapshot.version
 
     def _emitter(
         self,

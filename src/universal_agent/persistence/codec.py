@@ -48,6 +48,7 @@ def encode_session_snapshot(snapshot: SessionSnapshot) -> JsonObject:
         "domains": [
             {"name": identity.name, "version": identity.version} for identity in snapshot.domains
         ],
+        "version": snapshot.version,
         "task_graph": _encode_task_graph(snapshot.task_graph),
         "state": _encode_agent_state(snapshot.state),
         "evidence": [_encode_evidence(item) for item in snapshot.evidence],
@@ -74,6 +75,7 @@ def decode_session_snapshot(payload: Mapping[str, JsonValue]) -> SessionSnapshot
         domain_name,
         domain_version,
         _decode_domain_identities(payload.get("domains"), domain_name, domain_version),
+        _int(payload.get("version", 0), "version"),
     )
 
 

@@ -13,7 +13,12 @@ from universal_agent.persistence.codec import (
     json_mapping,
 )
 from universal_agent.runtime.events import filter_events
-from universal_agent.state import SessionSnapshot, StateNotFoundError, session_from_state
+from universal_agent.state import (
+    SessionSnapshot,
+    SessionVersionConflictError,
+    StateNotFoundError,
+    session_from_state,
+)
 from universal_agent.state.session import with_state
 
 
@@ -24,6 +29,7 @@ class SQLiteSessionStore:
         self._path = Path(path)
 
     async def create_session(self, snapshot: SessionSnapshot) -> None:
+        snapshot.version = 0
         payload = _encode_json(encode_session_snapshot(snapshot))
         with self._connect() as connection:
             try:
@@ -63,9 +69,22 @@ class SQLiteSessionStore:
         return decode_session_snapshot(json_mapping(json.loads(row[0])))
 
     async def save_session(self, snapshot: SessionSnapshot) -> None:
-        payload = _encode_json(encode_session_snapshot(snapshot))
         with self._connect() as connection:
-            cursor = connection.execute(
+            row = connection.execute(
+                "SELECT payload FROM sessions WHERE session_id = ?",
+                (str(snapshot.state.session_id),),
+            ).fetchone()
+            if row is None:
+                raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
+            stored = decode_session_snapshot(json_mapping(json.loads(row[0])))
+            if snapshot.version != stored.version:
+                raise SessionVersionConflictError(
+                    f"session version conflict: {snapshot.state.session_id} expected "
+                    f"{stored.version}, got {snapshot.version}"
+                )
+            snapshot.version = stored.version + 1
+            payload = _encode_json(encode_session_snapshot(snapshot))
+            connection.execute(
                 """
                 UPDATE sessions
                 SET created_at = ?, payload = ?
@@ -77,8 +96,6 @@ class SQLiteSessionStore:
                     str(snapshot.state.session_id),
                 ),
             )
-        if cursor.rowcount == 0:
-            raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
 
     async def create(self, state: AgentState) -> None:
         await self.create_session(session_from_state(state))

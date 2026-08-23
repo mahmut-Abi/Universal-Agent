@@ -18,7 +18,12 @@ from universal_agent.core import (
     new_session_id,
 )
 from universal_agent.evidence import Evidence, InMemoryEvidenceStore
-from universal_agent.state import InMemorySessionStore, SessionSnapshot, session_from_state
+from universal_agent.state import (
+    InMemorySessionStore,
+    SessionSnapshot,
+    SessionVersionConflictError,
+    session_from_state,
+)
 from universal_agent.tasks import TaskGraphSnapshot, TaskManager, TaskNodeSnapshot, TaskSpec
 from universal_agent.world import FactWorldUpdater, InMemoryWorldModel
 
@@ -68,6 +73,25 @@ async def test_session_store_isolates_saved_state() -> None:
     assert reloaded.satisfied_criteria == {"healthy": True}
     assert reloaded.recovery_attempts == {"task-root:timeout:rule": 1}
     assert reloaded.current_task is not state.current_task
+
+
+async def test_session_store_rejects_stale_snapshot_version() -> None:
+    store = InMemorySessionStore()
+    state = make_state()
+    await store.create_session(session_from_state(state))
+
+    first = await store.load_session(state.session_id)
+    second = await store.load_session(state.session_id)
+    first.state.iteration = 1
+
+    await store.save_session(first)
+
+    assert first.version == 1
+    with pytest.raises(SessionVersionConflictError, match="session version conflict"):
+        await store.save_session(second)
+    latest = await store.load_session(state.session_id)
+    assert latest.version == 1
+    assert latest.state.iteration == 1
 
 
 async def test_session_snapshot_round_trip_preserves_graph_and_evidence() -> None:

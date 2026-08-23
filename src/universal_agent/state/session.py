@@ -29,6 +29,7 @@ class SessionSnapshot:
     domain_name: str = ""
     domain_version: str = ""
     domain_identities: tuple[DomainIdentity, ...] = ()
+    version: int = 0
 
     @property
     def domains(self) -> tuple[DomainIdentity, ...]:
@@ -78,6 +79,7 @@ def with_state(snapshot: SessionSnapshot, state: AgentState) -> SessionSnapshot:
         snapshot.domain_name,
         snapshot.domain_version,
         snapshot.domains,
+        snapshot.version,
     )
 
 
@@ -97,6 +99,7 @@ def copy_session(snapshot: SessionSnapshot) -> SessionSnapshot:
         snapshot.domain_name,
         snapshot.domain_version,
         snapshot.domains,
+        snapshot.version,
     )
 
 

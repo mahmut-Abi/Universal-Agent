@@ -3,6 +3,7 @@ from universal_agent.state.store import (
     InMemorySessionStore,
     InMemoryStateStore,
     SessionStore,
+    SessionVersionConflictError,
     StateNotFoundError,
     StateStore,
 )
@@ -12,6 +13,7 @@ __all__ = [
     "InMemoryStateStore",
     "SessionSnapshot",
     "SessionStore",
+    "SessionVersionConflictError",
     "StateNotFoundError",
     "StateStore",
     "copy_session",

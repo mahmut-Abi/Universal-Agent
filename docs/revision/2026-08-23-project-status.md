@@ -37,7 +37,7 @@ Goal
 - typed Goal、Task、Decision、Action、Observation、Evidence 和 Evaluation 合约；
 - Runtime-owned state 与 bounded iteration/recovery；
 - Capability 与 Tool 分离，以及 Allow/Confirm/Deny 策略边界；
-- SessionSnapshot、Task Graph、Evidence replay 和 World replay；
+- SessionSnapshot、Task Graph、Evidence replay、World replay，以及 Session version/CAS；
 - advisory Memory，不把 Memory 当作 Evidence 或完成信号；
 - Domain Manifest、Domain Composition、Kubernetes fake-backed remediation；
 - Domain Loader 空 evaluator 拒绝、按 action Domain 的 evaluator routing、
@@ -58,7 +58,7 @@ Goal
 
 - Runtime API、RuntimeService、agentd route adapter 和标准库 HTTP bridge；
 - CLI、pause/resume/cancel、cursor event reads 和有限批次 SSE 格式输出；
-- memory/file/SQLite session 与 event store；
+- memory/file/SQLite session 与 event store，且 session snapshot save 具备 version/CAS；
 - metrics、Prometheus、cost、logs、traces、OTLP-shaped output、audit、doctor；
 - Evaluation Harness、suite file、quality gate、report recording、execution replay；
 - deterministic runtime mode、golden replay、TUI、Web Console、Session Explorer。
@@ -114,7 +114,7 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
 在本次审计环境中执行的结果：
 
 ```text
-pytest --disable-warnings      341 passed, 5 skipped
+pytest --disable-warnings      344 passed, 5 skipped
 ruff format --check           passed, 197 files formatted
 ruff check                    passed
 mypy (strict)                 passed, 197 source files
@@ -131,7 +131,6 @@ pytest-asyncio event loop 弃用警告；这些警告尚未影响当前测试结
 
 ### P1：完成单 Agent Runtime 的可靠性
 
-- 为 Session 引入 version/CAS 或等价并发控制；
 - 定义 State/Event 原子性策略（transaction、outbox 或可验证的事件一致性模型）；
 - 为长任务 Worker 增加自动 heartbeat 和 capability-aware leasing；
 - 覆盖 pause/resume/cancel、lease expiry、unknown execution 和重复执行场景。

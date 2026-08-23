@@ -13,7 +13,12 @@ from universal_agent.persistence.codec import (
     json_mapping,
 )
 from universal_agent.runtime.events import filter_events
-from universal_agent.state import SessionSnapshot, StateNotFoundError, session_from_state
+from universal_agent.state import (
+    SessionSnapshot,
+    SessionVersionConflictError,
+    StateNotFoundError,
+    session_from_state,
+)
 from universal_agent.state.session import with_state
 
 
@@ -32,6 +37,7 @@ class FileSessionStore:
         path = self._session_path(snapshot.state.session_id)
         if path.exists():
             raise ValueError(f"session already exists: {snapshot.state.session_id}")
+        snapshot.version = 0
         self._write_snapshot(path, snapshot)
 
     async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
@@ -63,6 +69,14 @@ class FileSessionStore:
         path = self._session_path(snapshot.state.session_id)
         if not path.exists():
             raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
+        with path.open("r", encoding="utf-8") as handle:
+            stored = decode_session_snapshot(json_mapping(json.load(handle)))
+        if snapshot.version != stored.version:
+            raise SessionVersionConflictError(
+                f"session version conflict: {snapshot.state.session_id} expected "
+                f"{stored.version}, got {snapshot.version}"
+            )
+        snapshot.version = stored.version + 1
         self._write_snapshot(path, snapshot)
 
     async def create(self, state: AgentState) -> None:

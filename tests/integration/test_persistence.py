@@ -21,8 +21,16 @@ from universal_agent import (
     Task,
     immutable_json,
 )
-from universal_agent.core import EventId, ExecutionStatus, GoalStatus, JsonMapping
+from universal_agent.core import (
+    AgentState,
+    EventId,
+    ExecutionStatus,
+    GoalStatus,
+    JsonMapping,
+    new_session_id,
+)
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.state import SessionVersionConflictError, session_from_state
 
 
 class PersistentRemediationBackend:
@@ -100,6 +108,42 @@ def scale_workload() -> Decision:
 
 def finish() -> Decision:
     return Decision(DecisionType.FINISH, "Required evidence is present")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("store_kind", ["file", "sqlite"])
+async def test_persistent_session_stores_reject_stale_snapshot_versions(
+    tmp_path: Path,
+    store_kind: str,
+) -> None:
+    store = (
+        FileSessionStore(tmp_path / "file-store")
+        if store_kind == "file"
+        else SQLiteSessionStore(tmp_path / "runtime.sqlite3")
+    )
+    goal = Goal("Persist version", (SuccessCriterion("healthy", True),))
+    task = Task("Inspect", ("healthy",))
+    snapshot = session_from_state(goal_state(goal, task))
+    await store.create_session(snapshot)
+
+    first = await store.load_session(snapshot.state.session_id)
+    second = await store.load_session(snapshot.state.session_id)
+    first.state.iteration = 1
+
+    await store.save_session(first)
+
+    assert first.version == 1
+    with pytest.raises(SessionVersionConflictError, match="session version conflict"):
+        await store.save_session(second)
+    latest = await store.load_session(snapshot.state.session_id)
+    assert latest.version == 1
+    assert latest.state.iteration == 1
+
+
+def goal_state(goal: Goal, task: Task) -> AgentState:
+    state = AgentState(session_id=new_session_id(), goal=goal, current_task=task)
+    state.tasks.append(task)
+    return state
 
 
 def remediation_goal_task() -> tuple[Goal, Task]:

@@ -369,6 +369,7 @@ async def test_resume_rejects_damaged_session_snapshot() -> None:
         snapshot.domain_name,
         snapshot.domain_version,
         snapshot.domains,
+        snapshot.version,
     )
 
     await store.save_session(damaged)

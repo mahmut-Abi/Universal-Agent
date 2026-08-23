@@ -33,6 +33,7 @@ class SessionRuntimeState:
     domain_name: str
     domain_version: str
     domain_identities: tuple[DomainIdentity, ...]
+    version: int = 0
 
     def record(self, evidence: Evidence) -> bool:
         return self.evidence_store.add(evidence)
@@ -67,6 +68,7 @@ class SessionRuntimeState:
             self.domain_name,
             self.domain_version,
             self.domain_identities,
+            self.version,
         )
 
 
@@ -115,6 +117,7 @@ def hydrate_session(
         metadata.name,
         metadata.version,
         expected,
+        snapshot.version,
     )
     session.sync_current_task()
     return session
