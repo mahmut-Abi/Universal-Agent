@@ -411,6 +411,30 @@ async def test_cli_init_can_write_file_backed_distributed_queue_config(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_cli_init_can_write_sqlite_backed_distributed_locks_config(tmp_path: Path) -> None:
+    output = StringIO()
+    profile_path = tmp_path / "profile.json"
+    locks_path = tmp_path / "distributed-locks.sqlite3"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--distributed-locks-backend",
+            "sqlite",
+            "--distributed-locks-path",
+            str(locks_path),
+        ],
+        stdout=output,
+    )
+    profile = ProfileConfig.from_json_file(profile_path).to_profile()
+
+    assert status == 0
+    assert profile.runtime.distributed_locks == StoreConfig.sqlite(str(locks_path))
+
+
+@pytest.mark.asyncio
 async def test_cli_init_can_write_sqlite_backed_distributed_queue_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "profile.json"

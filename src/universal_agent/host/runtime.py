@@ -12,6 +12,7 @@ from universal_agent.distributed import (
     InMemoryDistributedLockRegistry,
     InMemoryWorkerRegistry,
     InMemoryWorkQueue,
+    SQLiteDistributedLockRegistry,
     SQLiteWorkerRegistry,
     SQLiteWorkQueue,
 )
@@ -256,6 +257,9 @@ def _build_distributed_locks(config: RuntimeConfig) -> InMemoryDistributedLockRe
     if config.distributed_locks.backend is StoreBackend.FILE:
         assert config.distributed_locks.path is not None
         return FileDistributedLockRegistry(config.distributed_locks.path)
+    if config.distributed_locks.backend is StoreBackend.SQLITE:
+        assert config.distributed_locks.path is not None
+        return SQLiteDistributedLockRegistry(config.distributed_locks.path)
     raise ValueError(f"unsupported distributed locks backend: {config.distributed_locks.backend}")
 
 

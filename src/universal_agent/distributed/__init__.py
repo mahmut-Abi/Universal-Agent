@@ -22,6 +22,7 @@ from universal_agent.distributed.locks import (
     DistributedLockOwnerId,
     FileDistributedLockRegistry,
     InMemoryDistributedLockRegistry,
+    SQLiteDistributedLockRegistry,
 )
 from universal_agent.distributed.queue import (
     FileWorkQueue,
@@ -92,6 +93,7 @@ __all__ = [
     "LeaseId",
     "LeaseLostError",
     "NoWorkAvailable",
+    "SQLiteDistributedLockRegistry",
     "SQLiteWorkQueue",
     "SQLiteWorkerRegistry",
     "WorkHandler",

@@ -280,7 +280,7 @@ event-sourcing model or production migration system.
   local file-backed worker registry state for host rebuilds; `DistributedRuntimeCoordinator` exposes session, goal, task and confirmed pending-action scheduling, worker lifecycle, lock lifecycle, snapshot, health, expiry sweep and work-item cancellation over the queue, lock and worker primitives without changing AgentRuntime semantics; `RuntimeService.distributed_schedule_pending_actions` can sweep Runtime-owned waiting sessions and idempotently enqueue already-confirmed pending Actions; distributed session, task and action worker handlers acquire a session-scoped execution lock before resuming Runtime state; `RuntimeService.distributed_run_worker_once` and bounded `distributed_run_worker_until_idle` provide local queue → worker → RuntimeAPI paths for existing non-confirmation waiting sessions, matching current Tasks, confirmed pending Actions and newly scheduled Goals; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view; `build_distributed_health_report` projects that snapshot into HA-oriented checks for worker capacity, backlog, lease freshness, leased-work owners and worker registry health.
   `RuntimeConfig.distributed_queue`, `RuntimeConfig.distributed_locks` and
   `RuntimeConfig.distributed_workers` let `RuntimeHost` assemble in-memory coordination primitives,
-  local file-backed queue/lock/worker adapters, or SQLite-backed queue/worker adapters for CLI/agentd deployments
+  local file-backed queue/lock/worker adapters, or SQLite-backed queue/lock/worker adapters for CLI/agentd deployments
   that need coordination state to survive host rebuilds.
 - P7 Domain Package foundation: `DomainPackageManifest` defines package metadata for independently
   packaged Domain runtimes, including entrypoint, resources, dependencies, required tools,
@@ -397,6 +397,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p6_distributed_pending_actions.py
 .venv/bin/python examples/p6_runtime_host_file_queue.py
 .venv/bin/python examples/p6_runtime_host_sqlite_queue.py
+.venv/bin/python examples/p6_runtime_host_sqlite_locks.py
 .venv/bin/python examples/p6_runtime_host_sqlite_workers.py
 .venv/bin/python examples/p6_runtime_host_file_coordination.py
 .venv/bin/python examples/p6_worker_lifecycle.py
@@ -427,6 +428,8 @@ Python 3.12 or newer is required.
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-profile.json config show
 .venv/bin/python -m universal_agent.cli init --output .tmp/file-queue-profile.json --distributed-queue-backend file --distributed-queue-path .tmp/work-queue.json --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/file-queue-profile.json config show
+.venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-locks-profile.json --distributed-locks-backend sqlite --distributed-locks-path .tmp/distributed-locks.sqlite3 --force
+.venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-locks-profile.json config show
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-queue-profile.json --distributed-queue-backend sqlite --distributed-queue-path .tmp/work-queue.sqlite3 --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-queue-profile.json config show
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-workers-profile.json --distributed-workers-backend sqlite --distributed-workers-path .tmp/workers.sqlite3 --force

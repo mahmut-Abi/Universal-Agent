@@ -16,6 +16,7 @@ from universal_agent.distributed import (
     DistributedLockOwnerId,
     FileDistributedLockRegistry,
     InMemoryDistributedLockRegistry,
+    SQLiteDistributedLockRegistry,
 )
 
 
@@ -129,6 +130,111 @@ def test_file_distributed_lock_registry_reloads_before_stale_writer_mutates(
         "session/session-2",
         "session/session-3",
     )
+
+
+def test_sqlite_distributed_lock_registry_persists_and_reloads_leases(tmp_path: Path) -> None:
+    path = tmp_path / "distributed-locks.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    registry = SQLiteDistributedLockRegistry(path)
+
+    lease = registry.acquire(
+        lock_key="session/session-1",
+        owner_id=DistributedLockOwnerId("worker-a"),
+        ttl_seconds=10,
+        metadata=immutable_json({"reason": "resume session"}),
+        now=now,
+    )
+    renewed = SQLiteDistributedLockRegistry(path).heartbeat(
+        lease.lease_id,
+        owner_id=DistributedLockOwnerId("worker-a"),
+        ttl_seconds=20,
+        now=now + timedelta(seconds=5),
+    )
+
+    reloaded = SQLiteDistributedLockRegistry(path)
+
+    assert path.exists()
+    assert reloaded.active() == (renewed,)
+    assert renewed.metadata["reason"] == "resume session"
+    assert renewed.heartbeat_at == now + timedelta(seconds=5)
+    assert renewed.lease_expires_at == now + timedelta(seconds=25)
+
+
+def test_sqlite_distributed_lock_registry_restores_sequence(tmp_path: Path) -> None:
+    path = tmp_path / "distributed-locks.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    first = SQLiteDistributedLockRegistry(path).acquire(
+        lock_key="session/session-1",
+        owner_id=DistributedLockOwnerId("worker-a"),
+        now=now,
+    )
+
+    SQLiteDistributedLockRegistry(path).release(
+        first.lease_id,
+        owner_id=DistributedLockOwnerId("worker-a"),
+        now=now + timedelta(seconds=1),
+    )
+    second = SQLiteDistributedLockRegistry(path).acquire(
+        lock_key="session/session-2",
+        owner_id=DistributedLockOwnerId("worker-b"),
+        now=now + timedelta(seconds=2),
+    )
+
+    assert first.lease_id != second.lease_id
+    assert str(second.lease_id) == "lock-lease-2"
+
+
+def test_sqlite_distributed_lock_registry_reloads_before_stale_writer_mutates(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "distributed-locks.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    owner = SQLiteDistributedLockRegistry(path)
+    owner.acquire(
+        lock_key="session/session-1",
+        owner_id=DistributedLockOwnerId("worker-a"),
+        now=now,
+    )
+    stale_writer = SQLiteDistributedLockRegistry(path)
+
+    owner.acquire(
+        lock_key="session/session-2",
+        owner_id=DistributedLockOwnerId("worker-b"),
+        now=now + timedelta(seconds=1),
+    )
+    stale_writer.acquire(
+        lock_key="session/session-3",
+        owner_id=DistributedLockOwnerId("worker-c"),
+        now=now + timedelta(seconds=2),
+    )
+
+    assert tuple(lease.lock_key for lease in SQLiteDistributedLockRegistry(path).active()) == (
+        "session/session-1",
+        "session/session-2",
+        "session/session-3",
+    )
+
+
+def test_sqlite_distributed_lock_registry_persists_expiry_on_lost_release(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "distributed-locks.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    lease = SQLiteDistributedLockRegistry(path).acquire(
+        lock_key="session/session-1",
+        owner_id=DistributedLockOwnerId("worker-a"),
+        ttl_seconds=5,
+        now=now,
+    )
+
+    with pytest.raises(DistributedLockLeaseLostError, match="expired"):
+        SQLiteDistributedLockRegistry(path).release(
+            lease.lease_id,
+            owner_id=DistributedLockOwnerId("worker-a"),
+            now=now + timedelta(seconds=6),
+        )
+
+    assert SQLiteDistributedLockRegistry(path).active() == ()
 
 
 def test_file_distributed_lock_registry_serializes_cross_process_operations(

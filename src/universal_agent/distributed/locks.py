@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -288,6 +289,193 @@ class FileDistributedLockRegistry(InMemoryDistributedLockRegistry):
         tmp_path.replace(self._path)
 
 
+class SQLiteDistributedLockRegistry(InMemoryDistributedLockRegistry):
+    """SQLite-backed local distributed lock adapter.
+
+    This preserves the local leased-lock interface while adding durable state
+    for embedded RuntimeHost deployments. It is still a local coordination
+    primitive, not a distributed consensus implementation.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        super().__init__()
+        self._path = Path(path)
+        self._transaction_connection: sqlite3.Connection | None = None
+        with self._connect() as connection:
+            _ensure_sqlite_lock_registry_schema(connection)
+            self._load(connection)
+
+    def acquire(
+        self,
+        *,
+        lock_key: str,
+        owner_id: DistributedLockOwnerId,
+        ttl_seconds: float = 30.0,
+        metadata: JsonMapping | None = None,
+        now: datetime | None = None,
+    ) -> DistributedLockLease:
+        with self._transaction(commit_on=(DistributedLockConflictError,)) as connection:
+            self._load(connection)
+            timestamp = now or utc_now()
+            _require_lock_key(lock_key)
+            _require_owner_id(owner_id)
+            expired = InMemoryDistributedLockRegistry.expire(self, now=timestamp)
+            existing = self._leases.get(lock_key)
+            if existing is not None:
+                if expired:
+                    self._save(connection)
+                if existing.owner_id == owner_id:
+                    return existing
+                raise DistributedLockConflictError(
+                    f"lock is owned by {existing.owner_id}: {lock_key}"
+                )
+            lease = DistributedLockLease(
+                lock_key=lock_key,
+                owner_id=owner_id,
+                lease_id=self._next_lease_id(),
+                acquired_at=timestamp,
+                lease_expires_at=_lease_deadline(timestamp, ttl_seconds),
+                heartbeat_at=timestamp,
+                metadata=immutable_json(metadata),
+            )
+            self._leases[lock_key] = lease
+            self._save(connection)
+            return lease
+
+    def heartbeat(
+        self,
+        lease_id: DistributedLockLeaseId,
+        *,
+        owner_id: DistributedLockOwnerId,
+        ttl_seconds: float = 30.0,
+        now: datetime | None = None,
+    ) -> DistributedLockLease:
+        with self._transaction(commit_on=(DistributedLockLeaseLostError,)) as connection:
+            self._load(connection)
+            lease = super().heartbeat(
+                lease_id,
+                owner_id=owner_id,
+                ttl_seconds=ttl_seconds,
+                now=now,
+            )
+            self._save(connection)
+            return lease
+
+    def release(
+        self,
+        lease_id: DistributedLockLeaseId,
+        *,
+        owner_id: DistributedLockOwnerId,
+        now: datetime | None = None,
+    ) -> DistributedLockLease:
+        with self._transaction(commit_on=(DistributedLockLeaseLostError,)) as connection:
+            self._load(connection)
+            lease = super().release(lease_id, owner_id=owner_id, now=now)
+            self._save(connection)
+            return lease
+
+    def expire(self, *, now: datetime | None = None) -> tuple[DistributedLockLease, ...]:
+        with self._transaction() as connection:
+            self._load(connection)
+            expired = super().expire(now=now)
+            if expired:
+                self._save(connection)
+            return expired
+
+    def active(self) -> tuple[DistributedLockLease, ...]:
+        connection = self._transaction_connection
+        if connection is not None:
+            self._load(connection)
+            return super().active()
+        with self._connect() as fresh_connection:
+            self._load(fresh_connection)
+            return super().active()
+
+    @contextmanager
+    def _transaction(
+        self,
+        *,
+        commit_on: tuple[type[Exception], ...] = (),
+    ) -> Iterator[sqlite3.Connection]:
+        active = self._transaction_connection
+        if active is not None:
+            yield active
+            return
+        with self._connect() as connection:
+            _ensure_sqlite_lock_registry_schema(connection)
+            connection.execute("BEGIN IMMEDIATE")
+            self._transaction_connection = connection
+            try:
+                yield connection
+            except Exception as exc:
+                if isinstance(exc, commit_on):
+                    connection.commit()
+                else:
+                    connection.rollback()
+                raise
+            else:
+                connection.commit()
+            finally:
+                self._transaction_connection = None
+
+    def _connect(self) -> sqlite3.Connection:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        return sqlite3.connect(self._path, timeout=30.0, isolation_level=None)
+
+    def _load(self, connection: sqlite3.Connection) -> None:
+        _ensure_sqlite_lock_registry_schema(connection)
+        rows = connection.execute(
+            """
+            SELECT payload
+            FROM distributed_lock_leases
+            ORDER BY lock_key ASC
+            """
+        ).fetchall()
+        loaded: dict[str, DistributedLockLease] = {}
+        for row in rows:
+            payload: object = json.loads(row[0])
+            if not isinstance(payload, dict):
+                raise ValueError("sqlite distributed lock payload must be an object")
+            lease = _decode_distributed_lock_lease(payload)
+            if lease.lock_key in loaded:
+                raise ValueError(f"duplicate sqlite distributed lock: {lease.lock_key}")
+            loaded[lease.lock_key] = lease
+        sequence_row = connection.execute(
+            "SELECT value FROM distributed_lock_state WHERE key = 'sequence'"
+        ).fetchone()
+        sequence = _sqlite_lock_sequence(sequence_row[0] if sequence_row is not None else None)
+        loaded_sequence = max(
+            (_sequence_from_lock_lease_id(lease.lease_id) for lease in loaded.values()),
+            default=0,
+        )
+        self._leases = loaded
+        self._sequence = max(sequence, loaded_sequence)
+
+    def _save(self, connection: sqlite3.Connection) -> None:
+        connection.execute("DELETE FROM distributed_lock_leases")
+        connection.executemany(
+            """
+            INSERT INTO distributed_lock_leases(
+                lock_key,
+                owner_id,
+                lease_id,
+                lease_expires_at,
+                payload
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (_sqlite_lock_lease_row(lease) for lease in super().active()),
+        )
+        connection.execute(
+            """
+            INSERT INTO distributed_lock_state(key, value)
+            VALUES ('sequence', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (str(self._sequence),),
+        )
+
+
 @contextmanager
 def _file_lock_registry_lock(lock_path: Path) -> Iterator[None]:
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -370,3 +558,51 @@ def _sequence_from_lock_lease_id(lease_id: DistributedLockLeaseId) -> int:
     if not suffix.isdecimal():
         return 0
     return int(suffix)
+
+
+def _ensure_sqlite_lock_registry_schema(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS distributed_lock_leases (
+            lock_key TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            lease_id TEXT NOT NULL UNIQUE,
+            lease_expires_at TEXT NOT NULL,
+            payload TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS distributed_lock_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_distributed_lock_leases_expiry
+        ON distributed_lock_leases(lease_expires_at ASC, lock_key ASC)
+        """
+    )
+
+
+def _sqlite_lock_lease_row(
+    lease: DistributedLockLease,
+) -> tuple[str, str, str, str, str]:
+    return (
+        lease.lock_key,
+        str(lease.owner_id),
+        str(lease.lease_id),
+        lease.lease_expires_at.isoformat(),
+        json.dumps(_encode_distributed_lock_lease(lease), sort_keys=True, separators=(",", ":")),
+    )
+
+
+def _sqlite_lock_sequence(value: object) -> int:
+    if value is None:
+        return 0
+    if not isinstance(value, str) or not value.isdecimal():
+        raise ValueError("sqlite distributed lock sequence must be a decimal string")
+    return int(value)
