@@ -70,6 +70,7 @@ Goal
 当前已有本地内存实现：
 
 - WorkScheduler、WorkQueue、WorkerLease、heartbeat、retry、expiry；
+- capability-aware Worker leasing，以及长异步 handler 的 queue/worker lease heartbeat；
 - Worker Registry 以及 online/draining/offline/lost 状态；
 - leased distributed lock；
 - Runtime Snapshot、Health Report、Coordinator；
@@ -114,10 +115,10 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
 在本次审计环境中执行的结果：
 
 ```text
-pytest --disable-warnings      344 passed, 5 skipped
-ruff format --check           passed, 197 files formatted
+pytest --disable-warnings      347 passed, 5 skipped
+ruff format --check           passed, 198 files checked
 ruff check                    passed
-mypy (strict)                 passed, 197 source files
+mypy (strict)                 passed, 198 source files
 ```
 
 被跳过的测试是本地 socket bind 受到执行环境权限限制。测试运行还报告了较多 Python 3.14 /
@@ -132,7 +133,6 @@ pytest-asyncio event loop 弃用警告；这些警告尚未影响当前测试结
 ### P1：完成单 Agent Runtime 的可靠性
 
 - 定义 State/Event 原子性策略（transaction、outbox 或可验证的事件一致性模型）；
-- 为长任务 Worker 增加自动 heartbeat 和 capability-aware leasing；
 - 覆盖 pause/resume/cancel、lease expiry、unknown execution 和重复执行场景。
 
 ### P2：再接通 P6 执行闭环

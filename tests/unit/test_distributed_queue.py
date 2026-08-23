@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -90,6 +91,28 @@ def test_work_queue_heartbeat_extends_active_lease_and_rejects_wrong_worker() ->
             renewed.lease.lease_id,
             worker_id=WorkerId("worker-b"),
             now=now + timedelta(seconds=6),
+        )
+
+
+def test_work_queue_leases_only_accepted_kinds_when_filter_is_provided() -> None:
+    queue = InMemoryWorkQueue()
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    unsupported = queue.enqueue(kind="tool_action", priority=10, available_at=now)
+    supported = queue.enqueue(kind="agent_session", priority=1, available_at=now)
+
+    leased = queue.lease(
+        worker_id=WorkerId("worker-a"),
+        now=now,
+        accepted_kinds=("agent_session",),
+    )
+
+    assert leased.work_item_id == supported.work_item_id
+    assert queue.get(unsupported.work_item_id).status is WorkItemStatus.QUEUED
+    with pytest.raises(NoWorkAvailable):
+        queue.lease(
+            worker_id=WorkerId("worker-b"),
+            now=now,
+            accepted_kinds=("task",),
         )
 
 
@@ -192,6 +215,8 @@ def test_work_queue_validates_inputs() -> None:
     queue.enqueue(kind="agent_session")
     with pytest.raises(ValueError, match="ttl_seconds"):
         queue.lease(worker_id=WorkerId("worker-a"), ttl_seconds=0)
+    with pytest.raises(ValueError, match="accepted_kinds"):
+        queue.lease(worker_id=WorkerId("worker-a"), accepted_kinds=(" ",))
 
 
 @pytest.mark.asyncio
@@ -217,6 +242,55 @@ async def test_work_queue_worker_completes_handled_work() -> None:
     assert result.work_item is not None
     assert result.work_item.status is WorkItemStatus.COMPLETED
     assert result.reason == "handled agent_session"
+
+
+@pytest.mark.asyncio
+async def test_work_queue_worker_leases_only_declared_capabilities() -> None:
+    queue = InMemoryWorkQueue()
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    unsupported = queue.enqueue(kind="tool_action", priority=10, available_at=now)
+    supported = queue.enqueue(kind="agent_session", priority=1, available_at=now)
+    worker = WorkQueueWorker(
+        queue=queue,
+        worker_id=WorkerId("worker-a"),
+        handlers={"agent_session": lambda item: WorkHandlerResult.completed("handled session")},
+    )
+
+    result = await worker.run_once()
+
+    assert result.status is WorkerRunStatus.COMPLETED
+    assert result.work_item is not None
+    assert result.work_item.work_item_id == supported.work_item_id
+    assert queue.get(unsupported.work_item_id).status is WorkItemStatus.QUEUED
+
+
+@pytest.mark.asyncio
+async def test_work_queue_worker_heartbeats_long_running_async_handler() -> None:
+    queue = InMemoryWorkQueue()
+    registry = InMemoryWorkerRegistry()
+    queue.enqueue(kind="agent_session")
+
+    async def handler(item: WorkItem) -> WorkHandlerResult:
+        await asyncio.sleep(0.25)
+        return WorkHandlerResult.completed("long handler completed")
+
+    worker = WorkQueueWorker(
+        queue=queue,
+        worker_id=WorkerId("worker-a"),
+        handlers={"agent_session": handler},
+        lease_ttl_seconds=0.12,
+        heartbeat_interval_seconds=0.03,
+        worker_registry=registry,
+        worker_ttl_seconds=0.12,
+    )
+
+    result = await worker.run_once()
+
+    record = registry.get(WorkerId("worker-a"))
+    assert result.status is WorkerRunStatus.COMPLETED
+    assert result.work_item is not None
+    assert result.work_item.status is WorkItemStatus.COMPLETED
+    assert record.heartbeat_at > record.registered_at
 
 
 @pytest.mark.asyncio
@@ -276,7 +350,12 @@ async def test_work_queue_worker_retries_handler_failures_until_terminal() -> No
 async def test_work_queue_worker_fails_unhandled_work_without_retry_loop() -> None:
     queue = InMemoryWorkQueue()
     queue.enqueue(kind="missing_handler")
-    worker = WorkQueueWorker(queue=queue, worker_id=WorkerId("worker-a"), handlers={})
+    worker = WorkQueueWorker(
+        queue=queue,
+        worker_id=WorkerId("worker-a"),
+        handlers={},
+        worker_capabilities=("missing_handler",),
+    )
 
     result = await worker.run_once()
 

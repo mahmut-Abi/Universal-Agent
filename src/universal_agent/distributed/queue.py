@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -130,10 +131,12 @@ class InMemoryWorkQueue:
         worker_id: WorkerId,
         ttl_seconds: float = 30.0,
         now: datetime | None = None,
+        accepted_kinds: Collection[str] | None = None,
     ) -> WorkItem:
         timestamp = now or utc_now()
+        kind_filter = _normalize_accepted_kinds(accepted_kinds)
         self.expire(now=timestamp)
-        item = self._next_leaseable(timestamp)
+        item = self._next_leaseable(timestamp, accepted_kinds=kind_filter)
         if item is None:
             raise NoWorkAvailable("no work available")
         lease = WorkerLease(
@@ -305,11 +308,18 @@ class InMemoryWorkQueue:
                 return item
         return None
 
-    def _next_leaseable(self, now: datetime) -> WorkItem | None:
+    def _next_leaseable(
+        self,
+        now: datetime,
+        *,
+        accepted_kinds: frozenset[str] | None = None,
+    ) -> WorkItem | None:
         candidates = tuple(
             item
             for item in self._items.values()
-            if item.status is WorkItemStatus.QUEUED and item.available_at <= now
+            if item.status is WorkItemStatus.QUEUED
+            and item.available_at <= now
+            and (accepted_kinds is None or item.kind in accepted_kinds)
         )
         if not candidates:
             return None
@@ -354,6 +364,15 @@ def _lease_deadline(now: datetime, ttl_seconds: float) -> datetime:
     if ttl_seconds <= 0:
         raise ValueError("ttl_seconds must be positive")
     return now + timedelta(seconds=ttl_seconds)
+
+
+def _normalize_accepted_kinds(accepted_kinds: Collection[str] | None) -> frozenset[str] | None:
+    if accepted_kinds is None:
+        return None
+    normalized = frozenset(kind.strip() for kind in accepted_kinds)
+    if any(not kind for kind in normalized):
+        raise ValueError("accepted_kinds must not include empty kinds")
+    return normalized
 
 
 def _sort_key(item: WorkItem) -> tuple[int, datetime, str]:

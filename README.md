@@ -270,9 +270,10 @@ event-sourcing model or production migration system.
   work kinds and idempotency keys; `InMemoryWorkQueue` provides typed `WorkItem`, `WorkerLease` and
   status contracts for local scheduler/worker adapters, including priority ordering, idempotent enqueue,
   lease acquisition, heartbeat renewal, retry-aware failure, cancellation and lease expiry; `WorkQueueWorker`
-  consumes those leases through per-kind handlers, can register/heartbeat through `InMemoryWorkerRegistry`,
-  stops leasing when draining/offline/lost, and maps handler completion, retry, failure and cancellation
-  back into queue state; `InMemoryDistributedLockRegistry` adds leased lock acquisition, heartbeat,
+  consumes those leases through per-kind handlers, leases only declared work kinds by default, can
+  register/heartbeat through `InMemoryWorkerRegistry`, renews queue and worker leases while async
+  handlers run, stops leasing when draining/offline/lost, and maps handler completion, retry, failure
+  and cancellation back into queue state; `InMemoryDistributedLockRegistry` adds leased lock acquisition, heartbeat,
   conflict rejection, expiry and release; `InMemoryWorkerRegistry` tracks worker registration,
   heartbeat, draining, offline and lost states; `DistributedRuntimeCoordinator` exposes session scheduling, worker lifecycle, lock lifecycle, snapshot, health, expiry sweep and work-item cancellation over the queue, lock and worker primitives without changing AgentRuntime semantics; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view; `build_distributed_health_report` projects that snapshot into HA-oriented checks for worker capacity, backlog, lease freshness, leased-work owners and worker registry health.
 - P7 Domain Package foundation: `DomainPackageManifest` defines package metadata for independently
@@ -317,7 +318,7 @@ The design roadmap now separates semantic runtime maturity from productization:
 - P3.6-P3.7: Operations and Evaluation — OpenTelemetry, metrics, audit, cost tracking, runtime
   doctor, evaluation suites, quality gates, replay, and deterministic test mode.
 - P5: Read-only TUI/Web application views for runtime, session, evidence, world, domain and settings inspection.
-- P6: Distributed Runtime foundations — typed local Scheduler, Work Queue, Worker Registry, Worker Lease, Worker handler
+- P6: Distributed Runtime foundations — typed local Scheduler, Work Queue, Worker Registry, Worker Lease, capability-aware Worker handler
   execution, leased lock, Runtime Snapshot, Health Report, Coordinator, Heartbeat, retry, cancellation and lease expiry primitives.
 - P7: Ecosystem packaging and registry work.
 
@@ -372,6 +373,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p5_session_diagnostics.py
 .venv/bin/python examples/p6_distributed_queue.py
 .venv/bin/python examples/p6_distributed_worker.py
+.venv/bin/python examples/p6_capability_aware_worker.py
 .venv/bin/python examples/p6_distributed_scheduler.py
 .venv/bin/python examples/p6_distributed_lock.py
 .venv/bin/python examples/p6_worker_registry.py

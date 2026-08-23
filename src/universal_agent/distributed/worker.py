@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -87,6 +89,7 @@ class WorkQueueWorker:
         worker_registry: InMemoryWorkerRegistry | None = None,
         worker_ttl_seconds: float = 30.0,
         worker_capabilities: tuple[str, ...] | None = None,
+        heartbeat_interval_seconds: float | None = None,
     ) -> None:
         if not str(worker_id).strip():
             raise ValueError("worker_id must not be empty")
@@ -94,6 +97,8 @@ class WorkQueueWorker:
             raise ValueError("lease_ttl_seconds must be positive")
         if worker_ttl_seconds <= 0:
             raise ValueError("worker_ttl_seconds must be positive")
+        if heartbeat_interval_seconds is not None and heartbeat_interval_seconds <= 0:
+            raise ValueError("heartbeat_interval_seconds must be positive")
         self._queue = queue
         self._worker_id = worker_id
         self._handlers = dict(handlers)
@@ -103,6 +108,7 @@ class WorkQueueWorker:
         self._worker_capabilities = (
             tuple(sorted(self._handlers)) if worker_capabilities is None else worker_capabilities
         )
+        self._heartbeat_interval_seconds = heartbeat_interval_seconds or (lease_ttl_seconds / 2)
 
     async def run_once(self) -> WorkerRunResult:
         now = utc_now()
@@ -114,6 +120,7 @@ class WorkQueueWorker:
                 worker_id=self._worker_id,
                 ttl_seconds=self._lease_ttl_seconds,
                 now=now,
+                accepted_kinds=self._worker_capabilities,
             )
         except NoWorkAvailable:
             return WorkerRunResult(
@@ -138,7 +145,15 @@ class WorkQueueWorker:
                 retry=False,
             )
         try:
-            result = await _call_handler(handler, item)
+            result = await self._call_handler(handler, item, lease.lease_id)
+        except LeaseLostError as exc:
+            return WorkerRunResult(
+                status=WorkerRunStatus.LEASE_LOST,
+                worker_id=self._worker_id,
+                work_item=self._queue.get(item.work_item_id),
+                lease_id=lease.lease_id,
+                reason=str(exc),
+            )
         except Exception as exc:
             return self._fail_leased_item(
                 item,
@@ -242,6 +257,59 @@ class WorkQueueWorker:
             )
         return None
 
+    async def _call_handler(
+        self,
+        handler: WorkHandler,
+        item: WorkItem,
+        lease_id: LeaseId,
+    ) -> WorkHandlerResult:
+        result = handler(item)
+        if not isawaitable(result):
+            return result
+        task = asyncio.ensure_future(result)
+        try:
+            while True:
+                done, _ = await asyncio.wait(
+                    {task},
+                    timeout=self._heartbeat_interval_seconds,
+                )
+                if task in done:
+                    return task.result()
+                self._heartbeat_active_lease(lease_id)
+        except BaseException:
+            if not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+            raise
+
+    def _heartbeat_active_lease(self, lease_id: LeaseId) -> None:
+        now = utc_now()
+        self._queue.heartbeat(
+            lease_id,
+            worker_id=self._worker_id,
+            ttl_seconds=self._lease_ttl_seconds,
+            now=now,
+        )
+        if self._worker_registry is None:
+            return
+        try:
+            self._worker_registry.heartbeat(
+                self._worker_id,
+                ttl_seconds=self._worker_ttl_seconds,
+                now=now,
+            )
+        except WorkerNotFoundError as exc:
+            with suppress(LeaseLostError):
+                self._queue.fail(
+                    lease_id,
+                    worker_id=self._worker_id,
+                    reason=f"worker heartbeat failed: {exc}",
+                    retry=True,
+                    now=now,
+                )
+            raise LeaseLostError(f"worker heartbeat failed: {exc}") from exc
+
     def _fail_leased_item(
         self,
         item: WorkItem,
@@ -267,13 +335,6 @@ class WorkQueueWorker:
                 reason=str(exc),
             )
         return _worker_result_from_failed_item(self._worker_id, lease_id, failed)
-
-
-async def _call_handler(handler: WorkHandler, item: WorkItem) -> WorkHandlerResult:
-    result = handler(item)
-    if isawaitable(result):
-        return await result
-    return result
 
 
 def _worker_result_from_failed_item(
