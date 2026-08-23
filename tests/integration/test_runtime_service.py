@@ -143,6 +143,27 @@ def test_runtime_service_exposes_optional_distributed_runtime_views() -> None:
     assert health.status.value == "ok"
 
 
+@pytest.mark.asyncio
+async def test_runtime_service_doctor_includes_distributed_health() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.scheduler.schedule_session(SessionId("session-1"), available_at=now)
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+        distributed_coordinator=coordinator,
+    )
+
+    report = await service.doctor()
+    distributed = next(check for check in report.checks if check.name == "distributed_runtime")
+
+    assert report.status == "error"
+    assert distributed.status == "error"
+    assert "capacity_gaps=1" in distributed.message
+
+
 def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     service, _ = build_service([])
 

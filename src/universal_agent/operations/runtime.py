@@ -345,6 +345,10 @@ def build_doctor_report(
     store_backend: str | None = None,
     max_iterations: int | None = None,
     max_recovery_steps: int | None = None,
+    distributed_health_status: str | None = None,
+    distributed_health_check_count: int | None = None,
+    distributed_capacity_gap_count: int | None = None,
+    distributed_expiring_lease_count: int | None = None,
 ) -> DoctorReportView:
     metrics = build_runtime_metrics(sessions, events)
     cost = build_runtime_cost(events)
@@ -378,6 +382,12 @@ def build_doctor_report(
         _policy_denial_check(metrics.policy_denial_count),
         _recovery_check(metrics.recovery_exhausted_count),
         _resource_lock_check(sessions, metrics),
+        _distributed_runtime_check(
+            status=distributed_health_status,
+            check_count=distributed_health_check_count,
+            capacity_gap_count=distributed_capacity_gap_count,
+            expiring_lease_count=distributed_expiring_lease_count,
+        ),
         DoctorCheckView(
             "cost_tracking",
             "ok",
@@ -926,6 +936,35 @@ def _resource_lock_check(
         f"active={metrics.active_resource_lock_count} conflicts={metrics.resource_conflict_count}",
     )
 
+
+
+def _distributed_runtime_check(
+    *,
+    status: str | None,
+    check_count: int | None,
+    capacity_gap_count: int | None,
+    expiring_lease_count: int | None,
+) -> DoctorCheckView:
+    if status is None:
+        return DoctorCheckView(
+            "distributed_runtime",
+            "ok",
+            "distributed runtime coordinator not configured",
+        )
+    if status not in {"ok", "warn", "error"}:
+        return DoctorCheckView(
+            "distributed_runtime",
+            "error",
+            f"unknown distributed health status: {status}",
+        )
+    return DoctorCheckView(
+        "distributed_runtime",
+        status,
+        "status="
+        f"{status} checks={check_count or 0} "
+        f"capacity_gaps={capacity_gap_count or 0} "
+        f"expiring_leases={expiring_lease_count or 0}",
+    )
 
 def _runtime_config_check(
     *,

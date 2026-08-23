@@ -574,6 +574,7 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
         "policy_denials",
         "recovery",
         "resource_locks",
+        "distributed_runtime",
         "cost_tracking",
     ]
     assert next(check for check in report.checks if check.name == "event_stream").status == "warn"
@@ -704,3 +705,47 @@ def test_audit_records_include_only_side_effecting_policy_checks() -> None:
     assert records[1].policy_effect == "require_confirmation"
     assert records[1].status == "confirmation_required"
     assert records[1].completed_at == datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
+
+
+def test_doctor_report_includes_distributed_runtime_health() -> None:
+    report = build_doctor_report(
+        health_status="ok",
+        ready=True,
+        ready_reason="ready",
+        domain_count=1,
+        capability_count=1,
+        tool_count=1,
+        sessions=(),
+        events=(),
+        distributed_health_status="warn",
+        distributed_health_check_count=6,
+        distributed_capacity_gap_count=1,
+        distributed_expiring_lease_count=2,
+    )
+
+    distributed = next(check for check in report.checks if check.name == "distributed_runtime")
+
+    assert report.status == "warn"
+    assert distributed.status == "warn"
+    assert distributed.message == (
+        "status=warn checks=6 capacity_gaps=1 expiring_leases=2"
+    )
+
+
+def test_doctor_report_allows_missing_distributed_runtime() -> None:
+    report = build_doctor_report(
+        health_status="ok",
+        ready=True,
+        ready_reason="ready",
+        domain_count=1,
+        capability_count=1,
+        tool_count=1,
+        sessions=(),
+        events=(),
+    )
+
+    distributed = next(check for check in report.checks if check.name == "distributed_runtime")
+
+    assert report.status == "ok"
+    assert distributed.status == "ok"
+    assert distributed.message == "distributed runtime coordinator not configured"

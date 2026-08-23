@@ -462,6 +462,7 @@ class RuntimeService:
         config = self.config()
         sessions = await self.list_sessions()
         events = await self._list_all_events(sessions)
+        distributed_health = self.distributed_health()
         return build_doctor_report(
             health_status=health.status,
             ready=ready.ready,
@@ -475,6 +476,18 @@ class RuntimeService:
             store_backend=config.store_backend,
             max_iterations=config.max_iterations,
             max_recovery_steps=config.max_recovery_steps,
+            distributed_health_status=None
+            if distributed_health is None
+            else distributed_health.status.value,
+            distributed_health_check_count=None
+            if distributed_health is None
+            else len(distributed_health.checks),
+            distributed_capacity_gap_count=None
+            if distributed_health is None
+            else len(distributed_health.capacity_gaps),
+            distributed_expiring_lease_count=None
+            if distributed_health is None
+            else len(distributed_health.expiring_leases),
         )
 
     async def audit_records(
