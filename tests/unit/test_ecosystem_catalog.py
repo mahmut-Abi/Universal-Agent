@@ -8,10 +8,12 @@ import pytest
 
 from universal_agent import (
     AmbiguousEcosystemRegistryItemError,
+    DomainPackageRegistry,
     EcosystemCatalog,
     EcosystemDomainPackageRef,
     EcosystemProfileRef,
     EcosystemRegistryIndex,
+    EcosystemRegistryInstallError,
     EcosystemRegistryItemNotFoundError,
     EcosystemRegistryManifest,
     EcosystemRegistryStoreNotFoundError,
@@ -19,9 +21,11 @@ from universal_agent import (
     FileEcosystemRegistryStore,
     decode_ecosystem_registry_manifest,
     encode_ecosystem_registry_manifest,
+    install_ecosystem_domain_packages,
     load_ecosystem_catalog,
     load_ecosystem_registry_index,
     load_ecosystem_registry_manifest,
+    plan_ecosystem_domain_package_install,
     write_ecosystem_registry_manifest,
 )
 from universal_agent.core import DomainIdentity, JsonMapping
@@ -332,3 +336,116 @@ def test_file_ecosystem_registry_store_persists_and_lists_manifests(tmp_path: Pa
 
     with pytest.raises(EcosystemRegistryValidationError, match="already exists"):
         store.save(first, overwrite=False)
+
+
+def test_ecosystem_registry_plans_and_installs_domain_packages(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    write_domain_package(domain_root / "kubernetes")
+    catalog = load_ecosystem_catalog(domain_package_root=domain_root)
+    manifest = catalog.registry_manifest()
+
+    plan = plan_ecosystem_domain_package_install(manifest)
+    result = install_ecosystem_domain_packages(manifest)
+
+    assert plan.identities == (DomainIdentity("kubernetes", "1.0.0"),)
+    assert plan.candidates[0].reference.name == "kubernetes"
+    assert result.installed_packages[0].identity == DomainIdentity("kubernetes", "1.0.0")
+    assert result.registry.get_by_name("kubernetes").manifest.capabilities == ("inspect_workload",)
+
+
+def test_ecosystem_registry_installs_domain_packages_from_relative_paths(
+    tmp_path: Path,
+) -> None:
+    write_domain_package(tmp_path / "domains" / "kubernetes")
+    manifest = EcosystemRegistryManifest(
+        api_version="agent.nantian.dev/v1alpha1",
+        kind="EcosystemRegistry",
+        name="relative-registry",
+        version="1.0.0",
+        description="Relative path registry",
+        domain_packages=(
+            EcosystemDomainPackageRef(
+                "kubernetes",
+                "1.0.0",
+                "Kubernetes",
+                root_path="domains/kubernetes",
+                manifest_path="domains/kubernetes/manifest.json",
+            ),
+        ),
+    )
+
+    result = install_ecosystem_domain_packages(manifest, base_path=tmp_path)
+
+    assert result.registry.identities() == (DomainIdentity("kubernetes", "1.0.0"),)
+
+
+def test_ecosystem_registry_install_refuses_identity_mismatch(
+    tmp_path: Path,
+) -> None:
+    write_domain_package(tmp_path / "domains" / "kubernetes")
+    manifest = EcosystemRegistryManifest(
+        api_version="agent.nantian.dev/v1alpha1",
+        kind="EcosystemRegistry",
+        name="mismatched-registry",
+        version="1.0.0",
+        description="Mismatched registry",
+        domain_packages=(
+            EcosystemDomainPackageRef(
+                "database",
+                "1.0.0",
+                "Database",
+                manifest_path=str(tmp_path / "domains" / "kubernetes" / "manifest.json"),
+            ),
+        ),
+    )
+
+    with pytest.raises(EcosystemRegistryInstallError, match="identity mismatch"):
+        install_ecosystem_domain_packages(manifest)
+
+
+def test_ecosystem_registry_install_refuses_missing_paths_and_duplicates(
+    tmp_path: Path,
+) -> None:
+    write_domain_package(tmp_path / "domains" / "kubernetes")
+    catalog = load_ecosystem_catalog(domain_package_root=tmp_path / "domains")
+    manifest = catalog.registry_manifest()
+    missing_path_manifest = EcosystemRegistryManifest(
+        api_version="agent.nantian.dev/v1alpha1",
+        kind="EcosystemRegistry",
+        name="missing-path-registry",
+        version="1.0.0",
+        description="Missing path registry",
+        domain_packages=(EcosystemDomainPackageRef("kubernetes", "1.0.0", "Kubernetes"),),
+    )
+    registry = DomainPackageRegistry()
+
+    install_ecosystem_domain_packages(manifest, registry=registry)
+
+    with pytest.raises(EcosystemRegistryInstallError, match="no local path"):
+        install_ecosystem_domain_packages(missing_path_manifest)
+    with pytest.raises(EcosystemRegistryInstallError, match="already registered"):
+        install_ecosystem_domain_packages(manifest, registry=registry)
+    assert registry.identities() == (DomainIdentity("kubernetes", "1.0.0"),)
+
+
+def test_ecosystem_registry_install_requires_verified_references_by_default() -> None:
+    manifest = EcosystemRegistryManifest(
+        api_version="agent.nantian.dev/v1alpha1",
+        kind="EcosystemRegistry",
+        name="broken-registry",
+        version="1.0.0",
+        description="Broken registry",
+        domain_packages=(
+            EcosystemDomainPackageRef(
+                "kubernetes",
+                "1.0.0",
+                "Kubernetes",
+                dependencies=(DomainIdentity("observability", "1.0.0"),),
+            ),
+        ),
+    )
+
+    with pytest.raises(EcosystemRegistryInstallError, match="verification failed"):
+        install_ecosystem_domain_packages(manifest)

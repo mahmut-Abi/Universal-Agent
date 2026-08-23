@@ -7,7 +7,7 @@ from typing import Any
 from urllib.parse import quote
 
 from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
-from universal_agent.domain import DomainPackage, DomainPackageRegistry
+from universal_agent.domain import DomainPackage, DomainPackageRegistry, load_domain_package
 from universal_agent.evaluation.dataset import EvaluationDataset, EvaluationDatasetRegistry
 from universal_agent.profile import ProfileCatalog, ProfileCatalogEntry
 
@@ -58,6 +58,10 @@ class EcosystemRegistryItemNotFoundError(LookupError):
 
 
 class EcosystemRegistryStoreNotFoundError(LookupError):
+    pass
+
+
+class EcosystemRegistryInstallError(ValueError):
     pass
 
 
@@ -212,6 +216,31 @@ class EcosystemRegistryWriteResult:
     manifest: EcosystemRegistryManifest
     path: Path
     overwritten: bool
+
+
+@dataclass(frozen=True, slots=True)
+class EcosystemDomainPackageInstallCandidate:
+    reference: EcosystemDomainPackageRef
+    package: DomainPackage
+
+
+@dataclass(frozen=True, slots=True)
+class EcosystemDomainPackageInstallPlan:
+    candidates: tuple[EcosystemDomainPackageInstallCandidate, ...]
+
+    @property
+    def packages(self) -> tuple[DomainPackage, ...]:
+        return tuple(candidate.package for candidate in self.candidates)
+
+    @property
+    def identities(self) -> tuple[DomainIdentity, ...]:
+        return tuple(package.identity for package in self.packages)
+
+
+@dataclass(frozen=True, slots=True)
+class EcosystemDomainPackageInstallResult:
+    registry: DomainPackageRegistry
+    installed_packages: tuple[DomainPackage, ...]
 
 
 class FileEcosystemRegistryStore:
@@ -378,6 +407,45 @@ class EcosystemRegistryIndex:
                 ),
             )
         )
+
+
+def plan_ecosystem_domain_package_install(
+    source: EcosystemRegistryManifest | EcosystemRegistryIndex,
+    *,
+    base_path: str | Path | None = None,
+    verify: bool = True,
+) -> EcosystemDomainPackageInstallPlan:
+    """Validate local Domain package paths referenced by an ecosystem registry.
+
+    The plan loads package manifests only. It does not import package entrypoints,
+    activate Domain runtimes or mutate a target DomainPackageRegistry.
+    """
+
+    manifest = _registry_manifest(source)
+    if verify:
+        _verify_registry_install_source(EcosystemRegistryIndex(manifest))
+    candidates = tuple(
+        _domain_package_install_candidate(reference, base_path=base_path)
+        for reference in manifest.domain_packages
+    )
+    return EcosystemDomainPackageInstallPlan(candidates)
+
+
+def install_ecosystem_domain_packages(
+    source: EcosystemRegistryManifest | EcosystemRegistryIndex,
+    *,
+    registry: DomainPackageRegistry | None = None,
+    base_path: str | Path | None = None,
+    verify: bool = True,
+) -> EcosystemDomainPackageInstallResult:
+    """Install registry-referenced Domain package metadata into a local registry."""
+
+    plan = plan_ecosystem_domain_package_install(source, base_path=base_path, verify=verify)
+    target = registry or DomainPackageRegistry()
+    _reject_registry_install_duplicates(plan, target)
+    for package in plan.packages:
+        target.register(package)
+    return EcosystemDomainPackageInstallResult(target, plan.packages)
 
 
 @dataclass(frozen=True, slots=True)
@@ -732,6 +800,76 @@ def _registry_package_dependencies_registered(
         "all Domain package dependencies are present in the catalog",
         "Domain packages reference missing dependencies",
     )
+
+
+def _registry_manifest(
+    source: EcosystemRegistryManifest | EcosystemRegistryIndex,
+) -> EcosystemRegistryManifest:
+    if isinstance(source, EcosystemRegistryIndex):
+        return source.manifest
+    return source
+
+
+def _verify_registry_install_source(index: EcosystemRegistryIndex) -> None:
+    report = index.verify()
+    if report.passed:
+        return
+    failed = "; ".join(f"{check.name}: {check.message}" for check in report.failed_checks)
+    raise EcosystemRegistryInstallError(
+        f"ecosystem registry verification failed before package install: {failed}"
+    )
+
+
+def _domain_package_install_candidate(
+    reference: EcosystemDomainPackageRef,
+    *,
+    base_path: str | Path | None,
+) -> EcosystemDomainPackageInstallCandidate:
+    package_path = _domain_package_ref_path(reference, base_path=base_path)
+    package = load_domain_package(package_path)
+    if package.identity != reference.identity:
+        raise EcosystemRegistryInstallError(
+            "domain package identity mismatch: "
+            f"registry expected {_format_domain_identity(reference.identity)}, "
+            f"manifest loaded {_format_domain_identity(package.identity)}"
+        )
+    return EcosystemDomainPackageInstallCandidate(reference, package)
+
+
+def _domain_package_ref_path(
+    reference: EcosystemDomainPackageRef,
+    *,
+    base_path: str | Path | None,
+) -> Path:
+    path_value = reference.manifest_path or reference.root_path
+    if not path_value.strip():
+        raise EcosystemRegistryInstallError(
+            "domain package registry reference has no local path: "
+            f"{_format_domain_identity(reference.identity)}"
+        )
+    path = Path(path_value)
+    if not path.is_absolute() and base_path is not None:
+        path = Path(base_path) / path
+    return path
+
+
+def _reject_registry_install_duplicates(
+    plan: EcosystemDomainPackageInstallPlan,
+    registry: DomainPackageRegistry,
+) -> None:
+    seen: set[DomainIdentity] = set()
+    duplicates: set[DomainIdentity] = set()
+    for identity in plan.identities:
+        if identity in seen:
+            duplicates.add(identity)
+        seen.add(identity)
+    existing = frozenset(registry.identities())
+    duplicates.update(identity for identity in plan.identities if identity in existing)
+    if duplicates:
+        formatted = ", ".join(sorted(_format_domain_identity(identity) for identity in duplicates))
+        raise EcosystemRegistryInstallError(
+            f"domain packages already registered or duplicated in install plan: {formatted}"
+        )
 
 
 def _profile_domains_registered(
@@ -1125,11 +1263,15 @@ __all__ = [
     "EcosystemCatalogCheck",
     "EcosystemCatalogSummary",
     "EcosystemCatalogVerificationReport",
+    "EcosystemDomainPackageInstallCandidate",
+    "EcosystemDomainPackageInstallPlan",
+    "EcosystemDomainPackageInstallResult",
     "EcosystemDomainPackageRef",
     "EcosystemEvaluationDatasetRef",
     "EcosystemEvaluationDatasetSuiteRef",
     "EcosystemProfileRef",
     "EcosystemRegistryIndex",
+    "EcosystemRegistryInstallError",
     "EcosystemRegistryItemNotFoundError",
     "EcosystemRegistryManifest",
     "EcosystemRegistryNotFoundError",
@@ -1140,8 +1282,10 @@ __all__ = [
     "build_ecosystem_registry_manifest",
     "decode_ecosystem_registry_manifest",
     "encode_ecosystem_registry_manifest",
+    "install_ecosystem_domain_packages",
     "load_ecosystem_catalog",
     "load_ecosystem_registry_index",
     "load_ecosystem_registry_manifest",
+    "plan_ecosystem_domain_package_install",
     "write_ecosystem_registry_manifest",
 ]

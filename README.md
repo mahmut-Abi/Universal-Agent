@@ -301,7 +301,8 @@ event-sourcing model or production migration system.
   `EcosystemCatalog.verify()` adds an ecosystem integrity check for missing Profile Domain,
   Evaluation Dataset Domain and Domain Package dependency references. `EcosystemRegistryManifest`
   exports the discovered package, dataset and Profile references as a stable local registry manifest
-  with a read-only query index and file-backed registry store for CLI/CI and future
+  with a read-only query index, file-backed registry store and local Domain Package install plan
+  that validates referenced package manifests before registering them for CLI/CI and future
   package-registry adapters.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
@@ -412,6 +413,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p7_ecosystem_catalog.py
 .venv/bin/python examples/p7_ecosystem_registry_manifest.py
 .venv/bin/python examples/p7_ecosystem_registry_store.py
+.venv/bin/python examples/p7_ecosystem_registry_install.py
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli distributed health
 .venv/bin/python -m universal_agent.cli distributed snapshot
