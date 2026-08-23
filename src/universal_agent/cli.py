@@ -48,6 +48,7 @@ from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
 from universal_agent.core import (
     Decision,
     DecisionType,
+    DomainIdentity,
     ErrorCode,
     EventId,
     ExecutionStatus,
@@ -69,7 +70,15 @@ from universal_agent.distributed import (
     WorkItemId,
     WorkItemNotFoundError,
 )
-from universal_agent.domain import DomainLoader, DomainPackageNotFoundError, RuntimeBuilder
+from universal_agent.domain import (
+    DomainLoader,
+    DomainPackageCompatibility,
+    DomainPackageNotFoundError,
+    DomainPackageScaffoldResult,
+    DomainPackageScaffoldSpec,
+    RuntimeBuilder,
+    scaffold_domain_package,
+)
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.console import (
     build_evaluation_console_snapshot,
@@ -425,6 +434,35 @@ def build_parser() -> argparse.ArgumentParser:
     domain_package_show = domain_package_commands.add_parser("show")
     domain_package_show.add_argument("name")
     domain_package_show.add_argument("version", nargs="?")
+    domain_package_scaffold = domain_package_commands.add_parser("scaffold")
+    domain_package_scaffold.add_argument("name")
+    domain_package_scaffold.add_argument("--description", required=True)
+    domain_package_scaffold.add_argument("--output", required=True)
+    domain_package_scaffold.add_argument("--version", default="0.1.0")
+    domain_package_scaffold.add_argument("--api-version", default="agent.nantian.dev/v1alpha1")
+    domain_package_scaffold.add_argument("--author")
+    domain_package_scaffold.add_argument("--entrypoint")
+    domain_package_scaffold.add_argument("--ontology", action="append", default=[])
+    domain_package_scaffold.add_argument("--capability", action="append", default=[])
+    domain_package_scaffold.add_argument("--tool", action="append", default=[])
+    domain_package_scaffold.add_argument("--policy", action="append", default=[])
+    domain_package_scaffold.add_argument("--procedure", action="append", default=[])
+    domain_package_scaffold.add_argument("--knowledge", action="append", default=[])
+    domain_package_scaffold.add_argument("--evaluator", action="append", default=[])
+    domain_package_scaffold.add_argument("--context-provider", action="append", default=[])
+    domain_package_scaffold.add_argument("--prompt", action="append", default=[])
+    domain_package_scaffold.add_argument("--dependency", action="append", default=[])
+    domain_package_scaffold.add_argument("--required-tool", action="append", default=[])
+    domain_package_scaffold.add_argument("--runtime-api")
+    domain_package_scaffold.add_argument("--domain-api")
+    domain_package_scaffold.add_argument(
+        "--side-effects",
+        choices=("none", "reversible", "destructive"),
+        default="none",
+    )
+    domain_package_scaffold.add_argument("--requires-confirmation", action="store_true")
+    domain_package_scaffold.add_argument("--tag", action="append", default=[])
+    domain_package_scaffold.add_argument("--force", action="store_true")
 
     profile = commands.add_parser("profile")
     profile_commands = profile.add_subparsers(dest="profile_command", required=True)
@@ -1074,7 +1112,72 @@ def _dispatch_domain_packages(
             ),
         )
         return
+    if command == "scaffold":
+        result = scaffold_domain_package(
+            Path(cast(str, args.output)),
+            _domain_package_scaffold_spec(args),
+            overwrite=cast(bool, args.force),
+        )
+        _write_json(out, domain_package_scaffold_body(result))
+        return
     raise ValueError(f"unknown domain package command: {command}")
+
+
+def _domain_package_scaffold_spec(args: argparse.Namespace) -> DomainPackageScaffoldSpec:
+    return DomainPackageScaffoldSpec(
+        name=cast(str, args.name),
+        version=cast(str, args.version),
+        description=cast(str, args.description),
+        api_version=cast(str, args.api_version),
+        author=cast(str | None, args.author),
+        entrypoint=cast(str | None, args.entrypoint),
+        ontology=tuple(cast(list[str], args.ontology)),
+        capabilities=tuple(cast(list[str], args.capability)),
+        tools=tuple(cast(list[str], args.tool)),
+        policies=tuple(cast(list[str], args.policy)),
+        procedures=tuple(cast(list[str], args.procedure)),
+        knowledge=tuple(cast(list[str], args.knowledge)),
+        evaluators=tuple(cast(list[str], args.evaluator)),
+        context_providers=tuple(cast(list[str], args.context_provider)),
+        prompts=tuple(cast(list[str], args.prompt)),
+        dependencies=tuple(
+            _parse_domain_identity(item) for item in cast(list[str], args.dependency)
+        ),
+        required_tools=tuple(cast(list[str], args.required_tool)),
+        compatibility=DomainPackageCompatibility(
+            runtime_api=cast(str | None, args.runtime_api),
+            domain_api=cast(str | None, args.domain_api),
+        ),
+        security=immutable_json(
+            {
+                "side_effects": cast(str, args.side_effects),
+                "requires_confirmation": cast(bool, args.requires_confirmation),
+            }
+        ),
+        tags=tuple(cast(list[str], args.tag)),
+    )
+
+
+def _parse_domain_identity(value: str) -> DomainIdentity:
+    if "@" not in value:
+        raise ValueError(f"domain package dependency must be name@version: {value}")
+    name, version = value.split("@", 1)
+    if not name.strip() or not version.strip():
+        raise ValueError(f"domain package dependency must be name@version: {value}")
+    return DomainIdentity(name, version)
+
+
+def domain_package_scaffold_body(result: DomainPackageScaffoldResult) -> dict[str, object]:
+    package = result.package
+    return {
+        "status": "updated" if result.overwritten else "created",
+        "name": package.identity.name,
+        "version": package.identity.version,
+        "root_path": str(package.root_path),
+        "manifest_path": str(package.manifest_path),
+        "created_paths": [str(path) for path in result.created_paths],
+        "written_paths": [str(path) for path in result.written_paths],
+    }
 
 
 def _dispatch_config(

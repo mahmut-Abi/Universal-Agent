@@ -12,8 +12,8 @@ HTTP bridge, a local CLI adapter, local file-backed session/event persistence, t
 operations surface with cost tracking and OpenTelemetry-shaped trace span projections, a P3.7
 Evaluation Harness / Replay foundation, the first read-only TUI and Web Console snapshot
 foundations, the first P6 local scheduler, queue, worker registry, worker, lock, snapshot, health,
-and coordinator primitives, and the first P7 Domain Package registry metadata foundation. The v3.0
-design document also defines later productization layers such as production
+and coordinator primitives, and the first P7 Domain Package registry metadata plus SDK scaffold
+foundation. The v3.0 design document also defines later productization layers such as production
 database persistence, long-lived event delivery, OpenTelemetry exporters, optional Multi-Agent,
 distributed runtime, and ecosystem packaging.
 
@@ -275,6 +275,8 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   packaged Domain runtimes, including entrypoint, resources, dependencies, required tools,
   compatibility and security metadata. `DomainPackageRegistry` can validate, install and discover
   package manifests without importing Domain code or mutating Kernel runtime state.
+  `DomainPackageScaffoldSpec` and `scaffold_domain_package` provide the first Domain SDK surface for
+  generating a standard package layout and validated manifest from typed metadata.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
@@ -359,6 +361,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p6_worker_lifecycle.py
 .venv/bin/python examples/p6_distributed_lock_lifecycle.py
 .venv/bin/python examples/p7_domain_package_registry.py
+.venv/bin/python examples/p7_domain_package_scaffold.py
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli distributed health
 .venv/bin/python -m universal_agent.cli distributed snapshot

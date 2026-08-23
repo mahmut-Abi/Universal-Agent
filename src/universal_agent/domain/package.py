@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,17 @@ from typing import Any
 from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
 
 DOMAIN_PACKAGE_MANIFEST = "manifest.json"
+DOMAIN_PACKAGE_DIRECTORIES = (
+    "ontology",
+    "capabilities",
+    "tools",
+    "policies",
+    "procedures",
+    "knowledge",
+    "evaluators",
+    "context_providers",
+    "prompts",
+)
 
 
 class DomainPackageValidationError(ValueError):
@@ -91,6 +103,65 @@ class DomainPackage:
         return self.manifest.identity
 
 
+@dataclass(frozen=True, slots=True)
+class DomainPackageScaffoldSpec:
+    """SDK input for generating a package-shaped Domain Runtime directory."""
+
+    name: str
+    description: str
+    version: str = "0.1.0"
+    api_version: str = "agent.nantian.dev/v1alpha1"
+    author: str | None = None
+    entrypoint: str | None = None
+    ontology: tuple[str, ...] = ()
+    capabilities: tuple[str, ...] = ()
+    tools: tuple[str, ...] = ()
+    policies: tuple[str, ...] = ()
+    procedures: tuple[str, ...] = ()
+    knowledge: tuple[str, ...] = ()
+    evaluators: tuple[str, ...] = ()
+    context_providers: tuple[str, ...] = ()
+    prompts: tuple[str, ...] = ()
+    dependencies: tuple[DomainIdentity, ...] = ()
+    required_tools: tuple[str, ...] = ()
+    compatibility: DomainPackageCompatibility = field(default_factory=DomainPackageCompatibility)
+    security: JsonMapping = field(default_factory=immutable_json)
+    tags: tuple[str, ...] = ()
+    metadata: JsonMapping = field(default_factory=immutable_json)
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.name, "name")
+        _require_non_empty(self.description, "description")
+        _require_non_empty(self.version, "version")
+        _require_non_empty(self.api_version, "api_version")
+        if self.author is not None:
+            _require_non_empty(self.author, "author")
+        if self.entrypoint is not None:
+            _require_non_empty(self.entrypoint, "entrypoint")
+        _validate_strings("ontology", self.ontology)
+        _validate_strings("capabilities", self.capabilities)
+        _validate_strings("tools", self.tools)
+        _validate_strings("policies", self.policies)
+        _validate_strings("procedures", self.procedures)
+        _validate_strings("knowledge", self.knowledge)
+        _validate_strings("evaluators", self.evaluators)
+        _validate_strings("context_providers", self.context_providers)
+        _validate_strings("prompts", self.prompts)
+        _validate_strings("required_tools", self.required_tools)
+        _validate_strings("tags", self.tags)
+        for index, dependency in enumerate(self.dependencies):
+            _require_non_empty(dependency.name, f"dependencies[{index}].name")
+            _require_non_empty(dependency.version, f"dependencies[{index}].version")
+
+
+@dataclass(frozen=True, slots=True)
+class DomainPackageScaffoldResult:
+    package: DomainPackage
+    created_paths: tuple[Path, ...]
+    written_paths: tuple[Path, ...]
+    overwritten: bool = False
+
+
 class DomainPackageRegistry:
     """P7 metadata registry for independently packaged Domain runtimes.
 
@@ -166,6 +237,133 @@ def load_domain_package(path: Path) -> DomainPackage:
     )
 
 
+def build_domain_package_manifest(spec: DomainPackageScaffoldSpec) -> DomainPackageManifest:
+    metadata = dict(spec.metadata)
+    metadata.update(
+        {
+            "name": spec.name,
+            "version": spec.version,
+            "description": spec.description,
+        }
+    )
+    if spec.author is not None:
+        metadata["author"] = spec.author
+    if spec.tags:
+        metadata["tags"] = list(spec.tags)
+    return DomainPackageManifest(
+        api_version=spec.api_version,
+        kind="DomainPackage",
+        name=spec.name,
+        version=spec.version,
+        description=spec.description,
+        author=spec.author,
+        entrypoint=spec.entrypoint or _default_entrypoint(spec.name),
+        ontology=spec.ontology,
+        capabilities=spec.capabilities,
+        tools=spec.tools,
+        policies=spec.policies,
+        procedures=spec.procedures,
+        knowledge=spec.knowledge,
+        evaluators=spec.evaluators,
+        context_providers=spec.context_providers,
+        prompts=spec.prompts,
+        dependencies=spec.dependencies,
+        required_tools=spec.required_tools,
+        compatibility=spec.compatibility,
+        security=immutable_json(spec.security),
+        tags=spec.tags,
+        metadata=immutable_json(metadata),
+    )
+
+
+def encode_domain_package_manifest(manifest: DomainPackageManifest) -> dict[str, Any]:
+    metadata = dict(manifest.metadata)
+    metadata.update(
+        {
+            "name": manifest.name,
+            "version": manifest.version,
+            "description": manifest.description,
+        }
+    )
+    if manifest.author is not None:
+        metadata["author"] = manifest.author
+    if manifest.tags:
+        metadata["tags"] = list(manifest.tags)
+    payload: dict[str, Any] = {
+        "apiVersion": manifest.api_version,
+        "kind": manifest.kind,
+        "metadata": metadata,
+        "entrypoint": manifest.entrypoint,
+        "ontology": list(manifest.ontology),
+        "capabilities": list(manifest.capabilities),
+        "tools": list(manifest.tools),
+        "policies": list(manifest.policies),
+        "procedures": list(manifest.procedures),
+        "knowledge": list(manifest.knowledge),
+        "evaluators": list(manifest.evaluators),
+        "context_providers": list(manifest.context_providers),
+        "prompts": list(manifest.prompts),
+        "dependencies": [
+            {"name": dependency.name, "version": dependency.version}
+            for dependency in manifest.dependencies
+        ],
+        "required_tools": list(manifest.required_tools),
+    }
+    compatibility: dict[str, str] = {}
+    if manifest.compatibility.runtime_api is not None:
+        compatibility["runtime_api"] = manifest.compatibility.runtime_api
+    if manifest.compatibility.domain_api is not None:
+        compatibility["domain_api"] = manifest.compatibility.domain_api
+    if compatibility:
+        payload["compatibility"] = compatibility
+    if manifest.security:
+        payload["security"] = dict(manifest.security)
+    return payload
+
+
+def scaffold_domain_package(
+    root: Path,
+    spec: DomainPackageScaffoldSpec,
+    *,
+    overwrite: bool = False,
+) -> DomainPackageScaffoldResult:
+    """Create a package skeleton that can be validated by DomainPackageRegistry."""
+
+    manifest = build_domain_package_manifest(spec)
+    manifest_path = root / DOMAIN_PACKAGE_MANIFEST
+    if manifest_path.exists() and not overwrite:
+        raise DomainPackageValidationError(
+            f"domain package manifest already exists: {manifest_path}"
+        )
+
+    created_paths: list[Path] = []
+    if not root.exists():
+        root.mkdir(parents=True)
+        created_paths.append(root)
+    elif not root.is_dir():
+        raise DomainPackageValidationError(f"domain package root must be a directory: {root}")
+
+    for directory_name in DOMAIN_PACKAGE_DIRECTORIES:
+        directory = root / directory_name
+        if not directory.exists():
+            directory.mkdir()
+            created_paths.append(directory)
+        elif not directory.is_dir():
+            raise DomainPackageValidationError(
+                f"domain package scaffold path must be a directory: {directory}"
+            )
+
+    overwritten = manifest_path.exists()
+    _write_json_manifest(manifest_path, encode_domain_package_manifest(manifest))
+    package = load_domain_package(root)
+    return DomainPackageScaffoldResult(
+        package=package,
+        created_paths=tuple(created_paths),
+        written_paths=(manifest_path,),
+        overwritten=overwritten,
+    )
+
+
 def decode_domain_package_manifest(payload: JsonMapping) -> DomainPackageManifest:
     metadata = _mapping(payload, "metadata")
     compatibility = _optional_mapping(payload, "compatibility")
@@ -234,6 +432,14 @@ def _load_json_object(path: Path) -> JsonMapping:
     if not isinstance(loaded, dict):
         raise DomainPackageValidationError("domain package manifest must be a JSON object")
     return immutable_json(loaded)
+
+
+def _write_json_manifest(path: Path, payload: JsonMapping) -> None:
+    tmp_path = path.with_name(path.name + ".tmp")
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    tmp_path.replace(path)
 
 
 def _mapping(payload: JsonMapping, key: str) -> JsonMapping:
@@ -315,6 +521,17 @@ def _identity_tuple(payload: JsonMapping, key: str) -> tuple[DomainIdentity, ...
 def _require_non_empty(value: str, field_name: str) -> None:
     if not value.strip():
         raise DomainPackageValidationError(f"{field_name} must not be empty")
+
+
+def _validate_strings(field_name: str, values: Sequence[str]) -> None:
+    for index, value in enumerate(values):
+        if not isinstance(value, str) or not value.strip():
+            raise DomainPackageValidationError(f"{field_name}[{index}] must be a non-empty string")
+
+
+def _default_entrypoint(name: str) -> str:
+    module_name = name.replace("-", "_")
+    return f"{module_name}.domain:build_domain"
 
 
 def _format_identity(identity: DomainIdentity) -> str:

@@ -8,10 +8,15 @@ import pytest
 from universal_agent.core import DomainIdentity, JsonMapping, JsonValue
 from universal_agent.domain import (
     AmbiguousDomainPackageError,
+    DomainPackageCompatibility,
     DomainPackageNotFoundError,
     DomainPackageRegistry,
+    DomainPackageScaffoldSpec,
     DomainPackageValidationError,
+    build_domain_package_manifest,
     decode_domain_package_manifest,
+    encode_domain_package_manifest,
+    scaffold_domain_package,
 )
 
 
@@ -146,3 +151,95 @@ def test_domain_package_registry_reports_duplicate_missing_and_ambiguous_package
 def test_domain_package_registry_refuses_missing_manifest(tmp_path: Path) -> None:
     with pytest.raises(DomainPackageNotFoundError, match="manifest not found"):
         DomainPackageRegistry().install(tmp_path / "missing-domain")
+
+
+def test_build_domain_package_manifest_encodes_sdk_spec_with_default_entrypoint() -> None:
+    manifest = build_domain_package_manifest(
+        DomainPackageScaffoldSpec(
+            name="ai-ops",
+            description="AI operations domain package",
+            author="Runtime Team",
+            ontology=("Incident",),
+            capabilities=("inspect_incident",),
+            tools=("incident_api_get",),
+            policies=("read_only",),
+            evaluators=("incident_status",),
+            context_providers=("incident_context",),
+            dependencies=(DomainIdentity("observability", "1.0.0"),),
+            required_tools=("incident_api",),
+            compatibility=DomainPackageCompatibility(
+                runtime_api=">=0.1,<1",
+                domain_api="agent.nantian.dev/v1alpha1",
+            ),
+            tags=("ops", "ai"),
+        )
+    )
+
+    payload = encode_domain_package_manifest(manifest)
+    decoded = decode_domain_package_manifest(payload)
+
+    assert manifest.entrypoint == "ai_ops.domain:build_domain"
+    assert decoded.identity == DomainIdentity("ai-ops", "0.1.0")
+    assert decoded.capabilities == ("inspect_incident",)
+    assert decoded.dependencies == (DomainIdentity("observability", "1.0.0"),)
+    assert decoded.tags == ("ops", "ai")
+
+
+def test_scaffold_domain_package_creates_registry_loadable_package(tmp_path: Path) -> None:
+    package_root = tmp_path / "ai-ops-domain"
+
+    result = scaffold_domain_package(
+        package_root,
+        DomainPackageScaffoldSpec(
+            name="ai-ops",
+            version="1.0.0",
+            description="AI operations domain package",
+            capabilities=("inspect_incident", "resolve_incident"),
+            tools=("incident_api_get", "incident_api_resolve"),
+            policies=("incident_safety",),
+            required_tools=("incident_api",),
+            security={"side_effects": "reversible"},
+            tags=("ops",),
+        ),
+    )
+    installed = DomainPackageRegistry().install(package_root)
+    payload = json.loads((package_root / "manifest.json").read_text(encoding="utf-8"))
+
+    assert result.package.identity == DomainIdentity("ai-ops", "1.0.0")
+    assert installed.manifest.capabilities == ("inspect_incident", "resolve_incident")
+    assert installed.manifest.security["side_effects"] == "reversible"
+    assert payload["entrypoint"] == "ai_ops.domain:build_domain"
+    assert (package_root / "ontology").is_dir()
+    assert (package_root / "context_providers").is_dir()
+    assert result.written_paths == (package_root / "manifest.json",)
+
+
+def test_scaffold_domain_package_requires_force_to_overwrite_manifest(tmp_path: Path) -> None:
+    package_root = tmp_path / "database-domain"
+    scaffold_domain_package(
+        package_root,
+        DomainPackageScaffoldSpec(name="database", description="Database domain package"),
+    )
+
+    with pytest.raises(DomainPackageValidationError, match="already exists"):
+        scaffold_domain_package(
+            package_root,
+            DomainPackageScaffoldSpec(
+                name="database",
+                version="2.0.0",
+                description="Updated database domain package",
+            ),
+        )
+
+    result = scaffold_domain_package(
+        package_root,
+        DomainPackageScaffoldSpec(
+            name="database",
+            version="2.0.0",
+            description="Updated database domain package",
+        ),
+        overwrite=True,
+    )
+
+    assert result.overwritten is True
+    assert result.package.identity == DomainIdentity("database", "2.0.0")

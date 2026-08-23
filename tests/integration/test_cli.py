@@ -692,6 +692,113 @@ async def test_cli_exposes_domain_package_catalog_commands() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_scaffolds_domain_package(tmp_path: Path) -> None:
+    service, _ = build_cli_service([])
+    package_root = tmp_path / "ai-ops-domain"
+    output = StringIO()
+    duplicate_output = StringIO()
+    duplicate_error = StringIO()
+    force_output = StringIO()
+
+    status = await run_cli(
+        [
+            "domain-packages",
+            "scaffold",
+            "ai-ops",
+            "--description",
+            "AI operations domain package",
+            "--output",
+            str(package_root),
+            "--version",
+            "1.0.0",
+            "--author",
+            "Runtime Team",
+            "--ontology",
+            "Incident",
+            "--capability",
+            "inspect_incident",
+            "--tool",
+            "incident_api_get",
+            "--policy",
+            "incident_safety",
+            "--procedure",
+            "diagnose_incident",
+            "--knowledge",
+            "incident lifecycle",
+            "--evaluator",
+            "incident_status",
+            "--context-provider",
+            "incident_context",
+            "--prompt",
+            "incident_prompt",
+            "--dependency",
+            "observability@1.0.0",
+            "--required-tool",
+            "incident_api",
+            "--runtime-api",
+            ">=0.1,<1",
+            "--domain-api",
+            "agent.nantian.dev/v1alpha1",
+            "--side-effects",
+            "reversible",
+            "--requires-confirmation",
+            "--tag",
+            "ops",
+        ],
+        service=service,
+        stdout=output,
+    )
+    duplicate_status = await run_cli(
+        [
+            "domain-packages",
+            "scaffold",
+            "ai-ops",
+            "--description",
+            "AI operations domain package",
+            "--output",
+            str(package_root),
+        ],
+        service=service,
+        stdout=duplicate_output,
+        stderr=duplicate_error,
+    )
+    force_status = await run_cli(
+        [
+            "domain-packages",
+            "scaffold",
+            "ai-ops",
+            "--description",
+            "Updated AI operations domain package",
+            "--output",
+            str(package_root),
+            "--version",
+            "1.1.0",
+            "--force",
+        ],
+        service=service,
+        stdout=force_output,
+    )
+
+    payload = read_json(output)
+    force_payload = read_json(force_output)
+    manifest = json.loads((package_root / "manifest.json").read_text(encoding="utf-8"))
+    assert status == 0
+    assert duplicate_status == 2
+    assert force_status == 0
+    assert payload["status"] == "created"
+    assert payload["name"] == "ai-ops"
+    assert payload["version"] == "1.0.0"
+    assert payload["manifest_path"] == str(package_root / "manifest.json")
+    assert "already exists" in duplicate_error.getvalue()
+    assert force_payload["status"] == "updated"
+    assert force_payload["version"] == "1.1.0"
+    assert manifest["metadata"]["version"] == "1.1.0"
+    assert manifest["entrypoint"] == "ai_ops.domain:build_domain"
+    assert (package_root / "capabilities").is_dir()
+    assert (package_root / "context_providers").is_dir()
+
+
+@pytest.mark.asyncio
 async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
