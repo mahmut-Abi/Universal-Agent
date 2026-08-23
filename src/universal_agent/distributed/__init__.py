@@ -19,6 +19,15 @@ from universal_agent.distributed.queue import (
     WorkItemStatus,
 )
 from universal_agent.distributed.scheduler import WorkKind, WorkScheduler
+from universal_agent.distributed.snapshot import (
+    DistributedLockSnapshot,
+    DistributedRuntimeSnapshot,
+    WorkerRegistrySnapshot,
+    WorkerSnapshot,
+    WorkItemSnapshot,
+    WorkQueueSnapshot,
+    build_distributed_runtime_snapshot,
+)
 from universal_agent.distributed.worker import (
     WorkerRunResult,
     WorkerRunStatus,
@@ -40,6 +49,8 @@ __all__ = [
     "DistributedLockLeaseId",
     "DistributedLockLeaseLostError",
     "DistributedLockOwnerId",
+    "DistributedLockSnapshot",
+    "DistributedRuntimeSnapshot",
     "InMemoryDistributedLockRegistry",
     "InMemoryWorkQueue",
     "InMemoryWorkerRegistry",
@@ -52,15 +63,20 @@ __all__ = [
     "WorkItem",
     "WorkItemId",
     "WorkItemNotFoundError",
+    "WorkItemSnapshot",
     "WorkItemStatus",
     "WorkKind",
+    "WorkQueueSnapshot",
     "WorkQueueWorker",
     "WorkScheduler",
     "WorkerId",
     "WorkerLease",
     "WorkerNotFoundError",
     "WorkerRecord",
+    "WorkerRegistrySnapshot",
     "WorkerRunResult",
     "WorkerRunStatus",
+    "WorkerSnapshot",
     "WorkerStatus",
+    "build_distributed_runtime_snapshot",
 ]
