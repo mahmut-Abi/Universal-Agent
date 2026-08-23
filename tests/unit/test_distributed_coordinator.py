@@ -36,6 +36,32 @@ def test_distributed_runtime_coordinator_wires_scheduler_snapshot_and_health() -
     assert health.status is DistributedHealthStatus.OK
 
 
+def test_distributed_runtime_coordinator_schedules_session_work_and_reports_state() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=30,
+        now=now,
+    )
+
+    result = coordinator.schedule_session(
+        SessionId("session-1"),
+        priority=5,
+        max_attempts=2,
+        available_at=now,
+        now=now,
+    )
+
+    assert result.scheduled_work_item.kind == "agent_session"
+    assert result.scheduled_work_item.session_id == SessionId("session-1")
+    assert result.scheduled_work_item.priority == 5
+    assert result.scheduled_work_item.max_attempts == 2
+    assert result.snapshot.work_queue.queued_count == 1
+    assert result.health.status is DistributedHealthStatus.OK
+
+
 def test_distributed_runtime_coordinator_runs_expiry_sweep_with_one_timestamp() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()

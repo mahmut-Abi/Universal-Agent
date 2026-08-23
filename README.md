@@ -268,7 +268,7 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   stops leasing when draining/offline/lost, and maps handler completion, retry, failure and cancellation
   back into queue state; `InMemoryDistributedLockRegistry` adds leased lock acquisition, heartbeat,
   conflict rejection, expiry and release; `InMemoryWorkerRegistry` tracks worker registration,
-  heartbeat, draining, offline and lost states; `DistributedRuntimeCoordinator` exposes snapshot, health, expiry sweep and work-item cancellation over the queue, lock and worker primitives without changing AgentRuntime semantics; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view; `build_distributed_health_report` projects that snapshot into HA-oriented checks for worker capacity, backlog, lease freshness, leased-work owners and worker registry health.
+  heartbeat, draining, offline and lost states; `DistributedRuntimeCoordinator` exposes session scheduling, snapshot, health, expiry sweep and work-item cancellation over the queue, lock and worker primitives without changing AgentRuntime semantics; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view; `build_distributed_health_report` projects that snapshot into HA-oriented checks for worker capacity, backlog, lease freshness, leased-work owners and worker registry health.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
@@ -349,10 +349,12 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p6_distributed_health.py
 .venv/bin/python examples/p6_distributed_coordinator.py
 .venv/bin/python examples/p6_distributed_cancel.py
+.venv/bin/python examples/p6_distributed_schedule.py
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli distributed health
 .venv/bin/python -m universal_agent.cli distributed snapshot
 .venv/bin/python -m universal_agent.cli distributed expire
+.venv/bin/python -m universal_agent.cli distributed schedule-session session-1 --priority 5 --max-attempts 2
 .venv/bin/python -m universal_agent.cli distributed cancel work-1 --reason "operator cancelled queued work"
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-profile.json --store-backend sqlite --store-path .tmp/runtime.sqlite3 --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-profile.json config show

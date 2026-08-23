@@ -2,6 +2,7 @@ from universal_agent.distributed.coordinator import (
     DistributedCancellationResult,
     DistributedMaintenanceResult,
     DistributedRuntimeCoordinator,
+    DistributedSchedulingResult,
 )
 from universal_agent.distributed.health import (
     DistributedCapacityGap,
@@ -72,6 +73,7 @@ __all__ = [
     "DistributedMaintenanceResult",
     "DistributedRuntimeCoordinator",
     "DistributedRuntimeSnapshot",
+    "DistributedSchedulingResult",
     "InMemoryDistributedLockRegistry",
     "InMemoryWorkQueue",
     "InMemoryWorkerRegistry",

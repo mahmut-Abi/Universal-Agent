@@ -24,6 +24,7 @@ from universal_agent.distributed import (
     DistributedMaintenanceResult,
     DistributedRuntimeCoordinator,
     DistributedRuntimeSnapshot,
+    DistributedSchedulingResult,
     WorkItemId,
 )
 from universal_agent.domain import ActiveDomain, RuntimeComponents
@@ -355,6 +356,26 @@ class RuntimeService:
         if self._distributed_coordinator is None:
             return None
         return self._distributed_coordinator.health(now=now)
+
+    def distributed_schedule_session(
+        self,
+        session_id: SessionId,
+        *,
+        payload: JsonMapping | None = None,
+        priority: int = 0,
+        max_attempts: int = 3,
+        now: datetime | None = None,
+    ) -> DistributedSchedulingResult | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.schedule_session(
+            session_id,
+            payload=payload,
+            priority=priority,
+            max_attempts=max_attempts,
+            available_at=now,
+            now=now,
+        )
 
     def distributed_expire(
         self,

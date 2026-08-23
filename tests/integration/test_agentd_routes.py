@@ -692,6 +692,71 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agentd_distributed_schedule_route_schedules_session_work() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=999_999_999,
+        now=now,
+    )
+    service, _ = build_service([], distributed_coordinator=coordinator)
+    app = AgentdApp(service)
+
+    scheduled = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/sessions/session-1/schedule",
+            immutable_json(
+                {
+                    "payload": {"goal": "verify workload health"},
+                    "priority": 4,
+                    "max_attempts": 2,
+                }
+            ),
+        )
+    )
+    wrong_method = await app.handle(
+        HttpRequest("GET", "/v1/distributed/sessions/session-1/schedule")
+    )
+    invalid_priority = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/sessions/session-1/schedule",
+            immutable_json({"priority": "high"}),
+        )
+    )
+    missing_service, _ = build_service([])
+    missing_coordinator = await AgentdApp(missing_service).handle(
+        HttpRequest("POST", "/v1/distributed/sessions/session-1/schedule")
+    )
+
+    assert scheduled.status_code == 200
+    scheduled_item = scheduled.body["scheduled_work_item"]
+    assert isinstance(scheduled_item, dict)
+    assert scheduled_item["kind"] == "agent_session"
+    assert scheduled_item["status"] == "queued"
+    snapshot = scheduled.body["snapshot"]
+    assert isinstance(snapshot, dict)
+    work_queue = snapshot["work_queue"]
+    assert isinstance(work_queue, dict)
+    assert work_queue["queued_count"] == 1
+    assert scheduled.body["health"]["status"] == "ok"
+    assert wrong_method.status_code == 405
+    assert invalid_priority.status_code == 400
+    assert invalid_priority.body["error"] == {
+        "code": "bad_request",
+        "message": "distributed schedule priority must be an integer",
+    }
+    assert missing_coordinator.status_code == 404
+    assert missing_coordinator.body["error"] == {
+        "code": "not_found",
+        "message": "distributed runtime coordinator is not configured",
+    }
+
+
+@pytest.mark.asyncio
 async def test_agentd_distributed_cancel_route_cancels_work_item() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()

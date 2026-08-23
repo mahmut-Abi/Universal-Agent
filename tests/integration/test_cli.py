@@ -671,6 +671,41 @@ async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_distributed_schedule_session_command() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=999_999_999,
+        now=now,
+    )
+    service, _ = build_cli_service([], distributed_coordinator=coordinator)
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "distributed",
+            "schedule-session",
+            "session-1",
+            "--priority",
+            "7",
+            "--max-attempts",
+            "2",
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["scheduled_work_item"]["kind"] == "agent_session"
+    assert payload["scheduled_work_item"]["status"] == "queued"
+    assert payload["snapshot"]["work_queue"]["queued_count"] == 1
+    assert payload["health"]["status"] == "ok"
+
+
+@pytest.mark.asyncio
 async def test_cli_config_show_exposes_runtime_configuration() -> None:
     service, _ = build_cli_service([])
     output = StringIO()

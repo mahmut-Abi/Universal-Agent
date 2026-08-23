@@ -144,6 +144,40 @@ def test_runtime_service_exposes_optional_distributed_runtime_views() -> None:
     assert health.status.value == "ok"
 
 
+def test_runtime_service_exposes_distributed_session_scheduling() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    service, _ = build_service([])
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=30,
+        now=now,
+    )
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    distributed_service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+        distributed_coordinator=coordinator,
+    )
+
+    result = distributed_service.distributed_schedule_session(
+        SessionId("session-1"),
+        payload=immutable_json({"goal": "verify workload health"}),
+        priority=3,
+        max_attempts=2,
+        now=now,
+    )
+
+    assert service.distributed_schedule_session(SessionId("session-1")) is None
+    assert result is not None
+    assert result.scheduled_work_item.session_id == SessionId("session-1")
+    assert result.scheduled_work_item.payload["goal"] == "verify workload health"
+    assert result.scheduled_work_item.priority == 3
+    assert result.snapshot.work_queue.queued_count == 1
+
+
 def test_runtime_service_exposes_distributed_expiry_sweep() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()

@@ -24,6 +24,7 @@ from universal_agent.distributed import (
     DistributedHealthReport,
     DistributedMaintenanceResult,
     DistributedRuntimeSnapshot,
+    DistributedSchedulingResult,
     WorkItem,
     WorkItemId,
     WorkItemNotFoundError,
@@ -280,6 +281,31 @@ class AgentdApp:
             if health is None:
                 return not_found("distributed runtime coordinator is not configured")
             return json_response(distributed_health_body(health))
+        distributed_schedule_session_id = _distributed_schedule_session_route(path)
+        if distributed_schedule_session_id is not None:
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            payload = request.body.get("payload")
+            if payload is not None and not isinstance(payload, Mapping):
+                return bad_request("distributed schedule payload must be an object")
+            priority = request.body.get("priority", 0)
+            if not isinstance(priority, int):
+                return bad_request("distributed schedule priority must be an integer")
+            max_attempts = request.body.get("max_attempts", 3)
+            if not isinstance(max_attempts, int):
+                return bad_request("distributed schedule max_attempts must be an integer")
+            try:
+                scheduling = self._service.distributed_schedule_session(
+                    distributed_schedule_session_id,
+                    payload=None if payload is None else immutable_json(payload),
+                    priority=priority,
+                    max_attempts=max_attempts,
+                )
+            except ValueError as exc:
+                return bad_request(str(exc))
+            if scheduling is None:
+                return not_found("distributed runtime coordinator is not configured")
+            return json_response(distributed_scheduling_body(scheduling))
         if path == "/v1/distributed/expire":
             if method != "POST":
                 return method_not_allowed(("POST",))
@@ -816,6 +842,18 @@ def distributed_maintenance_body(view: DistributedMaintenanceResult) -> JsonMapp
                 }
                 for worker in view.expired_workers
             ],
+            "snapshot": dict(distributed_snapshot_body(view.snapshot)),
+            "health": dict(distributed_health_body(view.health)),
+        }
+    )
+
+
+def distributed_scheduling_body(view: DistributedSchedulingResult) -> JsonMapping:
+    return immutable_json(
+        {
+            "scheduled_work_item": distributed_work_item_summary_body(
+                view.scheduled_work_item
+            ),
             "snapshot": dict(distributed_snapshot_body(view.snapshot)),
             "health": dict(distributed_health_body(view.health)),
         }
@@ -1397,6 +1435,18 @@ def _console_domain_route(path: str) -> tuple[str | None, str | None]:
     ):
         return segments[2], segments[3]
     return None, None
+
+
+def _distributed_schedule_session_route(path: str) -> SessionId | None:
+    segments = tuple(segment for segment in path.split("/") if segment)
+    if (
+        len(segments) == 5
+        and segments[:3] == ("v1", "distributed", "sessions")
+        and segments[3].strip()
+        and segments[4] == "schedule"
+    ):
+        return SessionId(segments[3])
+    return None
 
 
 def _distributed_cancel_route(path: str) -> WorkItemId | None:
