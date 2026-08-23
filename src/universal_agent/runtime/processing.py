@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from universal_agent.core import (
+    DomainIdentity,
     EvaluationContext,
     EvaluationResult,
     Observation,
+    PendingAction,
     Task,
     immutable_json,
 )
@@ -31,6 +33,10 @@ class ProcessingResult:
     next_task: Task | None
 
 
+class EvaluationRoutingError(ValueError):
+    pass
+
+
 class ObservationProcessor:
     def __init__(self, components: RuntimeComponents) -> None:
         self._components = components
@@ -39,6 +45,8 @@ class ObservationProcessor:
         self,
         session: SessionRuntimeState,
         observation: Observation,
+        *,
+        action: PendingAction | None = None,
     ) -> ProcessingResult:
         state = session.state
         extractors = self._components.evidence_extractors or (StructuredEvidenceExtractor(),)
@@ -67,7 +75,8 @@ class ObservationProcessor:
                 )
             )
         )
-        evaluator = self._components.evaluators.resolve(self._components.evaluator_names[0])
+        evaluator_name = self._select_evaluator_name(action)
+        evaluator = self._components.evaluators.resolve(evaluator_name)
         criteria = {
             fact.claim: fact.value
             for fact in world.facts
@@ -95,3 +104,14 @@ class ObservationProcessor:
             next_task = current if current.id != previous_id else None
         session.sync_current_task()
         return ProcessingResult(extracted, evaluation, created, next_task)
+
+    def _select_evaluator_name(self, action: PendingAction | None) -> str:
+        if action is None or not action.domain_name or not action.domain_version:
+            return self._components.evaluator_names[0]
+        identity = DomainIdentity(action.domain_name, action.domain_version)
+        names = self._components.domain_composition.evaluator_names_for(identity)
+        if not names:
+            raise EvaluationRoutingError(
+                f"no evaluator registered for action domain: {identity.name}@{identity.version}"
+            )
+        return names[0]

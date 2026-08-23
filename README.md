@@ -294,8 +294,10 @@ The Kubernetes Domain uses injected backends. Tests and examples use fake backen
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
 while `KubernetesRemediationDomain` adds the fake-backed mutation path. Multi-domain operation now
 has a conservative `DomainManager` / `DomainComposition` foundation: Domain identities,
-capabilities and tools are validated before activation, Profiles may declare ordered Domain sets,
-and snapshots persist the activated composition for safe resume. Cross-domain World Model reasoning,
+capabilities and tools are validated before activation, Domain Loader rejects empty evaluator sets,
+Observation processing routes evaluation by the executed action's Domain, Profiles may declare
+ordered Domain sets, and snapshots persist the activated composition for safe resume.
+Cross-domain World Model reasoning,
 production database migration systems, packaging, marketplace behavior, optional Multi-Agent Runtime, and real
 Kubernetes API remediation remain outside P3.2. Persistence includes in-memory stores plus local file-backed and SQLite-backed session/event adapters with
 snapshot isolation; event sourcing and schema migration are not included.
@@ -336,6 +338,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p1_kubernetes_domain.py
 .venv/bin/python examples/p2_evidence_recovery.py
 .venv/bin/python examples/p3_memory.py
+.venv/bin/python examples/p3_multi_domain_evaluator_routing.py
 .venv/bin/python examples/p3_2_kubernetes_remediation.py
 .venv/bin/python examples/p3_5_runtime_api.py
 .venv/bin/python examples/p3_5_runtime_service.py

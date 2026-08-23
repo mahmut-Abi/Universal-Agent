@@ -142,6 +142,12 @@ class DomainComposition:
     def evaluator_names(self) -> tuple[str, ...]:
         return tuple(name for domain in self.domains for name in domain.manifest.evaluator_names)
 
+    def evaluator_names_for(self, identity: DomainIdentity) -> tuple[str, ...]:
+        for domain in self.domains:
+            if domain.identity == identity:
+                return domain.manifest.evaluator_names
+        return ()
+
     def _validate_unique_identities(self) -> None:
         seen: set[DomainIdentity] = set()
         duplicates: set[DomainIdentity] = set()
@@ -270,6 +276,10 @@ class DomainLoader:
         if capability_names != set(manifest.capability_names):
             raise DomainValidationError("manifest capability references do not match registrations")
         evaluator_names = {item.name for item in evaluators}
+        if not evaluator_names:
+            raise DomainValidationError("domain requires at least one evaluator")
+        if not manifest.evaluator_names:
+            raise DomainValidationError("domain manifest requires at least one evaluator")
         if evaluator_names != set(manifest.evaluator_names):
             raise DomainValidationError("manifest evaluator references do not match registrations")
         for tool in tools:

@@ -35,7 +35,7 @@ from universal_agent.runtime.actions import (
     ConfirmationRequired,
 )
 from universal_agent.runtime.events import EventSink
-from universal_agent.runtime.processing import ObservationProcessor
+from universal_agent.runtime.processing import EvaluationRoutingError, ObservationProcessor
 from universal_agent.runtime.session import (
     DomainMismatchError,
     SessionRuntimeState,
@@ -365,7 +365,17 @@ class AgentRuntime:
         observation = outcome.observation
         if observation.status is not ObservationStatus.SUCCEEDED:
             return await self._plan_recovery(session, outcome)
-        processed = self._observation_processor.process(session, observation)
+        try:
+            processed = self._observation_processor.process(
+                session,
+                observation,
+                action=outcome.pending,
+            )
+        except EvaluationRoutingError as exc:
+            return await self._settle(
+                session,
+                fail(session, ErrorCode.EVALUATION_FAILED, str(exc)),
+            )
         for evidence in processed.evidence:
             await self._emit(
                 state,

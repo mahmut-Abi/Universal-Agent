@@ -16,14 +16,32 @@ from universal_agent import (
     Task,
     immutable_json,
 )
+from universal_agent.context import DomainContextProvider
 from universal_agent.core import (
+    CapabilityCategory,
+    CapabilityDefinition,
+    DomainManifest,
+    DomainMetadata,
     ErrorCode,
+    EvaluationContext,
+    EvaluationResult,
+    EvaluationStatus,
     ExecutionStatus,
     GoalStatus,
     JsonMapping,
     TaskStatus,
+    ToolDefinition,
 )
+from universal_agent.domain import DomainComposition
 from universal_agent.domains.kubernetes import KubernetesDomain
+from universal_agent.evaluation import Evaluator
+from universal_agent.evidence import EvidenceExtractor
+from universal_agent.memory import MemoryRecord
+from universal_agent.policy import Policy
+from universal_agent.recovery import RecoveryRule
+from universal_agent.tasks import TaskExpander
+from universal_agent.tools import Tool
+from universal_agent.world import WorldUpdater
 
 
 class FakeKubernetesBackend:
@@ -34,6 +52,111 @@ class FakeKubernetesBackend:
     async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.calls += 1
         return immutable_json({"healthy": next(self._observations)})
+
+
+class StaticTool:
+    def __init__(
+        self,
+        name: str,
+        capability: str,
+        output: JsonMapping,
+    ) -> None:
+        self.definition = ToolDefinition(name, name, (capability,))
+        self._output = output
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        return self._output
+
+
+class CriterionEvaluator:
+    def __init__(self, name: str, criterion: str) -> None:
+        self.name = name
+        self._criterion = criterion
+
+    def evaluate(self, context: EvaluationContext) -> EvaluationResult:
+        complete = context.satisfied_criteria.get(self._criterion) is True
+        matched = {self._criterion: True} if complete else {}
+        return EvaluationResult(
+            EvaluationStatus.COMPLETED if complete else EvaluationStatus.INCOMPLETE,
+            f"{self._criterion} satisfied" if complete else f"{self._criterion} missing",
+            self.name,
+            immutable_json(matched),
+            complete,
+            complete,
+        )
+
+
+class TaskOnlyEvaluator:
+    name = "task-only"
+
+    def evaluate(self, context: EvaluationContext) -> EvaluationResult:
+        return EvaluationResult(
+            EvaluationStatus.COMPLETED,
+            "task is complete but goal is not",
+            self.name,
+            immutable_json({"task_ready": True}),
+            task_completed=True,
+            goal_completed=False,
+        )
+
+
+class SyntheticDomain:
+    def __init__(
+        self,
+        *,
+        name: str,
+        capability: str,
+        tool_name: str,
+        evaluator: Evaluator,
+        output: JsonMapping,
+    ) -> None:
+        self.manifest = DomainManifest(
+            "agent.nantian.dev/v1alpha1",
+            "Domain",
+            DomainMetadata(name, "1.0.0", name),
+            ("Thing",),
+            (capability,),
+            (evaluator.name,),
+        )
+        self._capability = capability
+        self._tool = StaticTool(tool_name, capability, output)
+        self._evaluator = evaluator
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        return (
+            CapabilityDefinition(
+                self._capability,
+                self._capability,
+                CapabilityCategory.OBSERVATION,
+            ),
+        )
+
+    def tools(self) -> tuple[Tool, ...]:
+        return (self._tool,)
+
+    def policies(self) -> tuple[Policy, ...]:
+        return ()
+
+    def evaluators(self) -> tuple[Evaluator, ...]:
+        return (self._evaluator,)
+
+    def context_providers(self) -> tuple[DomainContextProvider, ...]:
+        return ()
+
+    def evidence_extractors(self) -> tuple[EvidenceExtractor, ...]:
+        return ()
+
+    def world_updaters(self) -> tuple[WorldUpdater, ...]:
+        return ()
+
+    def task_expanders(self) -> tuple[TaskExpander, ...]:
+        return ()
+
+    def recovery_rules(self) -> tuple[RecoveryRule, ...]:
+        return ()
+
+    def memories(self) -> tuple[MemoryRecord, ...]:
+        return ()
 
 
 def execute_probe() -> Decision:
@@ -135,6 +258,98 @@ async def test_finish_is_rejected_without_evaluation() -> None:
     assert result.error_code is ErrorCode.INVALID_STATE
     assert state.goal.status is GoalStatus.FAILED
     assert events.events[-1].type == "GoalFailed"
+
+
+@pytest.mark.asyncio
+async def test_finish_requires_goal_completed_evaluation_flag() -> None:
+    domain = DomainLoader().load(
+        SyntheticDomain(
+            name="task-only",
+            capability="inspect_task",
+            tool_name="inspect_task_tool",
+            evaluator=TaskOnlyEvaluator(),
+            output=immutable_json({"task_ready": True}),
+        )
+    )
+    components = RuntimeBuilder().build(domain)
+    events = InMemoryEventSink()
+    runtime = AgentRuntime(
+        model=ScriptedModelAdapter(
+            [
+                Decision(
+                    DecisionType.EXECUTE,
+                    "Inspect task readiness",
+                    capability="inspect_task",
+                    expected_observations=("task_ready",),
+                ),
+                finish(),
+            ]
+        ),
+        state_store=InMemoryStateStore(),
+        components=components,
+        event_sink=events,
+    )
+
+    result = await runtime.run(
+        Goal("Verify task and goal", (SuccessCriterion("goal_ready", True),)),
+        Task("Inspect task", ("task_ready",)),
+    )
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error_code is ErrorCode.INVALID_STATE
+    assert any(event.type == "EvaluationCompleted" for event in events.events)
+    assert events.events[-1].type == "GoalFailed"
+
+
+@pytest.mark.asyncio
+async def test_multi_domain_evaluator_routes_by_action_domain() -> None:
+    loader = DomainLoader()
+    alpha = loader.load(
+        SyntheticDomain(
+            name="alpha",
+            capability="inspect_alpha",
+            tool_name="alpha_inspect",
+            evaluator=CriterionEvaluator("alpha-evaluator", "alpha_ready"),
+            output=immutable_json({"alpha_ready": True}),
+        )
+    )
+    beta = loader.load(
+        SyntheticDomain(
+            name="beta",
+            capability="inspect_beta",
+            tool_name="beta_inspect",
+            evaluator=CriterionEvaluator("beta-evaluator", "beta_ready"),
+            output=immutable_json({"beta_ready": True}),
+        )
+    )
+    components = RuntimeBuilder().build(DomainComposition((alpha, beta)))
+    events = InMemoryEventSink()
+    runtime = AgentRuntime(
+        model=ScriptedModelAdapter(
+            [
+                Decision(
+                    DecisionType.EXECUTE,
+                    "Inspect beta readiness",
+                    capability="inspect_beta",
+                    expected_observations=("beta_ready",),
+                ),
+                finish(),
+            ]
+        ),
+        state_store=InMemoryStateStore(),
+        components=components,
+        event_sink=events,
+    )
+
+    result = await runtime.run(
+        Goal("Verify beta", (SuccessCriterion("beta_ready", True),)),
+        Task("Inspect beta", ("beta_ready",)),
+    )
+    evaluation_event = next(event for event in events.events if event.type == "EvaluationCompleted")
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert evaluation_event.data["evaluator"] == "beta-evaluator"
+    assert events.events[-1].type == "GoalCompleted"
 
 
 @pytest.mark.asyncio

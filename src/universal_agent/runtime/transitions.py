@@ -115,6 +115,8 @@ def finish(session: SessionRuntimeState) -> Transition:
         or state.current_task.status is not TaskStatus.COMPLETED
         or evaluation is None
         or evaluation.status is not EvaluationStatus.COMPLETED
+        or not evaluation.task_completed
+        or not evaluation.goal_completed
     ):
         return fail(
             session,

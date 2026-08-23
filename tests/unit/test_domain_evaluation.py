@@ -182,6 +182,24 @@ def test_domain_loader_rejects_invalid_capability_reference() -> None:
         DomainLoader().load(domain)
 
 
+def test_domain_loader_rejects_empty_evaluator_set() -> None:
+    class NoEvaluatorDomain(TestDomain):
+        manifest = DomainManifest(
+            "agent.nantian.dev/v1alpha1",
+            "Domain",
+            DomainMetadata("no-evaluator", "1.0.0", "No evaluator"),
+            ("Thing",),
+            ("inspect",),
+            (),
+        )
+
+        def evaluators(self) -> tuple[Evaluator, ...]:
+            return ()
+
+    with pytest.raises(DomainValidationError, match="requires at least one evaluator"):
+        DomainLoader().load(NoEvaluatorDomain())
+
+
 def test_criteria_evaluator_requires_matching_observation_state() -> None:
     goal = Goal("Verify", (SuccessCriterion("healthy", True),))
     task = Task("Inspect", ("healthy",))

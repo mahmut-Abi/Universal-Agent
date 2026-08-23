@@ -40,6 +40,8 @@ Goal
 - SessionSnapshot、Task Graph、Evidence replay 和 World replay；
 - advisory Memory，不把 Memory 当作 Evidence 或完成信号；
 - Domain Manifest、Domain Composition、Kubernetes fake-backed remediation；
+- Domain Loader 空 evaluator 拒绝、按 action Domain 的 evaluator routing，以及
+  `goal_completed` 显式完成门禁；
 - idempotency key、参数 hash、uncertain execution 和 side-effect resource lock。
 
 相关实现入口：
@@ -87,9 +89,8 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
 
 以下项目应视为当前明确的工程边界，而不是隐藏能力：
 
-1. **Multi-Domain 仍是 composition foundation。** Domain 的 evaluator、extractor、updater 和
-   expander 尚未具备完整的 owner/routing 语义；当前 Observation processing 仍存在“选择第一个
-   evaluator”的简化路径。
+1. **Multi-Domain 仍是 composition foundation。** Observation processing 已按执行 action 所属
+   Domain 选择 evaluator；但 extractor、updater 和 expander 尚未具备完整的 owner/routing 语义。
 2. **World Model 主要是事实模型。** `WorldEntity`/`WorldRelation` 类型已存在，但默认内存实现
    仍以 fact projection 为主，跨 Domain 图推理尚未完成。
 3. **P6 不是网络分布式系统。** Queue、Worker、Registry、Lock 和 Coordinator 都是本地内存
@@ -113,10 +114,10 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
 在本次审计环境中执行的结果：
 
 ```text
-pytest --disable-warnings      336 passed, 5 skipped
-ruff format --check           passed, 196 files formatted
+pytest --disable-warnings      339 passed, 5 skipped
+ruff format --check           passed, 197 files formatted
 ruff check                    passed
-mypy (strict)                 passed, 196 source files
+mypy (strict)                 passed, 197 source files
 ```
 
 被跳过的测试是本地 socket bind 受到执行环境权限限制。测试运行还报告了较多 Python 3.14 /
@@ -124,11 +125,9 @@ pytest-asyncio event loop 弃用警告；这些警告尚未影响当前测试结
 
 ## 推荐推进顺序
 
-### P0：先收紧正确性门禁
+### P0：继续收紧正确性门禁
 
-- Domain Loader 拒绝空 evaluator；
-- 完成判定显式检查 `goal_completed`；
-- 增加双 Domain evaluator/routing 和损坏 Snapshot 测试；
+- 增加损坏 Snapshot 测试；
 - 明确 agentd Profile 的“单 Profile”或“多 Runtime 路由”语义。
 
 ### P1：完成单 Agent Runtime 的可靠性

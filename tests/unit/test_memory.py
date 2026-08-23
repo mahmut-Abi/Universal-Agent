@@ -14,7 +14,7 @@ from universal_agent.core import (
 )
 from universal_agent.domain import DomainLoader, DomainValidationError, RuntimeBuilder
 from universal_agent.domains.kubernetes import KubernetesDomain
-from universal_agent.evaluation import Evaluator
+from universal_agent.evaluation import CriteriaEvaluator, Evaluator
 from universal_agent.evidence import EvidenceExtractor
 from universal_agent.memory import (
     InMemoryMemoryStore,
@@ -172,7 +172,7 @@ def test_domain_loader_rejects_episodic_memory() -> None:
                 DomainMetadata("episodic-test", "0.1.0", ""),
                 (),
                 (),
-                (),
+                ("criteria",),
             )
 
         def capabilities(self) -> tuple[CapabilityDefinition, ...]:
@@ -185,7 +185,7 @@ def test_domain_loader_rejects_episodic_memory() -> None:
             return ()
 
         def evaluators(self) -> tuple[Evaluator, ...]:
-            return ()
+            return (CriteriaEvaluator(),)
 
         def context_providers(self) -> tuple[DomainContextProvider, ...]:
             return ()
