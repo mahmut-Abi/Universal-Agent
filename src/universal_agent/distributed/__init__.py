@@ -1,3 +1,7 @@
+from universal_agent.distributed.coordinator import (
+    DistributedMaintenanceResult,
+    DistributedRuntimeCoordinator,
+)
 from universal_agent.distributed.health import (
     DistributedCapacityGap,
     DistributedExpiringLease,
@@ -63,6 +67,8 @@ __all__ = [
     "DistributedLockLeaseLostError",
     "DistributedLockOwnerId",
     "DistributedLockSnapshot",
+    "DistributedMaintenanceResult",
+    "DistributedRuntimeCoordinator",
     "DistributedRuntimeSnapshot",
     "InMemoryDistributedLockRegistry",
     "InMemoryWorkQueue",

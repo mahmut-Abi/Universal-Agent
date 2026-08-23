@@ -11,7 +11,7 @@ pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter,
 HTTP bridge, a local CLI adapter, local file-backed session/event persistence, the first P3.6
 operations surface with cost tracking and OpenTelemetry-shaped trace span projections, a P3.7
 Evaluation Harness / Replay foundation, the first read-only TUI and Web Console snapshot
-foundations, and the first P6 local scheduler, queue, worker registry, worker, lock, and snapshot primitives. The v3.0 design document also defines later productization layers such as production
+foundations, and the first P6 local scheduler, queue, worker registry, worker, lock, snapshot, health, and coordinator primitives. The v3.0 design document also defines later productization layers such as production
 database persistence, long-lived event delivery, OpenTelemetry exporters, optional Multi-Agent,
 distributed runtime, and ecosystem packaging.
 
@@ -292,7 +292,7 @@ The design roadmap now separates semantic runtime maturity from productization:
   doctor, evaluation suites, quality gates, replay, and deterministic test mode.
 - P5: Read-only TUI/Web application views for runtime, session, evidence, world, domain and settings inspection.
 - P6: Distributed Runtime foundations — typed local Scheduler, Work Queue, Worker Registry, Worker Lease, Worker handler
-  execution, leased lock, Runtime Snapshot, Health Report, Heartbeat, retry, cancellation and lease expiry primitives.
+  execution, leased lock, Runtime Snapshot, Health Report, Coordinator, Heartbeat, retry, cancellation and lease expiry primitives.
 - P7: Ecosystem packaging and registry work.
 
 `PROMPT.md` is intentionally not kept as a project authority. Development instructions live in
@@ -346,6 +346,8 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p6_distributed_lock.py
 .venv/bin/python examples/p6_worker_registry.py
 .venv/bin/python examples/p6_distributed_snapshot.py
+.venv/bin/python examples/p6_distributed_health.py
+.venv/bin/python examples/p6_distributed_coordinator.py
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-profile.json --store-backend sqlite --store-path .tmp/runtime.sqlite3 --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-profile.json config show
