@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from universal_agent.core import (
     CapabilityCategory,
@@ -10,6 +11,7 @@ from universal_agent.core import (
     EventId,
     ExecutionStatus,
     Goal,
+    GoalId,
     GoalStatus,
     JsonMapping,
     JsonValue,
@@ -17,8 +19,11 @@ from universal_agent.core import (
     RiskLevel,
     SessionId,
     SideEffect,
+    SuccessCriterion,
     Task,
+    TaskId,
     immutable_json,
+    utc_now,
 )
 from universal_agent.distributed import (
     DistributedCancellationResult,
@@ -33,6 +38,7 @@ from universal_agent.distributed import (
     DistributedWorkerLifecycleResult,
     WorkerId,
     WorkerRunResult,
+    WorkHandler,
     WorkHandlerResult,
     WorkItem,
     WorkItemId,
@@ -456,6 +462,27 @@ class RuntimeService:
             now=now,
         )
 
+    def distributed_schedule_goal(
+        self,
+        goal: Goal,
+        task: Task,
+        *,
+        priority: int = 0,
+        max_attempts: int = 3,
+        idempotency_key: str | None = None,
+        now: datetime | None = None,
+    ) -> DistributedSchedulingResult | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.schedule_goal(
+            payload=_goal_work_payload(goal, task),
+            idempotency_key=idempotency_key or _goal_work_idempotency_key(goal, task),
+            priority=priority,
+            max_attempts=max_attempts,
+            available_at=now,
+            now=now,
+        )
+
     def distributed_register_worker(
         self,
         worker_id: WorkerId,
@@ -608,7 +635,7 @@ class RuntimeService:
         worker = WorkQueueWorker(
             queue=self._distributed_coordinator.queue,
             worker_id=worker_id,
-            handlers={WorkKind.AGENT_SESSION.value: self._handle_distributed_session_work},
+            handlers=self._distributed_work_handlers(),
             lease_ttl_seconds=lease_ttl_seconds,
             worker_registry=self._distributed_coordinator.workers,
             worker_ttl_seconds=worker_ttl_seconds,
@@ -630,13 +657,19 @@ class RuntimeService:
         worker = WorkQueueWorker(
             queue=self._distributed_coordinator.queue,
             worker_id=worker_id,
-            handlers={WorkKind.AGENT_SESSION.value: self._handle_distributed_session_work},
+            handlers=self._distributed_work_handlers(),
             lease_ttl_seconds=lease_ttl_seconds,
             worker_registry=self._distributed_coordinator.workers,
             worker_ttl_seconds=worker_ttl_seconds,
             heartbeat_interval_seconds=heartbeat_interval_seconds,
         )
         return await worker.run_until_idle(max_items=max_items)
+
+    def _distributed_work_handlers(self) -> Mapping[str, WorkHandler]:
+        return {
+            WorkKind.AGENT_SESSION.value: self._handle_distributed_session_work,
+            WorkKind.AGENT_GOAL.value: self._handle_distributed_goal_work,
+        }
 
     async def _handle_distributed_session_work(self, item: WorkItem) -> WorkHandlerResult:
         if item.session_id is None:
@@ -676,6 +709,23 @@ class RuntimeService:
             )
         return WorkHandlerResult.failed(
             f"distributed session resume failed: {run.result.reason}",
+            retry=False,
+        )
+
+    async def _handle_distributed_goal_work(self, item: WorkItem) -> WorkHandlerResult:
+        try:
+            goal, task = _goal_task_from_work_payload(item.payload)
+        except ValueError as exc:
+            return WorkHandlerResult.failed(f"invalid agent_goal work payload: {exc}", retry=False)
+        run = await self.run_goal(goal, task)
+        if run.result.status is ExecutionStatus.COMPLETED:
+            return WorkHandlerResult.completed(f"session completed: {run.result.session_id}")
+        if run.result.status is ExecutionStatus.WAITING:
+            return WorkHandlerResult.completed(f"session waiting: {run.result.session_id}")
+        if run.result.status is ExecutionStatus.CANCELLED:
+            return WorkHandlerResult.completed(f"session cancelled: {run.result.session_id}")
+        return WorkHandlerResult.failed(
+            f"distributed goal run failed: {run.result.reason}",
             retry=False,
         )
 
@@ -1040,6 +1090,150 @@ def _copy_json_value(value: JsonValue) -> JsonValue:
     if isinstance(value, dict):
         return {key: _copy_json_value(item) for key, item in value.items()}
     return value
+
+
+def _goal_work_payload(goal: Goal, task: Task) -> JsonMapping:
+    criteria: list[JsonValue] = []
+    for criterion in goal.success_criteria:
+        criteria.append(
+            {
+                "key": criterion.key,
+                "expected": _copy_json_value(criterion.expected),
+            }
+        )
+    payload: dict[str, JsonValue] = {
+        "goal": {
+            "id": str(goal.id),
+            "description": goal.description,
+            "success_criteria": criteria,
+            "created_at": goal.created_at.isoformat(),
+        },
+        "task": {
+            "id": str(task.id),
+            "description": task.description,
+            "required_criteria": list(task.required_criteria),
+            "created_at": task.created_at.isoformat(),
+        },
+    }
+    return immutable_json(payload)
+
+
+def _goal_work_idempotency_key(goal: Goal, task: Task) -> str:
+    return f"goal:{goal.id}:{task.id}"
+
+
+def _goal_task_from_work_payload(payload: Mapping[str, JsonValue]) -> tuple[Goal, Task]:
+    goal_payload = _object_payload_field(payload, "goal", "goal")
+    task_payload = _object_payload_field(payload, "task", "task")
+    return (
+        Goal(
+            _required_string_payload_field(goal_payload, "description", "goal.description"),
+            _success_criteria_from_payload(goal_payload),
+            id=GoalId(_required_string_payload_field(goal_payload, "id", "goal.id")),
+            created_at=_datetime_payload_field(goal_payload, "created_at", "goal.created_at"),
+        ),
+        Task(
+            _required_string_payload_field(task_payload, "description", "task.description"),
+            _string_tuple_payload_field(
+                task_payload,
+                "required_criteria",
+                "task.required_criteria",
+            ),
+            id=TaskId(_required_string_payload_field(task_payload, "id", "task.id")),
+            created_at=_datetime_payload_field(task_payload, "created_at", "task.created_at"),
+        ),
+    )
+
+
+def _object_payload_field(
+    payload: Mapping[str, JsonValue],
+    key: str,
+    field: str,
+) -> Mapping[str, JsonValue]:
+    value = payload.get(key)
+    if not isinstance(value, dict):
+        raise ValueError(f"{field} must be an object")
+    return cast(Mapping[str, JsonValue], value)
+
+
+def _success_criteria_from_payload(
+    payload: Mapping[str, JsonValue],
+) -> tuple[SuccessCriterion, ...]:
+    value = payload.get("success_criteria")
+    if not isinstance(value, list):
+        raise ValueError("goal.success_criteria must be a list")
+    if not value:
+        raise ValueError("goal.success_criteria must not be empty")
+    criteria: list[SuccessCriterion] = []
+    for index, item in enumerate(value):
+        field = f"goal.success_criteria[{index}]"
+        if not isinstance(item, dict):
+            raise ValueError(f"{field} must be an object")
+        item_payload = cast(Mapping[str, JsonValue], item)
+        criteria.append(
+            SuccessCriterion(
+                _required_string_payload_field(item_payload, "key", f"{field}.key"),
+                _required_json_payload_field(item_payload, "expected", f"{field}.expected"),
+            )
+        )
+    return tuple(criteria)
+
+
+def _string_tuple_payload_field(
+    payload: Mapping[str, JsonValue],
+    key: str,
+    field: str,
+) -> tuple[str, ...]:
+    value = payload.get(key)
+    if not isinstance(value, list):
+        raise ValueError(f"{field} must be a list")
+    values: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str):
+            raise ValueError(f"{field}[{index}] must be a string")
+        if not item.strip():
+            raise ValueError(f"{field}[{index}] must not be empty")
+        values.append(item)
+    return tuple(values)
+
+
+def _required_string_payload_field(
+    payload: Mapping[str, JsonValue],
+    key: str,
+    field: str,
+) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    if not value.strip():
+        raise ValueError(f"{field} must not be empty")
+    return value
+
+
+def _required_json_payload_field(
+    payload: Mapping[str, JsonValue],
+    key: str,
+    field: str,
+) -> JsonValue:
+    if key not in payload:
+        raise ValueError(f"{field} is required")
+    return _copy_json_value(payload[key])
+
+
+def _datetime_payload_field(
+    payload: Mapping[str, JsonValue],
+    key: str,
+    field: str,
+) -> datetime:
+    value = payload.get(key)
+    if value is None:
+        return utc_now()
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be an ISO datetime string")
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"{field} must be an ISO datetime string") from exc
 
 
 def _not_ready_reason(

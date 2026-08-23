@@ -26,6 +26,7 @@ from universal_agent import (
     WorkerRunStatus,
     WorkerStatus,
     WorkItemStatus,
+    WorkKind,
     immutable_json,
 )
 from universal_agent.core import (
@@ -423,7 +424,10 @@ async def test_runtime_service_distributed_worker_resumes_scheduled_session() ->
     assert worker_result.work_item.status is WorkItemStatus.COMPLETED
     assert completed.goal_status is not None
     assert completed.goal_status.value == "completed"
-    assert coordinator.workers.get(WorkerId("worker-a")).capabilities == ("agent_session",)
+    assert coordinator.workers.get(WorkerId("worker-a")).capabilities == (
+        "agent_goal",
+        "agent_session",
+    )
 
 
 @pytest.mark.asyncio
@@ -459,6 +463,50 @@ async def test_runtime_service_distributed_worker_runs_until_idle() -> None:
     assert coordinator.snapshot().work_queue.completed_count == 2
     assert (await service.get_session(first.result.session_id)).goal_status.value == "completed"
     assert (await service.get_session(second.result.session_id)).goal_status.value == "completed"
+
+
+@pytest.mark.asyncio
+async def test_runtime_service_distributed_worker_runs_scheduled_goal() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, _ = build_service(
+        [inspect_workload(), finish()],
+        distributed_coordinator=coordinator,
+    )
+
+    scheduled = service.distributed_schedule_goal(*goal_task(), priority=4)
+    worker_result = await service.distributed_run_worker_once(WorkerId("worker-a"))
+    sessions = await service.list_sessions()
+
+    assert scheduled is not None
+    assert scheduled.scheduled_work_item.kind == "agent_goal"
+    assert worker_result is not None
+    assert worker_result.status is WorkerRunStatus.COMPLETED
+    assert worker_result.work_item is not None
+    assert worker_result.work_item.status is WorkItemStatus.COMPLETED
+    assert worker_result.reason.startswith("session completed: ")
+    assert len(sessions) == 1
+    assert sessions[0].goal_description == "Verify workload health"
+    assert sessions[0].goal_status.value == "completed"
+
+
+@pytest.mark.asyncio
+async def test_runtime_service_distributed_worker_rejects_invalid_scheduled_goal_payload() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.queue.enqueue(
+        kind=WorkKind.AGENT_GOAL.value,
+        payload=immutable_json({"goal": "not an object"}),
+    )
+    service, _ = build_service([], distributed_coordinator=coordinator)
+
+    worker_result = await service.distributed_run_worker_once(WorkerId("worker-a"))
+    sessions = await service.list_sessions()
+
+    assert worker_result is not None
+    assert worker_result.status is WorkerRunStatus.FAILED
+    assert worker_result.work_item is not None
+    assert worker_result.work_item.status is WorkItemStatus.FAILED
+    assert worker_result.reason.startswith("invalid agent_goal work payload: ")
+    assert sessions == ()
 
 
 @pytest.mark.asyncio

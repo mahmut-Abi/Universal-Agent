@@ -150,6 +150,41 @@ class DistributedRuntimeCoordinator:
             health=health,
         )
 
+    def schedule_goal(
+        self,
+        *,
+        payload: JsonMapping,
+        idempotency_key: str,
+        priority: int = 0,
+        max_attempts: int = 3,
+        available_at: datetime | None = None,
+        now: datetime | None = None,
+        queued_backlog_warn_threshold: int = 100,
+        lease_expiry_warn_seconds: float = 10.0,
+        min_online_workers: int = 1,
+    ) -> DistributedSchedulingResult:
+        scheduled = self._scheduler.schedule_goal(
+            payload=payload,
+            idempotency_key=idempotency_key,
+            priority=priority,
+            max_attempts=max_attempts,
+            available_at=available_at,
+        )
+        timestamp = now or utc_now()
+        snapshot = self.snapshot()
+        health = build_distributed_health_report(
+            snapshot,
+            now=timestamp,
+            queued_backlog_warn_threshold=queued_backlog_warn_threshold,
+            lease_expiry_warn_seconds=lease_expiry_warn_seconds,
+            min_online_workers=min_online_workers,
+        )
+        return DistributedSchedulingResult(
+            scheduled_work_item=scheduled,
+            snapshot=snapshot,
+            health=health,
+        )
+
     def register_worker(
         self,
         worker_id: WorkerId,

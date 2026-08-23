@@ -318,6 +318,12 @@ def build_parser() -> argparse.ArgumentParser:
     distributed_schedule.add_argument("session_id")
     distributed_schedule.add_argument("--priority", type=int, default=0)
     distributed_schedule.add_argument("--max-attempts", type=int, default=3)
+    distributed_schedule_goal = distributed_commands.add_parser("schedule-goal")
+    distributed_schedule_goal.add_argument("profile")
+    distributed_schedule_goal.add_argument("goal")
+    distributed_schedule_goal.add_argument("--task", default="Run goal")
+    distributed_schedule_goal.add_argument("--priority", type=int, default=0)
+    distributed_schedule_goal.add_argument("--max-attempts", type=int, default=3)
     distributed_cancel = distributed_commands.add_parser("cancel")
     distributed_cancel.add_argument("work_item_id")
     distributed_cancel.add_argument(
@@ -673,6 +679,23 @@ async def _dispatch(
         if distributed_command == "schedule-session":
             scheduling = service.distributed_schedule_session(
                 SessionId(cast(str, args.session_id)),
+                priority=cast(int, args.priority),
+                max_attempts=cast(int, args.max_attempts),
+            )
+            if scheduling is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_scheduling_body(scheduling))
+            return
+        if distributed_command == "schedule-goal":
+            profile = cast(str, args.profile)
+            profile_error = service.profile_selection_error(profile)
+            if profile_error is not None:
+                raise ValueError(profile_error)
+            goal = Goal(cast(str, args.goal), (SuccessCriterion("healthy", True),))
+            task = Task(cast(str, args.task), ("healthy",))
+            scheduling = service.distributed_schedule_goal(
+                goal,
+                task,
                 priority=cast(int, args.priority),
                 max_attempts=cast(int, args.max_attempts),
             )

@@ -40,6 +40,33 @@ def test_work_scheduler_schedules_session_work_idempotently() -> None:
     assert len(queue.queued()) == 1
 
 
+def test_work_scheduler_schedules_goal_work_idempotently() -> None:
+    queue = InMemoryWorkQueue()
+    scheduler = WorkScheduler(queue)
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    payload = immutable_json({"goal": {"description": "verify workload"}})
+
+    first = scheduler.schedule_goal(
+        payload=payload,
+        idempotency_key="goal:verify-workload",
+        priority=5,
+        available_at=now,
+    )
+    second = scheduler.schedule_goal(
+        payload=immutable_json({"goal": {"description": "duplicate"}}),
+        idempotency_key="goal:verify-workload",
+        priority=1,
+        available_at=now,
+    )
+
+    assert first == second
+    assert first.kind == WorkKind.AGENT_GOAL.value
+    assert first.session_id is None
+    assert first.idempotency_key == "goal:verify-workload"
+    assert first.payload == payload
+    assert len(queue.queued()) == 1
+
+
 def test_work_scheduler_preserves_task_and_action_identity() -> None:
     queue = InMemoryWorkQueue()
     scheduler = WorkScheduler(queue)

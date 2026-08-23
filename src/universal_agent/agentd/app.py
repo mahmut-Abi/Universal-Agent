@@ -462,6 +462,35 @@ class AgentdApp:
             if lock_lifecycle is None:
                 return not_found("distributed runtime coordinator is not configured")
             return json_response(distributed_lock_lifecycle_body(lock_lifecycle))
+        if path == "/v1/distributed/goals":
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            priority = request.body.get("priority", 0)
+            if not isinstance(priority, int):
+                return bad_request("distributed schedule priority must be an integer")
+            max_attempts = request.body.get("max_attempts", 3)
+            if not isinstance(max_attempts, int):
+                return bad_request("distributed schedule max_attempts must be an integer")
+            try:
+                submission = parse_goal_submission(request.body)
+            except ValueError as exc:
+                return bad_request(str(exc))
+            if submission.profile_name is not None:
+                profile_error = self._service.profile_selection_error(submission.profile_name)
+                if profile_error is not None:
+                    return bad_request(profile_error)
+            try:
+                scheduling = self._service.distributed_schedule_goal(
+                    submission.goal,
+                    submission.task,
+                    priority=priority,
+                    max_attempts=max_attempts,
+                )
+            except ValueError as exc:
+                return bad_request(str(exc))
+            if scheduling is None:
+                return not_found("distributed runtime coordinator is not configured")
+            return json_response(distributed_scheduling_body(scheduling), status_code=202)
         distributed_schedule_session_id = _distributed_schedule_session_route(path)
         if distributed_schedule_session_id is not None:
             if method != "POST":

@@ -74,16 +74,17 @@ Goal
   以及 FileWorkQueue 版本/重复 work item 损坏文件拒绝；
 - RuntimeConfig.distributed_queue 与 RuntimeHost 组装 memory/file work queue；
 - capability-aware Worker leasing，以及长异步 handler 的 queue/worker lease heartbeat；
-- RuntimeService 本地 queue → worker → RuntimeAPI resume 闭环，用于已存在且无需确认的 waiting session；
+- RuntimeService 本地 queue → worker → RuntimeAPI 闭环，用于已存在且无需确认的 waiting session
+  resume，以及新 Goal 的 scheduled execution；
 - Worker Registry 以及 online/draining/offline/lost 状态；
 - leased distributed lock；
 - Runtime Snapshot、Health Report、Coordinator；
-- agentd/CLI 的 distributed snapshot、health、schedule、worker、lock、expire 视图，
+- agentd/CLI 的 distributed snapshot、health、schedule-session、schedule-goal、worker、lock、expire 视图，
   以及 CLI worker-run-once / bounded worker-run 本地执行入口。
 
 P6 当前遵循设计文档的“先做 local primitives”策略。它已有本地 waiting session resume
-闭环和 file-backed queue adapter，但还没有跨进程 Worker、并发安全队列锁，或新 Goal/Task/Action
-的自动调度执行闭环。
+闭环、新 Goal scheduled execution 闭环和 file-backed queue adapter，但还没有跨进程 Worker、
+并发安全队列锁，或 Task/Action 的自动调度执行闭环。
 
 ### P7：生态元数据基础
 
@@ -122,10 +123,10 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
 在本次审计环境中执行的结果：
 
 ```text
-pytest --disable-warnings      356 passed, 5 skipped
-ruff format --check           passed, 200 files checked
+pytest --disable-warnings      370 passed, 5 skipped
+ruff format --check           passed, 203 files checked
 ruff check                    passed
-mypy (strict)                 passed, 200 source files
+mypy (strict)                 passed, 203 source files
 ```
 
 被跳过的测试是本地 socket bind 受到执行环境权限限制。测试运行还报告了较多 Python 3.14 /
@@ -150,11 +151,12 @@ AgentRuntime
   → WorkScheduler
   → Persistent Queue
   → Worker
-  → AgentRuntime resume/settle
+  → AgentRuntime run/resume/settle
   → Session + Event Store
 ```
 
-在这个闭环之前，不应把 P6 描述为已经具备分布式 Agent 执行能力。
+当前已接通本地 memory/file queue 上的 waiting session resume 与 scheduled Goal execution；
+后续应继续补 Task/Action work kind 的执行语义、持久队列并发安全和 lease-aware 重复执行保护。
 
 ### P3：生产安全与外部适配
 

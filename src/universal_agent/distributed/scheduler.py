@@ -15,6 +15,7 @@ from universal_agent.distributed.queue import InMemoryWorkQueue, WorkItem, WorkI
 
 class WorkKind(StrEnum):
     AGENT_SESSION = "agent_session"
+    AGENT_GOAL = "agent_goal"
     TASK = "task"
     TOOL_ACTION = "tool_action"
 
@@ -43,6 +44,26 @@ class WorkScheduler:
             max_attempts=max_attempts,
             available_at=available_at,
             idempotency_key=_session_key(session_id),
+        )
+
+    def schedule_goal(
+        self,
+        *,
+        payload: JsonMapping | None = None,
+        idempotency_key: str,
+        priority: int = 0,
+        max_attempts: int = 3,
+        available_at: datetime | None = None,
+    ) -> WorkItem:
+        if not idempotency_key.strip():
+            raise ValueError("idempotency_key must not be empty")
+        return self._queue.enqueue(
+            kind=WorkKind.AGENT_GOAL.value,
+            payload=immutable_json(payload),
+            priority=priority,
+            max_attempts=max_attempts,
+            available_at=available_at,
+            idempotency_key=idempotency_key,
         )
 
     def schedule_task(

@@ -1183,6 +1183,37 @@ async def test_agentd_distributed_schedule_route_schedules_session_work() -> Non
 
 
 @pytest.mark.asyncio
+async def test_agentd_distributed_schedule_goal_route_runs_from_worker() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, _ = build_service(
+        [inspect_workload(), finish()],
+        distributed_coordinator=coordinator,
+    )
+    app = AgentdApp(service)
+
+    scheduled = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/goals",
+            goal_submission_body(),
+        )
+    )
+    worker = await app.handle(HttpRequest("POST", "/v1/distributed/workers/worker-a/run-once"))
+    sessions = await service.list_sessions()
+
+    assert scheduled.status_code == 202
+    scheduled_item = json_object(scheduled.body["scheduled_work_item"])
+    assert scheduled_item["kind"] == "agent_goal"
+    assert scheduled_item["status"] == "queued"
+    assert worker.status_code == 200
+    assert worker.body["status"] == "completed"
+    work_item = json_object(worker.body["work_item"])
+    assert work_item["status"] == "completed"
+    assert len(sessions) == 1
+    assert sessions[0].goal_status.value == "completed"
+
+
+@pytest.mark.asyncio
 async def test_agentd_distributed_cancel_route_cancels_work_item() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
