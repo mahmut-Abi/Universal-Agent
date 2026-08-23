@@ -3482,7 +3482,7 @@ High Availability
 Horizontal Scaling
 ```
 
-Initial implementation should start with local primitives: a typed Work Scheduler, Work Queue, Worker Registry, Worker Lease, Worker handler execution, leased lock, Runtime Snapshot, Heartbeat, cancellation and retry/expiry semantics that preserve Session/Task/Action identity before introducing networked workers.
+Initial implementation should start with local primitives: a typed Work Scheduler, Work Queue, Worker Registry, Worker Lease, registry-aware Worker handler execution, leased lock, Runtime Snapshot, Heartbeat, cancellation and retry/expiry semantics that preserve Session/Task/Action identity before introducing networked workers.
 
 ## P7 — Ecosystem
 

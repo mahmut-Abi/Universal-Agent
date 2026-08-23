@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from inspect import isawaitable
 
@@ -14,6 +15,11 @@ from universal_agent.distributed.queue import (
     WorkerId,
     WorkItem,
     WorkItemStatus,
+)
+from universal_agent.distributed.worker_state import (
+    InMemoryWorkerRegistry,
+    WorkerNotFoundError,
+    WorkerStatus,
 )
 
 
@@ -30,6 +36,7 @@ class WorkerRunStatus(StrEnum):
     CANCELLED = "cancelled"
     NO_WORK = "no_work"
     LEASE_LOST = "lease_lost"
+    WORKER_INACTIVE = "worker_inactive"
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,18 +84,31 @@ class WorkQueueWorker:
         worker_id: WorkerId,
         handlers: Mapping[str, WorkHandler],
         lease_ttl_seconds: float = 30.0,
+        worker_registry: InMemoryWorkerRegistry | None = None,
+        worker_ttl_seconds: float = 30.0,
+        worker_capabilities: tuple[str, ...] | None = None,
     ) -> None:
         if not str(worker_id).strip():
             raise ValueError("worker_id must not be empty")
         if lease_ttl_seconds <= 0:
             raise ValueError("lease_ttl_seconds must be positive")
+        if worker_ttl_seconds <= 0:
+            raise ValueError("worker_ttl_seconds must be positive")
         self._queue = queue
         self._worker_id = worker_id
         self._handlers = dict(handlers)
         self._lease_ttl_seconds = lease_ttl_seconds
+        self._worker_registry = worker_registry
+        self._worker_ttl_seconds = worker_ttl_seconds
+        self._worker_capabilities = (
+            tuple(sorted(self._handlers)) if worker_capabilities is None else worker_capabilities
+        )
 
     async def run_once(self) -> WorkerRunResult:
         now = utc_now()
+        inactive = self._prepare_worker(now=now)
+        if inactive is not None:
+            return inactive
         try:
             item = self._queue.lease(
                 worker_id=self._worker_id,
@@ -188,6 +208,39 @@ class WorkQueueWorker:
                 reason=str(exc),
             )
         return _worker_result_from_failed_item(self._worker_id, lease_id, failed)
+
+    def _prepare_worker(self, *, now: datetime) -> WorkerRunResult | None:
+        if self._worker_registry is None:
+            return None
+        try:
+            record = self._worker_registry.get(self._worker_id)
+        except WorkerNotFoundError:
+            self._worker_registry.register(
+                self._worker_id,
+                capabilities=self._worker_capabilities,
+                ttl_seconds=self._worker_ttl_seconds,
+                now=now,
+            )
+            return None
+        if record.status in {WorkerStatus.DRAINING, WorkerStatus.OFFLINE, WorkerStatus.LOST}:
+            return WorkerRunResult(
+                status=WorkerRunStatus.WORKER_INACTIVE,
+                worker_id=self._worker_id,
+                reason=f"worker is {record.status.value}",
+            )
+        try:
+            self._worker_registry.heartbeat(
+                self._worker_id,
+                ttl_seconds=self._worker_ttl_seconds,
+                now=now,
+            )
+        except WorkerNotFoundError as exc:
+            return WorkerRunResult(
+                status=WorkerRunStatus.WORKER_INACTIVE,
+                worker_id=self._worker_id,
+                reason=str(exc),
+            )
+        return None
 
     def _fail_leased_item(
         self,

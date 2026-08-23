@@ -264,7 +264,8 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   work kinds and idempotency keys; `InMemoryWorkQueue` provides typed `WorkItem`, `WorkerLease` and
   status contracts for local scheduler/worker adapters, including priority ordering, idempotent enqueue,
   lease acquisition, heartbeat renewal, retry-aware failure, cancellation and lease expiry; `WorkQueueWorker`
-  consumes those leases through per-kind handlers and maps handler completion, retry, failure and cancellation
+  consumes those leases through per-kind handlers, can register/heartbeat through `InMemoryWorkerRegistry`,
+  stops leasing when draining/offline/lost, and maps handler completion, retry, failure and cancellation
   back into queue state; `InMemoryDistributedLockRegistry` adds leased lock acquisition, heartbeat,
   conflict rejection, expiry and release; `InMemoryWorkerRegistry` tracks worker registration,
   heartbeat, draining, offline and lost states; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view without changing AgentRuntime semantics.
