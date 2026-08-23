@@ -37,7 +37,7 @@ from universal_agent.runtime.actions import (
 from universal_agent.runtime.events import EventSink
 from universal_agent.runtime.processing import EvaluationRoutingError, ObservationProcessor
 from universal_agent.runtime.session import (
-    DomainMismatchError,
+    SessionHydrationError,
     SessionRuntimeState,
     hydrate_session,
     mark_current_task,
@@ -53,7 +53,7 @@ from universal_agent.runtime.transitions import (
     cancel as cancel_transition,
 )
 from universal_agent.runtime.transitions import pause as pause_transition
-from universal_agent.state import SessionStore
+from universal_agent.state import SessionSnapshot, SessionStore, session_from_state
 
 
 class AgentRuntime:
@@ -124,8 +124,8 @@ class AgentRuntime:
         snapshot = await self._state_store.load_session(session_id)
         try:
             session = hydrate_session(snapshot, self._components)
-        except DomainMismatchError as exc:
-            return await self._reject_session(snapshot.state, str(exc))
+        except SessionHydrationError as exc:
+            return await self._reject_session(snapshot, str(exc))
         state = session.state
         pending = state.pending_action
         if state.goal.status is not GoalStatus.WAITING:
@@ -167,8 +167,8 @@ class AgentRuntime:
         snapshot = await self._state_store.load_session(session_id)
         try:
             session = hydrate_session(snapshot, self._components)
-        except DomainMismatchError as exc:
-            return await self._reject_session(snapshot.state, str(exc))
+        except SessionHydrationError as exc:
+            return await self._reject_session(snapshot, str(exc))
         state = session.state
         if state.goal.status in {
             GoalStatus.COMPLETED,
@@ -195,8 +195,8 @@ class AgentRuntime:
         snapshot = await self._state_store.load_session(session_id)
         try:
             session = hydrate_session(snapshot, self._components)
-        except DomainMismatchError as exc:
-            return await self._reject_session(snapshot.state, str(exc))
+        except SessionHydrationError as exc:
+            return await self._reject_session(snapshot, str(exc))
         state = session.state
         if state.goal.status in {
             GoalStatus.COMPLETED,
@@ -558,13 +558,22 @@ class AgentRuntime:
         )
         self._components.memory_store.add(record)
 
-    async def _reject_session(self, state: AgentState, reason: str) -> ExecutionResult:
+    async def _reject_session(self, snapshot: SessionSnapshot, reason: str) -> ExecutionResult:
         """Fail a session that could not be hydrated into a runtime state."""
+        state = snapshot.state
         state.goal.status = GoalStatus.FAILED
         state.current_task.status = TaskStatus.FAILED
+        state.tasks = [state.current_task]
         state.termination_reason = reason
         state.error_code = ErrorCode.INVALID_STATE
-        await self._state_store.save(state)
+        await self._state_store.save_session(
+            session_from_state(
+                state,
+                domain_name=snapshot.domain_name,
+                domain_version=snapshot.domain_version,
+                domain_identities=snapshot.domains,
+            )
+        )
         await self._emit(
             state,
             "GoalFailed",

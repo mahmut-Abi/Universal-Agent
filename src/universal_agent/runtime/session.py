@@ -10,7 +10,11 @@ from universal_agent.tasks import TaskManager
 from universal_agent.world import WorldModel, WorldSnapshot
 
 
-class DomainMismatchError(ValueError):
+class SessionHydrationError(ValueError):
+    pass
+
+
+class DomainMismatchError(SessionHydrationError):
     pass
 
 
@@ -93,7 +97,10 @@ def hydrate_session(
     metadata = components.active_domain.manifest.metadata
     expected = components.domain_composition.identities
     _validate_snapshot_domains(snapshot, expected, metadata.name, metadata.version)
-    tasks = TaskManager.from_snapshot(snapshot.task_graph)
+    try:
+        tasks = TaskManager.from_snapshot(snapshot.task_graph)
+    except ValueError as exc:
+        raise SessionHydrationError(f"invalid session snapshot task graph: {exc}") from exc
     components.evidence_store.replace(snapshot.state.session_id, snapshot.evidence)
     components.world_model.rebuild(
         snapshot.state.session_id,

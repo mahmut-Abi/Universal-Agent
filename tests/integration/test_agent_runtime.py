@@ -39,7 +39,8 @@ from universal_agent.evidence import EvidenceExtractor
 from universal_agent.memory import MemoryRecord
 from universal_agent.policy import Policy
 from universal_agent.recovery import RecoveryRule
-from universal_agent.tasks import TaskExpander
+from universal_agent.state import SessionSnapshot
+from universal_agent.tasks import TaskExpander, TaskGraphSnapshot
 from universal_agent.tools import Tool
 from universal_agent.world import WorldUpdater
 
@@ -350,6 +351,36 @@ async def test_multi_domain_evaluator_routes_by_action_domain() -> None:
     assert result.status is ExecutionStatus.COMPLETED
     assert evaluation_event.data["evaluator"] == "beta-evaluator"
     assert events.events[-1].type == "GoalCompleted"
+
+
+@pytest.mark.asyncio
+async def test_resume_rejects_damaged_session_snapshot() -> None:
+    runtime, _, store, events, _ = build_runtime(
+        [Decision(DecisionType.WAIT, "External pause")],
+        [],
+    )
+    goal, task = health_goal_and_task()
+    waiting = await runtime.run(goal, task)
+    snapshot = await store.load_session(waiting.session_id)
+    damaged = SessionSnapshot(
+        snapshot.state,
+        TaskGraphSnapshot((), snapshot.state.current_task.id),
+        snapshot.evidence,
+        snapshot.domain_name,
+        snapshot.domain_version,
+        snapshot.domains,
+    )
+
+    await store.save_session(damaged)
+    result = await runtime.resume(waiting.session_id)
+    reloaded = await store.load_session(waiting.session_id)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error_code is ErrorCode.INVALID_STATE
+    assert "invalid session snapshot task graph" in result.reason
+    assert reloaded.state.goal.status is GoalStatus.FAILED
+    assert reloaded.task_graph.nodes
+    assert events.events[-1].type == "GoalFailed"
 
 
 @pytest.mark.asyncio

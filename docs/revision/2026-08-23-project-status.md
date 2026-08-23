@@ -40,8 +40,8 @@ Goal
 - SessionSnapshot、Task Graph、Evidence replay 和 World replay；
 - advisory Memory，不把 Memory 当作 Evidence 或完成信号；
 - Domain Manifest、Domain Composition、Kubernetes fake-backed remediation；
-- Domain Loader 空 evaluator 拒绝、按 action Domain 的 evaluator routing，以及
-  `goal_completed` 显式完成门禁；
+- Domain Loader 空 evaluator 拒绝、按 action Domain 的 evaluator routing、
+  `goal_completed` 显式完成门禁，以及损坏 SessionSnapshot 拒绝/归档失败状态；
 - idempotency key、参数 hash、uncertain execution 和 side-effect resource lock。
 
 相关实现入口：
@@ -114,7 +114,7 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
 在本次审计环境中执行的结果：
 
 ```text
-pytest --disable-warnings      339 passed, 5 skipped
+pytest --disable-warnings      340 passed, 5 skipped
 ruff format --check           passed, 197 files formatted
 ruff check                    passed
 mypy (strict)                 passed, 197 source files
@@ -127,7 +127,6 @@ pytest-asyncio event loop 弃用警告；这些警告尚未影响当前测试结
 
 ### P0：继续收紧正确性门禁
 
-- 增加损坏 Snapshot 测试；
 - 明确 agentd Profile 的“单 Profile”或“多 Runtime 路由”语义。
 
 ### P1：完成单 Agent Runtime 的可靠性

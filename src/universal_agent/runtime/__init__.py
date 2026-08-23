@@ -33,6 +33,7 @@ from universal_agent.runtime.events import (
 )
 from universal_agent.runtime.session import (
     DomainMismatchError,
+    SessionHydrationError,
     SessionRuntimeState,
     hydrate_session,
     start_session,
@@ -60,6 +61,7 @@ __all__ = [
     "RuntimeRun",
     "RuntimeSessionBatch",
     "SessionDiagnosticsView",
+    "SessionHydrationError",
     "SessionRuntimeState",
     "SessionSummaryView",
     "SessionView",
