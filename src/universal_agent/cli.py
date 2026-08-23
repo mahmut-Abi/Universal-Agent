@@ -59,6 +59,7 @@ from universal_agent.core import (
     SessionId,
     SuccessCriterion,
     Task,
+    TaskId,
     immutable_json,
 )
 from universal_agent.distributed import (
@@ -324,6 +325,11 @@ def build_parser() -> argparse.ArgumentParser:
     distributed_schedule_goal.add_argument("--task", default="Run goal")
     distributed_schedule_goal.add_argument("--priority", type=int, default=0)
     distributed_schedule_goal.add_argument("--max-attempts", type=int, default=3)
+    distributed_schedule_task = distributed_commands.add_parser("schedule-task")
+    distributed_schedule_task.add_argument("session_id")
+    distributed_schedule_task.add_argument("task_id")
+    distributed_schedule_task.add_argument("--priority", type=int, default=0)
+    distributed_schedule_task.add_argument("--max-attempts", type=int, default=3)
     distributed_cancel = distributed_commands.add_parser("cancel")
     distributed_cancel.add_argument("work_item_id")
     distributed_cancel.add_argument(
@@ -696,6 +702,17 @@ async def _dispatch(
             scheduling = service.distributed_schedule_goal(
                 goal,
                 task,
+                priority=cast(int, args.priority),
+                max_attempts=cast(int, args.max_attempts),
+            )
+            if scheduling is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_scheduling_body(scheduling))
+            return
+        if distributed_command == "schedule-task":
+            scheduling = service.distributed_schedule_task(
+                SessionId(cast(str, args.session_id)),
+                TaskId(cast(str, args.task_id)),
                 priority=cast(int, args.priority),
                 max_attempts=cast(int, args.max_attempts),
             )

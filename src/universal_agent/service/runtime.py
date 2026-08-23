@@ -483,6 +483,28 @@ class RuntimeService:
             now=now,
         )
 
+    def distributed_schedule_task(
+        self,
+        session_id: SessionId,
+        task_id: TaskId,
+        *,
+        payload: JsonMapping | None = None,
+        priority: int = 0,
+        max_attempts: int = 3,
+        now: datetime | None = None,
+    ) -> DistributedSchedulingResult | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.schedule_task(
+            session_id,
+            task_id,
+            payload=payload,
+            priority=priority,
+            max_attempts=max_attempts,
+            available_at=now,
+            now=now,
+        )
+
     def distributed_register_worker(
         self,
         worker_id: WorkerId,
@@ -669,6 +691,7 @@ class RuntimeService:
         return {
             WorkKind.AGENT_SESSION.value: self._handle_distributed_session_work,
             WorkKind.AGENT_GOAL.value: self._handle_distributed_goal_work,
+            WorkKind.TASK.value: self._handle_distributed_task_work,
         }
 
     async def _handle_distributed_session_work(self, item: WorkItem) -> WorkHandlerResult:
@@ -726,6 +749,53 @@ class RuntimeService:
             return WorkHandlerResult.completed(f"session cancelled: {run.result.session_id}")
         return WorkHandlerResult.failed(
             f"distributed goal run failed: {run.result.reason}",
+            retry=False,
+        )
+
+    async def _handle_distributed_task_work(self, item: WorkItem) -> WorkHandlerResult:
+        if item.session_id is None:
+            return WorkHandlerResult.failed("task work item missing session_id", retry=False)
+        if item.task_id is None:
+            return WorkHandlerResult.failed("task work item missing task_id", retry=False)
+        try:
+            session = await self.get_session(item.session_id)
+        except StateNotFoundError as exc:
+            return WorkHandlerResult.failed(f"session not found: {exc}", retry=False)
+        if session.current_task_id != item.task_id:
+            return WorkHandlerResult.failed(
+                "task work item does not match current session task: "
+                f"{item.task_id} != {session.current_task_id}",
+                retry=False,
+            )
+        if session.pending_action is not None:
+            return WorkHandlerResult.failed(
+                "task requires explicit confirmation before distributed resume",
+                retry=False,
+            )
+        if session.goal_status in {
+            GoalStatus.COMPLETED,
+            GoalStatus.FAILED,
+            GoalStatus.CANCELLED,
+        }:
+            return WorkHandlerResult.completed(
+                f"session already terminal: {session.goal_status.value}"
+            )
+        if session.goal_status is not GoalStatus.WAITING:
+            return WorkHandlerResult.failed(
+                f"session task is not resumable: {session.goal_status.value}",
+                retry=True,
+            )
+        run = await self.resume_session(item.session_id)
+        if run.result.status in {
+            ExecutionStatus.COMPLETED,
+            ExecutionStatus.WAITING,
+            ExecutionStatus.CANCELLED,
+        }:
+            return WorkHandlerResult.completed(
+                f"distributed task resume settled as {run.result.status.value}"
+            )
+        return WorkHandlerResult.failed(
+            f"distributed task resume failed: {run.result.reason}",
             retry=False,
         )
 
@@ -914,13 +984,24 @@ class RuntimeService:
         sessions: tuple[SessionSummaryView, ...],
         snapshot: DistributedRuntimeSnapshot,
     ) -> int:
-        session_ids = {session.session_id for session in sessions}
-        return sum(
-            1
-            for item in snapshot.work_queue.items
-            if item.kind == WorkKind.AGENT_SESSION.value
-            and (item.session_id is None or item.session_id not in session_ids)
-        )
+        current_task_by_session = {
+            session.session_id: session.current_task_id for session in sessions
+        }
+        invalid_count = 0
+        for item in snapshot.work_queue.items:
+            if item.kind == WorkKind.AGENT_SESSION.value:
+                if item.session_id is None or item.session_id not in current_task_by_session:
+                    invalid_count += 1
+                continue
+            if item.kind != WorkKind.TASK.value:
+                continue
+            if item.session_id is None:
+                invalid_count += 1
+                continue
+            expected_task_id = current_task_by_session.get(item.session_id)
+            if expected_task_id is None or item.task_id is None or item.task_id != expected_task_id:
+                invalid_count += 1
+        return invalid_count
 
     def _world_fact_views(
         self,

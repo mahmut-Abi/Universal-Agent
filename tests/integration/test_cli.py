@@ -1183,6 +1183,47 @@ async def test_cli_distributed_worker_run_until_idle_resumes_backlog() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_distributed_schedule_task_command_runs_from_worker() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, _ = build_cli_service(
+        [wait(), inspect_workload(), finish()],
+        distributed_coordinator=coordinator,
+    )
+    waiting = await service.run_goal(*goal_task())
+    schedule_output = StringIO()
+    worker_output = StringIO()
+
+    schedule_status = await run_cli(
+        [
+            "distributed",
+            "schedule-task",
+            str(waiting.result.session_id),
+            str(waiting.session.current_task_id),
+            "--priority",
+            "4",
+        ],
+        service=service,
+        stdout=schedule_output,
+    )
+    worker_status = await run_cli(
+        ["distributed", "worker-run-once", "worker-a"],
+        service=service,
+        stdout=worker_output,
+    )
+    scheduled = read_json(schedule_output)
+    worker = read_json(worker_output)
+    completed = await service.get_session(waiting.result.session_id)
+
+    assert schedule_status == 0
+    assert scheduled["scheduled_work_item"]["kind"] == "task"
+    assert scheduled["scheduled_work_item"]["status"] == "queued"
+    assert worker_status == 0
+    assert worker["status"] == "completed"
+    assert worker["work_item"]["status"] == "completed"
+    assert completed.goal_status.value == "completed"
+
+
+@pytest.mark.asyncio
 async def test_cli_distributed_schedule_goal_command_runs_from_worker() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_cli_service(

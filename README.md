@@ -275,7 +275,7 @@ event-sourcing model or production migration system.
   handlers run, stops leasing when draining/offline/lost, and maps handler completion, retry, failure
   and cancellation back into queue state; `InMemoryDistributedLockRegistry` adds leased lock acquisition, heartbeat,
   conflict rejection, expiry and release; `InMemoryWorkerRegistry` tracks worker registration,
-  heartbeat, draining, offline and lost states; `DistributedRuntimeCoordinator` exposes session and goal scheduling, worker lifecycle, lock lifecycle, snapshot, health, expiry sweep and work-item cancellation over the queue, lock and worker primitives without changing AgentRuntime semantics; `RuntimeService.distributed_run_worker_once` and bounded `distributed_run_worker_until_idle` provide local queue → worker → RuntimeAPI paths for existing non-confirmation waiting sessions and newly scheduled Goals; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view; `build_distributed_health_report` projects that snapshot into HA-oriented checks for worker capacity, backlog, lease freshness, leased-work owners and worker registry health.
+  heartbeat, draining, offline and lost states; `DistributedRuntimeCoordinator` exposes session, goal and task scheduling, worker lifecycle, lock lifecycle, snapshot, health, expiry sweep and work-item cancellation over the queue, lock and worker primitives without changing AgentRuntime semantics; `RuntimeService.distributed_run_worker_once` and bounded `distributed_run_worker_until_idle` provide local queue → worker → RuntimeAPI paths for existing non-confirmation waiting sessions, matching current Tasks and newly scheduled Goals; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view; `build_distributed_health_report` projects that snapshot into HA-oriented checks for worker capacity, backlog, lease freshness, leased-work owners and worker registry health.
   `RuntimeConfig.distributed_queue` lets `RuntimeHost` assemble either an in-memory queue or a local
   file-backed queue for CLI/agentd deployments that need queue state to survive host rebuilds.
 - P7 Domain Package foundation: `DomainPackageManifest` defines package metadata for independently
@@ -321,7 +321,7 @@ The design roadmap now separates semantic runtime maturity from productization:
   doctor, evaluation suites, quality gates, replay, and deterministic test mode.
 - P5: Read-only TUI/Web application views for runtime, session, evidence, world, domain and settings inspection.
 - P6: Distributed Runtime foundations — typed local Scheduler, Work Queue, Worker Registry, Worker Lease, capability-aware Worker handler
-  execution, scheduled Goal execution, leased lock, Runtime Snapshot, Health Report, Coordinator, Heartbeat, retry, cancellation and lease expiry primitives.
+  execution, scheduled Goal execution, current Task resume, leased lock, Runtime Snapshot, Health Report, Coordinator, Heartbeat, retry, cancellation and lease expiry primitives.
 - P7: Ecosystem packaging and registry work.
 
 `PROMPT.md` is intentionally not kept as a project authority. Development instructions live in

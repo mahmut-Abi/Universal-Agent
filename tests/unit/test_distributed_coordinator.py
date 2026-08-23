@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from universal_agent.core import SessionId
+from universal_agent.core import SessionId, TaskId, immutable_json
 from universal_agent.distributed import (
     DistributedHealthStatus,
     DistributedLockOwnerId,
@@ -57,6 +57,63 @@ def test_distributed_runtime_coordinator_schedules_session_work_and_reports_stat
     assert result.scheduled_work_item.kind == "agent_session"
     assert result.scheduled_work_item.session_id == SessionId("session-1")
     assert result.scheduled_work_item.priority == 5
+    assert result.scheduled_work_item.max_attempts == 2
+    assert result.snapshot.work_queue.queued_count == 1
+    assert result.health.status is DistributedHealthStatus.OK
+
+
+def test_distributed_runtime_coordinator_schedules_goal_work_and_reports_state() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_goal",),
+        ttl_seconds=30,
+        now=now,
+    )
+    payload = immutable_json({"goal": {"description": "verify workload"}})
+
+    result = coordinator.schedule_goal(
+        payload=payload,
+        idempotency_key="goal:verify-workload",
+        priority=6,
+        max_attempts=2,
+        available_at=now,
+        now=now,
+    )
+
+    assert result.scheduled_work_item.kind == "agent_goal"
+    assert result.scheduled_work_item.session_id is None
+    assert result.scheduled_work_item.payload == payload
+    assert result.scheduled_work_item.priority == 6
+    assert result.scheduled_work_item.max_attempts == 2
+    assert result.snapshot.work_queue.queued_count == 1
+    assert result.health.status is DistributedHealthStatus.OK
+
+
+def test_distributed_runtime_coordinator_schedules_task_work_and_reports_state() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("task",),
+        ttl_seconds=30,
+        now=now,
+    )
+
+    result = coordinator.schedule_task(
+        SessionId("session-1"),
+        TaskId("task-1"),
+        priority=6,
+        max_attempts=2,
+        available_at=now,
+        now=now,
+    )
+
+    assert result.scheduled_work_item.kind == "task"
+    assert result.scheduled_work_item.session_id == SessionId("session-1")
+    assert result.scheduled_work_item.task_id == TaskId("task-1")
+    assert result.scheduled_work_item.priority == 6
     assert result.scheduled_work_item.max_attempts == 2
     assert result.snapshot.work_queue.queued_count == 1
     assert result.health.status is DistributedHealthStatus.OK

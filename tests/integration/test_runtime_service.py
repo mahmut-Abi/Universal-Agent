@@ -33,6 +33,7 @@ from universal_agent.core import (
     DomainIdentity,
     ExecutionStatus,
     GoalId,
+    GoalStatus,
     JsonMapping,
     RiskLevel,
     RuntimeEvent,
@@ -86,6 +87,10 @@ def scale_workload() -> Decision:
         arguments=immutable_json({"name": "example", "namespace": "default", "replicas": 3}),
         expected_observations=("mutation_applied",),
     )
+
+
+def wait() -> Decision:
+    return Decision(DecisionType.WAIT, "pause before distributed runtime service resume")
 
 
 def finish() -> Decision:
@@ -427,6 +432,7 @@ async def test_runtime_service_distributed_worker_resumes_scheduled_session() ->
     assert coordinator.workers.get(WorkerId("worker-a")).capabilities == (
         "agent_goal",
         "agent_session",
+        "task",
     )
 
 
@@ -487,6 +493,61 @@ async def test_runtime_service_distributed_worker_runs_scheduled_goal() -> None:
     assert len(sessions) == 1
     assert sessions[0].goal_description == "Verify workload health"
     assert sessions[0].goal_status.value == "completed"
+
+
+@pytest.mark.asyncio
+async def test_runtime_service_distributed_worker_resumes_scheduled_task() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, _ = build_service(
+        [wait(), inspect_workload(), finish()],
+        distributed_coordinator=coordinator,
+    )
+
+    waiting = await service.run_goal(*goal_task())
+    scheduled = service.distributed_schedule_task(
+        waiting.result.session_id,
+        waiting.session.current_task_id,
+        priority=5,
+    )
+    worker_result = await service.distributed_run_worker_once(WorkerId("worker-a"))
+    completed = await service.get_session(waiting.result.session_id)
+
+    assert waiting.result.status is ExecutionStatus.WAITING
+    assert scheduled is not None
+    assert scheduled.scheduled_work_item.kind == "task"
+    assert scheduled.scheduled_work_item.session_id == waiting.result.session_id
+    assert scheduled.scheduled_work_item.task_id == waiting.session.current_task_id
+    assert worker_result is not None
+    assert worker_result.status is WorkerRunStatus.COMPLETED
+    assert worker_result.work_item is not None
+    assert worker_result.work_item.status is WorkItemStatus.COMPLETED
+    assert worker_result.reason == "distributed task resume settled as completed"
+    assert completed.goal_status.value == "completed"
+
+
+@pytest.mark.asyncio
+async def test_runtime_service_distributed_worker_rejects_non_current_task_work() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, _ = build_service(
+        [wait(), inspect_workload(), finish()],
+        distributed_coordinator=coordinator,
+    )
+
+    waiting = await service.run_goal(*goal_task())
+    scheduled = service.distributed_schedule_task(
+        waiting.result.session_id,
+        TaskId("other-task"),
+    )
+    worker_result = await service.distributed_run_worker_once(WorkerId("worker-a"))
+    still_waiting = await service.get_session(waiting.result.session_id)
+
+    assert scheduled is not None
+    assert worker_result is not None
+    assert worker_result.status is WorkerRunStatus.FAILED
+    assert worker_result.work_item is not None
+    assert worker_result.work_item.status is WorkItemStatus.FAILED
+    assert worker_result.reason.startswith("task work item does not match current session task: ")
+    assert still_waiting.goal_status is GoalStatus.WAITING
 
 
 @pytest.mark.asyncio
@@ -561,11 +622,16 @@ async def test_runtime_service_doctor_detects_distributed_session_work_without_s
     coordinator = DistributedRuntimeCoordinator()
     coordinator.workers.register(
         WorkerId("worker-a"),
-        capabilities=("agent_session",),
+        capabilities=("agent_session", "task"),
         ttl_seconds=999_999_999,
         now=now,
     )
     coordinator.scheduler.schedule_session(SessionId("missing-session"), available_at=now)
+    coordinator.scheduler.schedule_task(
+        SessionId("missing-session"),
+        TaskId("missing-task"),
+        available_at=now,
+    )
     active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
     components = RuntimeBuilder().build(active)
     service = RuntimeService(
@@ -581,7 +647,7 @@ async def test_runtime_service_doctor_detects_distributed_session_work_without_s
 
     assert report.status == "error"
     assert distributed_queue.status == "error"
-    assert distributed_queue.message == "invalid_session_work_items=1"
+    assert distributed_queue.message == "invalid_session_work_items=2"
 
 
 def test_runtime_service_exposes_agentd_foundation_metadata() -> None:

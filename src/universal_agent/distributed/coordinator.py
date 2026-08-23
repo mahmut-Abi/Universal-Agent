@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from universal_agent.core import JsonMapping, SessionId, utc_now
+from universal_agent.core import JsonMapping, SessionId, TaskId, utc_now
 from universal_agent.distributed.health import (
     DistributedHealthReport,
     build_distributed_health_report,
@@ -166,6 +166,43 @@ class DistributedRuntimeCoordinator:
         scheduled = self._scheduler.schedule_goal(
             payload=payload,
             idempotency_key=idempotency_key,
+            priority=priority,
+            max_attempts=max_attempts,
+            available_at=available_at,
+        )
+        timestamp = now or utc_now()
+        snapshot = self.snapshot()
+        health = build_distributed_health_report(
+            snapshot,
+            now=timestamp,
+            queued_backlog_warn_threshold=queued_backlog_warn_threshold,
+            lease_expiry_warn_seconds=lease_expiry_warn_seconds,
+            min_online_workers=min_online_workers,
+        )
+        return DistributedSchedulingResult(
+            scheduled_work_item=scheduled,
+            snapshot=snapshot,
+            health=health,
+        )
+
+    def schedule_task(
+        self,
+        session_id: SessionId,
+        task_id: TaskId,
+        *,
+        payload: JsonMapping | None = None,
+        priority: int = 0,
+        max_attempts: int = 3,
+        available_at: datetime | None = None,
+        now: datetime | None = None,
+        queued_backlog_warn_threshold: int = 100,
+        lease_expiry_warn_seconds: float = 10.0,
+        min_online_workers: int = 1,
+    ) -> DistributedSchedulingResult:
+        scheduled = self._scheduler.schedule_task(
+            session_id,
+            task_id,
+            payload=payload,
             priority=priority,
             max_attempts=max_attempts,
             available_at=available_at,

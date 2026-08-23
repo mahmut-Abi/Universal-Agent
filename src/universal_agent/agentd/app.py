@@ -17,6 +17,7 @@ from universal_agent.core import (
     SessionId,
     SuccessCriterion,
     Task,
+    TaskId,
     immutable_json,
 )
 from universal_agent.distributed import (
@@ -491,6 +492,37 @@ class AgentdApp:
             if scheduling is None:
                 return not_found("distributed runtime coordinator is not configured")
             return json_response(distributed_scheduling_body(scheduling), status_code=202)
+        distributed_schedule_task_session_id, distributed_schedule_task_id = (
+            _distributed_schedule_task_route(path)
+        )
+        if (
+            distributed_schedule_task_session_id is not None
+            and distributed_schedule_task_id is not None
+        ):
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            payload = request.body.get("payload")
+            if payload is not None and not isinstance(payload, Mapping):
+                return bad_request("distributed schedule payload must be an object")
+            priority = request.body.get("priority", 0)
+            if not isinstance(priority, int):
+                return bad_request("distributed schedule priority must be an integer")
+            max_attempts = request.body.get("max_attempts", 3)
+            if not isinstance(max_attempts, int):
+                return bad_request("distributed schedule max_attempts must be an integer")
+            try:
+                scheduling = self._service.distributed_schedule_task(
+                    distributed_schedule_task_session_id,
+                    distributed_schedule_task_id,
+                    payload=None if payload is None else immutable_json(payload),
+                    priority=priority,
+                    max_attempts=max_attempts,
+                )
+            except ValueError as exc:
+                return bad_request(str(exc))
+            if scheduling is None:
+                return not_found("distributed runtime coordinator is not configured")
+            return json_response(distributed_scheduling_body(scheduling))
         distributed_schedule_session_id = _distributed_schedule_session_route(path)
         if distributed_schedule_session_id is not None:
             if method != "POST":
@@ -1889,6 +1921,20 @@ def _distributed_schedule_session_route(path: str) -> SessionId | None:
     ):
         return SessionId(segments[3])
     return None
+
+
+def _distributed_schedule_task_route(path: str) -> tuple[SessionId | None, TaskId | None]:
+    segments = tuple(segment for segment in path.split("/") if segment)
+    if (
+        len(segments) == 7
+        and segments[:3] == ("v1", "distributed", "sessions")
+        and segments[3].strip()
+        and segments[4] == "tasks"
+        and segments[5].strip()
+        and segments[6] == "schedule"
+    ):
+        return SessionId(segments[3]), TaskId(segments[5])
+    return None, None
 
 
 def _distributed_cancel_route(path: str) -> WorkItemId | None:
