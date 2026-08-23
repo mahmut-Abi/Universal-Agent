@@ -286,6 +286,9 @@ event-sourcing model or production migration system.
   packaged Domain runtimes, including entrypoint, resources, dependencies, required tools,
   compatibility and security metadata. `DomainPackageRegistry` can validate, install and discover
   package manifests without importing Domain code or mutating Kernel runtime state.
+  `DomainPackageRegistry.verify()` and `agent domain-packages verify` expose dependency-closure
+  checks for local package metadata so CLI/CI can catch missing package dependencies before
+  activation.
   `DomainPackageScaffoldSpec` and `scaffold_domain_package` provide the first Domain SDK surface for
   generating a standard package layout and validated manifest from typed metadata.
 - P7 Evaluation Dataset foundation: `EvaluationDatasetManifest` groups reusable evaluation suite
