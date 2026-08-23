@@ -57,7 +57,7 @@ from universal_agent.operations import (
     build_runtime_trace_spans,
 )
 from universal_agent.policy import Policy, PolicyRule
-from universal_agent.profile import AgentProfile, ProfileRegistry
+from universal_agent.profile import AgentProfile, ProfileNotFoundError, ProfileRegistry
 from universal_agent.runtime import (
     EvidenceView,
     RuntimeAPI,
@@ -370,7 +370,22 @@ class RuntimeService:
         return profile_view(self._profiles.get(name))
 
     def accepts_profile(self, name: str) -> bool:
-        return self._profiles.has(name)
+        return self.profile_selection_error(name) is None
+
+    def profile_selection_error(self, name: str) -> str | None:
+        try:
+            profile = self._profiles.get(name)
+        except ProfileNotFoundError:
+            return f"unknown profile: {name}"
+        profile_domains = tuple(domain.identity() for domain in profile.configured_domains())
+        active_domains = self._components.domain_composition.identities
+        if profile_domains != active_domains:
+            return (
+                f"profile {name} is not bound to this RuntimeService: profile domains "
+                f"{_format_identities(profile_domains)} do not match active runtime domains "
+                f"{_format_identities(active_domains)}"
+            )
+        return None
 
     def config(self) -> RuntimeConfigView:
         identities = self._components.domain_composition.identities
@@ -857,6 +872,10 @@ def memory_view(record: MemoryRecord) -> MemoryView:
         source_session_id=record.source_session_id,
         created_at=record.created_at,
     )
+
+
+def _format_identities(identities: tuple[DomainIdentity, ...]) -> str:
+    return ", ".join(f"{identity.name}@{identity.version}" for identity in identities) or "<none>"
 
 
 def runtime_config_domain_views(

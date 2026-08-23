@@ -98,8 +98,8 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
 4. **SQLite 不是生产持久化层。** 它提供本地 durable adapter，但没有 schema migration、跨 Store
    事务、outbox、租户隔离或高并发写入策略。
 5. **Event Stream 仍是有限批次。** `events/stream` 输出 SSE 格式批次，不是长连接 push stream。
-6. **Profile 请求选择尚未形成多 Runtime 路由。** agentd 可以校验 profile 名称，但当前 Service
-   仍使用已组装的 Runtime；Profile 不会自动切换 Model、Domain 或 Policy。
+6. **Profile 请求选择是单 Runtime 语义。** agentd 现在会拒绝未绑定到当前 RuntimeService
+   Domain composition 的 Profile；Profile 仍不会自动切换 Model、Domain、Policy 或路由到另一个 Runtime。
 7. **配置展示必须视为敏感边界。** Runtime environment 目前是通用 JSON；接入真实凭据前必须
    增加 secrets 分离、脱敏、认证和授权。
 8. **真实外部集成尚未接入。** Kubernetes 使用注入的 fake backend，Model 层只有 Protocol/
@@ -114,7 +114,7 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
 在本次审计环境中执行的结果：
 
 ```text
-pytest --disable-warnings      340 passed, 5 skipped
+pytest --disable-warnings      341 passed, 5 skipped
 ruff format --check           passed, 197 files formatted
 ruff check                    passed
 mypy (strict)                 passed, 197 source files
@@ -125,9 +125,9 @@ pytest-asyncio event loop 弃用警告；这些警告尚未影响当前测试结
 
 ## 推荐推进顺序
 
-### P0：继续收紧正确性门禁
+### P0：正确性门禁已压实
 
-- 明确 agentd Profile 的“单 Profile”或“多 Runtime 路由”语义。
+- 空 evaluator、`goal_completed`、双 Domain evaluator routing、损坏 Snapshot、agentd Profile 单 Runtime 语义均已覆盖。
 
 ### P1：完成单 Agent Runtime 的可靠性
 

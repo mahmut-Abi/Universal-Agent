@@ -254,7 +254,13 @@ def package_registry() -> DomainPackageRegistry:
     return DomainPackageRegistry((package,))
 
 
-def build_profile_service(decisions: list[Decision]) -> tuple[RuntimeService, AgentdBackend]:
+def build_profile_service(
+    decisions: list[Decision],
+    *,
+    profile_name: str = "production-operator",
+    profile_domain: DomainIdentity | None = None,
+) -> tuple[RuntimeService, AgentdBackend]:
+    profile_domain = profile_domain or DomainIdentity("kubernetes", "0.2.0")
     backend = AgentdBackend()
     store = InMemoryStateStore()
     events = InMemoryEventSink()
@@ -271,10 +277,10 @@ def build_profile_service(decisions: list[Decision]) -> tuple[RuntimeService, Ag
     api = RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
     profile = ProfileConfig.from_mapping(
         {
-            "name": "production-operator",
+            "name": profile_name,
             "version": "1.0.0",
             "description": "Production Kubernetes operator",
-            "domain": {"name": "kubernetes", "version": "0.2.0"},
+            "domain": {"name": profile_domain.name, "version": profile_domain.version},
         }
     ).to_profile()
     return (
@@ -520,6 +526,35 @@ async def test_agentd_create_session_route_rejects_unknown_profile() -> None:
         "code": "bad_request",
         "message": "unknown profile: missing-profile",
     }
+
+
+@pytest.mark.asyncio
+async def test_agentd_create_session_route_rejects_unbound_profile() -> None:
+    service, backend = build_profile_service(
+        [inspect_workload(), finish()],
+        profile_name="observability-operator",
+        profile_domain=DomainIdentity("observability", "1.0.0"),
+    )
+    app = AgentdApp(service)
+
+    response = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/sessions",
+            goal_submission_body(profile="observability-operator"),
+        )
+    )
+
+    assert response.status_code == 400
+    assert response.body["error"] == {
+        "code": "bad_request",
+        "message": (
+            "profile observability-operator is not bound to this RuntimeService: "
+            "profile domains observability@1.0.0 do not match active runtime domains "
+            "kubernetes@0.2.0"
+        ),
+    }
+    assert backend.inspect_calls == 0
 
 
 @pytest.mark.asyncio

@@ -178,7 +178,9 @@ regression, policy, recovery, token/cost budget and replay expectations. See
 
 `AgentProfile` is the first application-level Profile foundation. A Profile declares a selectable
 runtime identity — name, version, Domain identity and Runtime Configuration — for future CLI/agentd
-entry points. It is not a new Kernel, not a Domain implementation, and not a routing Agent.
+entry points. Profile selection is intentionally single-Runtime: agentd accepts only Profiles whose
+configured Domains match the already assembled RuntimeService. It is not a new Kernel, not a Domain
+implementation, not a multi-Runtime router, and not a routing Agent.
 
 `FileSessionStore` / `FileEventStore` and `SQLiteSessionStore` / `SQLiteEventStore` are local
 persistence adapters for P3.5 recovery tests and embedded deployments. They persist and list

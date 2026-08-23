@@ -526,10 +526,10 @@ class AgentdApp:
                 submission = parse_goal_submission(request.body)
             except ValueError as exc:
                 return bad_request(str(exc))
-            if submission.profile_name is not None and not self._service.accepts_profile(
-                submission.profile_name
-            ):
-                return bad_request(f"unknown profile: {submission.profile_name}")
+            if submission.profile_name is not None:
+                profile_error = self._service.profile_selection_error(submission.profile_name)
+                if profile_error is not None:
+                    return bad_request(profile_error)
             run = await self._service.run_goal(submission.goal, submission.task)
             return json_response(runtime_run_body(run), status_code=201)
 
