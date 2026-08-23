@@ -78,7 +78,7 @@ Goal
 - leased distributed lock；
 - Runtime Snapshot、Health Report、Coordinator；
 - agentd/CLI 的 distributed snapshot、health、schedule、worker、lock、expire 视图，
-  以及 CLI worker-run-once 本地执行入口。
+  以及 CLI worker-run-once / bounded worker-run 本地执行入口。
 
 P6 当前遵循设计文档的“先做 local primitives”策略。它已有本地 waiting session resume
 闭环和 file-backed queue adapter，但还没有跨进程 Worker、并发安全队列锁，或新 Goal/Task/Action

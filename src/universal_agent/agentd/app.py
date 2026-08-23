@@ -364,6 +364,28 @@ class AgentdApp:
                     if worker_run is None:
                         return not_found("distributed runtime coordinator is not configured")
                     return json_response(distributed_worker_run_body(worker_run))
+                elif distributed_worker_action == "run":
+                    worker_runs = await self._service.distributed_run_worker_until_idle(
+                        distributed_worker_id,
+                        max_items=_distributed_worker_run_max_items(request.body),
+                        lease_ttl_seconds=_distributed_worker_run_seconds(
+                            request.body,
+                            field_name="lease_ttl_seconds",
+                            default=30.0,
+                        ),
+                        worker_ttl_seconds=_distributed_worker_run_seconds(
+                            request.body,
+                            field_name="worker_ttl_seconds",
+                            default=30.0,
+                        ),
+                        heartbeat_interval_seconds=_distributed_worker_run_optional_seconds(
+                            request.body,
+                            field_name="heartbeat_interval_seconds",
+                        ),
+                    )
+                    if worker_runs is None:
+                        return not_found("distributed runtime coordinator is not configured")
+                    return json_response(distributed_worker_run_batch_body(worker_runs))
                 elif distributed_worker_action == "drain":
                     lifecycle = self._service.distributed_drain_worker(
                         distributed_worker_id,
@@ -1057,6 +1079,16 @@ def distributed_worker_run_body(view: WorkerRunResult) -> JsonMapping:
             "work_item": None
             if view.work_item is None
             else distributed_work_item_summary_body(view.work_item),
+        }
+    )
+
+
+def distributed_worker_run_batch_body(views: Sequence[WorkerRunResult]) -> JsonMapping:
+    return immutable_json(
+        {
+            "results": [dict(distributed_worker_run_body(view)) for view in views],
+            "processed_count": sum(1 for view in views if view.work_item is not None),
+            "terminal_status": None if not views else views[-1].status.value,
         }
     )
 
@@ -1793,6 +1825,15 @@ def _distributed_worker_run_optional_seconds(
     if field_name not in body:
         return None
     return _distributed_worker_run_seconds(body, field_name=field_name, default=30.0)
+
+
+def _distributed_worker_run_max_items(body: JsonMapping) -> int:
+    value = body.get("max_items", 1)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("distributed worker max_items must be a positive integer")
+    if value < 1:
+        raise ValueError("distributed worker max_items must be a positive integer")
+    return value
 
 
 def _distributed_reason(

@@ -427,6 +427,41 @@ async def test_runtime_service_distributed_worker_resumes_scheduled_session() ->
 
 
 @pytest.mark.asyncio
+async def test_runtime_service_distributed_worker_runs_until_idle() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, _ = build_service(
+        [
+            Decision(DecisionType.WAIT, "first distributed pause"),
+            Decision(DecisionType.WAIT, "second distributed pause"),
+            inspect_workload(),
+            finish(),
+            inspect_workload(),
+            finish(),
+        ],
+        distributed_coordinator=coordinator,
+    )
+
+    first = await service.run_goal(*goal_task())
+    second = await service.run_goal(*goal_task())
+    service.distributed_schedule_session(first.result.session_id)
+    service.distributed_schedule_session(second.result.session_id)
+    results = await service.distributed_run_worker_until_idle(
+        WorkerId("worker-a"),
+        max_items=5,
+    )
+
+    assert results is not None
+    assert [result.status for result in results] == [
+        WorkerRunStatus.COMPLETED,
+        WorkerRunStatus.COMPLETED,
+        WorkerRunStatus.NO_WORK,
+    ]
+    assert coordinator.snapshot().work_queue.completed_count == 2
+    assert (await service.get_session(first.result.session_id)).goal_status.value == "completed"
+    assert (await service.get_session(second.result.session_id)).goal_status.value == "completed"
+
+
+@pytest.mark.asyncio
 async def test_runtime_service_doctor_includes_distributed_health() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()

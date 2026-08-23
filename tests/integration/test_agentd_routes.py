@@ -1069,6 +1069,54 @@ async def test_agentd_distributed_worker_run_once_route() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agentd_distributed_worker_run_route_resumes_backlog() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, _ = build_service(
+        [
+            wait(),
+            wait(),
+            inspect_workload(),
+            finish(),
+            inspect_workload(),
+            finish(),
+        ],
+        distributed_coordinator=coordinator,
+    )
+    first = await service.run_goal(*goal_task())
+    second = await service.run_goal(*goal_task())
+    service.distributed_schedule_session(first.result.session_id)
+    service.distributed_schedule_session(second.result.session_id)
+    app = AgentdApp(service)
+
+    response = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/workers/worker-a/run",
+            immutable_json(
+                {
+                    "max_items": 5,
+                    "lease_ttl_seconds": 30,
+                    "worker_ttl_seconds": 30,
+                    "heartbeat_interval_seconds": 10,
+                }
+            ),
+        )
+    )
+
+    assert response.status_code == 200
+    results = json_array(response.body["results"])
+    assert [json_object(item)["status"] for item in results] == [
+        "completed",
+        "completed",
+        "no_work",
+    ]
+    assert response.body["processed_count"] == 2
+    assert response.body["terminal_status"] == "no_work"
+    assert (await service.get_session(first.result.session_id)).goal_status.value == "completed"
+    assert (await service.get_session(second.result.session_id)).goal_status.value == "completed"
+
+
+@pytest.mark.asyncio
 async def test_agentd_distributed_schedule_route_schedules_session_work() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()

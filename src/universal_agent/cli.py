@@ -22,6 +22,7 @@ from universal_agent.agentd.app import (
     distributed_scheduling_body,
     distributed_snapshot_body,
     distributed_worker_lifecycle_body,
+    distributed_worker_run_batch_body,
     distributed_worker_run_body,
     doctor_body,
     domain_body,
@@ -337,6 +338,12 @@ def build_parser() -> argparse.ArgumentParser:
     distributed_worker_run.add_argument("--lease-ttl-seconds", type=float, default=30.0)
     distributed_worker_run.add_argument("--worker-ttl-seconds", type=float, default=30.0)
     distributed_worker_run.add_argument("--heartbeat-interval-seconds", type=float)
+    distributed_worker_run_batch = distributed_commands.add_parser("worker-run")
+    distributed_worker_run_batch.add_argument("worker_id")
+    distributed_worker_run_batch.add_argument("--max-items", type=int, default=1)
+    distributed_worker_run_batch.add_argument("--lease-ttl-seconds", type=float, default=30.0)
+    distributed_worker_run_batch.add_argument("--worker-ttl-seconds", type=float, default=30.0)
+    distributed_worker_run_batch.add_argument("--heartbeat-interval-seconds", type=float)
 
     distributed_drain = distributed_commands.add_parser("worker-drain")
     distributed_drain.add_argument("worker_id")
@@ -717,6 +724,18 @@ async def _dispatch(
             if run is None:
                 raise ValueError("distributed runtime coordinator is not configured")
             _write_json(out, distributed_worker_run_body(run))
+            return
+        if distributed_command == "worker-run":
+            runs = await service.distributed_run_worker_until_idle(
+                WorkerId(cast(str, args.worker_id)),
+                max_items=cast(int, args.max_items),
+                lease_ttl_seconds=cast(float, args.lease_ttl_seconds),
+                worker_ttl_seconds=cast(float, args.worker_ttl_seconds),
+                heartbeat_interval_seconds=cast(float | None, args.heartbeat_interval_seconds),
+            )
+            if runs is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_worker_run_batch_body(runs))
             return
         if distributed_command == "worker-drain":
             lifecycle = service.distributed_drain_worker(

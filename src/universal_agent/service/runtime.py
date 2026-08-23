@@ -616,6 +616,28 @@ class RuntimeService:
         )
         return await worker.run_once()
 
+    async def distributed_run_worker_until_idle(
+        self,
+        worker_id: WorkerId,
+        *,
+        max_items: int,
+        lease_ttl_seconds: float = 30.0,
+        worker_ttl_seconds: float = 30.0,
+        heartbeat_interval_seconds: float | None = None,
+    ) -> tuple[WorkerRunResult, ...] | None:
+        if self._distributed_coordinator is None:
+            return None
+        worker = WorkQueueWorker(
+            queue=self._distributed_coordinator.queue,
+            worker_id=worker_id,
+            handlers={WorkKind.AGENT_SESSION.value: self._handle_distributed_session_work},
+            lease_ttl_seconds=lease_ttl_seconds,
+            worker_registry=self._distributed_coordinator.workers,
+            worker_ttl_seconds=worker_ttl_seconds,
+            heartbeat_interval_seconds=heartbeat_interval_seconds,
+        )
+        return await worker.run_until_idle(max_items=max_items)
+
     async def _handle_distributed_session_work(self, item: WorkItem) -> WorkHandlerResult:
         if item.session_id is None:
             return WorkHandlerResult.failed(
