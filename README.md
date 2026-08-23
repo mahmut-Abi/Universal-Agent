@@ -319,6 +319,9 @@ The design roadmap now separates semantic runtime maturity from productization:
 `AGENTS.md`; architecture lives in `universal-agent-runtime-domain-runtime-design.md`; operational
 usage stays in this README.
 
+For a dated implementation assessment, current limitations, verification snapshot, and recommended
+next steps, see [`docs/revision/2026-08-23-project-status.md`](docs/revision/2026-08-23-project-status.md).
+
 ## Development
 
 Python 3.12 or newer is required.

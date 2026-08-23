@@ -1,0 +1,168 @@
+# 项目当前状态与后续边界
+
+- 记录时间：2026-08-23 CST
+- 依据：当前仓库源码、README、架构设计文档、测试与示例
+- 目的：记录实现成熟度与未完成边界，不替代 `AGENTS.md` 或架构设计文档
+
+## 一句话定位
+
+本项目已经是一个具备完整单 Agent 语义循环的 Runtime foundation，而不是简单的
+`Prompt → LLM → Tool` 包装器。它目前适合本地嵌入、架构验证、Domain 开发和回归评估；
+尚不应被描述为已经具备生产级分布式执行、真实 Kubernetes 运维或完整生态安装能力的平台。
+
+## 已落地能力
+
+### P0–P3：运行时语义
+
+核心执行路径已经由 Runtime 控制：
+
+```text
+Goal
+ → Task
+ → Context
+ → Decision
+ → Capability Resolution
+ → Policy
+ → Tool
+ → Observation
+ → Evidence
+ → World Model
+ → Task Expansion
+ → Evaluation
+ → Continue / Recover / Finish
+```
+
+当前已经具备：
+
+- typed Goal、Task、Decision、Action、Observation、Evidence 和 Evaluation 合约；
+- Runtime-owned state 与 bounded iteration/recovery；
+- Capability 与 Tool 分离，以及 Allow/Confirm/Deny 策略边界；
+- SessionSnapshot、Task Graph、Evidence replay 和 World replay；
+- advisory Memory，不把 Memory 当作 Evidence 或完成信号；
+- Domain Manifest、Domain Composition、Kubernetes fake-backed remediation；
+- idempotency key、参数 hash、uncertain execution 和 side-effect resource lock。
+
+相关实现入口：
+
+- [AgentRuntime](../../src/universal_agent/runtime/agent.py)
+- [ActionExecutor](../../src/universal_agent/runtime/actions.py)
+- [ObservationProcessor](../../src/universal_agent/runtime/processing.py)
+- [Domain Runtime / Composition](../../src/universal_agent/domain/runtime.py)
+- [Session rebuild](../../src/universal_agent/runtime/session.py)
+
+### P3.5–P3.7：本地产品化与评估
+
+已经提供：
+
+- Runtime API、RuntimeService、agentd route adapter 和标准库 HTTP bridge；
+- CLI、pause/resume/cancel、cursor event reads 和有限批次 SSE 格式输出；
+- memory/file/SQLite session 与 event store；
+- metrics、Prometheus、cost、logs、traces、OTLP-shaped output、audit、doctor；
+- Evaluation Harness、suite file、quality gate、report recording、execution replay；
+- deterministic runtime mode、golden replay、TUI、Web Console、Session Explorer。
+
+这些接口主要是稳定的应用边界和本地验证面，尚不等于生产服务实现。
+
+### P6：分布式运行时基础原语
+
+当前已有本地内存实现：
+
+- WorkScheduler、WorkQueue、WorkerLease、heartbeat、retry、expiry；
+- Worker Registry 以及 online/draining/offline/lost 状态；
+- leased distributed lock；
+- Runtime Snapshot、Health Report、Coordinator；
+- agentd/CLI 的 distributed snapshot、health、schedule、worker、lock、expire 视图。
+
+P6 当前遵循设计文档的“先做 local primitives”策略。它还没有把 AgentRuntime 的
+Session/Task/Action 执行自动接入 Queue → Worker → Runtime resume 闭环。
+
+### P7：生态元数据基础
+
+当前已有 Domain Package、Evaluation Dataset、Profile 和 Ecosystem Catalog 的元数据
+发现/校验/脚手架基础。`EcosystemCatalog.verify()` 已能校验 Profile Domain、Evaluation
+Dataset Domain 和 Domain Package dependency 引用是否能在本地生态索引中闭合。它们不会自动导入
+Domain 代码、激活 Runtime、执行评估或安装外部依赖。
+
+## 已知边界与风险
+
+以下项目应视为当前明确的工程边界，而不是隐藏能力：
+
+1. **Multi-Domain 仍是 composition foundation。** Domain 的 evaluator、extractor、updater 和
+   expander 尚未具备完整的 owner/routing 语义；当前 Observation processing 仍存在“选择第一个
+   evaluator”的简化路径。
+2. **World Model 主要是事实模型。** `WorldEntity`/`WorldRelation` 类型已存在，但默认内存实现
+   仍以 fact projection 为主，跨 Domain 图推理尚未完成。
+3. **P6 不是网络分布式系统。** Queue、Worker、Registry、Lock 和 Coordinator 都是本地内存
+   primitives；没有网络协议、持久化队列、真正的 worker 进程编排或跨节点一致性。
+4. **SQLite 不是生产持久化层。** 它提供本地 durable adapter，但没有 schema migration、跨 Store
+   事务、outbox、租户隔离或高并发写入策略。
+5. **Event Stream 仍是有限批次。** `events/stream` 输出 SSE 格式批次，不是长连接 push stream。
+6. **Profile 请求选择尚未形成多 Runtime 路由。** agentd 可以校验 profile 名称，但当前 Service
+   仍使用已组装的 Runtime；Profile 不会自动切换 Model、Domain 或 Policy。
+7. **配置展示必须视为敏感边界。** Runtime environment 目前是通用 JSON；接入真实凭据前必须
+   增加 secrets 分离、脱敏、认证和授权。
+8. **真实外部集成尚未接入。** Kubernetes 使用注入的 fake backend，Model 层只有 Protocol/
+   scripted boundary，运行时没有绑定具体模型 SDK。
+9. **状态和事件没有跨 Store 原子提交。** 进程在 Snapshot 保存与 Event 写入之间崩溃时，
+   需要依靠后续一致性策略恢复。
+10. **取消与并发仍需强化。** 当前 cancellation 主要改变 Runtime 状态；in-flight tool cancellation、
+    Session CAS/version、lease-aware resume 和重复 Worker 执行还需要完整测试与实现。
+
+## 验证快照
+
+在本次审计环境中执行的结果：
+
+```text
+pytest --disable-warnings      336 passed, 5 skipped
+ruff format --check           passed, 196 files formatted
+ruff check                    passed
+mypy (strict)                 passed, 196 source files
+```
+
+被跳过的测试是本地 socket bind 受到执行环境权限限制。测试运行还报告了较多 Python 3.14 /
+pytest-asyncio event loop 弃用警告；这些警告尚未影响当前测试结果，但后续应在依赖升级前处理。
+
+## 推荐推进顺序
+
+### P0：先收紧正确性门禁
+
+- Domain Loader 拒绝空 evaluator；
+- 完成判定显式检查 `goal_completed`；
+- 增加双 Domain evaluator/routing 和损坏 Snapshot 测试；
+- 明确 agentd Profile 的“单 Profile”或“多 Runtime 路由”语义。
+
+### P1：完成单 Agent Runtime 的可靠性
+
+- 为 Session 引入 version/CAS 或等价并发控制；
+- 定义 State/Event 原子性策略（transaction、outbox 或可验证的事件一致性模型）；
+- 为长任务 Worker 增加自动 heartbeat 和 capability-aware leasing；
+- 覆盖 pause/resume/cancel、lease expiry、unknown execution 和重复执行场景。
+
+### P2：再接通 P6 执行闭环
+
+```text
+AgentRuntime
+  → WorkScheduler
+  → Persistent Queue
+  → Worker
+  → AgentRuntime resume/settle
+  → Session + Event Store
+```
+
+在这个闭环之前，不应把 P6 描述为已经具备分布式 Agent 执行能力。
+
+### P3：生产安全与外部适配
+
+- secrets 分离、agentd 认证、授权和租户隔离；
+- 真实 Model Provider 与 Kubernetes API adapter；
+- 持久化 Queue/Worker Registry、schema migration 和操作审计；
+- 真正的长连接 Event Stream 与 OpenTelemetry exporter。
+
+Multi-Agent、复杂 UI 和更大范围的分布式部署应继续排在上述可靠性工作之后。
+
+## 文档权威关系
+
+- 工程约束：[`AGENTS.md`](../../AGENTS.md)
+- 架构目标：[`universal-agent-runtime-domain-runtime-design.md`](../../universal-agent-runtime-domain-runtime-design.md)
+- 操作入口和当前实现说明：[`README.md`](../../README.md)
+- 本文：当前实现状态、边界和推进顺序的审计快照
