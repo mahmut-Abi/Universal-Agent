@@ -308,6 +308,24 @@ class EcosystemRegistryIndex:
             )
         return matches[0]
 
+    def verify(self) -> EcosystemCatalogVerificationReport:
+        registered_domains = frozenset(
+            package.identity for package in self.manifest.domain_packages
+        )
+        return EcosystemCatalogVerificationReport(
+            (
+                _registry_profile_domains_registered(self.manifest.profiles, registered_domains),
+                _registry_dataset_domains_registered(
+                    self.manifest.evaluation_datasets,
+                    registered_domains,
+                ),
+                _registry_package_dependencies_registered(
+                    self.manifest.domain_packages,
+                    registered_domains,
+                ),
+            )
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class EcosystemCatalog:
@@ -606,6 +624,60 @@ def _profile_ref(entry: ProfileCatalogEntry) -> EcosystemProfileRef:
             for domain in profile.configured_domains()
         ),
         path=str(entry.path),
+    )
+
+
+def _registry_profile_domains_registered(
+    profiles: tuple[EcosystemProfileRef, ...],
+    registered_domains: frozenset[DomainIdentity],
+) -> EcosystemCatalogCheck:
+    missing = tuple(
+        f"{profile.name}:{domain.name}@{domain.version}"
+        for profile in profiles
+        for domain in profile.domains
+        if domain not in registered_domains
+    )
+    return _reference_check(
+        "profile_domains_registered",
+        missing,
+        "all profile domains are backed by discovered Domain packages",
+        "profiles reference missing Domain packages",
+    )
+
+
+def _registry_dataset_domains_registered(
+    datasets: tuple[EcosystemEvaluationDatasetRef, ...],
+    registered_domains: frozenset[DomainIdentity],
+) -> EcosystemCatalogCheck:
+    missing = tuple(
+        f"{dataset.name}:{domain.name}@{domain.version}"
+        for dataset in datasets
+        for domain in dataset.domains
+        if domain not in registered_domains
+    )
+    return _reference_check(
+        "dataset_domains_registered",
+        missing,
+        "all evaluation dataset domains are backed by discovered Domain packages",
+        "evaluation datasets reference missing Domain packages",
+    )
+
+
+def _registry_package_dependencies_registered(
+    packages: tuple[EcosystemDomainPackageRef, ...],
+    registered_domains: frozenset[DomainIdentity],
+) -> EcosystemCatalogCheck:
+    missing = tuple(
+        f"{package.name}:{dependency.name}@{dependency.version}"
+        for package in packages
+        for dependency in package.dependencies
+        if dependency not in registered_domains
+    )
+    return _reference_check(
+        "package_dependencies_registered",
+        missing,
+        "all Domain package dependencies are present in the catalog",
+        "Domain packages reference missing dependencies",
     )
 
 

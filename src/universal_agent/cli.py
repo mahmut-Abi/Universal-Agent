@@ -88,6 +88,7 @@ from universal_agent.domain import (
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.ecosystem import (
     EcosystemCatalog,
+    EcosystemCatalogVerificationReport,
     EcosystemRegistryNotFoundError,
     encode_ecosystem_registry_manifest,
     load_ecosystem_catalog,
@@ -470,6 +471,7 @@ def build_parser() -> argparse.ArgumentParser:
     ecosystem_export.add_argument("--force", action="store_true")
     ecosystem_registry = ecosystem_commands.add_parser("registry")
     ecosystem_registry.add_argument("manifest")
+    ecosystem_registry.add_argument("--verify", action="store_true")
 
     evaluate = commands.add_parser("eval")
     eval_commands = evaluate.add_subparsers(dest="eval_command", required=True)
@@ -1030,6 +1032,9 @@ def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:
         return
     if command == "registry":
         index = load_ecosystem_registry_index(cast(str, args.manifest))
+        if cast(bool, args.verify):
+            _write_json(out, _ecosystem_verification_report_body(index.verify()))
+            return
         _write_json(out, encode_ecosystem_registry_manifest(index.manifest))
         return
     raise ValueError(f"unknown ecosystem command: {command}")
@@ -1744,7 +1749,12 @@ def _ecosystem_catalog_body(catalog: EcosystemCatalog) -> dict[str, object]:
 
 
 def _ecosystem_verification_body(catalog: EcosystemCatalog) -> dict[str, object]:
-    report = catalog.verify()
+    return _ecosystem_verification_report_body(catalog.verify())
+
+
+def _ecosystem_verification_report_body(
+    report: EcosystemCatalogVerificationReport,
+) -> dict[str, object]:
     return {
         "passed": report.passed,
         "failed_check_count": len(report.failed_checks),

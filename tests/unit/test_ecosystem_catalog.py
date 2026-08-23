@@ -10,6 +10,7 @@ from universal_agent import (
     AmbiguousEcosystemRegistryItemError,
     EcosystemCatalog,
     EcosystemDomainPackageRef,
+    EcosystemProfileRef,
     EcosystemRegistryIndex,
     EcosystemRegistryItemNotFoundError,
     EcosystemRegistryManifest,
@@ -231,6 +232,7 @@ def test_ecosystem_registry_index_queries_exported_manifest(tmp_path: Path) -> N
     write_ecosystem_registry_manifest(output_path, manifest)
     loaded = load_ecosystem_registry_index(output_path)
     assert loaded.domain_package("kubernetes").version == "1.0.0"
+    assert index.verify().passed is True
 
     with pytest.raises(EcosystemRegistryItemNotFoundError, match="domain package not found"):
         index.domain_package("database")
@@ -250,3 +252,41 @@ def test_ecosystem_registry_index_queries_exported_manifest(tmp_path: Path) -> N
     )
     with pytest.raises(AmbiguousEcosystemRegistryItemError, match="multiple versions"):
         ambiguous.domain_package("kubernetes")
+
+
+def test_ecosystem_registry_index_verification_reports_missing_references() -> None:
+    index = EcosystemRegistryIndex(
+        EcosystemRegistryManifest(
+            api_version="agent.nantian.dev/v1alpha1",
+            kind="EcosystemRegistry",
+            name="missing-references",
+            version="1.0.0",
+            description="Registry with missing references",
+            domain_packages=(
+                EcosystemDomainPackageRef(
+                    "kubernetes",
+                    "1.0.0",
+                    "Kubernetes",
+                    dependencies=(DomainIdentity("observability", "1.0.0"),),
+                ),
+            ),
+            profiles=(
+                EcosystemProfileRef(
+                    "ops-profile",
+                    "1.0.0",
+                    "Ops profile",
+                    (DomainIdentity("database", "1.0.0"),),
+                    "profiles/ops.profile.json",
+                ),
+            ),
+        )
+    )
+
+    report = index.verify()
+    failed = {check.name: check.message for check in report.failed_checks}
+
+    assert report.passed is False
+    assert "profile_domains_registered" in failed
+    assert "package_dependencies_registered" in failed
+    assert "database@1.0.0" in failed["profile_domains_registered"]
+    assert "observability@1.0.0" in failed["package_dependencies_registered"]

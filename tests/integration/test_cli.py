@@ -778,6 +778,7 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
     inline_output = StringIO()
     write_output = StringIO()
     registry_output = StringIO()
+    registry_verify_output = StringIO()
     duplicate_output = StringIO()
     duplicate_error = StringIO()
     force_output = StringIO()
@@ -821,6 +822,11 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
         service=service,
         stdout=registry_output,
     )
+    registry_verify_status = await run_cli(
+        ["ecosystem", "registry", str(output_path), "--verify"],
+        service=service,
+        stdout=registry_verify_output,
+    )
     duplicate_status = await run_cli(
         [
             "ecosystem",
@@ -850,12 +856,14 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
     inline = read_json(inline_output)
     written = read_json(write_output)
     registry = read_json(registry_output)
+    registry_verify = read_json(registry_verify_output)
     forced = read_json(force_output)
     loaded = load_ecosystem_registry_manifest(output_path)
 
     assert inline_status == 0
     assert write_status == 0
     assert registry_status == 0
+    assert registry_verify_status == 0
     assert duplicate_status == 2
     assert force_status == 0
     assert inline["kind"] == "EcosystemRegistry"
@@ -869,6 +877,8 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
     assert written["manifest"]["summary"]["total_items"] == 3
     assert registry["kind"] == "EcosystemRegistry"
     assert registry["summary"]["total_items"] == 3
+    assert registry_verify["passed"] is True
+    assert registry_verify["failed_check_count"] == 0
     assert duplicate_output.getvalue() == ""
     assert "ecosystem registry manifest already exists" in duplicate_error.getvalue()
     assert forced["status"] == "updated"
