@@ -79,6 +79,8 @@ Goal
 - RuntimeService 本地 queue → worker → RuntimeAPI 闭环，用于已存在且无需确认的 waiting session
   resume、当前 Task resume、已确认 pending Action resume、Runtime-owned pending Action sweep，
   以及新 Goal 的 scheduled execution；
+- RuntimeHost file-backed coordination 闭环，覆盖 file-backed session/event store、queue、lock
+  和 worker registry 跨 host rebuild 后继续执行 scheduled session；
 - session-scoped execution lock，Worker 在 resume waiting session、current Task 或 confirmed pending Action
   前会获取 `session/<session_id>` 锁，冲突时回到 retry 队列，成功或失败后释放锁；
 - Worker Registry 以及 online/draining/offline/lost 状态和 file-backed worker 持久化/重载；

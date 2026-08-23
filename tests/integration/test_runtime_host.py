@@ -20,7 +20,12 @@ from universal_agent import (
     immutable_json,
 )
 from universal_agent.core import ExecutionStatus, GoalStatus, JsonMapping, SessionId
-from universal_agent.distributed import DistributedLockOwnerId, WorkerId, WorkItemStatus
+from universal_agent.distributed import (
+    DistributedLockOwnerId,
+    WorkerId,
+    WorkerRunStatus,
+    WorkItemStatus,
+)
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 
 
@@ -325,6 +330,65 @@ def test_runtime_host_uses_configured_file_backed_worker_registry(tmp_path: Path
     assert snapshot.workers.total_count == 1
     assert snapshot.workers.workers[0].worker_id == WorkerId("worker-a")
     assert snapshot.workers.workers[0].capabilities == ("agent_session",)
+
+
+@pytest.mark.asyncio
+async def test_runtime_host_file_backed_coordination_resumes_scheduled_session(
+    tmp_path: Path,
+) -> None:
+    backend = HostRemediationBackend()
+    store_path = tmp_path / "runtime-store"
+    queue_path = tmp_path / "coordination" / "work-queue.json"
+    locks_path = tmp_path / "coordination" / "distributed-locks.json"
+    workers_path = tmp_path / "coordination" / "workers.json"
+    config = RuntimeConfig(
+        environment=immutable_json({"environment": "production"}),
+        store=StoreConfig.file(str(store_path)),
+        distributed_queue=StoreConfig.file(str(queue_path)),
+        distributed_locks=StoreConfig.file(str(locks_path)),
+        distributed_workers=StoreConfig.file(str(workers_path)),
+        domain=DomainConfig("kubernetes", "0.2.0"),
+    )
+    first = RuntimeHost.build(
+        config=config,
+        model=ScriptedModelAdapter([Decision(DecisionType.WAIT, "pause for file worker")]),
+        domain=KubernetesRemediationDomain(backend, backend),
+    )
+
+    waiting = await first.service.run_goal(*remediation_goal_task())
+    scheduled = first.service.distributed_schedule_session(waiting.result.session_id, priority=9)
+    backend._scaled = True
+    second = RuntimeHost.build(
+        config=config,
+        model=ScriptedModelAdapter([inspect_workload("healthy"), finish()]),
+        domain=KubernetesRemediationDomain(backend, backend),
+    )
+    worker_result = await second.service.distributed_run_worker_once(WorkerId("worker-a"))
+    third = RuntimeHost.build(
+        config=config,
+        model=ScriptedModelAdapter([]),
+        domain=KubernetesRemediationDomain(backend, backend),
+    )
+    snapshot = third.service.distributed_snapshot()
+    completed = await third.service.get_session(waiting.result.session_id)
+
+    assert waiting.result.status is ExecutionStatus.WAITING
+    assert scheduled is not None
+    assert scheduled.scheduled_work_item.status is WorkItemStatus.QUEUED
+    assert worker_result is not None
+    assert worker_result.status is WorkerRunStatus.COMPLETED
+    assert worker_result.work_item is not None
+    assert worker_result.work_item.status is WorkItemStatus.COMPLETED
+    assert completed.goal_status is GoalStatus.COMPLETED
+    assert snapshot is not None
+    assert snapshot.work_queue.completed_count == 1
+    assert snapshot.work_queue.items[0].priority == 9
+    assert snapshot.locks == ()
+    assert snapshot.workers.total_count == 1
+    assert snapshot.workers.workers[0].worker_id == WorkerId("worker-a")
+    assert queue_path.exists()
+    assert locks_path.exists()
+    assert workers_path.exists()
 
 
 def test_runtime_host_from_profile_exposes_profile_catalog(tmp_path: Path) -> None:

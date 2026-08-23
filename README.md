@@ -396,6 +396,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p6_distributed_action.py
 .venv/bin/python examples/p6_distributed_pending_actions.py
 .venv/bin/python examples/p6_runtime_host_file_queue.py
+.venv/bin/python examples/p6_runtime_host_file_coordination.py
 .venv/bin/python examples/p6_worker_lifecycle.py
 .venv/bin/python examples/p6_distributed_lock_lifecycle.py
 .venv/bin/python examples/p7_domain_package_registry.py
