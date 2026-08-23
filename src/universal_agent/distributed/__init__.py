@@ -23,6 +23,7 @@ from universal_agent.distributed.locks import (
     InMemoryDistributedLockRegistry,
 )
 from universal_agent.distributed.queue import (
+    FileWorkQueue,
     InMemoryWorkQueue,
     LeaseId,
     LeaseLostError,
@@ -78,6 +79,7 @@ __all__ = [
     "DistributedRuntimeSnapshot",
     "DistributedSchedulingResult",
     "DistributedWorkerLifecycleResult",
+    "FileWorkQueue",
     "InMemoryDistributedLockRegistry",
     "InMemoryWorkQueue",
     "InMemoryWorkerRegistry",

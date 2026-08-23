@@ -70,7 +70,7 @@ Goal
 
 当前已有本地内存实现：
 
-- WorkScheduler、WorkQueue、WorkerLease、heartbeat、retry、expiry；
+- WorkScheduler、InMemory/File WorkQueue、WorkerLease、heartbeat、retry、expiry；
 - capability-aware Worker leasing，以及长异步 handler 的 queue/worker lease heartbeat；
 - RuntimeService 本地 queue → worker → RuntimeAPI resume 闭环，用于已存在且无需确认的 waiting session；
 - Worker Registry 以及 online/draining/offline/lost 状态；
@@ -80,7 +80,8 @@ Goal
   以及 CLI worker-run-once 本地执行入口。
 
 P6 当前遵循设计文档的“先做 local primitives”策略。它已有本地 waiting session resume
-闭环，但还没有完整持久化 Queue、跨进程 Worker 或新 Goal/Task/Action 的自动调度执行闭环。
+闭环和 file-backed queue adapter，但还没有跨进程 Worker、并发安全队列锁，或新 Goal/Task/Action
+的自动调度执行闭环。
 
 ### P7：生态元数据基础
 
@@ -119,10 +120,10 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
 在本次审计环境中执行的结果：
 
 ```text
-pytest --disable-warnings      353 passed, 5 skipped
-ruff format --check           passed, 199 files checked
+pytest --disable-warnings      356 passed, 5 skipped
+ruff format --check           passed, 200 files checked
 ruff check                    passed
-mypy (strict)                 passed, 199 source files
+mypy (strict)                 passed, 200 source files
 ```
 
 被跳过的测试是本地 socket bind 受到执行环境权限限制。测试运行还报告了较多 Python 3.14 /
@@ -137,6 +138,7 @@ pytest-asyncio event loop 弃用警告；这些警告尚未影响当前测试结
 ### P1：完成单 Agent Runtime 的可靠性
 
 - 继续定义 State/Event 原子性策略（transaction、outbox 或恢复流程）；
+- 压实 FileWorkQueue 的并发/损坏文件边界，或引入 SQLite-backed queue adapter；
 - 覆盖 pause/resume/cancel、lease expiry、unknown execution 和重复执行场景。
 
 ### P2：再接通 P6 执行闭环

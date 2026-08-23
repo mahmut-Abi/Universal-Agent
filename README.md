@@ -267,7 +267,7 @@ event-sourcing model or production migration system.
   Evidence, World Model, Domain Manager and Settings views without a web framework dependency or
   Kernel access.
 - P6 Distributed Runtime foundation: `WorkScheduler` maps session/task/action identity into stable local
-  work kinds and idempotency keys; `InMemoryWorkQueue` provides typed `WorkItem`, `WorkerLease` and
+  work kinds and idempotency keys; `InMemoryWorkQueue` and `FileWorkQueue` provide typed `WorkItem`, `WorkerLease` and
   status contracts for local scheduler/worker adapters, including priority ordering, idempotent enqueue,
   lease acquisition, heartbeat renewal, retry-aware failure, cancellation and lease expiry; `WorkQueueWorker`
   consumes those leases through per-kind handlers, leases only declared work kinds by default, can
@@ -372,6 +372,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p5_web_console.py
 .venv/bin/python examples/p5_session_diagnostics.py
 .venv/bin/python examples/p6_distributed_queue.py
+.venv/bin/python examples/p6_file_work_queue.py
 .venv/bin/python examples/p6_distributed_worker.py
 .venv/bin/python examples/p6_capability_aware_worker.py
 .venv/bin/python examples/p6_runtime_service_worker.py
