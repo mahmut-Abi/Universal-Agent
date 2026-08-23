@@ -23,6 +23,7 @@ from universal_agent import (
     SuccessCriterion,
     Task,
     WorkerId,
+    WorkerRunStatus,
     WorkerStatus,
     WorkItemStatus,
     immutable_json,
@@ -102,6 +103,7 @@ def build_service(
     *,
     usage: list[ModelUsage] | None = None,
     domain_packages: DomainPackageRegistry | None = None,
+    distributed_coordinator: DistributedRuntimeCoordinator | None = None,
 ) -> tuple[RuntimeService, ServiceBackend]:
     backend = ServiceBackend()
     active = DomainLoader().load(KubernetesRemediationDomain(backend, backend))
@@ -111,6 +113,7 @@ def build_service(
         runtime_api=api,
         components=components,
         domain_packages=domain_packages,
+        distributed_coordinator=distributed_coordinator,
     ), backend
 
 
@@ -393,6 +396,34 @@ def test_runtime_service_exposes_distributed_work_item_cancellation() -> None:
     assert result.cancelled_work_item.status is WorkItemStatus.CANCELLED
     assert result.cancelled_work_item.last_error == "operator cancelled distributed work"
     assert result.snapshot.work_queue.cancelled_count == 1
+
+
+@pytest.mark.asyncio
+async def test_runtime_service_distributed_worker_resumes_scheduled_session() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, _ = build_service(
+        [
+            Decision(DecisionType.WAIT, "pause before distributed resume"),
+            inspect_workload(),
+            finish(),
+        ],
+        distributed_coordinator=coordinator,
+    )
+
+    waiting = await service.run_goal(*goal_task())
+    scheduled = service.distributed_schedule_session(waiting.result.session_id)
+    worker_result = await service.distributed_run_worker_once(WorkerId("worker-a"))
+    completed = await service.get_session(waiting.result.session_id)
+
+    assert waiting.result.status is ExecutionStatus.WAITING
+    assert scheduled is not None
+    assert worker_result is not None
+    assert worker_result.status is WorkerRunStatus.COMPLETED
+    assert worker_result.work_item is not None
+    assert worker_result.work_item.status is WorkItemStatus.COMPLETED
+    assert completed.goal_status is not None
+    assert completed.goal_status.value == "completed"
+    assert coordinator.workers.get(WorkerId("worker-a")).capabilities == ("agent_session",)
 
 
 @pytest.mark.asyncio

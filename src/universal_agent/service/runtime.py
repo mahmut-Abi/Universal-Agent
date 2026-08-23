@@ -8,7 +8,9 @@ from universal_agent.core import (
     CapabilityCategory,
     DomainIdentity,
     EventId,
+    ExecutionStatus,
     Goal,
+    GoalStatus,
     JsonMapping,
     JsonValue,
     PolicyEffect,
@@ -30,7 +32,12 @@ from universal_agent.distributed import (
     DistributedSchedulingResult,
     DistributedWorkerLifecycleResult,
     WorkerId,
+    WorkerRunResult,
+    WorkHandlerResult,
+    WorkItem,
     WorkItemId,
+    WorkKind,
+    WorkQueueWorker,
 )
 from universal_agent.domain import (
     ActiveDomain,
@@ -68,6 +75,7 @@ from universal_agent.runtime import (
     SessionSummaryView,
     SessionView,
 )
+from universal_agent.state import StateNotFoundError
 from universal_agent.world import InMemoryWorldModel, WorldFact
 
 if TYPE_CHECKING:
@@ -579,6 +587,68 @@ class RuntimeService:
             work_item_id,
             reason=reason,
             now=now,
+        )
+
+    async def distributed_run_worker_once(
+        self,
+        worker_id: WorkerId,
+        *,
+        lease_ttl_seconds: float = 30.0,
+        worker_ttl_seconds: float = 30.0,
+        heartbeat_interval_seconds: float | None = None,
+    ) -> WorkerRunResult | None:
+        if self._distributed_coordinator is None:
+            return None
+        worker = WorkQueueWorker(
+            queue=self._distributed_coordinator.queue,
+            worker_id=worker_id,
+            handlers={WorkKind.AGENT_SESSION.value: self._handle_distributed_session_work},
+            lease_ttl_seconds=lease_ttl_seconds,
+            worker_registry=self._distributed_coordinator.workers,
+            worker_ttl_seconds=worker_ttl_seconds,
+            heartbeat_interval_seconds=heartbeat_interval_seconds,
+        )
+        return await worker.run_once()
+
+    async def _handle_distributed_session_work(self, item: WorkItem) -> WorkHandlerResult:
+        if item.session_id is None:
+            return WorkHandlerResult.failed(
+                "agent_session work item missing session_id", retry=False
+            )
+        try:
+            session = await self.get_session(item.session_id)
+        except StateNotFoundError as exc:
+            return WorkHandlerResult.failed(f"session not found: {exc}", retry=False)
+        if session.pending_action is not None:
+            return WorkHandlerResult.failed(
+                "session requires explicit confirmation before distributed resume",
+                retry=False,
+            )
+        if session.goal_status in {
+            GoalStatus.COMPLETED,
+            GoalStatus.FAILED,
+            GoalStatus.CANCELLED,
+        }:
+            return WorkHandlerResult.completed(
+                f"session already terminal: {session.goal_status.value}"
+            )
+        if session.goal_status is not GoalStatus.WAITING:
+            return WorkHandlerResult.failed(
+                f"session is not resumable: {session.goal_status.value}",
+                retry=True,
+            )
+        run = await self.resume_session(item.session_id)
+        if run.result.status in {
+            ExecutionStatus.COMPLETED,
+            ExecutionStatus.WAITING,
+            ExecutionStatus.CANCELLED,
+        }:
+            return WorkHandlerResult.completed(
+                f"distributed session resume settled as {run.result.status.value}"
+            )
+        return WorkHandlerResult.failed(
+            f"distributed session resume failed: {run.result.reason}",
+            retry=False,
         )
 
     async def run_goal(self, goal: Goal, task: Task) -> RuntimeRun:

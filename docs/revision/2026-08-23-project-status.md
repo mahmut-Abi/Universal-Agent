@@ -72,13 +72,14 @@ Goal
 
 - WorkScheduler、WorkQueue、WorkerLease、heartbeat、retry、expiry；
 - capability-aware Worker leasing，以及长异步 handler 的 queue/worker lease heartbeat；
+- RuntimeService 本地 queue → worker → RuntimeAPI resume 闭环，用于已存在且无需确认的 waiting session；
 - Worker Registry 以及 online/draining/offline/lost 状态；
 - leased distributed lock；
 - Runtime Snapshot、Health Report、Coordinator；
 - agentd/CLI 的 distributed snapshot、health、schedule、worker、lock、expire 视图。
 
-P6 当前遵循设计文档的“先做 local primitives”策略。它还没有把 AgentRuntime 的
-Session/Task/Action 执行自动接入 Queue → Worker → Runtime resume 闭环。
+P6 当前遵循设计文档的“先做 local primitives”策略。它已有本地 waiting session resume
+闭环，但还没有完整持久化 Queue、跨进程 Worker 或新 Goal/Task/Action 的自动调度执行闭环。
 
 ### P7：生态元数据基础
 
@@ -117,10 +118,10 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
 在本次审计环境中执行的结果：
 
 ```text
-pytest --disable-warnings      350 passed, 5 skipped
-ruff format --check           passed, 198 files checked
+pytest --disable-warnings      351 passed, 5 skipped
+ruff format --check           passed, 199 files checked
 ruff check                    passed
-mypy (strict)                 passed, 198 source files
+mypy (strict)                 passed, 199 source files
 ```
 
 被跳过的测试是本地 socket bind 受到执行环境权限限制。测试运行还报告了较多 Python 3.14 /
