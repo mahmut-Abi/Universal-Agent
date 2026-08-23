@@ -1034,6 +1034,40 @@ async def test_agentd_distributed_worker_lifecycle_routes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agentd_distributed_worker_run_once_route() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, _ = build_service(
+        [wait(), inspect_workload(), finish()],
+        distributed_coordinator=coordinator,
+    )
+    waiting = await service.run_goal(*goal_task())
+    service.distributed_schedule_session(waiting.result.session_id)
+    app = AgentdApp(service)
+
+    response = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/workers/worker-a/run-once",
+            immutable_json(
+                {
+                    "lease_ttl_seconds": 30,
+                    "worker_ttl_seconds": 30,
+                    "heartbeat_interval_seconds": 10,
+                }
+            ),
+        )
+    )
+    completed = await service.get_session(waiting.result.session_id)
+
+    assert response.status_code == 200
+    assert response.body["status"] == "completed"
+    assert response.body["worker_id"] == "worker-a"
+    work_item = json_object(response.body["work_item"])
+    assert work_item["status"] == "completed"
+    assert completed.goal_status.value == "completed"
+
+
+@pytest.mark.asyncio
 async def test_agentd_distributed_schedule_route_schedules_session_work() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()

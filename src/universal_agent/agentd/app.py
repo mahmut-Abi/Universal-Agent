@@ -343,6 +343,27 @@ class AgentdApp:
                         distributed_worker_id,
                         ttl_seconds=_distributed_ttl_seconds(request.body),
                     )
+                elif distributed_worker_action == "run-once":
+                    worker_run = await self._service.distributed_run_worker_once(
+                        distributed_worker_id,
+                        lease_ttl_seconds=_distributed_worker_run_seconds(
+                            request.body,
+                            field_name="lease_ttl_seconds",
+                            default=30.0,
+                        ),
+                        worker_ttl_seconds=_distributed_worker_run_seconds(
+                            request.body,
+                            field_name="worker_ttl_seconds",
+                            default=30.0,
+                        ),
+                        heartbeat_interval_seconds=_distributed_worker_run_optional_seconds(
+                            request.body,
+                            field_name="heartbeat_interval_seconds",
+                        ),
+                    )
+                    if worker_run is None:
+                        return not_found("distributed runtime coordinator is not configured")
+                    return json_response(distributed_worker_run_body(worker_run))
                 elif distributed_worker_action == "drain":
                     lifecycle = self._service.distributed_drain_worker(
                         distributed_worker_id,
@@ -1743,6 +1764,31 @@ def _distributed_ttl_seconds(body: JsonMapping) -> float:
     if ttl_seconds <= 0:
         raise ValueError("distributed worker ttl_seconds must be a positive number")
     return ttl_seconds
+
+
+def _distributed_worker_run_seconds(
+    body: JsonMapping,
+    *,
+    field_name: str,
+    default: float,
+) -> float:
+    value = body.get(field_name, default)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"distributed worker {field_name} must be a positive number")
+    seconds = float(value)
+    if seconds <= 0:
+        raise ValueError(f"distributed worker {field_name} must be a positive number")
+    return seconds
+
+
+def _distributed_worker_run_optional_seconds(
+    body: JsonMapping,
+    *,
+    field_name: str,
+) -> float | None:
+    if field_name not in body:
+        return None
+    return _distributed_worker_run_seconds(body, field_name=field_name, default=30.0)
 
 
 def _distributed_reason(
