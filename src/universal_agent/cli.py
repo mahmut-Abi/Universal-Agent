@@ -15,6 +15,8 @@ from universal_agent.agentd.app import (
     capability_body,
     config_body,
     cost_body,
+    distributed_health_body,
+    distributed_snapshot_body,
     doctor_body,
     domain_body,
     evaluator_body,
@@ -254,6 +256,14 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("doctor")
     commands.add_parser("audit")
 
+    distributed = commands.add_parser("distributed")
+    distributed_commands = distributed.add_subparsers(
+        dest="distributed_command",
+        required=True,
+    )
+    distributed_commands.add_parser("snapshot")
+    distributed_commands.add_parser("health")
+
     init = commands.add_parser("init")
     init.add_argument("--output", default="profile.json")
     init.add_argument("--profile", default=LOCAL_PROFILE_NAME)
@@ -480,6 +490,21 @@ async def _dispatch(
     if command == "audit":
         _write_json(out, audit_records_body(await service.audit_records()))
         return
+    if command == "distributed":
+        distributed_command = cast(str, args.distributed_command)
+        if distributed_command == "snapshot":
+            snapshot = service.distributed_snapshot()
+            if snapshot is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_snapshot_body(snapshot))
+            return
+        if distributed_command == "health":
+            health = service.distributed_health()
+            if health is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_health_body(health))
+            return
+        raise ValueError(f"unknown distributed command: {distributed_command}")
     if command == "init":
         _dispatch_init(args, out)
         return

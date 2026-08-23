@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from universal_agent import (
     AgentRuntime,
     Decision,
     DecisionType,
+    DistributedRuntimeCoordinator,
     DomainConfig,
     DomainLoader,
     Goal,
@@ -30,11 +32,12 @@ from universal_agent import (
     StoreConfig,
     SuccessCriterion,
     Task,
+    WorkerId,
     immutable_json,
 )
 from universal_agent.agentd import AgentdHttpServer
 from universal_agent.cli import run_cli
-from universal_agent.core import JsonMapping
+from universal_agent.core import JsonMapping, SessionId
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.recording import (
     FileEvaluationReportStore,
@@ -121,6 +124,7 @@ def build_cli_service(
     decisions: list[Decision],
     *,
     usage: list[ModelUsage] | None = None,
+    distributed_coordinator: DistributedRuntimeCoordinator | None = None,
 ) -> tuple[RuntimeService, CliBackend]:
     backend = CliBackend()
     components = RuntimeBuilder().build(
@@ -147,6 +151,7 @@ def build_cli_service(
         components=components,
         profiles=(cli_profile(),),
         config=config,
+        distributed_coordinator=distributed_coordinator,
     ), backend
 
 
@@ -589,6 +594,53 @@ async def test_cli_exposes_service_catalog_commands() -> None:
         "kubernetes readiness",
         "unhealthy workload triage",
     }
+
+
+@pytest.mark.asyncio
+async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.scheduler.schedule_session(SessionId("session-1"), available_at=now)
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=999_999_999,
+        now=now,
+    )
+    service, _ = build_cli_service([], distributed_coordinator=coordinator)
+    snapshot_output = StringIO()
+    health_output = StringIO()
+    missing_output = StringIO()
+    missing_error = StringIO()
+
+    snapshot_status = await run_cli(
+        ["distributed", "snapshot"],
+        service=service,
+        stdout=snapshot_output,
+    )
+    health_status = await run_cli(
+        ["distributed", "health"],
+        service=service,
+        stdout=health_output,
+    )
+    missing_status = await run_cli(
+        ["distributed", "health"],
+        service=build_cli_service([])[0],
+        stdout=missing_output,
+        stderr=missing_error,
+    )
+
+    snapshot = read_json(snapshot_output)
+    health = read_json(health_output)
+
+    assert snapshot_status == 0
+    assert snapshot["work_queue"]["queued_count"] == 1
+    assert snapshot["workers"]["online_count"] == 1
+    assert health_status == 0
+    assert health["status"] == "ok"
+    assert missing_status == 2
+    assert missing_output.getvalue() == ""
+    assert "distributed runtime coordinator is not configured" in missing_error.getvalue()
 
 
 @pytest.mark.asyncio
