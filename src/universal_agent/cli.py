@@ -19,6 +19,7 @@ from universal_agent.agentd.app import (
     distributed_health_body,
     distributed_lock_lifecycle_body,
     distributed_maintenance_body,
+    distributed_pending_action_scheduling_body,
     distributed_scheduling_body,
     distributed_snapshot_body,
     distributed_worker_lifecycle_body,
@@ -340,6 +341,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     distributed_schedule_action.add_argument("--priority", type=int, default=0)
     distributed_schedule_action.add_argument("--max-attempts", type=int, default=3)
+    distributed_pending_actions = distributed_commands.add_parser("schedule-pending-actions")
+    distributed_pending_actions.add_argument(
+        "--confirmed", choices=("true", "false"), required=True
+    )
+    distributed_pending_actions.add_argument("--priority", type=int, default=0)
+    distributed_pending_actions.add_argument("--max-attempts", type=int, default=3)
     distributed_cancel = distributed_commands.add_parser("cancel")
     distributed_cancel.add_argument("work_item_id")
     distributed_cancel.add_argument(
@@ -745,6 +752,19 @@ async def _dispatch(
             if scheduling is None:
                 raise ValueError("distributed runtime coordinator is not configured")
             _write_json(out, distributed_scheduling_body(scheduling))
+            return
+        if distributed_command == "schedule-pending-actions":
+            confirmed = cast(str, args.confirmed) == "true"
+            if not confirmed:
+                raise ValueError("distributed schedule-pending-actions requires --confirmed true")
+            pending_scheduling = await service.distributed_schedule_pending_actions(
+                confirmed=confirmed,
+                priority=cast(int, args.priority),
+                max_attempts=cast(int, args.max_attempts),
+            )
+            if pending_scheduling is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_pending_action_scheduling_body(pending_scheduling))
             return
         if distributed_command == "expire":
             maintenance = service.distributed_expire()

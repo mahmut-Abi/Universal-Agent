@@ -239,6 +239,13 @@ class WorldFactView:
 
 
 @dataclass(frozen=True, slots=True)
+class DistributedPendingActionSchedulingResult:
+    scheduled_work_items: tuple[WorkItem, ...]
+    snapshot: DistributedRuntimeSnapshot
+    health: DistributedHealthReport
+
+
+@dataclass(frozen=True, slots=True)
 class SessionExplorerView:
     session: SessionView
     evidence: tuple[EvidenceView, ...]
@@ -530,6 +537,45 @@ class RuntimeService:
             max_attempts=max_attempts,
             available_at=now,
             now=now,
+        )
+
+    async def distributed_schedule_pending_actions(
+        self,
+        *,
+        confirmed: bool,
+        priority: int = 0,
+        max_attempts: int = 3,
+        now: datetime | None = None,
+    ) -> DistributedPendingActionSchedulingResult | None:
+        if not confirmed:
+            raise ValueError("distributed pending-action schedule requires confirmed=true")
+        if self._distributed_coordinator is None:
+            return None
+
+        scheduled: list[WorkItem] = []
+        for summary in await self.list_sessions():
+            if summary.goal_status is not GoalStatus.WAITING or not summary.pending_action:
+                continue
+            session = await self.get_session(summary.session_id)
+            pending = session.pending_action
+            if pending is None or session.goal_status is not GoalStatus.WAITING:
+                continue
+            result = self._distributed_coordinator.schedule_action(
+                session.session_id,
+                session.current_task_id,
+                pending.action_id,
+                payload=immutable_json({"confirmed": confirmed}),
+                priority=priority,
+                max_attempts=max_attempts,
+                available_at=now,
+                now=now,
+            )
+            scheduled.append(result.scheduled_work_item)
+
+        return DistributedPendingActionSchedulingResult(
+            scheduled_work_items=tuple(scheduled),
+            snapshot=self._distributed_coordinator.snapshot(),
+            health=self._distributed_coordinator.health(now=now),
         )
 
     def distributed_register_worker(

@@ -59,6 +59,7 @@ from universal_agent.runtime import (
 from universal_agent.service import (
     AuditRecordView,
     CapabilityView,
+    DistributedPendingActionSchedulingResult,
     DoctorReportView,
     DomainPackageView,
     DomainView,
@@ -493,6 +494,36 @@ class AgentdApp:
             if scheduling is None:
                 return not_found("distributed runtime coordinator is not configured")
             return json_response(distributed_scheduling_body(scheduling), status_code=202)
+        if path == "/v1/distributed/pending-actions/schedule":
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            confirmed = request.body.get("confirmed")
+            if not isinstance(confirmed, bool):
+                return bad_request(
+                    "distributed pending-action schedule confirmed must be a boolean"
+                )
+            if not confirmed:
+                return bad_request("distributed pending-action schedule requires confirmed=true")
+            priority = request.body.get("priority", 0)
+            if not isinstance(priority, int):
+                return bad_request("distributed schedule priority must be an integer")
+            max_attempts = request.body.get("max_attempts", 3)
+            if not isinstance(max_attempts, int):
+                return bad_request("distributed schedule max_attempts must be an integer")
+            try:
+                pending_scheduling = await self._service.distributed_schedule_pending_actions(
+                    confirmed=confirmed,
+                    priority=priority,
+                    max_attempts=max_attempts,
+                )
+            except ValueError as exc:
+                return bad_request(str(exc))
+            if pending_scheduling is None:
+                return not_found("distributed runtime coordinator is not configured")
+            return json_response(
+                distributed_pending_action_scheduling_body(pending_scheduling),
+                status_code=202,
+            )
         (
             distributed_schedule_action_session_id,
             distributed_schedule_action_task_id,
@@ -1209,6 +1240,21 @@ def distributed_scheduling_body(view: DistributedSchedulingResult) -> JsonMappin
     return immutable_json(
         {
             "scheduled_work_item": distributed_work_item_summary_body(view.scheduled_work_item),
+            "snapshot": dict(distributed_snapshot_body(view.snapshot)),
+            "health": dict(distributed_health_body(view.health)),
+        }
+    )
+
+
+def distributed_pending_action_scheduling_body(
+    view: DistributedPendingActionSchedulingResult,
+) -> JsonMapping:
+    return immutable_json(
+        {
+            "scheduled_count": len(view.scheduled_work_items),
+            "scheduled_work_items": [
+                distributed_work_item_summary_body(item) for item in view.scheduled_work_items
+            ],
             "snapshot": dict(distributed_snapshot_body(view.snapshot)),
             "health": dict(distributed_health_body(view.health)),
         }

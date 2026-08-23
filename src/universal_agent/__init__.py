@@ -135,6 +135,7 @@ from universal_agent.runtime import (
 )
 from universal_agent.service import (
     AuditRecordView,
+    DistributedPendingActionSchedulingResult,
     DoctorReportView,
     DomainPackageView,
     RuntimeConfigDomainView,
@@ -183,6 +184,7 @@ __all__ = [
     "DistributedLockOwnerId",
     "DistributedLockSnapshot",
     "DistributedMaintenanceResult",
+    "DistributedPendingActionSchedulingResult",
     "DistributedRuntimeCoordinator",
     "DistributedRuntimeSnapshot",
     "DistributedSchedulingResult",

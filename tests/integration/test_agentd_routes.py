@@ -1271,6 +1271,48 @@ async def test_agentd_distributed_schedule_action_route_confirms_pending_action(
 
 
 @pytest.mark.asyncio
+async def test_agentd_distributed_schedule_pending_actions_route_confirms_pending_actions() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, backend = build_remediation_service(
+        [
+            inspect_workload("healthy"),
+            inspect_pod(),
+            scale_workload(),
+            inspect_workload("verification_observed", "healthy"),
+            finish(),
+        ],
+        distributed_coordinator=coordinator,
+    )
+    waiting = await service.run_goal(*remediation_goal_task())
+    assert waiting.session.pending_action is not None
+    pending = waiting.session.pending_action
+    app = AgentdApp(service)
+
+    scheduled = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/pending-actions/schedule",
+            immutable_json({"confirmed": True, "priority": 4}),
+        )
+    )
+    worker = await app.handle(HttpRequest("POST", "/v1/distributed/workers/worker-a/run-once"))
+    completed = await service.get_session(waiting.result.session_id)
+
+    assert scheduled.status_code == 202
+    assert scheduled.body["scheduled_count"] == 1
+    scheduled_items = json_array(scheduled.body["scheduled_work_items"])
+    scheduled_item = json_object(scheduled_items[0])
+    assert scheduled_item["kind"] == "tool_action"
+    assert scheduled_item["status"] == "queued"
+    assert scheduled_item["action_id"] == str(pending.action_id)
+    assert worker.status_code == 200
+    assert worker.body["status"] == "completed"
+    assert completed.goal_status.value == "completed"
+    assert completed.pending_action is None
+    assert backend.mutation_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_agentd_distributed_schedule_action_route_validates_confirmation() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_remediation_service(
@@ -1301,6 +1343,34 @@ async def test_agentd_distributed_schedule_action_route_validates_confirmation()
     assert false_confirmation.body["error"] == {
         "code": "bad_request",
         "message": "distributed schedule-action requires confirmed=true",
+    }
+    assert wrong_method.status_code == 405
+    assert wrong_method.headers["allow"] == "POST"
+
+
+@pytest.mark.asyncio
+async def test_agentd_distributed_schedule_pending_actions_route_validates_confirmation() -> None:
+    service, _ = build_remediation_service(
+        [], distributed_coordinator=DistributedRuntimeCoordinator()
+    )
+    app = AgentdApp(service)
+    route = "/v1/distributed/pending-actions/schedule"
+
+    missing = await app.handle(HttpRequest("POST", route))
+    false_confirmation = await app.handle(
+        HttpRequest("POST", route, immutable_json({"confirmed": False}))
+    )
+    wrong_method = await app.handle(HttpRequest("GET", route))
+
+    assert missing.status_code == 400
+    assert missing.body["error"] == {
+        "code": "bad_request",
+        "message": "distributed pending-action schedule confirmed must be a boolean",
+    }
+    assert false_confirmation.status_code == 400
+    assert false_confirmation.body["error"] == {
+        "code": "bad_request",
+        "message": "distributed pending-action schedule requires confirmed=true",
     }
     assert wrong_method.status_code == 405
     assert wrong_method.headers["allow"] == "POST"

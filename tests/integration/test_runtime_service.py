@@ -90,6 +90,28 @@ def scale_workload() -> Decision:
     )
 
 
+def inspect_named_workload(name: str) -> Decision:
+    return Decision(
+        DecisionType.EXECUTE,
+        f"Inspect workload {name}",
+        capability="inspect_workload",
+        target=f"deployment/{name}",
+        arguments=immutable_json({"name": name}),
+        expected_observations=("healthy",),
+    )
+
+
+def scale_named_workload(name: str) -> Decision:
+    return Decision(
+        DecisionType.EXECUTE,
+        f"Scale workload {name}",
+        capability="scale_workload",
+        target=f"deployment/{name}",
+        arguments=immutable_json({"name": name, "namespace": "default", "replicas": 3}),
+        expected_observations=("mutation_applied",),
+    )
+
+
 def wait() -> Decision:
     return Decision(DecisionType.WAIT, "pause before distributed runtime service resume")
 
@@ -567,6 +589,78 @@ async def test_runtime_service_distributed_worker_confirms_scheduled_action() ->
     assert completed.pending_action is None
     assert backend.mutation_calls == 1
     assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_runtime_service_distributed_schedules_pending_actions_from_sessions() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, backend = build_service(
+        [
+            scale_named_workload("example-a"),
+            scale_named_workload("example-b"),
+            inspect_named_workload("example-a"),
+            finish(),
+            inspect_named_workload("example-b"),
+            finish(),
+        ],
+        distributed_coordinator=coordinator,
+        environment="production",
+    )
+
+    first = await service.run_goal(*goal_task())
+    second = await service.run_goal(*goal_task())
+    assert first.session.pending_action is not None
+    assert second.session.pending_action is not None
+    first_pending = first.session.pending_action
+    second_pending = second.session.pending_action
+    scheduled = await service.distributed_schedule_pending_actions(
+        confirmed=True,
+        priority=7,
+    )
+    duplicate = await service.distributed_schedule_pending_actions(
+        confirmed=True,
+        priority=1,
+    )
+    worker_results = await service.distributed_run_worker_until_idle(
+        WorkerId("worker-a"),
+        max_items=5,
+    )
+    first_completed = await service.get_session(first.result.session_id)
+    second_completed = await service.get_session(second.result.session_id)
+
+    assert scheduled is not None
+    assert duplicate is not None
+    assert len(scheduled.scheduled_work_items) == 2
+    assert [item.priority for item in scheduled.scheduled_work_items] == [7, 7]
+    assert {item.action_id for item in scheduled.scheduled_work_items} == {
+        first_pending.action_id,
+        second_pending.action_id,
+    }
+    assert [item.work_item_id for item in duplicate.scheduled_work_items] == [
+        item.work_item_id for item in scheduled.scheduled_work_items
+    ]
+    assert scheduled.snapshot.work_queue.queued_count == 2
+    assert worker_results is not None
+    assert [result.status for result in worker_results] == [
+        WorkerRunStatus.COMPLETED,
+        WorkerRunStatus.COMPLETED,
+        WorkerRunStatus.NO_WORK,
+    ]
+    assert first_completed.goal_status is GoalStatus.COMPLETED
+    assert second_completed.goal_status is GoalStatus.COMPLETED
+    assert backend.mutation_calls == 2
+    assert backend.inspect_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_runtime_service_distributed_pending_action_sweep_requires_confirmation() -> None:
+    service, _ = build_service([], distributed_coordinator=DistributedRuntimeCoordinator())
+
+    with pytest.raises(
+        ValueError,
+        match="distributed pending-action schedule requires confirmed=true",
+    ):
+        await service.distributed_schedule_pending_actions(confirmed=False)
 
 
 @pytest.mark.asyncio

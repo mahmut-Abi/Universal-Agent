@@ -8,6 +8,7 @@ from universal_agent.operations import (
 )
 from universal_agent.service.runtime import (
     CapabilityView,
+    DistributedPendingActionSchedulingResult,
     DomainPackageView,
     DomainView,
     EvaluatorView,
@@ -27,6 +28,7 @@ from universal_agent.service.runtime import (
 __all__ = [
     "AuditRecordView",
     "CapabilityView",
+    "DistributedPendingActionSchedulingResult",
     "DoctorReportView",
     "DomainPackageView",
     "DomainView",

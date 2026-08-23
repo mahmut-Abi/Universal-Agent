@@ -1278,6 +1278,54 @@ async def test_cli_distributed_schedule_action_command_confirms_pending_action()
 
 
 @pytest.mark.asyncio
+async def test_cli_distributed_schedule_pending_actions_command_confirms_pending_actions() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, backend = build_cli_service(
+        [scale_workload(), inspect_workload(), finish()],
+        distributed_coordinator=coordinator,
+        environment="production",
+    )
+    waiting = await service.run_goal(*goal_task())
+    assert waiting.session.pending_action is not None
+    pending = waiting.session.pending_action
+    schedule_output = StringIO()
+    worker_output = StringIO()
+
+    schedule_status = await run_cli(
+        [
+            "distributed",
+            "schedule-pending-actions",
+            "--confirmed",
+            "true",
+            "--priority",
+            "4",
+        ],
+        service=service,
+        stdout=schedule_output,
+    )
+    worker_status = await run_cli(
+        ["distributed", "worker-run-once", "worker-a"],
+        service=service,
+        stdout=worker_output,
+    )
+    scheduled = read_json(schedule_output)
+    worker = read_json(worker_output)
+    completed = await service.get_session(waiting.result.session_id)
+
+    assert schedule_status == 0
+    assert scheduled["scheduled_count"] == 1
+    assert scheduled["scheduled_work_items"][0]["kind"] == "tool_action"
+    assert scheduled["scheduled_work_items"][0]["status"] == "queued"
+    assert scheduled["scheduled_work_items"][0]["action_id"] == str(pending.action_id)
+    assert worker_status == 0
+    assert worker["status"] == "completed"
+    assert worker["work_item"]["status"] == "completed"
+    assert completed.goal_status.value == "completed"
+    assert completed.pending_action is None
+    assert backend.mutation_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_cli_distributed_schedule_goal_command_runs_from_worker() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_cli_service(
