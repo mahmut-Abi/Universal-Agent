@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -141,6 +141,29 @@ def test_runtime_service_exposes_optional_distributed_runtime_views() -> None:
     assert health is not None
     assert snapshot.work_queue.queued_count == 1
     assert health.status.value == "ok"
+
+
+def test_runtime_service_exposes_distributed_expiry_sweep() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.queue.enqueue(kind="agent_session", available_at=now)
+    leased = coordinator.queue.lease(worker_id=WorkerId("worker-a"), ttl_seconds=1, now=now)
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+        distributed_coordinator=coordinator,
+    )
+
+    result = service.distributed_expire(now=now + timedelta(seconds=2))
+
+    assert result is not None
+    assert [item.work_item_id for item in result.expired_work_items] == [leased.work_item_id]
+    assert result.snapshot.work_queue.queued_count == 1
+    second = service.distributed_expire(now=now + timedelta(seconds=3))
+    assert second is not None
+    assert second.expired_work_items == ()
 
 
 @pytest.mark.asyncio

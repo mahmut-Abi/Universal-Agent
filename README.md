@@ -351,6 +351,7 @@ Python 3.12 or newer is required.
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli distributed health
 .venv/bin/python -m universal_agent.cli distributed snapshot
+.venv/bin/python -m universal_agent.cli distributed expire
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-profile.json --store-backend sqlite --store-path .tmp/runtime.sqlite3 --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-profile.json config show
 .venv/bin/python -m universal_agent.cli eval list local-kubernetes --kind policy --tag kubernetes

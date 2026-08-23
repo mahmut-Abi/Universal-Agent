@@ -20,6 +20,7 @@ from universal_agent.core import (
 )
 from universal_agent.distributed import (
     DistributedHealthReport,
+    DistributedMaintenanceResult,
     DistributedRuntimeCoordinator,
     DistributedRuntimeSnapshot,
 )
@@ -352,6 +353,12 @@ class RuntimeService:
         if self._distributed_coordinator is None:
             return None
         return self._distributed_coordinator.health(now=now)
+
+
+    def distributed_expire(self, *, now: datetime | None = None) -> DistributedMaintenanceResult | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.expire(now=now)
 
     async def run_goal(self, goal: Goal, task: Task) -> RuntimeRun:
         return await self._runtime_api.run_goal(goal, task)

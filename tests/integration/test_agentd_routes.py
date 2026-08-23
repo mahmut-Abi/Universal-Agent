@@ -646,6 +646,13 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
 
     snapshot = await app.handle(HttpRequest("GET", "/v1/distributed/snapshot"))
     health = await app.handle(HttpRequest("GET", "/v1/distributed/health"))
+    expired_work = coordinator.queue.lease(
+        worker_id=WorkerId("worker-a"),
+        ttl_seconds=1,
+        now=now,
+    )
+    expired = await app.handle(HttpRequest("POST", "/v1/distributed/expire"))
+    expire_get = await app.handle(HttpRequest("GET", "/v1/distributed/expire"))
     missing_service, _ = build_service([])
     missing = await AgentdApp(missing_service).handle(
         HttpRequest("GET", "/v1/distributed/health")
@@ -664,6 +671,14 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
     assert workers["online_count"] == 1
     assert first_lock["lock_key"] == "session/session-1"
     assert health.status_code == 200
+    assert expired.status_code == 200
+    expired_items = expired.body["expired_work_items"]
+    assert isinstance(expired_items, list)
+    first_expired = expired_items[0]
+    assert isinstance(first_expired, dict)
+    assert first_expired["work_item_id"] == str(expired_work.work_item_id)
+    assert first_expired["status"] == "queued"
+    assert expire_get.status_code == 405
     checks = health.body["checks"]
     assert isinstance(checks, list)
     first_check = checks[0]

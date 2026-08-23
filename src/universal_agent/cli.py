@@ -16,6 +16,7 @@ from universal_agent.agentd.app import (
     config_body,
     cost_body,
     distributed_health_body,
+    distributed_maintenance_body,
     distributed_snapshot_body,
     doctor_body,
     domain_body,
@@ -265,6 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     distributed_commands.add_parser("snapshot")
     distributed_commands.add_parser("health")
+    distributed_commands.add_parser("expire")
 
     init = commands.add_parser("init")
     init.add_argument("--output", default="profile.json")
@@ -505,6 +507,12 @@ async def _dispatch(
             if health is None:
                 raise ValueError("distributed runtime coordinator is not configured")
             _write_json(out, distributed_health_body(health))
+            return
+        if distributed_command == "expire":
+            maintenance = service.distributed_expire()
+            if maintenance is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_maintenance_body(maintenance))
             return
         raise ValueError(f"unknown distributed command: {distributed_command}")
     if command == "init":

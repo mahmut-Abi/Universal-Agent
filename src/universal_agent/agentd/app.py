@@ -21,6 +21,7 @@ from universal_agent.core import (
 )
 from universal_agent.distributed import (
     DistributedHealthReport,
+    DistributedMaintenanceResult,
     DistributedRuntimeSnapshot,
 )
 from universal_agent.profile import ProfileNotFoundError
@@ -275,6 +276,13 @@ class AgentdApp:
             if health is None:
                 return not_found("distributed runtime coordinator is not configured")
             return json_response(distributed_health_body(health))
+        if path == "/v1/distributed/expire":
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            maintenance = self._service.distributed_expire()
+            if maintenance is None:
+                return not_found("distributed runtime coordinator is not configured")
+            return json_response(distributed_maintenance_body(maintenance))
         if path == "/v1/metrics":
             if method != "GET":
                 return method_not_allowed(("GET",))
@@ -759,6 +767,42 @@ def metrics_body(view: RuntimeMetricsView) -> JsonMapping:
     )
 
 
+
+
+def distributed_maintenance_body(view: DistributedMaintenanceResult) -> JsonMapping:
+    return immutable_json(
+        {
+            "ran_at": view.ran_at.isoformat(),
+            "expired_work_items": [
+                {
+                    "work_item_id": str(item.work_item_id),
+                    "kind": item.kind,
+                    "status": item.status.value,
+                    "attempts": item.attempts,
+                    "last_error": item.last_error,
+                }
+                for item in view.expired_work_items
+            ],
+            "expired_locks": [
+                {
+                    "lock_key": lock.lock_key,
+                    "owner_id": str(lock.owner_id),
+                    "lease_id": str(lock.lease_id),
+                }
+                for lock in view.expired_locks
+            ],
+            "expired_workers": [
+                {
+                    "worker_id": str(worker.worker_id),
+                    "status": worker.status.value,
+                    "last_error": worker.last_error,
+                }
+                for worker in view.expired_workers
+            ],
+            "snapshot": dict(distributed_snapshot_body(view.snapshot)),
+            "health": dict(distributed_health_body(view.health)),
+        }
+    )
 
 def distributed_snapshot_body(view: DistributedRuntimeSnapshot) -> JsonMapping:
     return immutable_json(
