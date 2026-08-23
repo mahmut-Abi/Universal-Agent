@@ -4,7 +4,33 @@ from pathlib import Path
 
 import pytest
 
-from universal_agent import DomainConfig, ProfileConfig, ProfileRegistry, StoreConfig
+from universal_agent import (
+    DomainConfig,
+    ProfileCatalog,
+    ProfileConfig,
+    ProfileConfigNotFoundError,
+    ProfileRegistry,
+    StoreConfig,
+    load_profile_catalog,
+)
+
+
+def write_profile(path: Path, name: str, *, domain: str = "kubernetes") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"""
+        {{
+          "name": "{name}",
+          "version": "1.0.0",
+          "description": "{name} profile",
+          "domain": {{"name": "{domain}", "version": "0.2.0"}},
+          "runtime": {{
+            "domain": {{"name": "{domain}", "version": "0.2.0"}}
+          }}
+        }}
+        """,
+        encoding="utf-8",
+    )
 
 
 def test_profile_config_from_mapping_parses_runtime_and_domain() -> None:
@@ -138,3 +164,40 @@ def test_profile_registry_rejects_duplicate_profile_names() -> None:
 
     with pytest.raises(ValueError, match="duplicate profiles: production-operator"):
         ProfileRegistry((profile, profile))
+
+
+def test_profile_catalog_discovers_profile_configs_in_stable_order(tmp_path: Path) -> None:
+    write_profile(tmp_path / "beta" / "profile.json", "beta-profile", domain="database")
+    write_profile(tmp_path / "alpha.profile.json", "alpha-profile")
+
+    catalog = load_profile_catalog(tmp_path)
+    registry = catalog.registry()
+
+    assert [entry.profile.name for entry in catalog.all()] == ["alpha-profile", "beta-profile"]
+    assert registry.has("alpha-profile") is True
+    assert catalog.get("beta-profile").profile.domain == DomainConfig("database", "0.2.0")
+
+
+def test_profile_catalog_accepts_single_profile_file(tmp_path: Path) -> None:
+    path = tmp_path / "operator.profile.json"
+    write_profile(path, "operator")
+
+    catalog = ProfileCatalog.discover(path)
+
+    assert catalog.all()[0].path == path
+    assert catalog.all()[0].profile.name == "operator"
+
+
+def test_profile_catalog_rejects_missing_configs_and_duplicate_names(tmp_path: Path) -> None:
+    with pytest.raises(ProfileConfigNotFoundError, match="not found"):
+        load_profile_catalog(tmp_path / "missing")
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(ProfileConfigNotFoundError, match="files not found"):
+        load_profile_catalog(empty)
+
+    write_profile(tmp_path / "one.profile.json", "duplicate")
+    write_profile(tmp_path / "two" / "profile.json", "duplicate")
+    with pytest.raises(ValueError, match="duplicate profiles: duplicate"):
+        load_profile_catalog(tmp_path)

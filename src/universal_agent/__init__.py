@@ -105,7 +105,15 @@ from universal_agent.persistence import (
     SQLiteEventStore,
     SQLiteSessionStore,
 )
-from universal_agent.profile import AgentProfile, ProfileConfig, ProfileRegistry
+from universal_agent.profile import (
+    AgentProfile,
+    ProfileCatalog,
+    ProfileCatalogEntry,
+    ProfileConfig,
+    ProfileConfigNotFoundError,
+    ProfileRegistry,
+    load_profile_catalog,
+)
 from universal_agent.runtime import (
     AgentRuntime,
     EventCursorError,
@@ -208,7 +216,10 @@ __all__ = [
     "ModelUsage",
     "ModelUsageProvider",
     "NoWorkAvailable",
+    "ProfileCatalog",
+    "ProfileCatalogEntry",
     "ProfileConfig",
+    "ProfileConfigNotFoundError",
     "ProfileRegistry",
     "RuntimeAPI",
     "RuntimeBuilder",
@@ -275,6 +286,7 @@ __all__ = [
     "immutable_json",
     "load_domain_package",
     "load_evaluation_dataset",
+    "load_profile_catalog",
     "render_tui_snapshot",
     "render_web_console",
     "render_web_domain_detail",

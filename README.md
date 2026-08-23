@@ -12,8 +12,8 @@ HTTP bridge, a local CLI adapter, local file-backed session/event persistence, t
 operations surface with cost tracking and OpenTelemetry-shaped trace span projections, a P3.7
 Evaluation Harness / Replay foundation, the first read-only TUI and Web Console snapshot
 foundations, the first P6 local scheduler, queue, worker registry, worker, lock, snapshot, health,
-and coordinator primitives, and the first P7 Domain Package registry metadata plus SDK scaffold
-foundation and Evaluation Dataset catalog foundation. The v3.0 design document also defines later productization layers such as production
+and coordinator primitives, and the first P7 Domain Package registry metadata plus SDK scaffold,
+Evaluation Dataset catalog and Profile Catalog foundations. The v3.0 design document also defines later productization layers such as production
 database persistence, long-lived event delivery, OpenTelemetry exporters, optional Multi-Agent,
 distributed runtime, and ecosystem packaging.
 
@@ -281,6 +281,9 @@ backend for `RuntimeHost` configuration, not an event-sourcing model or producti
   files into discoverable datasets with Domain, tag, suite and author metadata. `EvaluationDatasetRegistry`
   validates referenced suite configs and lists or retrieves datasets without executing scenarios or
   coupling dataset cataloging to RuntimeService internals.
+- P7 Profile Catalog foundation: `ProfileCatalog` discovers `profile.json` and `*.profile.json`
+  files, validates them through `ProfileConfig`, preserves source paths and exposes a `ProfileRegistry`
+  view for application adapters without changing RuntimeHost configuration semantics.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
@@ -367,6 +370,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p7_domain_package_registry.py
 .venv/bin/python examples/p7_domain_package_scaffold.py
 .venv/bin/python examples/p7_evaluation_dataset.py
+.venv/bin/python examples/p7_profile_catalog.py
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli distributed health
 .venv/bin/python -m universal_agent.cli distributed snapshot

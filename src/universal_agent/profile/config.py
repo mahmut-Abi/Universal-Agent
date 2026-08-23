@@ -11,6 +11,9 @@ from universal_agent.core import JsonValue
 if TYPE_CHECKING:
     from universal_agent.host.config import DomainConfig, RuntimeConfig
 
+PROFILE_CONFIG_FILE = "profile.json"
+PROFILE_CONFIG_SUFFIX = ".profile.json"
+
 
 @dataclass(frozen=True, slots=True)
 class AgentProfile:
@@ -110,6 +113,42 @@ class ProfileNotFoundError(LookupError):
     pass
 
 
+class ProfileConfigNotFoundError(LookupError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileCatalogEntry:
+    profile: AgentProfile
+    config: ProfileConfig
+    path: Path
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileCatalog:
+    entries: tuple[ProfileCatalogEntry, ...] = ()
+
+    def __post_init__(self) -> None:
+        ProfileRegistry(tuple(entry.profile for entry in self.entries))
+
+    @classmethod
+    def discover(cls, root: str | Path) -> ProfileCatalog:
+        entries = tuple(_load_profile_entry(path) for path in _profile_config_paths(Path(root)))
+        return cls(entries)
+
+    def all(self) -> tuple[ProfileCatalogEntry, ...]:
+        return tuple(sorted(self.entries, key=lambda item: (item.profile.name, str(item.path))))
+
+    def registry(self) -> ProfileRegistry:
+        return ProfileRegistry(tuple(entry.profile for entry in self.all()))
+
+    def get(self, name: str) -> ProfileCatalogEntry:
+        for entry in self.all():
+            if entry.profile.name == name:
+                return entry
+        raise ProfileNotFoundError(f"profile not found: {name}")
+
+
 @dataclass(frozen=True, slots=True)
 class ProfileRegistry:
     profiles: tuple[AgentProfile, ...] = ()
@@ -135,6 +174,28 @@ class ProfileRegistry:
             if profile.name == name:
                 return profile
         raise ProfileNotFoundError(f"profile not found: {name}")
+
+
+def load_profile_catalog(root: str | Path) -> ProfileCatalog:
+    return ProfileCatalog.discover(root)
+
+
+def _load_profile_entry(path: Path) -> ProfileCatalogEntry:
+    config = ProfileConfig.from_json_file(path)
+    return ProfileCatalogEntry(config.to_profile(), config, path)
+
+
+def _profile_config_paths(root: Path) -> tuple[Path, ...]:
+    if root.is_file():
+        return (root,)
+    if not root.exists():
+        raise ProfileConfigNotFoundError(f"profile config root not found: {root}")
+    profile_json = tuple(root.rglob(PROFILE_CONFIG_FILE))
+    suffixed = tuple(root.rglob(f"*{PROFILE_CONFIG_SUFFIX}"))
+    paths = tuple(sorted(set(profile_json + suffixed)))
+    if not paths:
+        raise ProfileConfigNotFoundError(f"profile config files not found: {root}")
+    return paths
 
 
 def _object(value: JsonValue, field: str) -> Mapping[str, JsonValue]:
