@@ -460,6 +460,36 @@ async def test_runtime_service_distributed_worker_resumes_scheduled_session() ->
         "task",
         "tool_action",
     )
+    assert coordinator.locks.active() == ()
+
+
+@pytest.mark.asyncio
+async def test_runtime_service_distributed_worker_retries_when_session_lock_is_held() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, _ = build_service(
+        [
+            Decision(DecisionType.WAIT, "pause before distributed resume"),
+            inspect_workload(),
+            finish(),
+        ],
+        distributed_coordinator=coordinator,
+    )
+
+    waiting = await service.run_goal(*goal_task())
+    coordinator.locks.acquire(
+        lock_key=f"session/{waiting.result.session_id}",
+        owner_id=DistributedLockOwnerId("worker:other"),
+    )
+    service.distributed_schedule_session(waiting.result.session_id)
+    worker_result = await service.distributed_run_worker_once(WorkerId("worker-a"))
+    still_waiting = await service.get_session(waiting.result.session_id)
+
+    assert worker_result is not None
+    assert worker_result.status is WorkerRunStatus.RETRYING
+    assert worker_result.work_item is not None
+    assert worker_result.work_item.status is WorkItemStatus.QUEUED
+    assert worker_result.reason.startswith("session execution lock conflict: ")
+    assert still_waiting.goal_status is GoalStatus.WAITING
 
 
 @pytest.mark.asyncio
@@ -587,6 +617,7 @@ async def test_runtime_service_distributed_worker_confirms_scheduled_action() ->
     assert worker_result.reason == "distributed action resume settled as completed"
     assert completed.goal_status.value == "completed"
     assert completed.pending_action is None
+    assert coordinator.locks.active() == ()
     assert backend.mutation_calls == 1
     assert backend.inspect_calls == 1
 

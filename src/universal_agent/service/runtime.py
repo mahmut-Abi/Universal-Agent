@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, cast
@@ -29,7 +30,9 @@ from universal_agent.core import (
 from universal_agent.distributed import (
     DistributedCancellationResult,
     DistributedHealthReport,
+    DistributedLockConflictError,
     DistributedLockLeaseId,
+    DistributedLockLeaseLostError,
     DistributedLockLifecycleResult,
     DistributedLockOwnerId,
     DistributedMaintenanceResult,
@@ -87,6 +90,9 @@ from universal_agent.world import InMemoryWorldModel, WorldFact
 
 if TYPE_CHECKING:
     from universal_agent.host.config import RuntimeConfig
+
+
+_DISTRIBUTED_SESSION_LOCK_TTL_SECONDS = 300.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -795,18 +801,11 @@ class RuntimeService:
                 f"session is not resumable: {session.goal_status.value}",
                 retry=True,
             )
-        run = await self.resume_session(item.session_id)
-        if run.result.status in {
-            ExecutionStatus.COMPLETED,
-            ExecutionStatus.WAITING,
-            ExecutionStatus.CANCELLED,
-        }:
-            return WorkHandlerResult.completed(
-                f"distributed session resume settled as {run.result.status.value}"
-            )
-        return WorkHandlerResult.failed(
-            f"distributed session resume failed: {run.result.reason}",
-            retry=False,
+        return await self._resume_distributed_session_under_lock(
+            item,
+            confirmed=None,
+            completed_reason_prefix="distributed session resume settled as",
+            failure_reason_prefix="distributed session resume failed",
         )
 
     async def _handle_distributed_goal_work(self, item: WorkItem) -> WorkHandlerResult:
@@ -859,18 +858,11 @@ class RuntimeService:
                 f"session task is not resumable: {session.goal_status.value}",
                 retry=True,
             )
-        run = await self.resume_session(item.session_id)
-        if run.result.status in {
-            ExecutionStatus.COMPLETED,
-            ExecutionStatus.WAITING,
-            ExecutionStatus.CANCELLED,
-        }:
-            return WorkHandlerResult.completed(
-                f"distributed task resume settled as {run.result.status.value}"
-            )
-        return WorkHandlerResult.failed(
-            f"distributed task resume failed: {run.result.reason}",
-            retry=False,
+        return await self._resume_distributed_session_under_lock(
+            item,
+            confirmed=None,
+            completed_reason_prefix="distributed task resume settled as",
+            failure_reason_prefix="distributed task resume failed",
         )
 
     async def _handle_distributed_action_work(self, item: WorkItem) -> WorkHandlerResult:
@@ -912,19 +904,92 @@ class RuntimeService:
                 f"session action is not confirmable: {session.goal_status.value}",
                 retry=True,
             )
-        run = await self.resume_session(item.session_id, confirmed=True)
-        if run.result.status in {
-            ExecutionStatus.COMPLETED,
-            ExecutionStatus.WAITING,
-            ExecutionStatus.CANCELLED,
-        }:
-            return WorkHandlerResult.completed(
-                f"distributed action resume settled as {run.result.status.value}"
-            )
-        return WorkHandlerResult.failed(
-            f"distributed action resume failed: {run.result.reason}",
-            retry=False,
+        return await self._resume_distributed_session_under_lock(
+            item,
+            confirmed=True,
+            completed_reason_prefix="distributed action resume settled as",
+            failure_reason_prefix="distributed action resume failed",
         )
+
+    async def _resume_distributed_session_under_lock(
+        self,
+        item: WorkItem,
+        *,
+        confirmed: bool | None,
+        completed_reason_prefix: str,
+        failure_reason_prefix: str,
+    ) -> WorkHandlerResult:
+        if item.session_id is None:
+            return WorkHandlerResult.failed(
+                "distributed session work item missing session_id",
+                retry=False,
+            )
+        session_id = item.session_id
+
+        async def resume() -> WorkHandlerResult:
+            run = await self.resume_session(session_id, confirmed=confirmed)
+            if run.result.status in {
+                ExecutionStatus.COMPLETED,
+                ExecutionStatus.WAITING,
+                ExecutionStatus.CANCELLED,
+            }:
+                return WorkHandlerResult.completed(
+                    f"{completed_reason_prefix} {run.result.status.value}"
+                )
+            return WorkHandlerResult.failed(
+                f"{failure_reason_prefix}: {run.result.reason}",
+                retry=False,
+            )
+
+        return await self._with_distributed_session_lock(item, resume)
+
+    async def _with_distributed_session_lock(
+        self,
+        item: WorkItem,
+        operation: Callable[[], Awaitable[WorkHandlerResult]],
+    ) -> WorkHandlerResult:
+        if self._distributed_coordinator is None:
+            return await operation()
+        if item.session_id is None:
+            return WorkHandlerResult.failed(
+                "distributed session lock requires session_id",
+                retry=False,
+            )
+        if item.lease is None:
+            return WorkHandlerResult.failed(
+                "distributed session lock requires queue lease metadata",
+                retry=False,
+            )
+
+        owner_id = _distributed_session_lock_owner(item)
+        lock_key = _distributed_session_lock_key(item.session_id)
+        try:
+            lock = self._distributed_coordinator.locks.acquire(
+                lock_key=lock_key,
+                owner_id=owner_id,
+                ttl_seconds=_DISTRIBUTED_SESSION_LOCK_TTL_SECONDS,
+                metadata=immutable_json(
+                    {
+                        "work_item_id": str(item.work_item_id),
+                        "work_kind": item.kind,
+                        "queue_lease_id": str(item.lease.lease_id),
+                    }
+                ),
+            )
+        except DistributedLockConflictError as exc:
+            return WorkHandlerResult.failed(
+                f"session execution lock conflict: {exc}",
+                retry=True,
+            )
+
+        try:
+            return await operation()
+        finally:
+            with suppress(DistributedLockLeaseLostError):
+                self._distributed_coordinator.locks.release(
+                    lock.lease_id,
+                    owner_id=owner_id,
+                )
 
     async def run_goal(self, goal: Goal, task: Task) -> RuntimeRun:
         return await self._runtime_api.run_goal(goal, task)
@@ -1269,6 +1334,19 @@ def memory_view(record: MemoryRecord) -> MemoryView:
         confidence=record.confidence,
         source_session_id=record.source_session_id,
         created_at=record.created_at,
+    )
+
+
+def _distributed_session_lock_key(session_id: SessionId) -> str:
+    return f"session/{session_id}"
+
+
+def _distributed_session_lock_owner(item: WorkItem) -> DistributedLockOwnerId:
+    lease = item.lease
+    if lease is None:
+        return DistributedLockOwnerId(f"worker:unknown:work:{item.work_item_id}")
+    return DistributedLockOwnerId(
+        f"worker:{lease.worker_id}:work:{item.work_item_id}:lease:{lease.lease_id}"
     )
 
 

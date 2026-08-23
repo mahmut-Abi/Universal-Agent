@@ -77,6 +77,8 @@ Goal
 - RuntimeService 本地 queue → worker → RuntimeAPI 闭环，用于已存在且无需确认的 waiting session
   resume、当前 Task resume、已确认 pending Action resume、Runtime-owned pending Action sweep，
   以及新 Goal 的 scheduled execution；
+- session-scoped execution lock，Worker 在 resume waiting session、current Task 或 confirmed pending Action
+  前会获取 `session/<session_id>` 锁，冲突时回到 retry 队列，成功或失败后释放锁；
 - Worker Registry 以及 online/draining/offline/lost 状态；
 - leased distributed lock；
 - Runtime Snapshot、Health Report、Coordinator；
@@ -84,8 +86,8 @@ Goal
   以及 CLI worker-run-once / bounded worker-run 本地执行入口。
 
 P6 当前遵循设计文档的“先做 local primitives”策略。它已有本地 waiting session resume
-闭环、当前 Task resume 闭环、已确认 pending Action resume 闭环、Runtime-owned pending Action sweep、新 Goal scheduled execution 闭环和 file-backed queue adapter，但还没有跨进程 Worker、
-并发安全队列锁，或 lease-aware 重复执行保护。
+闭环、当前 Task resume 闭环、已确认 pending Action resume 闭环、Runtime-owned pending Action sweep、session-scoped execution lock、新 Goal scheduled execution 闭环和 file-backed queue adapter，但还没有跨进程 Worker
+或并发安全持久队列锁。
 
 ### P7：生态元数据基础
 
@@ -117,7 +119,7 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
    缺少匹配终态 Event 的断裂；但进程在 Snapshot 保存与 Event 写入之间崩溃时，仍需要后续
    transaction/outbox 策略恢复。
 10. **取消与并发仍需强化。** 当前 cancellation 主要改变 Runtime 状态；in-flight tool cancellation、
-    Session CAS/version、lease-aware resume 和重复 Worker 执行还需要完整测试与实现。
+    Session CAS/version 和跨进程重复 Worker 执行还需要完整测试与实现。
 
 ## 验证快照
 
@@ -156,8 +158,8 @@ AgentRuntime
   → Session + Event Store
 ```
 
-当前已接通本地 memory/file queue 上的 waiting session resume、current Task resume、confirmed pending Action resume、Runtime-owned pending Action sweep 与 scheduled Goal execution；
-后续应继续补持久队列并发安全和 lease-aware 重复执行保护。
+当前已接通本地 memory/file queue 上的 waiting session resume、current Task resume、confirmed pending Action resume、Runtime-owned pending Action sweep、session-scoped execution lock 与 scheduled Goal execution；
+后续应继续补持久队列并发安全和跨进程重复执行保护。
 
 ### P3：生产安全与外部适配
 
