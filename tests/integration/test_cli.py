@@ -240,6 +240,37 @@ def write_evaluation_suite_file(
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def write_evaluation_dataset_file(root: Path) -> None:
+    suite_path = root / "suites" / "healthy.json"
+    suite_path.parent.mkdir(parents=True, exist_ok=True)
+    write_evaluation_suite_file(suite_path)
+    (root / "dataset.json").write_text(
+        json.dumps(
+            {
+                "apiVersion": "agent.nantian.dev/v1alpha1",
+                "kind": "EvaluationDataset",
+                "metadata": {
+                    "name": "kubernetes-remediation",
+                    "version": "1.0.0",
+                    "description": "Kubernetes remediation evaluation dataset",
+                    "author": "Runtime Team",
+                    "tags": ["kubernetes", "regression"],
+                },
+                "domains": [{"name": "kubernetes", "version": "0.2.0"}],
+                "suites": [
+                    {
+                        "name": "healthy",
+                        "path": "suites/healthy.json",
+                        "description": "Healthy workload regression suite",
+                        "tags": ["smoke"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 @pytest.mark.asyncio
 async def test_cli_init_writes_parseable_profile_config(tmp_path: Path) -> None:
     output = StringIO()
@@ -1456,6 +1487,84 @@ async def test_cli_eval_list_loads_suite_file(tmp_path: Path) -> None:
     assert payload["scenario_count"] == 1
     assert payload["scenarios"][0]["scenario_name"] == "file healthy workload"
     assert payload["scenarios"][0]["task"]["description"] == "Inspect workload from file"
+
+
+@pytest.mark.asyncio
+async def test_cli_eval_exposes_dataset_catalog(tmp_path: Path) -> None:
+    service, _ = build_cli_service([])
+    dataset_root = tmp_path / "datasets" / "kubernetes"
+    write_evaluation_dataset_file(dataset_root)
+    list_output = StringIO()
+    filtered_output = StringIO()
+    show_output = StringIO()
+    missing_output = StringIO()
+    missing_error = StringIO()
+
+    list_status = await run_cli(
+        ["eval", "datasets", "--dataset-dir", str(tmp_path / "datasets")],
+        service=service,
+        stdout=list_output,
+    )
+    filtered_status = await run_cli(
+        [
+            "eval",
+            "datasets",
+            "--dataset-dir",
+            str(tmp_path / "datasets"),
+            "--tag",
+            "kubernetes",
+            "--domain",
+            "kubernetes@0.2.0",
+        ],
+        service=service,
+        stdout=filtered_output,
+    )
+    show_status = await run_cli(
+        [
+            "eval",
+            "dataset",
+            "kubernetes-remediation",
+            "1.0.0",
+            "--dataset-dir",
+            str(tmp_path / "datasets"),
+        ],
+        service=service,
+        stdout=show_output,
+    )
+    missing_status = await run_cli(
+        [
+            "eval",
+            "dataset",
+            "database",
+            "--dataset-dir",
+            str(tmp_path / "datasets"),
+        ],
+        service=service,
+        stdout=missing_output,
+        stderr=missing_error,
+    )
+
+    listed = read_json(list_output)
+    filtered = read_json(filtered_output)
+    shown = read_json(show_output)
+    datasets = listed["datasets"]
+    assert list_status == 0
+    assert filtered_status == 0
+    assert show_status == 0
+    assert missing_status == 1
+    assert missing_output.getvalue() == ""
+    assert "evaluation dataset not registered: database" in missing_error.getvalue()
+    assert isinstance(datasets, list)
+    assert len(datasets) == 1
+    dataset = datasets[0]
+    assert isinstance(dataset, dict)
+    assert dataset["name"] == "kubernetes-remediation"
+    assert dataset["version"] == "1.0.0"
+    assert dataset["suite_count"] == 1
+    assert dataset["domains"] == [{"name": "kubernetes", "version": "0.2.0"}]
+    assert dataset["suites"][0]["path"] == "suites/healthy.json"
+    assert filtered == listed
+    assert shown == dataset
 
 
 @pytest.mark.asyncio

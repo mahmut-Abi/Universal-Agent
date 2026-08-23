@@ -84,6 +84,12 @@ from universal_agent.evaluation.console import (
     build_evaluation_console_snapshot,
     render_evaluation_console,
 )
+from universal_agent.evaluation.dataset import (
+    EvaluationDataset,
+    EvaluationDatasetIdentity,
+    EvaluationDatasetNotFoundError,
+    EvaluationDatasetRegistry,
+)
 from universal_agent.evaluation.harness import (
     EvaluationQualityGate,
     EvaluationScenario,
@@ -251,6 +257,7 @@ async def run_cli(
     except (
         StateNotFoundError,
         DomainPackageNotFoundError,
+        EvaluationDatasetNotFoundError,
         WorkItemNotFoundError,
         WorkerNotFoundError,
         DistributedLockLeaseLostError,
@@ -419,6 +426,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     eval_console = eval_commands.add_parser("console")
     eval_console.add_argument("--report-dir", required=True)
+
+    eval_datasets = eval_commands.add_parser("datasets")
+    eval_datasets.add_argument("--dataset-dir", required=True)
+    eval_datasets.add_argument("--tag")
+    eval_datasets.add_argument("--domain")
+
+    eval_dataset = eval_commands.add_parser("dataset")
+    eval_dataset.add_argument("name")
+    eval_dataset.add_argument("version", nargs="?")
+    eval_dataset.add_argument("--dataset-dir", required=True)
 
     domain = commands.add_parser("domain")
     domain_commands = domain.add_subparsers(dest="domain_command", required=True)
@@ -861,7 +878,39 @@ async def _dispatch_eval(
             render_evaluation_console(build_evaluation_console_snapshot(report_dir)),
         )
         return
+    if command == "datasets":
+        registry = _evaluation_dataset_registry(args)
+        domain = cast(str | None, args.domain)
+        _write_json(
+            out,
+            {
+                "datasets": [
+                    _evaluation_dataset_body(dataset)
+                    for dataset in registry.list(
+                        tag=cast(str | None, args.tag),
+                        domain=None if domain is None else _parse_domain_identity(domain),
+                    )
+                ]
+            },
+        )
+        return
+    if command == "dataset":
+        registry = _evaluation_dataset_registry(args)
+        version = cast(str | None, args.version)
+        dataset = (
+            registry.get_by_name(cast(str, args.name))
+            if version is None
+            else registry.get(EvaluationDatasetIdentity(cast(str, args.name), version))
+        )
+        _write_json(out, _evaluation_dataset_body(dataset))
+        return
     raise ValueError(f"unknown eval command: {command}")
+
+
+def _evaluation_dataset_registry(args: argparse.Namespace) -> EvaluationDatasetRegistry:
+    registry = EvaluationDatasetRegistry()
+    registry.discover(Path(cast(str, args.dataset_dir)))
+    return registry
 
 
 def _evaluation_selector(args: argparse.Namespace) -> EvaluationScenarioSelector | None:
@@ -1415,6 +1464,32 @@ def _evaluation_list_body(
         "suite_tags": list(suite.tags),
         "scenario_count": len(scenarios),
         "scenarios": [_evaluation_scenario_definition_body(item) for item in scenarios],
+    }
+
+
+def _evaluation_dataset_body(dataset: EvaluationDataset) -> dict[str, object]:
+    return {
+        "name": dataset.identity.name,
+        "version": dataset.identity.version,
+        "description": dataset.manifest.description,
+        "author": dataset.manifest.author,
+        "tags": list(dataset.manifest.tags),
+        "domains": [
+            {"name": domain.name, "version": domain.version} for domain in dataset.manifest.domains
+        ],
+        "suite_count": len(dataset.manifest.suites),
+        "suites": [
+            {
+                "name": suite.name,
+                "path": suite.path,
+                "description": suite.description,
+                "tags": list(suite.tags),
+                "suite_path": str(dataset.suite_path(suite)),
+            }
+            for suite in dataset.manifest.suites
+        ],
+        "root_path": str(dataset.root_path),
+        "manifest_path": str(dataset.manifest_path),
     }
 
 
