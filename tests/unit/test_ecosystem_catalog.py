@@ -50,6 +50,14 @@ def write_domain_package(root: Path) -> None:
             },
             "capabilities": ["inspect_workload"],
             "required_tools": ["kubernetes_api"],
+            "compatibility": {
+                "runtime_api": ">=0.1,<1",
+                "domain_api": "agent.nantian.dev/v1alpha1",
+            },
+            "security": {
+                "requires_confirmation": False,
+                "side_effects": "none",
+            },
         },
     )
 
@@ -192,6 +200,17 @@ def test_ecosystem_registry_manifest_round_trips_catalog_metadata(tmp_path: Path
     assert decoded.name == "ops-ecosystem"
     assert decoded.version == "1.2.3"
     assert decoded.domain_packages[0].identity.name == "kubernetes"
+    assert decoded.domain_packages[0].compatibility.runtime_api == ">=0.1,<1"
+    assert decoded.domain_packages[0].compatibility.domain_api == "agent.nantian.dev/v1alpha1"
+    assert decoded.domain_packages[0].security["side_effects"] == "none"
+    assert encoded["domain_packages"][0]["compatibility"] == {
+        "domain_api": "agent.nantian.dev/v1alpha1",
+        "runtime_api": ">=0.1,<1",
+    }
+    assert encoded["domain_packages"][0]["security"] == {
+        "requires_confirmation": False,
+        "side_effects": "none",
+    }
     assert decoded.evaluation_datasets[0].domains[0].name == "kubernetes"
     assert decoded.profiles[0].domains[0].name == "kubernetes"
 
@@ -208,6 +227,33 @@ def test_ecosystem_registry_manifest_round_trips_catalog_metadata(tmp_path: Path
         write_ecosystem_registry_manifest(output_path, manifest)
     overwritten = write_ecosystem_registry_manifest(output_path, manifest, overwrite=True)
     assert overwritten.overwritten is True
+
+
+def test_ecosystem_registry_manifest_accepts_legacy_package_refs_without_optional_metadata() -> (
+    None
+):
+    decoded = decode_ecosystem_registry_manifest(
+        {
+            "apiVersion": "agent.nantian.dev/v1alpha1",
+            "kind": "EcosystemRegistry",
+            "metadata": {
+                "name": "legacy-registry",
+                "version": "1.0.0",
+                "description": "Legacy registry",
+            },
+            "domain_packages": [
+                {
+                    "name": "kubernetes",
+                    "version": "1.0.0",
+                    "description": "Kubernetes",
+                }
+            ],
+        }
+    )
+
+    assert decoded.domain_packages[0].compatibility.runtime_api is None
+    assert decoded.domain_packages[0].compatibility.domain_api is None
+    assert decoded.domain_packages[0].security == {}
 
 
 def test_ecosystem_registry_index_queries_exported_manifest(tmp_path: Path) -> None:

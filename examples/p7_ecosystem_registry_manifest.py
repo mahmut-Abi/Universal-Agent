@@ -31,6 +31,11 @@ def write_domain_package(root: Path) -> None:
             },
             "capabilities": ["inspect_workload", "scale_workload"],
             "required_tools": ["kubernetes_api"],
+            "compatibility": {
+                "runtime_api": ">=0.1,<1",
+                "domain_api": "agent.nantian.dev/v1alpha1",
+            },
+            "security": {"side_effects": "reversible"},
         },
     )
 

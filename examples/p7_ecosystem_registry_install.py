@@ -32,6 +32,11 @@ def write_domain_package(root: Path, name: str) -> None:
             "entrypoint": f"{name}.domain:build_domain",
             "capabilities": ["inspect_workload"],
             "required_tools": [f"{name}_api"],
+            "compatibility": {
+                "runtime_api": ">=0.1,<1",
+                "domain_api": "agent.nantian.dev/v1alpha1",
+            },
+            "security": {"side_effects": "none"},
         },
     )
 

@@ -7,7 +7,12 @@ from typing import Any
 from urllib.parse import quote
 
 from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
-from universal_agent.domain import DomainPackage, DomainPackageRegistry, load_domain_package
+from universal_agent.domain import (
+    DomainPackage,
+    DomainPackageCompatibility,
+    DomainPackageRegistry,
+    load_domain_package,
+)
 from universal_agent.evaluation.dataset import EvaluationDataset, EvaluationDatasetRegistry
 from universal_agent.profile import ProfileCatalog, ProfileCatalogEntry
 
@@ -79,6 +84,8 @@ class EcosystemDomainPackageRef:
     capability_names: tuple[str, ...] = ()
     required_tools: tuple[str, ...] = ()
     dependencies: tuple[DomainIdentity, ...] = ()
+    compatibility: DomainPackageCompatibility = field(default_factory=DomainPackageCompatibility)
+    security: JsonMapping = field(default_factory=immutable_json)
     root_path: str = ""
     manifest_path: str = ""
 
@@ -578,6 +585,8 @@ def encode_ecosystem_registry_manifest(manifest: EcosystemRegistryManifest) -> d
                 "capability_names": list(package.capability_names),
                 "required_tools": list(package.required_tools),
                 "dependencies": [_identity_body(item) for item in package.dependencies],
+                "compatibility": _compatibility_body(package.compatibility),
+                "security": dict(package.security),
                 "root_path": package.root_path,
                 "manifest_path": package.manifest_path,
             }
@@ -707,6 +716,8 @@ def _domain_package_ref(package: DomainPackage) -> EcosystemDomainPackageRef:
         capability_names=manifest.capabilities,
         required_tools=manifest.required_tools,
         dependencies=manifest.dependencies,
+        compatibility=manifest.compatibility,
+        security=manifest.security,
         root_path=str(package.root_path),
         manifest_path=str(package.manifest_path),
     )
@@ -971,6 +982,16 @@ def _domain_package_refs(payload: JsonMapping) -> tuple[EcosystemDomainPackageRe
                 "dependencies",
                 field_name=f"domain_packages[{index}].dependencies",
             ),
+            compatibility=_compatibility(
+                item,
+                field_name=f"domain_packages[{index}].compatibility",
+            ),
+            security=_optional_mapping(
+                item,
+                "security",
+                field_name=f"domain_packages[{index}].security",
+            )
+            or immutable_json(),
             root_path=_optional_string_allow_empty(
                 item,
                 "root_path",
@@ -1070,6 +1091,20 @@ def _mapping(payload: JsonMapping, key: str) -> JsonMapping:
     return immutable_json(value)
 
 
+def _optional_mapping(
+    payload: JsonMapping,
+    key: str,
+    *,
+    field_name: str | None = None,
+) -> JsonMapping | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise EcosystemRegistryValidationError(f"{field_name or key} must be an object")
+    return immutable_json(value)
+
+
 def _api_version(payload: JsonMapping) -> str:
     camel = payload.get("apiVersion")
     snake = payload.get("api_version")
@@ -1077,6 +1112,28 @@ def _api_version(payload: JsonMapping) -> str:
         raise EcosystemRegistryValidationError("apiVersion and api_version must match")
     value = camel if camel is not None else snake
     return _string_value(value, "apiVersion")
+
+
+def _compatibility(
+    payload: JsonMapping,
+    *,
+    field_name: str,
+) -> DomainPackageCompatibility:
+    compatibility = _optional_mapping(payload, "compatibility", field_name=field_name)
+    if compatibility is None:
+        return DomainPackageCompatibility()
+    return DomainPackageCompatibility(
+        runtime_api=_optional_string(
+            compatibility,
+            "runtime_api",
+            field_name=f"{field_name}.runtime_api",
+        ),
+        domain_api=_optional_string(
+            compatibility,
+            "domain_api",
+            field_name=f"{field_name}.domain_api",
+        ),
+    )
 
 
 def _object_list(
@@ -1195,6 +1252,15 @@ def _identity_tuple(
 
 def _identity_body(identity: DomainIdentity) -> dict[str, str]:
     return {"name": identity.name, "version": identity.version}
+
+
+def _compatibility_body(compatibility: DomainPackageCompatibility) -> dict[str, str]:
+    body: dict[str, str] = {}
+    if compatibility.runtime_api is not None:
+        body["runtime_api"] = compatibility.runtime_api
+    if compatibility.domain_api is not None:
+        body["domain_api"] = compatibility.domain_api
+    return body
 
 
 def _dataset_identities(
