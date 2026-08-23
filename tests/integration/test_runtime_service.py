@@ -507,6 +507,35 @@ async def test_runtime_service_doctor_detects_orphan_events_from_full_event_stre
     assert "orphan_events=1" in consistency.message
 
 
+@pytest.mark.asyncio
+async def test_runtime_service_doctor_detects_distributed_session_work_without_session() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=999_999_999,
+        now=now,
+    )
+    coordinator.scheduler.schedule_session(SessionId("missing-session"), available_at=now)
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+        distributed_coordinator=coordinator,
+    )
+
+    report = await service.doctor()
+    distributed_queue = next(
+        check for check in report.checks if check.name == "distributed_work_queue"
+    )
+
+    assert report.status == "error"
+    assert distributed_queue.status == "error"
+    assert distributed_queue.message == "invalid_session_work_items=1"
+
+
 def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     service, _ = build_service([])
 

@@ -789,6 +789,7 @@ class RuntimeService:
         sessions = await self.list_sessions()
         events = await self._list_all_events(sessions)
         distributed_health = self.distributed_health()
+        distributed_snapshot = self.distributed_snapshot()
         return build_doctor_report(
             health_status=health.status,
             ready=ready.ready,
@@ -814,6 +815,9 @@ class RuntimeService:
             distributed_expiring_lease_count=None
             if distributed_health is None
             else len(distributed_health.expiring_leases),
+            distributed_invalid_session_work_item_count=None
+            if distributed_snapshot is None
+            else self._distributed_invalid_session_work_item_count(sessions, distributed_snapshot),
         )
 
     async def audit_records(
@@ -854,6 +858,19 @@ class RuntimeService:
         for session in sessions:
             events.extend(await self.list_events(session.session_id))
         return tuple(sorted(events, key=lambda event: event.occurred_at))
+
+    def _distributed_invalid_session_work_item_count(
+        self,
+        sessions: tuple[SessionSummaryView, ...],
+        snapshot: DistributedRuntimeSnapshot,
+    ) -> int:
+        session_ids = {session.session_id for session in sessions}
+        return sum(
+            1
+            for item in snapshot.work_queue.items
+            if item.kind == WorkKind.AGENT_SESSION.value
+            and (item.session_id is None or item.session_id not in session_ids)
+        )
 
     def _world_fact_views(
         self,

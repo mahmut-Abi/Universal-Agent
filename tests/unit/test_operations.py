@@ -577,6 +577,7 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
         "recovery",
         "resource_locks",
         "distributed_runtime",
+        "distributed_work_queue",
         "cost_tracking",
     ]
     assert next(check for check in report.checks if check.name == "event_stream").status == "warn"
@@ -777,6 +778,28 @@ def test_doctor_report_includes_distributed_runtime_health() -> None:
     assert distributed.message == ("status=warn checks=6 capacity_gaps=1 expiring_leases=2")
 
 
+def test_doctor_report_errors_on_invalid_distributed_session_work_items() -> None:
+    report = build_doctor_report(
+        health_status="ok",
+        ready=True,
+        ready_reason="ready",
+        domain_count=1,
+        capability_count=1,
+        tool_count=1,
+        sessions=(),
+        events=(),
+        distributed_invalid_session_work_item_count=2,
+    )
+
+    distributed_queue = next(
+        check for check in report.checks if check.name == "distributed_work_queue"
+    )
+
+    assert report.status == "error"
+    assert distributed_queue.status == "error"
+    assert distributed_queue.message == "invalid_session_work_items=2"
+
+
 def test_doctor_report_allows_missing_distributed_runtime() -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -794,3 +817,6 @@ def test_doctor_report_allows_missing_distributed_runtime() -> None:
     assert report.status == "ok"
     assert distributed.status == "ok"
     assert distributed.message == "distributed runtime coordinator not configured"
+    queue = next(check for check in report.checks if check.name == "distributed_work_queue")
+    assert queue.status == "ok"
+    assert queue.message == "distributed work queue not inspected"

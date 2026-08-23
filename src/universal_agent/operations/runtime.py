@@ -355,6 +355,7 @@ def build_doctor_report(
     distributed_health_check_count: int | None = None,
     distributed_capacity_gap_count: int | None = None,
     distributed_expiring_lease_count: int | None = None,
+    distributed_invalid_session_work_item_count: int | None = None,
 ) -> DoctorReportView:
     metrics = build_runtime_metrics(sessions, events)
     cost = build_runtime_cost(events)
@@ -394,6 +395,9 @@ def build_doctor_report(
             check_count=distributed_health_check_count,
             capacity_gap_count=distributed_capacity_gap_count,
             expiring_lease_count=distributed_expiring_lease_count,
+        ),
+        _distributed_work_queue_check(
+            invalid_session_work_item_count=distributed_invalid_session_work_item_count,
         ),
         DoctorCheckView(
             "cost_tracking",
@@ -1019,6 +1023,29 @@ def _distributed_runtime_check(
         f"{status} checks={check_count or 0} "
         f"capacity_gaps={capacity_gap_count or 0} "
         f"expiring_leases={expiring_lease_count or 0}",
+    )
+
+
+def _distributed_work_queue_check(
+    *,
+    invalid_session_work_item_count: int | None,
+) -> DoctorCheckView:
+    if invalid_session_work_item_count is None:
+        return DoctorCheckView(
+            "distributed_work_queue",
+            "ok",
+            "distributed work queue not inspected",
+        )
+    if invalid_session_work_item_count:
+        return DoctorCheckView(
+            "distributed_work_queue",
+            "error",
+            f"invalid_session_work_items={invalid_session_work_item_count}",
+        )
+    return DoctorCheckView(
+        "distributed_work_queue",
+        "ok",
+        "session work items reference known sessions",
     )
 
 
