@@ -302,8 +302,9 @@ event-sourcing model or production migration system.
   Evaluation Dataset Domain and Domain Package dependency references. `EcosystemRegistryManifest`
   exports the discovered package, dataset and Profile references as a stable local registry manifest
   with Domain package compatibility/security metadata, a read-only query index, file-backed registry
-  store and local Domain Package install plan that validates referenced package manifests before
-  registering them for CLI/CI and future package-registry adapters.
+  store, local Domain Package install plan and full ecosystem install plan/result that validates
+  referenced package manifests, evaluation datasets and Profile configs before registering metadata
+  for CLI/CI and future package-registry adapters.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,

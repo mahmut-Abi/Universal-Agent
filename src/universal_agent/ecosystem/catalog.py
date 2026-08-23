@@ -13,8 +13,17 @@ from universal_agent.domain import (
     DomainPackageRegistry,
     load_domain_package,
 )
-from universal_agent.evaluation.dataset import EvaluationDataset, EvaluationDatasetRegistry
-from universal_agent.profile import ProfileCatalog, ProfileCatalogEntry
+from universal_agent.evaluation.dataset import (
+    EvaluationDataset,
+    EvaluationDatasetRegistry,
+    load_evaluation_dataset,
+)
+from universal_agent.profile import (
+    ProfileCatalog,
+    ProfileCatalogEntry,
+    ProfileConfig,
+    ProfileRegistry,
+)
 
 ECOSYSTEM_REGISTRY_KIND = "EcosystemRegistry"
 
@@ -250,6 +259,35 @@ class EcosystemDomainPackageInstallResult:
     installed_packages: tuple[DomainPackage, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class EcosystemEvaluationDatasetInstallCandidate:
+    reference: EcosystemEvaluationDatasetRef
+    dataset: EvaluationDataset
+
+
+@dataclass(frozen=True, slots=True)
+class EcosystemProfileInstallCandidate:
+    reference: EcosystemProfileRef
+    entry: ProfileCatalogEntry
+
+
+@dataclass(frozen=True, slots=True)
+class EcosystemInstallPlan:
+    domain_packages: EcosystemDomainPackageInstallPlan
+    evaluation_datasets: tuple[EcosystemEvaluationDatasetInstallCandidate, ...] = ()
+    profiles: tuple[EcosystemProfileInstallCandidate, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class EcosystemInstallResult:
+    domain_packages: DomainPackageRegistry
+    evaluation_datasets: EvaluationDatasetRegistry
+    profiles: ProfileRegistry
+    installed_domain_packages: tuple[DomainPackage, ...]
+    installed_evaluation_datasets: tuple[EvaluationDataset, ...]
+    installed_profiles: tuple[ProfileCatalogEntry, ...]
+
+
 class FileEcosystemRegistryStore:
     """File-backed store for exported ecosystem registry manifests.
 
@@ -453,6 +491,73 @@ def install_ecosystem_domain_packages(
     for package in plan.packages:
         target.register(package)
     return EcosystemDomainPackageInstallResult(target, plan.packages)
+
+
+def plan_ecosystem_install(
+    source: EcosystemRegistryManifest | EcosystemRegistryIndex,
+    *,
+    base_path: str | Path | None = None,
+    verify: bool = True,
+) -> EcosystemInstallPlan:
+    """Validate all local artifact paths referenced by an ecosystem registry.
+
+    The plan loads metadata manifests/configs only. It does not import Domain
+    entrypoints, activate runtimes, run evaluation suites or assemble hosts.
+    """
+
+    manifest = _registry_manifest(source)
+    if verify:
+        _verify_registry_install_source(EcosystemRegistryIndex(manifest))
+    return EcosystemInstallPlan(
+        domain_packages=plan_ecosystem_domain_package_install(
+            manifest,
+            base_path=base_path,
+            verify=False,
+        ),
+        evaluation_datasets=tuple(
+            _evaluation_dataset_install_candidate(reference, base_path=base_path)
+            for reference in manifest.evaluation_datasets
+        ),
+        profiles=tuple(
+            _profile_install_candidate(reference, base_path=base_path)
+            for reference in manifest.profiles
+        ),
+    )
+
+
+def install_ecosystem(
+    source: EcosystemRegistryManifest | EcosystemRegistryIndex,
+    *,
+    domain_package_registry: DomainPackageRegistry | None = None,
+    evaluation_dataset_registry: EvaluationDatasetRegistry | None = None,
+    profile_registry: ProfileRegistry | None = None,
+    base_path: str | Path | None = None,
+    verify: bool = True,
+) -> EcosystemInstallResult:
+    """Install registry-referenced ecosystem metadata into local registries."""
+
+    plan = plan_ecosystem_install(source, base_path=base_path, verify=verify)
+    domain_packages = domain_package_registry or DomainPackageRegistry()
+    evaluation_datasets = evaluation_dataset_registry or EvaluationDatasetRegistry()
+    _reject_registry_install_duplicates(plan.domain_packages, domain_packages)
+    _reject_evaluation_dataset_install_duplicates(plan.evaluation_datasets, evaluation_datasets)
+    profiles = _profile_install_registry(plan.profiles, profile_registry)
+
+    for package in plan.domain_packages.packages:
+        domain_packages.register(package)
+    for dataset in (candidate.dataset for candidate in plan.evaluation_datasets):
+        evaluation_datasets.register(dataset)
+
+    return EcosystemInstallResult(
+        domain_packages=domain_packages,
+        evaluation_datasets=evaluation_datasets,
+        profiles=profiles,
+        installed_domain_packages=plan.domain_packages.packages,
+        installed_evaluation_datasets=tuple(
+            candidate.dataset for candidate in plan.evaluation_datasets
+        ),
+        installed_profiles=tuple(candidate.entry for candidate in plan.profiles),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -864,6 +969,72 @@ def _domain_package_ref_path(
     return path
 
 
+def _evaluation_dataset_install_candidate(
+    reference: EcosystemEvaluationDatasetRef,
+    *,
+    base_path: str | Path | None,
+) -> EcosystemEvaluationDatasetInstallCandidate:
+    dataset_path = _evaluation_dataset_ref_path(reference, base_path=base_path)
+    dataset = load_evaluation_dataset(dataset_path)
+    if (dataset.identity.name, dataset.identity.version) != reference.identity:
+        raise EcosystemRegistryInstallError(
+            "evaluation dataset identity mismatch: "
+            f"registry expected {reference.name}@{reference.version}, "
+            f"manifest loaded {dataset.identity.name}@{dataset.identity.version}"
+        )
+    return EcosystemEvaluationDatasetInstallCandidate(reference, dataset)
+
+
+def _evaluation_dataset_ref_path(
+    reference: EcosystemEvaluationDatasetRef,
+    *,
+    base_path: str | Path | None,
+) -> Path:
+    path_value = reference.manifest_path or reference.root_path
+    if not path_value.strip():
+        raise EcosystemRegistryInstallError(
+            "evaluation dataset registry reference has no local path: "
+            f"{reference.name}@{reference.version}"
+        )
+    path = Path(path_value)
+    if not path.is_absolute() and base_path is not None:
+        path = Path(base_path) / path
+    return path
+
+
+def _profile_install_candidate(
+    reference: EcosystemProfileRef,
+    *,
+    base_path: str | Path | None,
+) -> EcosystemProfileInstallCandidate:
+    profile_path = _profile_ref_path(reference, base_path=base_path)
+    config = ProfileConfig.from_json_file(profile_path)
+    entry = ProfileCatalogEntry(config.to_profile(), config, profile_path)
+    if (entry.profile.name, entry.profile.version) != reference.identity:
+        raise EcosystemRegistryInstallError(
+            "profile identity mismatch: "
+            f"registry expected {reference.name}@{reference.version}, "
+            f"config loaded {entry.profile.name}@{entry.profile.version}"
+        )
+    return EcosystemProfileInstallCandidate(reference, entry)
+
+
+def _profile_ref_path(
+    reference: EcosystemProfileRef,
+    *,
+    base_path: str | Path | None,
+) -> Path:
+    if not reference.path.strip():
+        raise EcosystemRegistryInstallError(
+            "profile registry reference has no local path: "
+            f"{reference.name}@{reference.version}"
+        )
+    path = Path(reference.path)
+    if not path.is_absolute() and base_path is not None:
+        path = Path(base_path) / path
+    return path
+
+
 def _reject_registry_install_duplicates(
     plan: EcosystemDomainPackageInstallPlan,
     registry: DomainPackageRegistry,
@@ -881,6 +1052,53 @@ def _reject_registry_install_duplicates(
         raise EcosystemRegistryInstallError(
             f"domain packages already registered or duplicated in install plan: {formatted}"
         )
+
+
+def _reject_evaluation_dataset_install_duplicates(
+    candidates: tuple[EcosystemEvaluationDatasetInstallCandidate, ...],
+    registry: EvaluationDatasetRegistry,
+) -> None:
+    seen: set[tuple[str, str]] = set()
+    duplicates: set[tuple[str, str]] = set()
+    identities = tuple(
+        (candidate.dataset.identity.name, candidate.dataset.identity.version)
+        for candidate in candidates
+    )
+    for identity in identities:
+        if identity in seen:
+            duplicates.add(identity)
+        seen.add(identity)
+    existing = frozenset((identity.name, identity.version) for identity in registry.identities())
+    duplicates.update(identity for identity in identities if identity in existing)
+    if duplicates:
+        formatted = ", ".join(f"{name}@{version}" for name, version in sorted(duplicates))
+        raise EcosystemRegistryInstallError(
+            "evaluation datasets already registered or duplicated in install plan: "
+            f"{formatted}"
+        )
+
+
+def _profile_install_registry(
+    candidates: tuple[EcosystemProfileInstallCandidate, ...],
+    registry: ProfileRegistry | None,
+) -> ProfileRegistry:
+    existing_profiles = registry.profiles if registry is not None else ()
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    names = tuple(candidate.entry.profile.name for candidate in candidates)
+    for name in names:
+        if name in seen:
+            duplicates.add(name)
+        seen.add(name)
+    existing = frozenset(profile.name for profile in existing_profiles)
+    duplicates.update(name for name in names if name in existing)
+    if duplicates:
+        formatted = ", ".join(sorted(duplicates))
+        raise EcosystemRegistryInstallError(
+            f"profiles already registered or duplicated in install plan: {formatted}"
+        )
+    installed_profiles = tuple(candidate.entry.profile for candidate in candidates)
+    return ProfileRegistry(existing_profiles + installed_profiles)
 
 
 def _profile_domains_registered(
@@ -1333,8 +1551,12 @@ __all__ = [
     "EcosystemDomainPackageInstallPlan",
     "EcosystemDomainPackageInstallResult",
     "EcosystemDomainPackageRef",
+    "EcosystemEvaluationDatasetInstallCandidate",
     "EcosystemEvaluationDatasetRef",
     "EcosystemEvaluationDatasetSuiteRef",
+    "EcosystemInstallPlan",
+    "EcosystemInstallResult",
+    "EcosystemProfileInstallCandidate",
     "EcosystemProfileRef",
     "EcosystemRegistryIndex",
     "EcosystemRegistryInstallError",
@@ -1348,10 +1570,12 @@ __all__ = [
     "build_ecosystem_registry_manifest",
     "decode_ecosystem_registry_manifest",
     "encode_ecosystem_registry_manifest",
+    "install_ecosystem",
     "install_ecosystem_domain_packages",
     "load_ecosystem_catalog",
     "load_ecosystem_registry_index",
     "load_ecosystem_registry_manifest",
     "plan_ecosystem_domain_package_install",
+    "plan_ecosystem_install",
     "write_ecosystem_registry_manifest",
 ]

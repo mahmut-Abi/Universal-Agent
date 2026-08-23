@@ -21,11 +21,13 @@ from universal_agent import (
     FileEcosystemRegistryStore,
     decode_ecosystem_registry_manifest,
     encode_ecosystem_registry_manifest,
+    install_ecosystem,
     install_ecosystem_domain_packages,
     load_ecosystem_catalog,
     load_ecosystem_registry_index,
     load_ecosystem_registry_manifest,
     plan_ecosystem_domain_package_install,
+    plan_ecosystem_install,
     write_ecosystem_registry_manifest,
 )
 from universal_agent.core import DomainIdentity, JsonMapping
@@ -399,6 +401,41 @@ def test_ecosystem_registry_plans_and_installs_domain_packages(
     assert plan.candidates[0].reference.name == "kubernetes"
     assert result.installed_packages[0].identity == DomainIdentity("kubernetes", "1.0.0")
     assert result.registry.get_by_name("kubernetes").manifest.capabilities == ("inspect_workload",)
+
+
+def test_ecosystem_registry_plans_and_installs_full_ecosystem_artifacts(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    dataset_root = tmp_path / "datasets"
+    profile_root = tmp_path / "profiles"
+    write_domain_package(domain_root / "kubernetes")
+    write_evaluation_dataset(dataset_root / "kubernetes")
+    write_profile(profile_root / "kubernetes.profile.json")
+    catalog = load_ecosystem_catalog(
+        domain_package_root=domain_root,
+        evaluation_dataset_root=dataset_root,
+        profile_root=profile_root,
+    )
+    manifest = catalog.registry_manifest()
+
+    plan = plan_ecosystem_install(manifest)
+    result = install_ecosystem(manifest)
+
+    assert plan.domain_packages.identities == (DomainIdentity("kubernetes", "1.0.0"),)
+    assert plan.evaluation_datasets[0].dataset.identity.name == "kubernetes-remediation"
+    assert plan.profiles[0].entry.profile.name == "kubernetes-operator"
+    assert result.domain_packages.get_by_name("kubernetes").identity == DomainIdentity(
+        "kubernetes",
+        "1.0.0",
+    )
+    assert result.evaluation_datasets.get_by_name("kubernetes-remediation").identity.name == (
+        "kubernetes-remediation"
+    )
+    assert result.profiles.get("kubernetes-operator").version == "1.0.0"
+    assert result.installed_domain_packages[0].identity.name == "kubernetes"
+    assert result.installed_evaluation_datasets[0].identity.name == "kubernetes-remediation"
+    assert result.installed_profiles[0].path.name == "kubernetes.profile.json"
 
 
 def test_ecosystem_registry_installs_domain_packages_from_relative_paths(
