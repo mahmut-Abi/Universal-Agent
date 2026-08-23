@@ -104,6 +104,26 @@ class EvaluationDataset:
         return self.root_path / suite.path
 
 
+@dataclass(frozen=True, slots=True)
+class EvaluationDatasetCheck:
+    name: str
+    passed: bool
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationDatasetVerificationReport:
+    checks: tuple[EvaluationDatasetCheck, ...]
+
+    @property
+    def passed(self) -> bool:
+        return all(check.passed for check in self.checks)
+
+    @property
+    def failed_checks(self) -> tuple[EvaluationDatasetCheck, ...]:
+        return tuple(check for check in self.checks if not check.passed)
+
+
 class EvaluationDatasetRegistry:
     """P7 catalog for reusable evaluation suite datasets.
 
@@ -171,6 +191,9 @@ class EvaluationDatasetRegistry:
             )
         return matches[0]
 
+    def verify(self) -> EvaluationDatasetVerificationReport:
+        return verify_evaluation_dataset_registry(self)
+
 
 def load_evaluation_dataset(path: str | Path) -> EvaluationDataset:
     manifest_path = _manifest_path(Path(path))
@@ -184,6 +207,28 @@ def load_evaluation_dataset(path: str | Path) -> EvaluationDataset:
     for suite in manifest.suites:
         _validate_suite_file(dataset, suite)
     return dataset
+
+
+def verify_evaluation_dataset(dataset: EvaluationDataset) -> EvaluationDatasetVerificationReport:
+    return EvaluationDatasetVerificationReport(
+        (
+            _dataset_root_exists(dataset),
+            _dataset_manifest_exists(dataset),
+            _dataset_manifest_matches_identity(dataset),
+            _dataset_suites_load(dataset),
+        )
+    )
+
+
+def verify_evaluation_dataset_registry(
+    registry: EvaluationDatasetRegistry,
+) -> EvaluationDatasetVerificationReport:
+    checks = tuple(
+        check
+        for dataset in registry.list()
+        for check in verify_evaluation_dataset(dataset).checks
+    )
+    return EvaluationDatasetVerificationReport(checks)
 
 
 def decode_evaluation_dataset_manifest(payload: JsonMapping) -> EvaluationDatasetManifest:
@@ -244,6 +289,75 @@ def _validate_suite_file(dataset: EvaluationDataset, suite: EvaluationDatasetSui
         raise EvaluationDatasetValidationError(
             f"invalid evaluation suite file referenced by dataset {dataset.identity.name}: {path}"
         ) from exc
+
+
+def _dataset_root_exists(dataset: EvaluationDataset) -> EvaluationDatasetCheck:
+    if dataset.root_path.is_dir():
+        return EvaluationDatasetCheck(
+            "dataset_root_exists",
+            True,
+            f"evaluation dataset root exists: {_format_identity(dataset.identity)}",
+        )
+    return EvaluationDatasetCheck(
+        "dataset_root_exists",
+        False,
+        f"evaluation dataset root missing or not a directory: {dataset.root_path}",
+    )
+
+
+def _dataset_manifest_exists(dataset: EvaluationDataset) -> EvaluationDatasetCheck:
+    if dataset.manifest_path.is_file():
+        return EvaluationDatasetCheck(
+            "dataset_manifest_exists",
+            True,
+            f"evaluation dataset manifest exists: {_format_identity(dataset.identity)}",
+        )
+    return EvaluationDatasetCheck(
+        "dataset_manifest_exists",
+        False,
+        f"evaluation dataset manifest missing or not a file: {dataset.manifest_path}",
+    )
+
+
+def _dataset_manifest_matches_identity(dataset: EvaluationDataset) -> EvaluationDatasetCheck:
+    try:
+        loaded = decode_evaluation_dataset_manifest(_load_json_object(dataset.manifest_path))
+    except (EvaluationDatasetNotFoundError, EvaluationDatasetValidationError) as exc:
+        return EvaluationDatasetCheck(
+            "dataset_manifest_matches_identity",
+            False,
+            f"evaluation dataset manifest could not be loaded: {exc}",
+        )
+    loaded_identity = loaded.identity
+    if loaded_identity == dataset.identity:
+        return EvaluationDatasetCheck(
+            "dataset_manifest_matches_identity",
+            True,
+            f"evaluation dataset manifest identity matches: {_format_identity(dataset.identity)}",
+        )
+    return EvaluationDatasetCheck(
+        "dataset_manifest_matches_identity",
+        False,
+        "evaluation dataset identity mismatch: "
+        f"expected {_format_identity(dataset.identity)}, "
+        f"loaded {_format_identity(loaded_identity)}",
+    )
+
+
+def _dataset_suites_load(dataset: EvaluationDataset) -> EvaluationDatasetCheck:
+    try:
+        load_evaluation_dataset(dataset.manifest_path)
+    except (EvaluationDatasetNotFoundError, EvaluationDatasetValidationError) as exc:
+        return EvaluationDatasetCheck(
+            "dataset_suites_load",
+            False,
+            f"evaluation dataset suites could not be loaded: {exc}",
+        )
+    return EvaluationDatasetCheck(
+        "dataset_suites_load",
+        True,
+        f"all evaluation dataset suites load: {_format_identity(dataset.identity)}",
+    )
 
 
 def _manifest_paths(root: Path) -> tuple[Path, ...]:
@@ -425,13 +539,17 @@ __all__ = [
     "EVALUATION_DATASET_MANIFEST",
     "AmbiguousEvaluationDatasetError",
     "EvaluationDataset",
+    "EvaluationDatasetCheck",
     "EvaluationDatasetIdentity",
     "EvaluationDatasetManifest",
     "EvaluationDatasetNotFoundError",
     "EvaluationDatasetRegistry",
     "EvaluationDatasetSuiteRef",
     "EvaluationDatasetValidationError",
+    "EvaluationDatasetVerificationReport",
     "decode_evaluation_dataset_manifest",
     "encode_evaluation_dataset_manifest",
     "load_evaluation_dataset",
+    "verify_evaluation_dataset",
+    "verify_evaluation_dataset_registry",
 ]

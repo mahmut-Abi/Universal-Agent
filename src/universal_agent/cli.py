@@ -114,6 +114,7 @@ from universal_agent.evaluation.dataset import (
     EvaluationDatasetIdentity,
     EvaluationDatasetNotFoundError,
     EvaluationDatasetRegistry,
+    EvaluationDatasetVerificationReport,
 )
 from universal_agent.evaluation.harness import (
     EvaluationQualityGate,
@@ -565,6 +566,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_datasets.add_argument("--dataset-dir", required=True)
     eval_datasets.add_argument("--tag")
     eval_datasets.add_argument("--domain")
+    eval_datasets.add_argument("--verify", action="store_true")
 
     eval_dataset = eval_commands.add_parser("dataset")
     eval_dataset.add_argument("name")
@@ -1206,6 +1208,9 @@ async def _dispatch_eval(
         return
     if command == "datasets":
         registry = _evaluation_dataset_registry(args)
+        if cast(bool, args.verify):
+            _write_json(out, evaluation_dataset_verification_body(registry.verify()))
+            return
         domain = cast(str | None, args.domain)
         _write_json(
             out,
@@ -1937,6 +1942,23 @@ def _ecosystem_domain_package_body(package: DomainPackage) -> dict[str, object]:
 
 def domain_package_verification_body(
     report: DomainPackageVerificationReport,
+) -> dict[str, object]:
+    return {
+        "passed": report.passed,
+        "failed_check_count": len(report.failed_checks),
+        "checks": [
+            {
+                "name": check.name,
+                "passed": check.passed,
+                "message": check.message,
+            }
+            for check in report.checks
+        ],
+    }
+
+
+def evaluation_dataset_verification_body(
+    report: EvaluationDatasetVerificationReport,
 ) -> dict[str, object]:
     return {
         "passed": report.passed,

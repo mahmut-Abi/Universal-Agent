@@ -15,6 +15,7 @@ from universal_agent.evaluation.dataset import (
     decode_evaluation_dataset_manifest,
     encode_evaluation_dataset_manifest,
     load_evaluation_dataset,
+    verify_evaluation_dataset,
 )
 
 
@@ -149,3 +150,49 @@ def test_load_evaluation_dataset_rejects_missing_suite_and_unsafe_paths(tmp_path
 
     with pytest.raises(EvaluationDatasetValidationError, match="relative package path"):
         decode_evaluation_dataset_manifest(dataset_payload(suite_path="../suite.json"))
+
+
+def test_evaluation_dataset_verification_checks_local_manifest_and_suites(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "kubernetes-dataset"
+    write_dataset(root, dataset_payload())
+    dataset = load_evaluation_dataset(root)
+
+    passing = verify_evaluation_dataset(dataset)
+    (root / "suites" / "healthy.json").unlink()
+    failing = verify_evaluation_dataset(dataset)
+    failed_checks = {check.name: check.message for check in failing.failed_checks}
+
+    assert passing.passed is True
+    assert {check.name for check in passing.checks} == {
+        "dataset_root_exists",
+        "dataset_manifest_exists",
+        "dataset_manifest_matches_identity",
+        "dataset_suites_load",
+    }
+    assert failing.passed is False
+    assert "dataset_suites_load" in failed_checks
+    assert "suite file not found" in failed_checks["dataset_suites_load"]
+
+
+def test_evaluation_dataset_registry_verification_checks_all_registered_datasets(
+    tmp_path: Path,
+) -> None:
+    write_dataset(tmp_path / "alpha-dataset", dataset_payload("alpha"))
+    write_dataset(tmp_path / "beta-dataset", dataset_payload("beta"))
+    registry = EvaluationDatasetRegistry()
+    registry.discover(tmp_path)
+
+    passing = registry.verify()
+    (tmp_path / "beta-dataset" / "dataset.json").write_text(
+        json.dumps(dataset_payload("renamed"), indent=2),
+        encoding="utf-8",
+    )
+    failing = registry.verify()
+    failed_checks = {check.name: check.message for check in failing.failed_checks}
+
+    assert passing.passed is True
+    assert failing.passed is False
+    assert "dataset_manifest_matches_identity" in failed_checks
+    assert "identity mismatch" in failed_checks["dataset_manifest_matches_identity"]

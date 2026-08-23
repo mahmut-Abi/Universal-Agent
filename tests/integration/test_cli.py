@@ -2310,6 +2310,7 @@ async def test_cli_eval_exposes_dataset_catalog(tmp_path: Path) -> None:
     list_output = StringIO()
     filtered_output = StringIO()
     show_output = StringIO()
+    verify_output = StringIO()
     missing_output = StringIO()
     missing_error = StringIO()
 
@@ -2344,6 +2345,11 @@ async def test_cli_eval_exposes_dataset_catalog(tmp_path: Path) -> None:
         service=service,
         stdout=show_output,
     )
+    verify_status = await run_cli(
+        ["eval", "datasets", "--dataset-dir", str(tmp_path / "datasets"), "--verify"],
+        service=service,
+        stdout=verify_output,
+    )
     missing_status = await run_cli(
         [
             "eval",
@@ -2360,10 +2366,12 @@ async def test_cli_eval_exposes_dataset_catalog(tmp_path: Path) -> None:
     listed = read_json(list_output)
     filtered = read_json(filtered_output)
     shown = read_json(show_output)
+    verification = read_json(verify_output)
     datasets = listed["datasets"]
     assert list_status == 0
     assert filtered_status == 0
     assert show_status == 0
+    assert verify_status == 0
     assert missing_status == 1
     assert missing_output.getvalue() == ""
     assert "evaluation dataset not registered: database" in missing_error.getvalue()
@@ -2378,6 +2386,14 @@ async def test_cli_eval_exposes_dataset_catalog(tmp_path: Path) -> None:
     assert dataset["suites"][0]["path"] == "suites/healthy.json"
     assert filtered == listed
     assert shown == dataset
+    assert verification["passed"] is True
+    assert verification["failed_check_count"] == 0
+    assert {check["name"] for check in verification["checks"]} == {
+        "dataset_root_exists",
+        "dataset_manifest_exists",
+        "dataset_manifest_matches_identity",
+        "dataset_suites_load",
+    }
 
 
 @pytest.mark.asyncio
