@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import json
+import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -194,6 +197,50 @@ def test_file_work_queue_reloads_before_stale_writer_mutates(tmp_path: Path) -> 
     assert enqueued.work_item_id == WorkItemId("work-2")
     assert reloaded.get(leased.work_item_id).status is WorkItemStatus.LEASED
     assert reloaded.get(enqueued.work_item_id).kind == "task"
+
+
+def test_file_work_queue_serializes_cross_process_operations(tmp_path: Path) -> None:
+    path = tmp_path / "work-queue.json"
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    FileWorkQueue(path).enqueue(kind="agent_session", available_at=now)
+
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_handle = lock_path.open("a+", encoding="utf-8")
+    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+    try:
+        persisted = json.loads(path.read_text(encoding="utf-8"))
+        assert persisted["items"][0]["status"] == WorkItemStatus.QUEUED.value
+        probe = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import errno, fcntl, pathlib, sys; "
+                    "handle = pathlib.Path(sys.argv[1]).open('a+', encoding='utf-8'); "
+                    "\ntry:\n"
+                    "    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+                    "except BlockingIOError as exc:\n"
+                    "    blocked = exc.errno in (errno.EACCES, errno.EAGAIN)\n"
+                    "    print('blocked' if blocked else exc.errno)\n"
+                    "else:\n"
+                    "    print('acquired')\n"
+                ),
+                str(lock_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    finally:
+        if not lock_handle.closed:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+            lock_handle.close()
+
+    assert probe.stdout.strip() == "blocked"
+    leased = FileWorkQueue(path).lease(worker_id=WorkerId("worker-a"), now=now)
+    assert FileWorkQueue(path).get(leased.work_item_id).lease is not None
 
 
 def test_file_work_queue_rejects_unsupported_file_version(tmp_path: Path) -> None:

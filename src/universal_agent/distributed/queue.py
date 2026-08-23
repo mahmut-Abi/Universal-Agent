@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import fcntl
 import json
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -378,7 +380,10 @@ class FileWorkQueue(InMemoryWorkQueue):
     def __init__(self, path: str | Path) -> None:
         super().__init__()
         self._path = Path(path)
-        self._load()
+        self._lock_path = self._path.with_suffix(self._path.suffix + ".lock")
+        self._lock_depth = 0
+        with self._locked():
+            self._load()
 
     def enqueue(
         self,
@@ -394,21 +399,22 @@ class FileWorkQueue(InMemoryWorkQueue):
         idempotency_key: str | None = None,
         work_item_id: WorkItemId | None = None,
     ) -> WorkItem:
-        self._load()
-        item = super().enqueue(
-            kind=kind,
-            payload=payload,
-            session_id=session_id,
-            task_id=task_id,
-            action_id=action_id,
-            priority=priority,
-            max_attempts=max_attempts,
-            available_at=available_at,
-            idempotency_key=idempotency_key,
-            work_item_id=work_item_id,
-        )
-        self._save()
-        return item
+        with self._locked():
+            self._load()
+            item = super().enqueue(
+                kind=kind,
+                payload=payload,
+                session_id=session_id,
+                task_id=task_id,
+                action_id=action_id,
+                priority=priority,
+                max_attempts=max_attempts,
+                available_at=available_at,
+                idempotency_key=idempotency_key,
+                work_item_id=work_item_id,
+            )
+            self._save()
+            return item
 
     def lease(
         self,
@@ -418,15 +424,16 @@ class FileWorkQueue(InMemoryWorkQueue):
         now: datetime | None = None,
         accepted_kinds: Collection[str] | None = None,
     ) -> WorkItem:
-        self._load()
-        item = super().lease(
-            worker_id=worker_id,
-            ttl_seconds=ttl_seconds,
-            now=now,
-            accepted_kinds=accepted_kinds,
-        )
-        self._save()
-        return item
+        with self._locked():
+            self._load()
+            item = super().lease(
+                worker_id=worker_id,
+                ttl_seconds=ttl_seconds,
+                now=now,
+                accepted_kinds=accepted_kinds,
+            )
+            self._save()
+            return item
 
     def heartbeat(
         self,
@@ -436,15 +443,16 @@ class FileWorkQueue(InMemoryWorkQueue):
         ttl_seconds: float = 30.0,
         now: datetime | None = None,
     ) -> WorkItem:
-        self._load()
-        item = super().heartbeat(
-            lease_id,
-            worker_id=worker_id,
-            ttl_seconds=ttl_seconds,
-            now=now,
-        )
-        self._save()
-        return item
+        with self._locked():
+            self._load()
+            item = super().heartbeat(
+                lease_id,
+                worker_id=worker_id,
+                ttl_seconds=ttl_seconds,
+                now=now,
+            )
+            self._save()
+            return item
 
     def complete(
         self,
@@ -453,10 +461,11 @@ class FileWorkQueue(InMemoryWorkQueue):
         worker_id: WorkerId,
         now: datetime | None = None,
     ) -> WorkItem:
-        self._load()
-        item = super().complete(lease_id, worker_id=worker_id, now=now)
-        self._save()
-        return item
+        with self._locked():
+            self._load()
+            item = super().complete(lease_id, worker_id=worker_id, now=now)
+            self._save()
+            return item
 
     def fail(
         self,
@@ -467,16 +476,17 @@ class FileWorkQueue(InMemoryWorkQueue):
         retry: bool = True,
         now: datetime | None = None,
     ) -> WorkItem:
-        self._load()
-        item = super().fail(
-            lease_id,
-            worker_id=worker_id,
-            reason=reason,
-            retry=retry,
-            now=now,
-        )
-        self._save()
-        return item
+        with self._locked():
+            self._load()
+            item = super().fail(
+                lease_id,
+                worker_id=worker_id,
+                reason=reason,
+                retry=retry,
+                now=now,
+            )
+            self._save()
+            return item
 
     def cancel(
         self,
@@ -485,25 +495,41 @@ class FileWorkQueue(InMemoryWorkQueue):
         reason: str = "cancelled",
         now: datetime | None = None,
     ) -> WorkItem:
-        self._load()
-        item = super().cancel(work_item_id, reason=reason, now=now)
-        self._save()
-        return item
+        with self._locked():
+            self._load()
+            item = super().cancel(work_item_id, reason=reason, now=now)
+            self._save()
+            return item
 
     def expire(self, *, now: datetime | None = None) -> tuple[WorkItem, ...]:
-        self._load()
-        expired = super().expire(now=now)
-        if expired:
-            self._save()
-        return expired
+        with self._locked():
+            self._load()
+            expired = super().expire(now=now)
+            if expired:
+                self._save()
+            return expired
 
     def get(self, work_item_id: WorkItemId) -> WorkItem:
-        self._load()
-        return super().get(work_item_id)
+        with self._locked():
+            self._load()
+            return super().get(work_item_id)
 
     def list(self, *, status: WorkItemStatus | None = None) -> tuple[WorkItem, ...]:
-        self._load()
-        return super().list(status=status)
+        with self._locked():
+            self._load()
+            return super().list(status=status)
+
+    @contextmanager
+    def _locked(self) -> Iterator[None]:
+        if self._lock_depth > 0:
+            yield
+            return
+        with _file_queue_lock(self._lock_path):
+            self._lock_depth += 1
+            try:
+                yield
+            finally:
+                self._lock_depth -= 1
 
     def _load(self) -> None:
         if not self._path.exists():
@@ -546,6 +572,17 @@ class FileWorkQueue(InMemoryWorkQueue):
             json.dump(payload, handle, indent=2, sort_keys=True)
             handle.write("\n")
         tmp_path.replace(self._path)
+
+
+@contextmanager
+def _file_queue_lock(lock_path: Path) -> Iterator[None]:
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _lease_deadline(now: datetime, ttl_seconds: float) -> datetime:
