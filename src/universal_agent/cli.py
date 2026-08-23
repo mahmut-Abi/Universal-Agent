@@ -410,7 +410,11 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--distributed-queue-path", default=".universal-agent/work-queue.json")
     init.add_argument("--distributed-locks-backend", choices=("memory", "file"), default="memory")
     init.add_argument("--distributed-locks-path", default=".universal-agent/distributed-locks.json")
-    init.add_argument("--distributed-workers-backend", choices=("memory", "file"), default="memory")
+    init.add_argument(
+        "--distributed-workers-backend",
+        choices=("memory", "file", "sqlite"),
+        default="memory",
+    )
     init.add_argument("--distributed-workers-path", default=".universal-agent/workers.json")
     init.add_argument("--force", action="store_true")
 

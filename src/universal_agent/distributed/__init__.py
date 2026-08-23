@@ -58,6 +58,7 @@ from universal_agent.distributed.worker import (
 from universal_agent.distributed.worker_state import (
     FileWorkerRegistry,
     InMemoryWorkerRegistry,
+    SQLiteWorkerRegistry,
     WorkerNotFoundError,
     WorkerRecord,
     WorkerStatus,
@@ -92,6 +93,7 @@ __all__ = [
     "LeaseLostError",
     "NoWorkAvailable",
     "SQLiteWorkQueue",
+    "SQLiteWorkerRegistry",
     "WorkHandler",
     "WorkHandlerResult",
     "WorkHandlerStatus",

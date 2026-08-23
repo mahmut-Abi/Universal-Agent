@@ -362,6 +362,38 @@ def test_runtime_host_uses_configured_file_backed_worker_registry(tmp_path: Path
     assert snapshot.workers.workers[0].capabilities == ("agent_session",)
 
 
+def test_runtime_host_uses_configured_sqlite_backed_worker_registry(tmp_path: Path) -> None:
+    backend = HostRemediationBackend()
+    workers_path = tmp_path / "coordination" / "workers.sqlite3"
+    config = RuntimeConfig(
+        environment=immutable_json({"environment": "production"}),
+        distributed_workers=StoreConfig.sqlite(str(workers_path)),
+        domain=DomainConfig("kubernetes", "0.2.0"),
+    )
+    first = RuntimeHost.build(
+        config=config,
+        model=ScriptedModelAdapter([]),
+        domain=KubernetesRemediationDomain(backend, backend),
+    )
+
+    first.distributed_coordinator.register_worker(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+    )
+    second = RuntimeHost.build(
+        config=config,
+        model=ScriptedModelAdapter([]),
+        domain=KubernetesRemediationDomain(backend, backend),
+    )
+    snapshot = second.service.distributed_snapshot()
+
+    assert workers_path.exists()
+    assert snapshot is not None
+    assert snapshot.workers.total_count == 1
+    assert snapshot.workers.workers[0].worker_id == WorkerId("worker-a")
+    assert snapshot.workers.workers[0].capabilities == ("agent_session",)
+
+
 @pytest.mark.asyncio
 async def test_runtime_host_file_backed_coordination_resumes_scheduled_session(
     tmp_path: Path,

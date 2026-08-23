@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -332,6 +333,180 @@ class FileWorkerRegistry(InMemoryWorkerRegistry):
         tmp_path.replace(self._path)
 
 
+class SQLiteWorkerRegistry(InMemoryWorkerRegistry):
+    """SQLite-backed local worker registry adapter."""
+
+    def __init__(self, path: str | Path) -> None:
+        super().__init__()
+        self._path = Path(path)
+        self._transaction_connection: sqlite3.Connection | None = None
+        with self._connect() as connection:
+            _ensure_sqlite_worker_registry_schema(connection)
+            self._load(connection)
+
+    def register(
+        self,
+        worker_id: WorkerId,
+        *,
+        capabilities: tuple[str, ...] = (),
+        metadata: JsonMapping | None = None,
+        ttl_seconds: float = 30.0,
+        now: datetime | None = None,
+    ) -> WorkerRecord:
+        with self._transaction() as connection:
+            self._load(connection)
+            record = super().register(
+                worker_id,
+                capabilities=capabilities,
+                metadata=metadata,
+                ttl_seconds=ttl_seconds,
+                now=now,
+            )
+            self._save(connection)
+            return record
+
+    def heartbeat(
+        self,
+        worker_id: WorkerId,
+        *,
+        ttl_seconds: float = 30.0,
+        now: datetime | None = None,
+    ) -> WorkerRecord:
+        with self._transaction(commit_on=(WorkerNotFoundError,)) as connection:
+            self._load(connection)
+            record = super().heartbeat(worker_id, ttl_seconds=ttl_seconds, now=now)
+            self._save(connection)
+            return record
+
+    def drain(
+        self,
+        worker_id: WorkerId,
+        *,
+        reason: str = "worker draining",
+        now: datetime | None = None,
+    ) -> WorkerRecord:
+        with self._transaction() as connection:
+            self._load(connection)
+            record = super().drain(worker_id, reason=reason, now=now)
+            self._save(connection)
+            return record
+
+    def mark_offline(
+        self,
+        worker_id: WorkerId,
+        *,
+        reason: str = "worker offline",
+        now: datetime | None = None,
+    ) -> WorkerRecord:
+        with self._transaction() as connection:
+            self._load(connection)
+            record = super().mark_offline(worker_id, reason=reason, now=now)
+            self._save(connection)
+            return record
+
+    def expire(self, *, now: datetime | None = None) -> tuple[WorkerRecord, ...]:
+        with self._transaction() as connection:
+            self._load(connection)
+            expired = super().expire(now=now)
+            if expired:
+                self._save(connection)
+            return expired
+
+    def get(self, worker_id: WorkerId) -> WorkerRecord:
+        connection = self._transaction_connection
+        if connection is not None:
+            self._load(connection)
+            return super().get(worker_id)
+        with self._connect() as fresh_connection:
+            self._load(fresh_connection)
+            return super().get(worker_id)
+
+    def active(self) -> tuple[WorkerRecord, ...]:
+        connection = self._transaction_connection
+        if connection is not None:
+            self._load(connection)
+            return super().active()
+        with self._connect() as fresh_connection:
+            self._load(fresh_connection)
+            return super().active()
+
+    def list(self, *, status: WorkerStatus | None = None) -> tuple[WorkerRecord, ...]:
+        connection = self._transaction_connection
+        if connection is not None:
+            self._load(connection)
+            return super().list(status=status)
+        with self._connect() as fresh_connection:
+            self._load(fresh_connection)
+            return super().list(status=status)
+
+    @contextmanager
+    def _transaction(
+        self,
+        *,
+        commit_on: tuple[type[Exception], ...] = (),
+    ) -> Iterator[sqlite3.Connection]:
+        active = self._transaction_connection
+        if active is not None:
+            yield active
+            return
+        with self._connect() as connection:
+            _ensure_sqlite_worker_registry_schema(connection)
+            connection.execute("BEGIN IMMEDIATE")
+            self._transaction_connection = connection
+            try:
+                yield connection
+            except Exception as exc:
+                if isinstance(exc, commit_on):
+                    connection.commit()
+                else:
+                    connection.rollback()
+                raise
+            else:
+                connection.commit()
+            finally:
+                self._transaction_connection = None
+
+    def _connect(self) -> sqlite3.Connection:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        return sqlite3.connect(self._path, timeout=30.0, isolation_level=None)
+
+    def _load(self, connection: sqlite3.Connection) -> None:
+        _ensure_sqlite_worker_registry_schema(connection)
+        rows = connection.execute(
+            """
+            SELECT payload
+            FROM worker_registry_records
+            ORDER BY worker_id ASC
+            """
+        ).fetchall()
+        loaded: dict[WorkerId, WorkerRecord] = {}
+        for row in rows:
+            payload: object = json.loads(row[0])
+            if not isinstance(payload, dict):
+                raise ValueError("sqlite worker registry payload must be an object")
+            record = _decode_worker_record(payload)
+            if record.worker_id in loaded:
+                raise ValueError(f"duplicate sqlite worker registry worker: {record.worker_id}")
+            loaded[record.worker_id] = record
+        self._workers = loaded
+
+    def _save(self, connection: sqlite3.Connection) -> None:
+        connection.execute("DELETE FROM worker_registry_records")
+        connection.executemany(
+            """
+            INSERT INTO worker_registry_records(
+                worker_id,
+                status,
+                heartbeat_at,
+                lease_expires_at,
+                payload
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (_sqlite_worker_record_row(record) for record in super().list()),
+        )
+
+
 @contextmanager
 def _file_worker_registry_lock(lock_path: Path) -> Iterator[None]:
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -423,3 +598,33 @@ def _optional_mapping(value: object, key: str) -> JsonMapping:
     if not isinstance(value, dict):
         raise ValueError(f"{key} must be an object")
     return immutable_json(value)
+
+
+def _ensure_sqlite_worker_registry_schema(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS worker_registry_records (
+            worker_id TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            heartbeat_at TEXT NOT NULL,
+            lease_expires_at TEXT NOT NULL,
+            payload TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_worker_registry_records_status
+        ON worker_registry_records(status, lease_expires_at ASC, worker_id ASC)
+        """
+    )
+
+
+def _sqlite_worker_record_row(record: WorkerRecord) -> tuple[str, str, str, str, str]:
+    return (
+        str(record.worker_id),
+        record.status.value,
+        record.heartbeat_at.isoformat(),
+        record.lease_expires_at.isoformat(),
+        json.dumps(_encode_worker_record(record), sort_keys=True, separators=(",", ":")),
+    )

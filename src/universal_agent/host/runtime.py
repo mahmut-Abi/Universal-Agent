@@ -12,6 +12,7 @@ from universal_agent.distributed import (
     InMemoryDistributedLockRegistry,
     InMemoryWorkerRegistry,
     InMemoryWorkQueue,
+    SQLiteWorkerRegistry,
     SQLiteWorkQueue,
 )
 from universal_agent.domain import (
@@ -264,6 +265,9 @@ def _build_worker_registry(config: RuntimeConfig) -> InMemoryWorkerRegistry:
     if config.distributed_workers.backend is StoreBackend.FILE:
         assert config.distributed_workers.path is not None
         return FileWorkerRegistry(config.distributed_workers.path)
+    if config.distributed_workers.backend is StoreBackend.SQLITE:
+        assert config.distributed_workers.path is not None
+        return SQLiteWorkerRegistry(config.distributed_workers.path)
     raise ValueError(
         f"unsupported distributed workers backend: {config.distributed_workers.backend}"
     )

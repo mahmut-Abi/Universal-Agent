@@ -13,6 +13,7 @@ from universal_agent.core import immutable_json
 from universal_agent.distributed import (
     FileWorkerRegistry,
     InMemoryWorkerRegistry,
+    SQLiteWorkerRegistry,
     WorkerId,
     WorkerNotFoundError,
     WorkerStatus,
@@ -93,6 +94,68 @@ def test_file_worker_registry_reloads_before_stale_writer_mutates(tmp_path: Path
         WorkerId("worker-b"),
         WorkerId("worker-c"),
     )
+
+
+def test_sqlite_worker_registry_persists_and_reloads_worker_state(tmp_path: Path) -> None:
+    path = tmp_path / "workers.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    registry = SQLiteWorkerRegistry(path)
+
+    registered = registry.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        metadata=immutable_json({"host": "local"}),
+        ttl_seconds=10,
+        now=now,
+    )
+    renewed = SQLiteWorkerRegistry(path).heartbeat(
+        registered.worker_id,
+        ttl_seconds=20,
+        now=now + timedelta(seconds=5),
+    )
+
+    reloaded = SQLiteWorkerRegistry(path)
+
+    assert path.exists()
+    assert reloaded.get(WorkerId("worker-a")) == renewed
+    assert reloaded.active() == (renewed,)
+    assert renewed.metadata["host"] == "local"
+    assert renewed.heartbeat_at == now + timedelta(seconds=5)
+    assert renewed.lease_expires_at == now + timedelta(seconds=25)
+
+
+def test_sqlite_worker_registry_reloads_before_stale_writer_mutates(tmp_path: Path) -> None:
+    path = tmp_path / "workers.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    owner = SQLiteWorkerRegistry(path)
+    owner.register(WorkerId("worker-a"), capabilities=("agent_session",), now=now)
+    stale_writer = SQLiteWorkerRegistry(path)
+
+    owner.register(WorkerId("worker-b"), capabilities=("tool_action",), now=now)
+    stale_writer.register(WorkerId("worker-c"), capabilities=("goal_execution",), now=now)
+
+    assert tuple(record.worker_id for record in SQLiteWorkerRegistry(path).list()) == (
+        WorkerId("worker-a"),
+        WorkerId("worker-b"),
+        WorkerId("worker-c"),
+    )
+
+
+def test_sqlite_worker_registry_persists_expiry_on_heartbeat_failure(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "workers.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    registry = SQLiteWorkerRegistry(path)
+    registry.register(WorkerId("worker-a"), ttl_seconds=5, now=now)
+
+    with pytest.raises(WorkerNotFoundError, match="expired"):
+        registry.heartbeat(WorkerId("worker-a"), now=now + timedelta(seconds=6))
+
+    reloaded = SQLiteWorkerRegistry(path)
+    record = reloaded.get(WorkerId("worker-a"))
+    assert record.status is WorkerStatus.LOST
+    assert record.last_error == "worker heartbeat expired: worker-a"
 
 
 def test_file_worker_registry_serializes_cross_process_operations(tmp_path: Path) -> None:
