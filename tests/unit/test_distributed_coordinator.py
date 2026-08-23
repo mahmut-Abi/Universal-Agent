@@ -62,6 +62,43 @@ def test_distributed_runtime_coordinator_schedules_session_work_and_reports_stat
     assert result.health.status is DistributedHealthStatus.OK
 
 
+def test_distributed_runtime_coordinator_manages_worker_lifecycle() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+
+    registered = coordinator.register_worker(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=30,
+        now=now,
+    )
+    heartbeat = coordinator.heartbeat_worker(
+        WorkerId("worker-a"),
+        ttl_seconds=60,
+        now=now + timedelta(seconds=5),
+    )
+    draining = coordinator.drain_worker(
+        WorkerId("worker-a"),
+        reason="finish current lease",
+        now=now + timedelta(seconds=6),
+    )
+    offline = coordinator.mark_worker_offline(
+        WorkerId("worker-a"),
+        reason="shutdown complete",
+        now=now + timedelta(seconds=7),
+    )
+
+    assert registered.worker.status is WorkerStatus.ONLINE
+    assert registered.snapshot.workers.online_count == 1
+    assert registered.health.status is DistributedHealthStatus.OK
+    assert heartbeat.worker.lease_expires_at == now + timedelta(seconds=65)
+    assert draining.worker.status is WorkerStatus.DRAINING
+    assert draining.worker.last_error == "finish current lease"
+    assert draining.snapshot.workers.draining_count == 1
+    assert offline.worker.status is WorkerStatus.OFFLINE
+    assert offline.snapshot.workers.offline_count == 1
+
+
 def test_distributed_runtime_coordinator_runs_expiry_sweep_with_one_timestamp() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()

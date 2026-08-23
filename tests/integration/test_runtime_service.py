@@ -21,6 +21,7 @@ from universal_agent import (
     SuccessCriterion,
     Task,
     WorkerId,
+    WorkerStatus,
     WorkItemStatus,
     immutable_json,
 )
@@ -176,6 +177,53 @@ def test_runtime_service_exposes_distributed_session_scheduling() -> None:
     assert result.scheduled_work_item.payload["goal"] == "verify workload health"
     assert result.scheduled_work_item.priority == 3
     assert result.snapshot.work_queue.queued_count == 1
+
+
+def test_runtime_service_exposes_distributed_worker_lifecycle() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    service, _ = build_service([])
+    coordinator = DistributedRuntimeCoordinator()
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    distributed_service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+        distributed_coordinator=coordinator,
+    )
+
+    registered = distributed_service.distributed_register_worker(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        metadata=immutable_json({"host": "local"}),
+        ttl_seconds=30,
+        now=now,
+    )
+    heartbeat = distributed_service.distributed_heartbeat_worker(
+        WorkerId("worker-a"),
+        ttl_seconds=60,
+        now=now + timedelta(seconds=5),
+    )
+    draining = distributed_service.distributed_drain_worker(
+        WorkerId("worker-a"),
+        reason="finish current lease",
+        now=now + timedelta(seconds=6),
+    )
+    offline = distributed_service.distributed_mark_worker_offline(
+        WorkerId("worker-a"),
+        reason="shutdown complete",
+        now=now + timedelta(seconds=7),
+    )
+
+    assert service.distributed_register_worker(WorkerId("worker-a")) is None
+    assert registered is not None
+    assert heartbeat is not None
+    assert draining is not None
+    assert offline is not None
+    assert registered.worker.metadata["host"] == "local"
+    assert heartbeat.worker.lease_expires_at == now + timedelta(seconds=65)
+    assert draining.worker.status is WorkerStatus.DRAINING
+    assert offline.worker.status is WorkerStatus.OFFLINE
+    assert offline.snapshot.workers.offline_count == 1
 
 
 def test_runtime_service_exposes_distributed_expiry_sweep() -> None:

@@ -706,6 +706,78 @@ async def test_cli_distributed_schedule_session_command() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_distributed_worker_lifecycle_commands() -> None:
+    service, _ = build_cli_service([], distributed_coordinator=DistributedRuntimeCoordinator())
+    register_output = StringIO()
+    heartbeat_output = StringIO()
+    drain_output = StringIO()
+    offline_output = StringIO()
+
+    register_status = await run_cli(
+        [
+            "distributed",
+            "worker-register",
+            "worker-a",
+            "--capability",
+            "agent_session",
+            "--ttl-seconds",
+            "30",
+        ],
+        service=service,
+        stdout=register_output,
+    )
+    heartbeat_status = await run_cli(
+        [
+            "distributed",
+            "worker-heartbeat",
+            "worker-a",
+            "--ttl-seconds",
+            "60",
+        ],
+        service=service,
+        stdout=heartbeat_output,
+    )
+    drain_status = await run_cli(
+        [
+            "distributed",
+            "worker-drain",
+            "worker-a",
+            "--reason",
+            "finish current lease",
+        ],
+        service=service,
+        stdout=drain_output,
+    )
+    offline_status = await run_cli(
+        [
+            "distributed",
+            "worker-offline",
+            "worker-a",
+            "--reason",
+            "shutdown complete",
+        ],
+        service=service,
+        stdout=offline_output,
+    )
+
+    registered = read_json(register_output)
+    heartbeat = read_json(heartbeat_output)
+    draining = read_json(drain_output)
+    offline = read_json(offline_output)
+
+    assert register_status == 0
+    assert heartbeat_status == 0
+    assert drain_status == 0
+    assert offline_status == 0
+    assert registered["worker"]["worker_id"] == "worker-a"
+    assert registered["worker"]["capabilities"] == ["agent_session"]
+    assert heartbeat["worker"]["status"] == "online"
+    assert draining["worker"]["status"] == "draining"
+    assert offline["worker"]["status"] == "offline"
+    assert offline["snapshot"]["workers"]["offline_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_cli_config_show_exposes_runtime_configuration() -> None:
     service, _ = build_cli_service([])
     output = StringIO()

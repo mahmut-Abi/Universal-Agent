@@ -12,7 +12,7 @@ from universal_agent.distributed.locks import (
     DistributedLockLease,
     InMemoryDistributedLockRegistry,
 )
-from universal_agent.distributed.queue import InMemoryWorkQueue, WorkItem, WorkItemId
+from universal_agent.distributed.queue import InMemoryWorkQueue, WorkerId, WorkItem, WorkItemId
 from universal_agent.distributed.scheduler import WorkScheduler
 from universal_agent.distributed.snapshot import (
     DistributedRuntimeSnapshot,
@@ -41,6 +41,13 @@ class DistributedCancellationResult:
 @dataclass(frozen=True, slots=True)
 class DistributedSchedulingResult:
     scheduled_work_item: WorkItem
+    snapshot: DistributedRuntimeSnapshot
+    health: DistributedHealthReport
+
+
+@dataclass(frozen=True, slots=True)
+class DistributedWorkerLifecycleResult:
+    worker: WorkerRecord
     snapshot: DistributedRuntimeSnapshot
     health: DistributedHealthReport
 
@@ -133,6 +140,106 @@ class DistributedRuntimeCoordinator:
             snapshot=snapshot,
             health=health,
         )
+
+    def register_worker(
+        self,
+        worker_id: WorkerId,
+        *,
+        capabilities: tuple[str, ...] = (),
+        metadata: JsonMapping | None = None,
+        ttl_seconds: float = 30.0,
+        now: datetime | None = None,
+        queued_backlog_warn_threshold: int = 100,
+        lease_expiry_warn_seconds: float = 10.0,
+        min_online_workers: int = 1,
+    ) -> DistributedWorkerLifecycleResult:
+        timestamp = now or utc_now()
+        worker = self._workers.register(
+            worker_id,
+            capabilities=capabilities,
+            metadata=metadata,
+            ttl_seconds=ttl_seconds,
+            now=timestamp,
+        )
+        snapshot = self.snapshot()
+        health = build_distributed_health_report(
+            snapshot,
+            now=timestamp,
+            queued_backlog_warn_threshold=queued_backlog_warn_threshold,
+            lease_expiry_warn_seconds=lease_expiry_warn_seconds,
+            min_online_workers=min_online_workers,
+        )
+        return DistributedWorkerLifecycleResult(worker=worker, snapshot=snapshot, health=health)
+
+    def heartbeat_worker(
+        self,
+        worker_id: WorkerId,
+        *,
+        ttl_seconds: float = 30.0,
+        now: datetime | None = None,
+        queued_backlog_warn_threshold: int = 100,
+        lease_expiry_warn_seconds: float = 10.0,
+        min_online_workers: int = 1,
+    ) -> DistributedWorkerLifecycleResult:
+        timestamp = now or utc_now()
+        worker = self._workers.heartbeat(
+            worker_id,
+            ttl_seconds=ttl_seconds,
+            now=timestamp,
+        )
+        snapshot = self.snapshot()
+        health = build_distributed_health_report(
+            snapshot,
+            now=timestamp,
+            queued_backlog_warn_threshold=queued_backlog_warn_threshold,
+            lease_expiry_warn_seconds=lease_expiry_warn_seconds,
+            min_online_workers=min_online_workers,
+        )
+        return DistributedWorkerLifecycleResult(worker=worker, snapshot=snapshot, health=health)
+
+    def drain_worker(
+        self,
+        worker_id: WorkerId,
+        *,
+        reason: str = "worker draining",
+        now: datetime | None = None,
+        queued_backlog_warn_threshold: int = 100,
+        lease_expiry_warn_seconds: float = 10.0,
+        min_online_workers: int = 1,
+    ) -> DistributedWorkerLifecycleResult:
+        timestamp = now or utc_now()
+        worker = self._workers.drain(worker_id, reason=reason, now=timestamp)
+        snapshot = self.snapshot()
+        health = build_distributed_health_report(
+            snapshot,
+            now=timestamp,
+            queued_backlog_warn_threshold=queued_backlog_warn_threshold,
+            lease_expiry_warn_seconds=lease_expiry_warn_seconds,
+            min_online_workers=min_online_workers,
+        )
+        return DistributedWorkerLifecycleResult(worker=worker, snapshot=snapshot, health=health)
+
+    def mark_worker_offline(
+        self,
+        worker_id: WorkerId,
+        *,
+        reason: str = "worker offline",
+        now: datetime | None = None,
+        queued_backlog_warn_threshold: int = 100,
+        lease_expiry_warn_seconds: float = 10.0,
+        min_online_workers: int = 1,
+    ) -> DistributedWorkerLifecycleResult:
+        timestamp = now or utc_now()
+        worker = self._workers.mark_offline(worker_id, reason=reason, now=timestamp)
+        snapshot = self.snapshot()
+        health = build_distributed_health_report(
+            snapshot,
+            now=timestamp,
+            queued_backlog_warn_threshold=queued_backlog_warn_threshold,
+            lease_expiry_warn_seconds=lease_expiry_warn_seconds,
+            min_online_workers=min_online_workers,
+        )
+        return DistributedWorkerLifecycleResult(worker=worker, snapshot=snapshot, health=health)
 
     def expire(
         self,

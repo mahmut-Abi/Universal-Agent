@@ -25,6 +25,10 @@ from universal_agent.distributed import (
     DistributedMaintenanceResult,
     DistributedRuntimeSnapshot,
     DistributedSchedulingResult,
+    DistributedWorkerLifecycleResult,
+    WorkerId,
+    WorkerNotFoundError,
+    WorkerRecord,
     WorkItem,
     WorkItemId,
     WorkItemNotFoundError,
@@ -281,6 +285,53 @@ class AgentdApp:
             if health is None:
                 return not_found("distributed runtime coordinator is not configured")
             return json_response(distributed_health_body(health))
+        distributed_worker_id, distributed_worker_action = _distributed_worker_action_route(path)
+        if distributed_worker_id is not None:
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            try:
+                if distributed_worker_action == "register":
+                    metadata = request.body.get("metadata")
+                    if metadata is not None and not isinstance(metadata, Mapping):
+                        return bad_request("distributed worker metadata must be an object")
+                    lifecycle = self._service.distributed_register_worker(
+                        distributed_worker_id,
+                        capabilities=_distributed_worker_capabilities(request.body),
+                        metadata=None if metadata is None else immutable_json(metadata),
+                        ttl_seconds=_distributed_ttl_seconds(request.body),
+                    )
+                elif distributed_worker_action == "heartbeat":
+                    lifecycle = self._service.distributed_heartbeat_worker(
+                        distributed_worker_id,
+                        ttl_seconds=_distributed_ttl_seconds(request.body),
+                    )
+                elif distributed_worker_action == "drain":
+                    lifecycle = self._service.distributed_drain_worker(
+                        distributed_worker_id,
+                        reason=_distributed_reason(
+                            request.body,
+                            default="worker draining from agentd",
+                            field_name="distributed worker drain reason",
+                        ),
+                    )
+                elif distributed_worker_action == "offline":
+                    lifecycle = self._service.distributed_mark_worker_offline(
+                        distributed_worker_id,
+                        reason=_distributed_reason(
+                            request.body,
+                            default="worker offline from agentd",
+                            field_name="distributed worker offline reason",
+                        ),
+                    )
+                else:
+                    return not_found(f"unknown route: {path}")
+            except WorkerNotFoundError as exc:
+                return not_found(str(exc))
+            except ValueError as exc:
+                return bad_request(str(exc))
+            if lifecycle is None:
+                return not_found("distributed runtime coordinator is not configured")
+            return json_response(distributed_worker_lifecycle_body(lifecycle))
         distributed_schedule_session_id = _distributed_schedule_session_route(path)
         if distributed_schedule_session_id is not None:
             if method != "POST":
@@ -846,6 +897,29 @@ def distributed_maintenance_body(view: DistributedMaintenanceResult) -> JsonMapp
             "health": dict(distributed_health_body(view.health)),
         }
     )
+
+
+def distributed_worker_lifecycle_body(view: DistributedWorkerLifecycleResult) -> JsonMapping:
+    return immutable_json(
+        {
+            "worker": distributed_worker_record_summary_body(view.worker),
+            "snapshot": dict(distributed_snapshot_body(view.snapshot)),
+            "health": dict(distributed_health_body(view.health)),
+        }
+    )
+
+
+def distributed_worker_record_summary_body(worker: WorkerRecord) -> dict[str, JsonValue]:
+    return {
+        "worker_id": str(worker.worker_id),
+        "status": worker.status.value,
+        "registered_at": worker.registered_at.isoformat(),
+        "heartbeat_at": worker.heartbeat_at.isoformat(),
+        "lease_expires_at": worker.lease_expires_at.isoformat(),
+        "capabilities": list(worker.capabilities),
+        "metadata": _json_value(worker.metadata),
+        "last_error": worker.last_error,
+    }
 
 
 def distributed_scheduling_body(view: DistributedSchedulingResult) -> JsonMapping:
@@ -1435,6 +1509,56 @@ def _console_domain_route(path: str) -> tuple[str | None, str | None]:
     ):
         return segments[2], segments[3]
     return None, None
+
+
+def _distributed_worker_action_route(path: str) -> tuple[WorkerId | None, str]:
+    segments = tuple(segment for segment in path.split("/") if segment)
+    if (
+        len(segments) == 5
+        and segments[:3] == ("v1", "distributed", "workers")
+        and segments[3].strip()
+        and segments[4].strip()
+    ):
+        return WorkerId(segments[3]), segments[4]
+    return None, ""
+
+
+def _distributed_worker_capabilities(body: JsonMapping) -> tuple[str, ...]:
+    value = body.get("capabilities", ())
+    if isinstance(value, str) or not isinstance(value, Sequence):
+        raise ValueError("distributed worker capabilities must be a list of strings")
+    capabilities: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(
+                f"distributed worker capabilities[{index}] must be a non-empty string"
+            )
+        capabilities.append(item)
+    return tuple(capabilities)
+
+
+def _distributed_ttl_seconds(body: JsonMapping) -> float:
+    value = body.get("ttl_seconds", 30.0)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError("distributed worker ttl_seconds must be a positive number")
+    ttl_seconds = float(value)
+    if ttl_seconds <= 0:
+        raise ValueError("distributed worker ttl_seconds must be a positive number")
+    return ttl_seconds
+
+
+def _distributed_reason(
+    body: JsonMapping,
+    *,
+    default: str,
+    field_name: str,
+) -> str:
+    value = body.get("reason", default)
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    if not value.strip():
+        raise ValueError(f"{field_name} must not be empty")
+    return value
 
 
 def _distributed_schedule_session_route(path: str) -> SessionId | None:

@@ -692,6 +692,106 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agentd_distributed_worker_lifecycle_routes() -> None:
+    service, _ = build_service([], distributed_coordinator=DistributedRuntimeCoordinator())
+    app = AgentdApp(service)
+
+    registered = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/workers/worker-a/register",
+            immutable_json(
+                {
+                    "capabilities": ["agent_session"],
+                    "metadata": {"host": "local"},
+                    "ttl_seconds": 30,
+                }
+            ),
+        )
+    )
+    heartbeat = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/workers/worker-a/heartbeat",
+            immutable_json({"ttl_seconds": 60}),
+        )
+    )
+    draining = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/workers/worker-a/drain",
+            immutable_json({"reason": "finish current lease"}),
+        )
+    )
+    offline = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/workers/worker-a/offline",
+            immutable_json({"reason": "shutdown complete"}),
+        )
+    )
+    wrong_method = await app.handle(
+        HttpRequest("GET", "/v1/distributed/workers/worker-a/register")
+    )
+    invalid_capability = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/workers/worker-b/register",
+            immutable_json({"capabilities": [1]}),
+        )
+    )
+    invalid_ttl = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/workers/worker-a/heartbeat",
+            immutable_json({"ttl_seconds": 0}),
+        )
+    )
+    missing_worker = await app.handle(
+        HttpRequest("POST", "/v1/distributed/workers/worker-missing/heartbeat")
+    )
+    missing_service, _ = build_service([])
+    missing_coordinator = await AgentdApp(missing_service).handle(
+        HttpRequest("POST", "/v1/distributed/workers/worker-a/register")
+    )
+
+    assert registered.status_code == 200
+    worker = registered.body["worker"]
+    assert isinstance(worker, dict)
+    assert worker["worker_id"] == "worker-a"
+    assert worker["status"] == "online"
+    assert worker["capabilities"] == ["agent_session"]
+    assert worker["metadata"] == {"host": "local"}
+    assert registered.body["snapshot"]["workers"]["online_count"] == 1
+    assert heartbeat.body["worker"]["status"] == "online"
+    assert draining.body["worker"]["status"] == "draining"
+    assert draining.body["worker"]["last_error"] == "finish current lease"
+    assert offline.body["worker"]["status"] == "offline"
+    assert offline.body["snapshot"]["workers"]["offline_count"] == 1
+    assert wrong_method.status_code == 405
+    assert invalid_capability.status_code == 400
+    assert invalid_capability.body["error"] == {
+        "code": "bad_request",
+        "message": "distributed worker capabilities[0] must be a non-empty string",
+    }
+    assert invalid_ttl.status_code == 400
+    assert invalid_ttl.body["error"] == {
+        "code": "bad_request",
+        "message": "distributed worker ttl_seconds must be a positive number",
+    }
+    assert missing_worker.status_code == 404
+    assert missing_worker.body["error"] == {
+        "code": "not_found",
+        "message": "worker not found: worker-missing",
+    }
+    assert missing_coordinator.status_code == 404
+    assert missing_coordinator.body["error"] == {
+        "code": "not_found",
+        "message": "distributed runtime coordinator is not configured",
+    }
+
+
+@pytest.mark.asyncio
 async def test_agentd_distributed_schedule_route_schedules_session_work() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()

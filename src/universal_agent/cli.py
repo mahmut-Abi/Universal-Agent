@@ -20,6 +20,7 @@ from universal_agent.agentd.app import (
     distributed_maintenance_body,
     distributed_scheduling_body,
     distributed_snapshot_body,
+    distributed_worker_lifecycle_body,
     doctor_body,
     domain_body,
     evaluator_body,
@@ -57,6 +58,8 @@ from universal_agent.core import (
 )
 from universal_agent.distributed import (
     DistributedRuntimeCoordinator,
+    WorkerId,
+    WorkerNotFoundError,
     WorkItemId,
     WorkItemNotFoundError,
 )
@@ -230,7 +233,7 @@ async def run_cli(
 
     try:
         await _dispatch(args, runtime_service, out, server_runner=server_runner)
-    except (StateNotFoundError, WorkItemNotFoundError) as exc:
+    except (StateNotFoundError, WorkItemNotFoundError, WorkerNotFoundError) as exc:
         _write_error(err, "not_found", str(exc))
         return 1
     except CliExit as exc:
@@ -283,6 +286,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--reason",
         default="distributed work item cancelled from CLI",
     )
+    distributed_register = distributed_commands.add_parser("worker-register")
+    distributed_register.add_argument("worker_id")
+    distributed_register.add_argument("--capability", action="append", default=[])
+    distributed_register.add_argument("--ttl-seconds", type=float, default=30.0)
+
+    distributed_heartbeat = distributed_commands.add_parser("worker-heartbeat")
+    distributed_heartbeat.add_argument("worker_id")
+    distributed_heartbeat.add_argument("--ttl-seconds", type=float, default=30.0)
+
+    distributed_drain = distributed_commands.add_parser("worker-drain")
+    distributed_drain.add_argument("worker_id")
+    distributed_drain.add_argument("--reason", default="worker draining from CLI")
+
+    distributed_offline = distributed_commands.add_parser("worker-offline")
+    distributed_offline.add_argument("worker_id")
+    distributed_offline.add_argument("--reason", default="worker offline from CLI")
 
     init = commands.add_parser("init")
     init.add_argument("--output", default="profile.json")
@@ -548,6 +567,43 @@ async def _dispatch(
             if cancellation is None:
                 raise ValueError("distributed runtime coordinator is not configured")
             _write_json(out, distributed_cancellation_body(cancellation))
+            return
+        if distributed_command == "worker-register":
+            lifecycle = service.distributed_register_worker(
+                WorkerId(cast(str, args.worker_id)),
+                capabilities=tuple(cast(list[str], args.capability)),
+                ttl_seconds=cast(float, args.ttl_seconds),
+            )
+            if lifecycle is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_worker_lifecycle_body(lifecycle))
+            return
+        if distributed_command == "worker-heartbeat":
+            lifecycle = service.distributed_heartbeat_worker(
+                WorkerId(cast(str, args.worker_id)),
+                ttl_seconds=cast(float, args.ttl_seconds),
+            )
+            if lifecycle is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_worker_lifecycle_body(lifecycle))
+            return
+        if distributed_command == "worker-drain":
+            lifecycle = service.distributed_drain_worker(
+                WorkerId(cast(str, args.worker_id)),
+                reason=cast(str, args.reason),
+            )
+            if lifecycle is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_worker_lifecycle_body(lifecycle))
+            return
+        if distributed_command == "worker-offline":
+            lifecycle = service.distributed_mark_worker_offline(
+                WorkerId(cast(str, args.worker_id)),
+                reason=cast(str, args.reason),
+            )
+            if lifecycle is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_worker_lifecycle_body(lifecycle))
             return
         raise ValueError(f"unknown distributed command: {distributed_command}")
     if command == "init":

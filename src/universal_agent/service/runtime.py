@@ -25,6 +25,8 @@ from universal_agent.distributed import (
     DistributedRuntimeCoordinator,
     DistributedRuntimeSnapshot,
     DistributedSchedulingResult,
+    DistributedWorkerLifecycleResult,
+    WorkerId,
     WorkItemId,
 )
 from universal_agent.domain import ActiveDomain, RuntimeComponents
@@ -346,7 +348,6 @@ class RuntimeService:
             domains=runtime_config_domain_views(configured or identities),
         )
 
-
     def distributed_snapshot(self) -> DistributedRuntimeSnapshot | None:
         if self._distributed_coordinator is None:
             return None
@@ -374,6 +375,70 @@ class RuntimeService:
             priority=priority,
             max_attempts=max_attempts,
             available_at=now,
+            now=now,
+        )
+
+    def distributed_register_worker(
+        self,
+        worker_id: WorkerId,
+        *,
+        capabilities: tuple[str, ...] = (),
+        metadata: JsonMapping | None = None,
+        ttl_seconds: float = 30.0,
+        now: datetime | None = None,
+    ) -> DistributedWorkerLifecycleResult | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.register_worker(
+            worker_id,
+            capabilities=capabilities,
+            metadata=metadata,
+            ttl_seconds=ttl_seconds,
+            now=now,
+        )
+
+    def distributed_heartbeat_worker(
+        self,
+        worker_id: WorkerId,
+        *,
+        ttl_seconds: float = 30.0,
+        now: datetime | None = None,
+    ) -> DistributedWorkerLifecycleResult | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.heartbeat_worker(
+            worker_id,
+            ttl_seconds=ttl_seconds,
+            now=now,
+        )
+
+    def distributed_drain_worker(
+        self,
+        worker_id: WorkerId,
+        *,
+        reason: str = "worker draining",
+        now: datetime | None = None,
+    ) -> DistributedWorkerLifecycleResult | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.drain_worker(
+            worker_id,
+            reason=reason,
+            now=now,
+        )
+
+    def distributed_mark_worker_offline(
+        self,
+        worker_id: WorkerId,
+        *,
+        reason: str = "worker offline",
+        now: datetime | None = None,
+    ) -> DistributedWorkerLifecycleResult | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.mark_worker_offline(
+            worker_id,
+            reason=reason,
             now=now,
         )
 
