@@ -75,16 +75,16 @@ Goal
 - RuntimeConfig.distributed_queue 与 RuntimeHost 组装 memory/file work queue；
 - capability-aware Worker leasing，以及长异步 handler 的 queue/worker lease heartbeat；
 - RuntimeService 本地 queue → worker → RuntimeAPI 闭环，用于已存在且无需确认的 waiting session
-  resume、当前 Task resume，以及新 Goal 的 scheduled execution；
+  resume、当前 Task resume、已确认 pending Action resume，以及新 Goal 的 scheduled execution；
 - Worker Registry 以及 online/draining/offline/lost 状态；
 - leased distributed lock；
 - Runtime Snapshot、Health Report、Coordinator；
-- agentd/CLI 的 distributed snapshot、health、schedule-session、schedule-task、schedule-goal、worker、lock、expire 视图，
+- agentd/CLI 的 distributed snapshot、health、schedule-session、schedule-task、schedule-action、schedule-goal、worker、lock、expire 视图，
   以及 CLI worker-run-once / bounded worker-run 本地执行入口。
 
 P6 当前遵循设计文档的“先做 local primitives”策略。它已有本地 waiting session resume
-闭环、当前 Task resume 闭环、新 Goal scheduled execution 闭环和 file-backed queue adapter，但还没有跨进程 Worker、
-并发安全队列锁，或 Action 的自动调度执行闭环。
+闭环、当前 Task resume 闭环、已确认 pending Action resume 闭环、新 Goal scheduled execution 闭环和 file-backed queue adapter，但还没有跨进程 Worker、
+并发安全队列锁，或自动发现并调度 pending Action 的后台调度器。
 
 ### P7：生态元数据基础
 
@@ -155,8 +155,8 @@ AgentRuntime
   → Session + Event Store
 ```
 
-当前已接通本地 memory/file queue 上的 waiting session resume、current Task resume 与 scheduled Goal execution；
-后续应继续补 Action work kind 的执行语义、持久队列并发安全和 lease-aware 重复执行保护。
+当前已接通本地 memory/file queue 上的 waiting session resume、current Task resume、confirmed pending Action resume 与 scheduled Goal execution；
+后续应继续补自动发现 pending Action 的调度器、持久队列并发安全和 lease-aware 重复执行保护。
 
 ### P3：生产安全与外部适配
 

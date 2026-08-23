@@ -48,6 +48,7 @@ from universal_agent.agentd.app import (
 )
 from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
 from universal_agent.core import (
+    ActionId,
     Decision,
     DecisionType,
     DomainIdentity,
@@ -330,6 +331,15 @@ def build_parser() -> argparse.ArgumentParser:
     distributed_schedule_task.add_argument("task_id")
     distributed_schedule_task.add_argument("--priority", type=int, default=0)
     distributed_schedule_task.add_argument("--max-attempts", type=int, default=3)
+    distributed_schedule_action = distributed_commands.add_parser("schedule-action")
+    distributed_schedule_action.add_argument("session_id")
+    distributed_schedule_action.add_argument("task_id")
+    distributed_schedule_action.add_argument("action_id")
+    distributed_schedule_action.add_argument(
+        "--confirmed", choices=("true", "false"), required=True
+    )
+    distributed_schedule_action.add_argument("--priority", type=int, default=0)
+    distributed_schedule_action.add_argument("--max-attempts", type=int, default=3)
     distributed_cancel = distributed_commands.add_parser("cancel")
     distributed_cancel.add_argument("work_item_id")
     distributed_cancel.add_argument(
@@ -713,6 +723,22 @@ async def _dispatch(
             scheduling = service.distributed_schedule_task(
                 SessionId(cast(str, args.session_id)),
                 TaskId(cast(str, args.task_id)),
+                priority=cast(int, args.priority),
+                max_attempts=cast(int, args.max_attempts),
+            )
+            if scheduling is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_scheduling_body(scheduling))
+            return
+        if distributed_command == "schedule-action":
+            confirmed = cast(str, args.confirmed) == "true"
+            if not confirmed:
+                raise ValueError("distributed schedule-action requires --confirmed true")
+            scheduling = service.distributed_schedule_action(
+                SessionId(cast(str, args.session_id)),
+                TaskId(cast(str, args.task_id)),
+                ActionId(cast(str, args.action_id)),
+                confirmed=confirmed,
                 priority=cast(int, args.priority),
                 max_attempts=cast(int, args.max_attempts),
             )

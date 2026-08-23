@@ -9,6 +9,7 @@ from types import MappingProxyType
 from urllib.parse import parse_qs, urlsplit
 
 from universal_agent.core import (
+    ActionId,
     EventId,
     ExecutionResult,
     Goal,
@@ -492,6 +493,43 @@ class AgentdApp:
             if scheduling is None:
                 return not_found("distributed runtime coordinator is not configured")
             return json_response(distributed_scheduling_body(scheduling), status_code=202)
+        (
+            distributed_schedule_action_session_id,
+            distributed_schedule_action_task_id,
+            distributed_schedule_action_id,
+        ) = _distributed_schedule_action_route(path)
+        if (
+            distributed_schedule_action_session_id is not None
+            and distributed_schedule_action_task_id is not None
+            and distributed_schedule_action_id is not None
+        ):
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            confirmed = request.body.get("confirmed")
+            if not isinstance(confirmed, bool):
+                return bad_request("distributed schedule-action confirmed must be a boolean")
+            if not confirmed:
+                return bad_request("distributed schedule-action requires confirmed=true")
+            priority = request.body.get("priority", 0)
+            if not isinstance(priority, int):
+                return bad_request("distributed schedule priority must be an integer")
+            max_attempts = request.body.get("max_attempts", 3)
+            if not isinstance(max_attempts, int):
+                return bad_request("distributed schedule max_attempts must be an integer")
+            try:
+                scheduling = self._service.distributed_schedule_action(
+                    distributed_schedule_action_session_id,
+                    distributed_schedule_action_task_id,
+                    distributed_schedule_action_id,
+                    confirmed=confirmed,
+                    priority=priority,
+                    max_attempts=max_attempts,
+                )
+            except ValueError as exc:
+                return bad_request(str(exc))
+            if scheduling is None:
+                return not_found("distributed runtime coordinator is not configured")
+            return json_response(distributed_scheduling_body(scheduling))
         distributed_schedule_task_session_id, distributed_schedule_task_id = (
             _distributed_schedule_task_route(path)
         )
@@ -1192,7 +1230,12 @@ def distributed_work_item_summary_body(item: WorkItem) -> dict[str, JsonValue]:
         "work_item_id": str(item.work_item_id),
         "kind": item.kind,
         "status": item.status.value,
+        "session_id": None if item.session_id is None else str(item.session_id),
+        "task_id": None if item.task_id is None else str(item.task_id),
+        "action_id": None if item.action_id is None else str(item.action_id),
+        "priority": item.priority,
         "attempts": item.attempts,
+        "max_attempts": item.max_attempts,
         "last_error": item.last_error,
     }
 
@@ -1935,6 +1978,24 @@ def _distributed_schedule_task_route(path: str) -> tuple[SessionId | None, TaskI
     ):
         return SessionId(segments[3]), TaskId(segments[5])
     return None, None
+
+
+def _distributed_schedule_action_route(
+    path: str,
+) -> tuple[SessionId | None, TaskId | None, ActionId | None]:
+    segments = tuple(segment for segment in path.split("/") if segment)
+    if (
+        len(segments) == 9
+        and segments[:3] == ("v1", "distributed", "sessions")
+        and segments[3].strip()
+        and segments[4] == "tasks"
+        and segments[5].strip()
+        and segments[6] == "actions"
+        and segments[7].strip()
+        and segments[8] == "schedule"
+    ):
+        return SessionId(segments[3]), TaskId(segments[5]), ActionId(segments[7])
+    return None, None, None
 
 
 def _distributed_cancel_route(path: str) -> WorkItemId | None:

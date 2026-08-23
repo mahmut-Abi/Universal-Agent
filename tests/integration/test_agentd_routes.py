@@ -302,6 +302,8 @@ def remediation_goal_task() -> tuple[Goal, Task]:
 
 def build_remediation_service(
     decisions: list[Decision],
+    *,
+    distributed_coordinator: DistributedRuntimeCoordinator | None = None,
 ) -> tuple[RuntimeService, AgentdRemediationBackend]:
     backend = AgentdRemediationBackend()
     store = InMemoryStateStore()
@@ -317,7 +319,14 @@ def build_remediation_service(
         environment=immutable_json({"environment": "production"}),
     )
     api = RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
-    return RuntimeService(runtime_api=api, components=components), backend
+    return (
+        RuntimeService(
+            runtime_api=api,
+            components=components,
+            distributed_coordinator=distributed_coordinator,
+        ),
+        backend,
+    )
 
 
 def find_named(items: JsonValue, name: str) -> dict[str, JsonValue]:
@@ -1214,6 +1223,87 @@ async def test_agentd_distributed_schedule_task_route_runs_from_worker() -> None
     work_item = json_object(worker.body["work_item"])
     assert work_item["status"] == "completed"
     assert completed.goal_status.value == "completed"
+
+
+@pytest.mark.asyncio
+async def test_agentd_distributed_schedule_action_route_confirms_pending_action() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, backend = build_remediation_service(
+        [
+            inspect_workload("healthy"),
+            inspect_pod(),
+            scale_workload(),
+            inspect_workload("verification_observed", "healthy"),
+            finish(),
+        ],
+        distributed_coordinator=coordinator,
+    )
+    waiting = await service.run_goal(*remediation_goal_task())
+    assert waiting.session.pending_action is not None
+    app = AgentdApp(service)
+
+    scheduled = await app.handle(
+        HttpRequest(
+            "POST",
+            (
+                f"/v1/distributed/sessions/{waiting.result.session_id}/tasks/"
+                f"{waiting.session.current_task_id}/actions/"
+                f"{waiting.session.pending_action.action_id}/schedule"
+            ),
+            immutable_json({"confirmed": True, "priority": 4}),
+        )
+    )
+    worker = await app.handle(HttpRequest("POST", "/v1/distributed/workers/worker-a/run-once"))
+    completed = await service.get_session(waiting.result.session_id)
+
+    assert scheduled.status_code == 200
+    scheduled_item = json_object(scheduled.body["scheduled_work_item"])
+    assert scheduled_item["kind"] == "tool_action"
+    assert scheduled_item["status"] == "queued"
+    assert scheduled_item["action_id"] == str(waiting.session.pending_action.action_id)
+    assert worker.status_code == 200
+    assert worker.body["status"] == "completed"
+    work_item = json_object(worker.body["work_item"])
+    assert work_item["status"] == "completed"
+    assert completed.goal_status.value == "completed"
+    assert completed.pending_action is None
+    assert backend.mutation_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_agentd_distributed_schedule_action_route_validates_confirmation() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, _ = build_remediation_service(
+        [inspect_workload("healthy"), inspect_pod(), scale_workload()],
+        distributed_coordinator=coordinator,
+    )
+    waiting = await service.run_goal(*remediation_goal_task())
+    assert waiting.session.pending_action is not None
+    route = (
+        f"/v1/distributed/sessions/{waiting.result.session_id}/tasks/"
+        f"{waiting.session.current_task_id}/actions/"
+        f"{waiting.session.pending_action.action_id}/schedule"
+    )
+    app = AgentdApp(service)
+
+    missing = await app.handle(HttpRequest("POST", route))
+    false_confirmation = await app.handle(
+        HttpRequest("POST", route, immutable_json({"confirmed": False}))
+    )
+    wrong_method = await app.handle(HttpRequest("GET", route))
+
+    assert missing.status_code == 400
+    assert missing.body["error"] == {
+        "code": "bad_request",
+        "message": "distributed schedule-action confirmed must be a boolean",
+    }
+    assert false_confirmation.status_code == 400
+    assert false_confirmation.body["error"] == {
+        "code": "bad_request",
+        "message": "distributed schedule-action requires confirmed=true",
+    }
+    assert wrong_method.status_code == 405
+    assert wrong_method.headers["allow"] == "POST"
 
 
 @pytest.mark.asyncio

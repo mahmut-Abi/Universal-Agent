@@ -55,6 +55,7 @@ from universal_agent.evaluation.recording import (
 class CliBackend:
     def __init__(self) -> None:
         self.inspect_calls = 0
+        self.mutation_calls = 0
 
     async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.inspect_calls += 1
@@ -62,6 +63,7 @@ class CliBackend:
         return immutable_json({"resource": "deployment/example", "healthy": True})
 
     async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
+        self.mutation_calls += 1
         assert capability == "scale_workload"
         return immutable_json({"resource": "deployment/example", "mutation_applied": True})
 
@@ -132,6 +134,7 @@ def build_cli_service(
     usage: list[ModelUsage] | None = None,
     distributed_coordinator: DistributedRuntimeCoordinator | None = None,
     domain_packages: DomainPackageRegistry | None = None,
+    environment: str = "staging",
 ) -> tuple[RuntimeService, CliBackend]:
     backend = CliBackend()
     components = RuntimeBuilder().build(
@@ -144,11 +147,11 @@ def build_cli_service(
         state_store=store,
         components=components,
         event_sink=events,
-        environment=immutable_json({"environment": "staging"}),
+        environment=immutable_json({"environment": environment}),
     )
     api = RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
     config = RuntimeConfig(
-        environment=immutable_json({"environment": "staging"}),
+        environment=immutable_json({"environment": environment}),
         store=StoreConfig.memory(),
         limits=RuntimeLimitsConfig(max_iterations=12, max_recovery_steps=4),
         domain=DomainConfig("kubernetes", "0.2.0"),
@@ -1221,6 +1224,57 @@ async def test_cli_distributed_schedule_task_command_runs_from_worker() -> None:
     assert worker["status"] == "completed"
     assert worker["work_item"]["status"] == "completed"
     assert completed.goal_status.value == "completed"
+
+
+@pytest.mark.asyncio
+async def test_cli_distributed_schedule_action_command_confirms_pending_action() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, backend = build_cli_service(
+        [scale_workload(), inspect_workload(), finish()],
+        distributed_coordinator=coordinator,
+        environment="production",
+    )
+    waiting = await service.run_goal(*goal_task())
+    assert waiting.session.pending_action is not None
+    schedule_output = StringIO()
+    worker_output = StringIO()
+
+    schedule_status = await run_cli(
+        [
+            "distributed",
+            "schedule-action",
+            str(waiting.result.session_id),
+            str(waiting.session.current_task_id),
+            str(waiting.session.pending_action.action_id),
+            "--confirmed",
+            "true",
+            "--priority",
+            "4",
+        ],
+        service=service,
+        stdout=schedule_output,
+    )
+    worker_status = await run_cli(
+        ["distributed", "worker-run-once", "worker-a"],
+        service=service,
+        stdout=worker_output,
+    )
+    scheduled = read_json(schedule_output)
+    worker = read_json(worker_output)
+    completed = await service.get_session(waiting.result.session_id)
+
+    assert schedule_status == 0
+    assert scheduled["scheduled_work_item"]["kind"] == "tool_action"
+    assert scheduled["scheduled_work_item"]["status"] == "queued"
+    assert scheduled["scheduled_work_item"]["action_id"] == str(
+        waiting.session.pending_action.action_id
+    )
+    assert worker_status == 0
+    assert worker["status"] == "completed"
+    assert worker["work_item"]["status"] == "completed"
+    assert completed.goal_status.value == "completed"
+    assert completed.pending_action is None
+    assert backend.mutation_calls == 1
 
 
 @pytest.mark.asyncio

@@ -275,7 +275,7 @@ event-sourcing model or production migration system.
   handlers run, stops leasing when draining/offline/lost, and maps handler completion, retry, failure
   and cancellation back into queue state; `InMemoryDistributedLockRegistry` adds leased lock acquisition, heartbeat,
   conflict rejection, expiry and release; `InMemoryWorkerRegistry` tracks worker registration,
-  heartbeat, draining, offline and lost states; `DistributedRuntimeCoordinator` exposes session, goal and task scheduling, worker lifecycle, lock lifecycle, snapshot, health, expiry sweep and work-item cancellation over the queue, lock and worker primitives without changing AgentRuntime semantics; `RuntimeService.distributed_run_worker_once` and bounded `distributed_run_worker_until_idle` provide local queue → worker → RuntimeAPI paths for existing non-confirmation waiting sessions, matching current Tasks and newly scheduled Goals; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view; `build_distributed_health_report` projects that snapshot into HA-oriented checks for worker capacity, backlog, lease freshness, leased-work owners and worker registry health.
+  heartbeat, draining, offline and lost states; `DistributedRuntimeCoordinator` exposes session, goal, task and confirmed pending-action scheduling, worker lifecycle, lock lifecycle, snapshot, health, expiry sweep and work-item cancellation over the queue, lock and worker primitives without changing AgentRuntime semantics; `RuntimeService.distributed_run_worker_once` and bounded `distributed_run_worker_until_idle` provide local queue → worker → RuntimeAPI paths for existing non-confirmation waiting sessions, matching current Tasks, confirmed pending Actions and newly scheduled Goals; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view; `build_distributed_health_report` projects that snapshot into HA-oriented checks for worker capacity, backlog, lease freshness, leased-work owners and worker registry health.
   `RuntimeConfig.distributed_queue` lets `RuntimeHost` assemble either an in-memory queue or a local
   file-backed queue for CLI/agentd deployments that need queue state to survive host rebuilds.
 - P7 Domain Package foundation: `DomainPackageManifest` defines package metadata for independently
@@ -387,6 +387,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p6_distributed_coordinator.py
 .venv/bin/python examples/p6_distributed_cancel.py
 .venv/bin/python examples/p6_distributed_schedule.py
+.venv/bin/python examples/p6_distributed_action.py
 .venv/bin/python examples/p6_runtime_host_file_queue.py
 .venv/bin/python examples/p6_worker_lifecycle.py
 .venv/bin/python examples/p6_distributed_lock_lifecycle.py
@@ -400,6 +401,7 @@ Python 3.12 or newer is required.
 .venv/bin/python -m universal_agent.cli distributed snapshot
 .venv/bin/python -m universal_agent.cli distributed expire
 .venv/bin/python -m universal_agent.cli distributed schedule-session session-1 --priority 5 --max-attempts 2
+.venv/bin/python -m universal_agent.cli distributed schedule-action session-1 task-1 action-1 --confirmed true --priority 5
 .venv/bin/python -m universal_agent.cli distributed worker-register worker-a --capability agent_session
 .venv/bin/python -m universal_agent.cli distributed worker-heartbeat worker-a
 .venv/bin/python -m universal_agent.cli distributed worker-run-once worker-a
