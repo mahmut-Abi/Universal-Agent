@@ -1,3 +1,11 @@
+from universal_agent.distributed.locks import (
+    DistributedLockConflictError,
+    DistributedLockLease,
+    DistributedLockLeaseId,
+    DistributedLockLeaseLostError,
+    DistributedLockOwnerId,
+    InMemoryDistributedLockRegistry,
+)
 from universal_agent.distributed.queue import (
     InMemoryWorkQueue,
     LeaseId,
@@ -21,6 +29,12 @@ from universal_agent.distributed.worker import (
 )
 
 __all__ = [
+    "DistributedLockConflictError",
+    "DistributedLockLease",
+    "DistributedLockLeaseId",
+    "DistributedLockLeaseLostError",
+    "DistributedLockOwnerId",
+    "InMemoryDistributedLockRegistry",
     "InMemoryWorkQueue",
     "LeaseId",
     "LeaseLostError",
