@@ -74,20 +74,21 @@ Goal
   以及 FileWorkQueue 版本/重复 work item 损坏文件拒绝和跨进程文件锁；
 - RuntimeConfig.distributed_queue 与 RuntimeHost 组装 memory/file work queue；
 - RuntimeConfig.distributed_locks 与 RuntimeHost 组装 memory/file leased lock registry；
+- RuntimeConfig.distributed_workers 与 RuntimeHost 组装 memory/file worker registry；
 - capability-aware Worker leasing，以及长异步 handler 的 queue/worker lease heartbeat；
 - RuntimeService 本地 queue → worker → RuntimeAPI 闭环，用于已存在且无需确认的 waiting session
   resume、当前 Task resume、已确认 pending Action resume、Runtime-owned pending Action sweep，
   以及新 Goal 的 scheduled execution；
 - session-scoped execution lock，Worker 在 resume waiting session、current Task 或 confirmed pending Action
   前会获取 `session/<session_id>` 锁，冲突时回到 retry 队列，成功或失败后释放锁；
-- Worker Registry 以及 online/draining/offline/lost 状态；
+- Worker Registry 以及 online/draining/offline/lost 状态和 file-backed worker 持久化/重载；
 - leased distributed lock 以及 file-backed lock 持久化/重载；
 - Runtime Snapshot、Health Report、Coordinator；
 - agentd/CLI 的 distributed snapshot、health、schedule-session、schedule-task、schedule-action、schedule-pending-actions、schedule-goal、worker、lock、expire 视图，
   以及 CLI worker-run-once / bounded worker-run 本地执行入口。
 
 P6 当前遵循设计文档的“先做 local primitives”策略。它已有本地 waiting session resume
-闭环、当前 Task resume 闭环、已确认 pending Action resume 闭环、Runtime-owned pending Action sweep、session-scoped execution lock、新 Goal scheduled execution 闭环和 file-backed queue adapter，但还没有跨进程 Worker
+闭环、当前 Task resume 闭环、已确认 pending Action resume 闭环、Runtime-owned pending Action sweep、session-scoped execution lock、新 Goal scheduled execution 闭环，以及 file-backed queue/lock/worker adapters，但还没有跨进程 Worker
 编排、网络协议或跨节点一致性。
 
 ### P7：生态元数据基础
@@ -105,8 +106,8 @@ Domain 代码、激活 Runtime、执行评估或安装外部依赖。
    Domain 选择 evaluator；但 extractor、updater 和 expander 尚未具备完整的 owner/routing 语义。
 2. **World Model 主要是事实模型。** `WorldEntity`/`WorldRelation` 类型已存在，但默认内存实现
    仍以 fact projection 为主，跨 Domain 图推理尚未完成。
-3. **P6 不是网络分布式系统。** Queue 和 Lock 已有本地 file-backed adapter；Worker、Registry
-   和 Coordinator 仍是本地 primitives；没有网络协议、真正的 worker 进程编排或跨节点一致性。
+3. **P6 不是网络分布式系统。** Queue、Lock 和 Worker Registry 已有本地 file-backed adapter；
+   Coordinator 仍是本地 primitive；没有网络协议、真正的 worker 进程编排或跨节点一致性。
 4. **SQLite 不是生产持久化层。** 它提供本地 durable adapter，但没有 schema migration、跨 Store
    事务、outbox、租户隔离或高并发写入策略。
 5. **Event Stream 仍是有限批次。** `events/stream` 输出 SSE 格式批次，不是长连接 push stream。

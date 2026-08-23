@@ -55,6 +55,7 @@ from universal_agent.distributed.worker import (
     WorkQueueWorker,
 )
 from universal_agent.distributed.worker_state import (
+    FileWorkerRegistry,
     InMemoryWorkerRegistry,
     WorkerNotFoundError,
     WorkerRecord,
@@ -82,6 +83,7 @@ __all__ = [
     "DistributedWorkerLifecycleResult",
     "FileDistributedLockRegistry",
     "FileWorkQueue",
+    "FileWorkerRegistry",
     "InMemoryDistributedLockRegistry",
     "InMemoryWorkQueue",
     "InMemoryWorkerRegistry",

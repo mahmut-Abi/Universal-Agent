@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import fcntl
+import json
+import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
 from universal_agent.core import immutable_json
 from universal_agent.distributed import (
+    FileWorkerRegistry,
     InMemoryWorkerRegistry,
     WorkerId,
     WorkerNotFoundError,
@@ -43,6 +49,91 @@ def test_worker_registry_registers_and_re_registers_worker() -> None:
     assert second.capabilities == ("tool_action",)
     assert second.metadata["host"] == "local-2"
     assert registry.active() == (second,)
+
+
+def test_file_worker_registry_persists_and_reloads_worker_state(tmp_path: Path) -> None:
+    path = tmp_path / "workers.json"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    registry = FileWorkerRegistry(path)
+
+    registered = registry.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        metadata=immutable_json({"host": "local"}),
+        ttl_seconds=10,
+        now=now,
+    )
+    renewed = FileWorkerRegistry(path).heartbeat(
+        registered.worker_id,
+        ttl_seconds=20,
+        now=now + timedelta(seconds=5),
+    )
+
+    reloaded = FileWorkerRegistry(path)
+
+    assert reloaded.get(WorkerId("worker-a")) == renewed
+    assert reloaded.active() == (renewed,)
+    assert renewed.metadata["host"] == "local"
+    assert renewed.heartbeat_at == now + timedelta(seconds=5)
+    assert renewed.lease_expires_at == now + timedelta(seconds=25)
+
+
+def test_file_worker_registry_reloads_before_stale_writer_mutates(tmp_path: Path) -> None:
+    path = tmp_path / "workers.json"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    owner = FileWorkerRegistry(path)
+    owner.register(WorkerId("worker-a"), capabilities=("agent_session",), now=now)
+    stale_writer = FileWorkerRegistry(path)
+
+    owner.register(WorkerId("worker-b"), capabilities=("tool_action",), now=now)
+    stale_writer.register(WorkerId("worker-c"), capabilities=("goal_execution",), now=now)
+
+    assert tuple(record.worker_id for record in FileWorkerRegistry(path).list()) == (
+        WorkerId("worker-a"),
+        WorkerId("worker-b"),
+        WorkerId("worker-c"),
+    )
+
+
+def test_file_worker_registry_serializes_cross_process_operations(tmp_path: Path) -> None:
+    path = tmp_path / "workers.json"
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    FileWorkerRegistry(path).register(WorkerId("worker-a"), now=now)
+
+    lock_handle = lock_path.open("a+", encoding="utf-8")
+    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+    try:
+        persisted = json.loads(path.read_text(encoding="utf-8"))
+        assert persisted["workers"][0]["worker_id"] == "worker-a"
+        probe = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import errno, fcntl, pathlib, sys; "
+                    "handle = pathlib.Path(sys.argv[1]).open('a+', encoding='utf-8'); "
+                    "\ntry:\n"
+                    "    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+                    "except BlockingIOError as exc:\n"
+                    "    blocked = exc.errno in (errno.EACCES, errno.EAGAIN)\n"
+                    "    print('blocked' if blocked else exc.errno)\n"
+                    "else:\n"
+                    "    print('acquired')\n"
+                ),
+                str(lock_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    finally:
+        if not lock_handle.closed:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+            lock_handle.close()
+
+    assert probe.stdout.strip() == "blocked"
 
 
 def test_worker_registry_heartbeat_extends_worker_lease() -> None:

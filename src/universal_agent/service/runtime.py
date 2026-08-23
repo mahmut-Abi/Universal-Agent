@@ -231,6 +231,8 @@ class RuntimeConfigView:
     distributed_queue_path: str | None
     distributed_locks_backend: str
     distributed_locks_path: str | None
+    distributed_workers_backend: str
+    distributed_workers_path: str | None
     max_iterations: int
     max_recovery_steps: int
     domains: tuple[RuntimeConfigDomainView, ...]
@@ -430,6 +432,8 @@ class RuntimeService:
                 distributed_queue_path=None,
                 distributed_locks_backend="memory",
                 distributed_locks_path=None,
+                distributed_workers_backend="memory",
+                distributed_workers_path=None,
                 max_iterations=20,
                 max_recovery_steps=8,
                 domains=runtime_config_domain_views(identities),
@@ -447,6 +451,8 @@ class RuntimeService:
             distributed_queue_path=self._config.distributed_queue.path,
             distributed_locks_backend=self._config.distributed_locks.backend.value,
             distributed_locks_path=self._config.distributed_locks.path,
+            distributed_workers_backend=self._config.distributed_workers.backend.value,
+            distributed_workers_path=self._config.distributed_workers.path,
             max_iterations=self._config.limits.max_iterations,
             max_recovery_steps=self._config.limits.max_recovery_steps,
             domains=runtime_config_domain_views(configured or identities),

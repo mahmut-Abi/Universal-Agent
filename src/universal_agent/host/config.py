@@ -102,6 +102,7 @@ class RuntimeConfig:
     store: StoreConfig = field(default_factory=StoreConfig.memory)
     distributed_queue: StoreConfig = field(default_factory=StoreConfig.memory)
     distributed_locks: StoreConfig = field(default_factory=StoreConfig.memory)
+    distributed_workers: StoreConfig = field(default_factory=StoreConfig.memory)
     limits: RuntimeLimitsConfig = field(default_factory=RuntimeLimitsConfig)
     domain: DomainConfig = field(default_factory=DomainConfig)
     domains: tuple[DomainConfig, ...] = ()
@@ -130,6 +131,9 @@ class RuntimeConfig:
             distributed_locks=StoreConfig.from_mapping(
                 _object(values.get("distributed_locks", {}), "distributed_locks")
             ),
+            distributed_workers=StoreConfig.from_mapping(
+                _object(values.get("distributed_workers", {}), "distributed_workers")
+            ),
             limits=RuntimeLimitsConfig.from_mapping(_object(values.get("limits", {}), "limits")),
             domain=domain,
             domains=domains,
@@ -145,6 +149,9 @@ class RuntimeConfig:
         self.distributed_locks.validate()
         if self.distributed_locks.backend is StoreBackend.SQLITE:
             raise ValueError("distributed locks sqlite backend is not supported")
+        self.distributed_workers.validate()
+        if self.distributed_workers.backend is StoreBackend.SQLITE:
+            raise ValueError("distributed workers sqlite backend is not supported")
         self.limits.validate()
         self.domain.validate()
         for domain in self.domains:

@@ -377,6 +377,7 @@ async def test_cli_init_can_write_file_backed_distributed_queue_config(tmp_path:
     store_path = tmp_path / "runtime-store"
     queue_path = tmp_path / "work-queue.json"
     locks_path = tmp_path / "distributed-locks.json"
+    workers_path = tmp_path / "workers.json"
 
     status = await run_cli(
         [
@@ -393,6 +394,10 @@ async def test_cli_init_can_write_file_backed_distributed_queue_config(tmp_path:
             "file",
             "--distributed-locks-path",
             str(locks_path),
+            "--distributed-workers-backend",
+            "file",
+            "--distributed-workers-path",
+            str(workers_path),
         ],
         stdout=output,
     )
@@ -402,6 +407,7 @@ async def test_cli_init_can_write_file_backed_distributed_queue_config(tmp_path:
     assert profile.runtime.store == StoreConfig.file(str(store_path))
     assert profile.runtime.distributed_queue == StoreConfig.file(str(queue_path))
     assert profile.runtime.distributed_locks == StoreConfig.file(str(locks_path))
+    assert profile.runtime.distributed_workers == StoreConfig.file(str(workers_path))
 
 
 @pytest.mark.asyncio
@@ -532,6 +538,7 @@ async def test_cli_profile_config_drives_run_and_persisted_session_reads(tmp_pat
     assert config_payload["store"] == {"backend": "file", "path": str(store_path)}
     assert config_payload["distributed_queue"] == {"backend": "memory", "path": None}
     assert config_payload["distributed_locks"] == {"backend": "memory", "path": None}
+    assert config_payload["distributed_workers"] == {"backend": "memory", "path": None}
     assert list((store_path / "sessions").glob("*.json"))
     assert (store_path / "events.jsonl").exists()
 
@@ -1520,6 +1527,7 @@ async def test_cli_config_show_exposes_runtime_configuration() -> None:
         "store": {"backend": "memory", "path": None},
         "distributed_queue": {"backend": "memory", "path": None},
         "distributed_locks": {"backend": "memory", "path": None},
+        "distributed_workers": {"backend": "memory", "path": None},
         "limits": {"max_iterations": 12, "max_recovery_steps": 4},
         "domains": [{"name": "kubernetes", "version": "0.2.0", "primary": True}],
     }

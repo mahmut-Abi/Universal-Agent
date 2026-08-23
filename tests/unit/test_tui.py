@@ -79,6 +79,8 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
             distributed_queue_path=None,
             distributed_locks_backend="memory",
             distributed_locks_path=None,
+            distributed_workers_backend="memory",
+            distributed_workers_path=None,
             max_iterations=20,
             max_recovery_steps=8,
             domains=(RuntimeConfigDomainView("kubernetes", "0.2.0", True),),

@@ -7,8 +7,10 @@ from universal_agent.core import DomainIdentity
 from universal_agent.distributed import (
     DistributedRuntimeCoordinator,
     FileDistributedLockRegistry,
+    FileWorkerRegistry,
     FileWorkQueue,
     InMemoryDistributedLockRegistry,
+    InMemoryWorkerRegistry,
     InMemoryWorkQueue,
 )
 from universal_agent.domain import (
@@ -115,6 +117,7 @@ class RuntimeHost:
         distributed_coordinator = DistributedRuntimeCoordinator(
             queue=_build_work_queue(config),
             locks=_build_distributed_locks(config),
+            workers=_build_worker_registry(config),
         )
         return cls(
             config=config,
@@ -249,6 +252,17 @@ def _build_distributed_locks(config: RuntimeConfig) -> InMemoryDistributedLockRe
         assert config.distributed_locks.path is not None
         return FileDistributedLockRegistry(config.distributed_locks.path)
     raise ValueError(f"unsupported distributed locks backend: {config.distributed_locks.backend}")
+
+
+def _build_worker_registry(config: RuntimeConfig) -> InMemoryWorkerRegistry:
+    if config.distributed_workers.backend is StoreBackend.MEMORY:
+        return InMemoryWorkerRegistry()
+    if config.distributed_workers.backend is StoreBackend.FILE:
+        assert config.distributed_workers.path is not None
+        return FileWorkerRegistry(config.distributed_workers.path)
+    raise ValueError(
+        f"unsupported distributed workers backend: {config.distributed_workers.backend}"
+    )
 
 
 def _format_identities(identities: tuple[DomainIdentity, ...]) -> str:
