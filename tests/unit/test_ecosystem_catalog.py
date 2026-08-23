@@ -7,15 +7,21 @@ from typing import cast
 import pytest
 
 from universal_agent import (
+    AmbiguousEcosystemRegistryItemError,
     EcosystemCatalog,
+    EcosystemDomainPackageRef,
+    EcosystemRegistryIndex,
+    EcosystemRegistryItemNotFoundError,
+    EcosystemRegistryManifest,
     EcosystemRegistryValidationError,
     decode_ecosystem_registry_manifest,
     encode_ecosystem_registry_manifest,
     load_ecosystem_catalog,
+    load_ecosystem_registry_index,
     load_ecosystem_registry_manifest,
     write_ecosystem_registry_manifest,
 )
-from universal_agent.core import JsonMapping
+from universal_agent.core import DomainIdentity, JsonMapping
 
 
 def write_json(path: Path, payload: dict[str, object]) -> None:
@@ -195,3 +201,52 @@ def test_ecosystem_registry_manifest_round_trips_catalog_metadata(tmp_path: Path
         write_ecosystem_registry_manifest(output_path, manifest)
     overwritten = write_ecosystem_registry_manifest(output_path, manifest, overwrite=True)
     assert overwritten.overwritten is True
+
+
+def test_ecosystem_registry_index_queries_exported_manifest(tmp_path: Path) -> None:
+    domain_root = tmp_path / "domains"
+    dataset_root = tmp_path / "datasets"
+    profile_root = tmp_path / "profiles"
+    write_domain_package(domain_root / "kubernetes")
+    write_evaluation_dataset(dataset_root / "kubernetes")
+    write_profile(profile_root / "kubernetes.profile.json")
+    catalog = load_ecosystem_catalog(
+        domain_package_root=domain_root,
+        evaluation_dataset_root=dataset_root,
+        profile_root=profile_root,
+    )
+    manifest = catalog.registry_manifest()
+    index = EcosystemRegistryIndex(manifest)
+    domain = DomainIdentity("kubernetes", "1.0.0")
+
+    assert index.summary.total_items == 3
+    assert index.domain_package("kubernetes").version == "1.0.0"
+    assert index.domain_packages(tag="kubernetes")[0].name == "kubernetes"
+    assert index.evaluation_dataset("kubernetes-remediation").version == "1.0.0"
+    assert index.evaluation_datasets(domain=domain)[0].name == "kubernetes-remediation"
+    assert index.profile("kubernetes-operator").version == "1.0.0"
+    assert index.profiles(domain=domain)[0].name == "kubernetes-operator"
+
+    output_path = tmp_path / "registry.json"
+    write_ecosystem_registry_manifest(output_path, manifest)
+    loaded = load_ecosystem_registry_index(output_path)
+    assert loaded.domain_package("kubernetes").version == "1.0.0"
+
+    with pytest.raises(EcosystemRegistryItemNotFoundError, match="domain package not found"):
+        index.domain_package("database")
+
+    ambiguous = EcosystemRegistryIndex(
+        EcosystemRegistryManifest(
+            api_version="agent.nantian.dev/v1alpha1",
+            kind="EcosystemRegistry",
+            name="ambiguous",
+            version="1.0.0",
+            description="Ambiguous registry",
+            domain_packages=(
+                EcosystemDomainPackageRef("kubernetes", "1.0.0", "Kubernetes v1"),
+                EcosystemDomainPackageRef("kubernetes", "2.0.0", "Kubernetes v2"),
+            ),
+        )
+    )
+    with pytest.raises(AmbiguousEcosystemRegistryItemError, match="multiple versions"):
+        ambiguous.domain_package("kubernetes")

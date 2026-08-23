@@ -1,4 +1,5 @@
 from universal_agent.ecosystem.catalog import (
+    AmbiguousEcosystemRegistryItemError,
     EcosystemCatalog,
     EcosystemCatalogCheck,
     EcosystemCatalogSummary,
@@ -7,6 +8,8 @@ from universal_agent.ecosystem.catalog import (
     EcosystemEvaluationDatasetRef,
     EcosystemEvaluationDatasetSuiteRef,
     EcosystemProfileRef,
+    EcosystemRegistryIndex,
+    EcosystemRegistryItemNotFoundError,
     EcosystemRegistryManifest,
     EcosystemRegistryNotFoundError,
     EcosystemRegistryValidationError,
@@ -15,11 +18,13 @@ from universal_agent.ecosystem.catalog import (
     decode_ecosystem_registry_manifest,
     encode_ecosystem_registry_manifest,
     load_ecosystem_catalog,
+    load_ecosystem_registry_index,
     load_ecosystem_registry_manifest,
     write_ecosystem_registry_manifest,
 )
 
 __all__ = [
+    "AmbiguousEcosystemRegistryItemError",
     "EcosystemCatalog",
     "EcosystemCatalogCheck",
     "EcosystemCatalogSummary",
@@ -28,6 +33,8 @@ __all__ = [
     "EcosystemEvaluationDatasetRef",
     "EcosystemEvaluationDatasetSuiteRef",
     "EcosystemProfileRef",
+    "EcosystemRegistryIndex",
+    "EcosystemRegistryItemNotFoundError",
     "EcosystemRegistryManifest",
     "EcosystemRegistryNotFoundError",
     "EcosystemRegistryValidationError",
@@ -36,6 +43,7 @@ __all__ = [
     "decode_ecosystem_registry_manifest",
     "encode_ecosystem_registry_manifest",
     "load_ecosystem_catalog",
+    "load_ecosystem_registry_index",
     "load_ecosystem_registry_manifest",
     "write_ecosystem_registry_manifest",
 ]

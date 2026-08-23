@@ -52,6 +52,14 @@ class EcosystemRegistryNotFoundError(LookupError):
     pass
 
 
+class EcosystemRegistryItemNotFoundError(LookupError):
+    pass
+
+
+class AmbiguousEcosystemRegistryItemError(ValueError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class EcosystemDomainPackageRef:
     name: str
@@ -199,6 +207,106 @@ class EcosystemRegistryWriteResult:
     manifest: EcosystemRegistryManifest
     path: Path
     overwritten: bool
+
+
+@dataclass(frozen=True, slots=True)
+class EcosystemRegistryIndex:
+    """Read-only query index over an exported ecosystem registry manifest.
+
+    The index is intentionally metadata-only. It never imports Domain entrypoints,
+    executes evaluation suites or assembles RuntimeHost instances.
+    """
+
+    manifest: EcosystemRegistryManifest
+
+    @property
+    def summary(self) -> EcosystemCatalogSummary:
+        return self.manifest.summary
+
+    def domain_packages(self, *, tag: str | None = None) -> tuple[EcosystemDomainPackageRef, ...]:
+        packages = self.manifest.domain_packages
+        if tag is None:
+            return packages
+        return tuple(package for package in packages if tag in package.tags)
+
+    def domain_package(
+        self,
+        name: str,
+        version: str | None = None,
+    ) -> EcosystemDomainPackageRef:
+        matches = tuple(
+            package
+            for package in self.manifest.domain_packages
+            if package.name == name and (version is None or package.version == version)
+        )
+        if not matches:
+            raise EcosystemRegistryItemNotFoundError(
+                _missing_registry_item_message("domain package", name, version)
+            )
+        if len(matches) > 1:
+            raise AmbiguousEcosystemRegistryItemError(
+                _ambiguous_registry_item_message("domain package", name, matches)
+            )
+        return matches[0]
+
+    def evaluation_datasets(
+        self,
+        *,
+        tag: str | None = None,
+        domain: DomainIdentity | None = None,
+    ) -> tuple[EcosystemEvaluationDatasetRef, ...]:
+        datasets = self.manifest.evaluation_datasets
+        if tag is not None:
+            datasets = tuple(dataset for dataset in datasets if tag in dataset.tags)
+        if domain is not None:
+            datasets = tuple(dataset for dataset in datasets if domain in dataset.domains)
+        return datasets
+
+    def evaluation_dataset(
+        self,
+        name: str,
+        version: str | None = None,
+    ) -> EcosystemEvaluationDatasetRef:
+        matches = tuple(
+            dataset
+            for dataset in self.manifest.evaluation_datasets
+            if dataset.name == name and (version is None or dataset.version == version)
+        )
+        if not matches:
+            raise EcosystemRegistryItemNotFoundError(
+                _missing_registry_item_message("evaluation dataset", name, version)
+            )
+        if len(matches) > 1:
+            raise AmbiguousEcosystemRegistryItemError(
+                _ambiguous_registry_item_message("evaluation dataset", name, matches)
+            )
+        return matches[0]
+
+    def profiles(
+        self,
+        *,
+        domain: DomainIdentity | None = None,
+    ) -> tuple[EcosystemProfileRef, ...]:
+        profiles = self.manifest.profiles
+        if domain is None:
+            return profiles
+        return tuple(profile for profile in profiles if domain in profile.domains)
+
+    def profile(self, name: str, version: str | None = None) -> EcosystemProfileRef:
+        matches = tuple(
+            profile
+            for profile in self.manifest.profiles
+            if profile.name == name and (version is None or profile.version == version)
+        )
+        if not matches:
+            raise EcosystemRegistryItemNotFoundError(
+                _missing_registry_item_message("profile", name, version)
+            )
+        if len(matches) > 1:
+            raise AmbiguousEcosystemRegistryItemError(
+                _ambiguous_registry_item_message("profile", name, matches)
+            )
+        return matches[0]
 
 
 @dataclass(frozen=True, slots=True)
@@ -399,6 +507,10 @@ def load_ecosystem_registry_manifest(path: str | Path) -> EcosystemRegistryManif
     if not isinstance(loaded, dict):
         raise EcosystemRegistryValidationError("ecosystem registry manifest must be a JSON object")
     return decode_ecosystem_registry_manifest(immutable_json(loaded))
+
+
+def load_ecosystem_registry_index(path: str | Path) -> EcosystemRegistryIndex:
+    return EcosystemRegistryIndex(load_ecosystem_registry_manifest(path))
 
 
 def write_ecosystem_registry_manifest(
@@ -846,6 +958,24 @@ def _reject_duplicates(label: str, identities: tuple[str, ...]) -> None:
         )
 
 
+def _missing_registry_item_message(label: str, name: str, version: str | None) -> str:
+    if version is None:
+        return f"{label} not found in ecosystem registry: {name}"
+    return f"{label} not found in ecosystem registry: {name}@{version}"
+
+
+def _ambiguous_registry_item_message(
+    label: str,
+    name: str,
+    matches: tuple[
+        EcosystemDomainPackageRef | EcosystemEvaluationDatasetRef | EcosystemProfileRef,
+        ...,
+    ],
+) -> str:
+    versions = ", ".join(sorted(item.version for item in matches))
+    return f"{label} {name} has multiple versions in ecosystem registry: {versions}"
+
+
 def _format_domain_identity(identity: DomainIdentity) -> str:
     return f"{identity.name}@{identity.version}"
 
@@ -864,6 +994,7 @@ def _validate_strings(field_name: str, values: tuple[str, ...]) -> None:
 
 
 __all__ = [
+    "AmbiguousEcosystemRegistryItemError",
     "EcosystemCatalog",
     "EcosystemCatalogCheck",
     "EcosystemCatalogSummary",
@@ -872,6 +1003,8 @@ __all__ = [
     "EcosystemEvaluationDatasetRef",
     "EcosystemEvaluationDatasetSuiteRef",
     "EcosystemProfileRef",
+    "EcosystemRegistryIndex",
+    "EcosystemRegistryItemNotFoundError",
     "EcosystemRegistryManifest",
     "EcosystemRegistryNotFoundError",
     "EcosystemRegistryValidationError",
@@ -880,6 +1013,7 @@ __all__ = [
     "decode_ecosystem_registry_manifest",
     "encode_ecosystem_registry_manifest",
     "load_ecosystem_catalog",
+    "load_ecosystem_registry_index",
     "load_ecosystem_registry_manifest",
     "write_ecosystem_registry_manifest",
 ]
