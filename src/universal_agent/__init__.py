@@ -59,7 +59,19 @@ from universal_agent.distributed import (
     build_distributed_health_report,
     build_distributed_runtime_snapshot,
 )
-from universal_agent.domain import DomainLoader, RuntimeBuilder
+from universal_agent.domain import (
+    AmbiguousDomainPackageError,
+    DomainLoader,
+    DomainPackage,
+    DomainPackageCompatibility,
+    DomainPackageManifest,
+    DomainPackageNotFoundError,
+    DomainPackageRegistry,
+    DomainPackageValidationError,
+    RuntimeBuilder,
+    decode_domain_package_manifest,
+    load_domain_package,
+)
 from universal_agent.host import (
     DomainConfig,
     RuntimeConfig,
@@ -117,6 +129,7 @@ from universal_agent.web import (
 __all__ = [
     "AgentProfile",
     "AgentRuntime",
+    "AmbiguousDomainPackageError",
     "AuditRecordView",
     "Decision",
     "DecisionType",
@@ -141,6 +154,12 @@ __all__ = [
     "DoctorReportView",
     "DomainConfig",
     "DomainLoader",
+    "DomainPackage",
+    "DomainPackageCompatibility",
+    "DomainPackageManifest",
+    "DomainPackageNotFoundError",
+    "DomainPackageRegistry",
+    "DomainPackageValidationError",
     "EventCursorError",
     "EvidenceView",
     "ExecutionResult",
@@ -218,7 +237,9 @@ __all__ = [
     "build_runtime_console_snapshot",
     "build_tui_snapshot",
     "build_web_console_snapshot",
+    "decode_domain_package_manifest",
     "immutable_json",
+    "load_domain_package",
     "render_tui_snapshot",
     "render_web_console",
     "render_web_domain_detail",

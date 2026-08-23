@@ -937,7 +937,6 @@ def _resource_lock_check(
     )
 
 
-
 def _distributed_runtime_check(
     *,
     status: str | None,
@@ -965,6 +964,7 @@ def _distributed_runtime_check(
         f"capacity_gaps={capacity_gap_count or 0} "
         f"expiring_leases={expiring_lease_count or 0}",
     )
+
 
 def _runtime_config_check(
     *,

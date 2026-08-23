@@ -259,10 +259,13 @@ def test_runtime_service_exposes_distributed_lock_lifecycle() -> None:
         now=now + timedelta(seconds=6),
     )
 
-    assert service.distributed_acquire_lock(
-        lock_key="session/session-1",
-        owner_id=DistributedLockOwnerId("worker-a"),
-    ) is None
+    assert (
+        service.distributed_acquire_lock(
+            lock_key="session/session-1",
+            owner_id=DistributedLockOwnerId("worker-a"),
+        )
+        is None
+    )
     assert renewed is not None
     assert released is not None
     assert acquired.lock.metadata["reason"] == "run session"

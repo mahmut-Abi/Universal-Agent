@@ -727,9 +727,7 @@ def test_doctor_report_includes_distributed_runtime_health() -> None:
 
     assert report.status == "warn"
     assert distributed.status == "warn"
-    assert distributed.message == (
-        "status=warn checks=6 capacity_gaps=1 expiring_leases=2"
-    )
+    assert distributed.message == ("status=warn checks=6 capacity_gaps=1 expiring_leases=2")
 
 
 def test_doctor_report_allows_missing_distributed_runtime() -> None:

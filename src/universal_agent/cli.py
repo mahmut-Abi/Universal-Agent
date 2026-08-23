@@ -630,33 +630,33 @@ async def _dispatch(
             _write_json(out, distributed_worker_lifecycle_body(lifecycle))
             return
         if distributed_command == "lock-acquire":
-            lifecycle = service.distributed_acquire_lock(
+            lock_lifecycle = service.distributed_acquire_lock(
                 lock_key=cast(str, args.lock_key),
                 owner_id=DistributedLockOwnerId(cast(str, args.owner_id)),
                 ttl_seconds=cast(float, args.ttl_seconds),
             )
-            if lifecycle is None:
+            if lock_lifecycle is None:
                 raise ValueError("distributed runtime coordinator is not configured")
-            _write_json(out, distributed_lock_lifecycle_body(lifecycle))
+            _write_json(out, distributed_lock_lifecycle_body(lock_lifecycle))
             return
         if distributed_command == "lock-heartbeat":
-            lifecycle = service.distributed_heartbeat_lock(
+            lock_lifecycle = service.distributed_heartbeat_lock(
                 DistributedLockLeaseId(cast(str, args.lease_id)),
                 owner_id=DistributedLockOwnerId(cast(str, args.owner_id)),
                 ttl_seconds=cast(float, args.ttl_seconds),
             )
-            if lifecycle is None:
+            if lock_lifecycle is None:
                 raise ValueError("distributed runtime coordinator is not configured")
-            _write_json(out, distributed_lock_lifecycle_body(lifecycle))
+            _write_json(out, distributed_lock_lifecycle_body(lock_lifecycle))
             return
         if distributed_command == "lock-release":
-            lifecycle = service.distributed_release_lock(
+            lock_lifecycle = service.distributed_release_lock(
                 DistributedLockLeaseId(cast(str, args.lease_id)),
                 owner_id=DistributedLockOwnerId(cast(str, args.owner_id)),
             )
-            if lifecycle is None:
+            if lock_lifecycle is None:
                 raise ValueError("distributed runtime coordinator is not configured")
-            _write_json(out, distributed_lock_lifecycle_body(lifecycle))
+            _write_json(out, distributed_lock_lifecycle_body(lock_lifecycle))
             return
         raise ValueError(f"unknown distributed command: {distributed_command}")
     if command == "init":

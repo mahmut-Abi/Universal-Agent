@@ -208,9 +208,7 @@ async def test_work_queue_worker_completes_handled_work() -> None:
         queue=queue,
         worker_id=WorkerId("worker-a"),
         handlers={
-            "agent_session": lambda item: WorkHandlerResult.completed(
-                f"handled {item.kind}"
-            )
+            "agent_session": lambda item: WorkHandlerResult.completed(f"handled {item.kind}")
         },
     )
     result = await worker.run_once()

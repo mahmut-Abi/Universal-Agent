@@ -67,8 +67,7 @@ def test_distributed_health_report_detects_missing_worker_capacity() -> None:
 
     assert report.status is DistributedHealthStatus.ERROR
     assert [
-        (gap.kind, gap.queued_count, gap.capable_online_workers)
-        for gap in report.capacity_gaps
+        (gap.kind, gap.queued_count, gap.capable_online_workers) for gap in report.capacity_gaps
     ] == [("tool_action", 1, 0)]
     assert checks["capacity"] is DistributedHealthStatus.ERROR
 

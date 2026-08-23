@@ -163,6 +163,21 @@ def goal_submission_body(
     return immutable_json(body)
 
 
+def json_object(value: JsonValue) -> JsonMapping:
+    assert isinstance(value, dict)
+    return value
+
+
+def json_array(value: JsonValue) -> list[JsonValue]:
+    assert isinstance(value, list)
+    return value
+
+
+def json_string(value: JsonValue) -> str:
+    assert isinstance(value, str)
+    return value
+
+
 def build_service(
     decisions: list[Decision],
     *,
@@ -654,9 +669,7 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
     expired = await app.handle(HttpRequest("POST", "/v1/distributed/expire"))
     expire_get = await app.handle(HttpRequest("GET", "/v1/distributed/expire"))
     missing_service, _ = build_service([])
-    missing = await AgentdApp(missing_service).handle(
-        HttpRequest("GET", "/v1/distributed/health")
-    )
+    missing = await AgentdApp(missing_service).handle(HttpRequest("GET", "/v1/distributed/health"))
 
     assert snapshot.status_code == 200
     work_queue = snapshot.body["work_queue"]
@@ -710,7 +723,8 @@ async def test_agentd_distributed_lock_lifecycle_routes() -> None:
             ),
         )
     )
-    lease_id = acquired.body["lock"]["lease_id"]
+    acquired_lock = json_object(acquired.body["lock"])
+    lease_id = json_string(acquired_lock["lease_id"])
     conflict = await app.handle(
         HttpRequest(
             "POST",
@@ -767,15 +781,21 @@ async def test_agentd_distributed_lock_lifecycle_routes() -> None:
     )
 
     assert acquired.status_code == 200
-    assert acquired.body["lock"]["lock_key"] == "session/session-1"
-    assert acquired.body["lock"]["metadata"] == {"reason": "run session"}
-    assert acquired.body["snapshot"]["locks"][0]["lock_key"] == "session/session-1"
+    assert acquired_lock["lock_key"] == "session/session-1"
+    assert acquired_lock["metadata"] == {"reason": "run session"}
+    acquired_snapshot = json_object(acquired.body["snapshot"])
+    acquired_locks = json_array(acquired_snapshot["locks"])
+    acquired_first_lock = json_object(acquired_locks[0])
+    assert acquired_first_lock["lock_key"] == "session/session-1"
     assert conflict.status_code == 409
-    assert conflict.body["error"]["code"] == "conflict"
+    conflict_error = json_object(conflict.body["error"])
+    assert conflict_error["code"] == "conflict"
     assert heartbeat.status_code == 200
-    assert heartbeat.body["lock"]["lease_id"] == lease_id
+    heartbeat_lock = json_object(heartbeat.body["lock"])
+    assert heartbeat_lock["lease_id"] == lease_id
     assert released.status_code == 200
-    assert released.body["snapshot"]["locks"] == []
+    released_snapshot = json_object(released.body["snapshot"])
+    assert released_snapshot["locks"] == []
     assert missing_lease.status_code == 404
     assert missing_lease.body["error"] == {
         "code": "not_found",
@@ -832,9 +852,7 @@ async def test_agentd_distributed_worker_lifecycle_routes() -> None:
             immutable_json({"reason": "shutdown complete"}),
         )
     )
-    wrong_method = await app.handle(
-        HttpRequest("GET", "/v1/distributed/workers/worker-a/register")
-    )
+    wrong_method = await app.handle(HttpRequest("GET", "/v1/distributed/workers/worker-a/register"))
     invalid_capability = await app.handle(
         HttpRequest(
             "POST",
@@ -864,12 +882,19 @@ async def test_agentd_distributed_worker_lifecycle_routes() -> None:
     assert worker["status"] == "online"
     assert worker["capabilities"] == ["agent_session"]
     assert worker["metadata"] == {"host": "local"}
-    assert registered.body["snapshot"]["workers"]["online_count"] == 1
-    assert heartbeat.body["worker"]["status"] == "online"
-    assert draining.body["worker"]["status"] == "draining"
-    assert draining.body["worker"]["last_error"] == "finish current lease"
-    assert offline.body["worker"]["status"] == "offline"
-    assert offline.body["snapshot"]["workers"]["offline_count"] == 1
+    registered_snapshot = json_object(registered.body["snapshot"])
+    registered_workers = json_object(registered_snapshot["workers"])
+    assert registered_workers["online_count"] == 1
+    heartbeat_worker = json_object(heartbeat.body["worker"])
+    assert heartbeat_worker["status"] == "online"
+    draining_worker = json_object(draining.body["worker"])
+    assert draining_worker["status"] == "draining"
+    assert draining_worker["last_error"] == "finish current lease"
+    offline_worker = json_object(offline.body["worker"])
+    assert offline_worker["status"] == "offline"
+    offline_snapshot = json_object(offline.body["snapshot"])
+    offline_workers = json_object(offline_snapshot["workers"])
+    assert offline_workers["offline_count"] == 1
     assert wrong_method.status_code == 405
     assert invalid_capability.status_code == 400
     assert invalid_capability.body["error"] == {
@@ -944,7 +969,8 @@ async def test_agentd_distributed_schedule_route_schedules_session_work() -> Non
     work_queue = snapshot["work_queue"]
     assert isinstance(work_queue, dict)
     assert work_queue["queued_count"] == 1
-    assert scheduled.body["health"]["status"] == "ok"
+    health = json_object(scheduled.body["health"])
+    assert health["status"] == "ok"
     assert wrong_method.status_code == 405
     assert invalid_priority.status_code == 400
     assert invalid_priority.body["error"] == {

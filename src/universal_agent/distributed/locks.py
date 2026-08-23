@@ -53,9 +53,7 @@ class InMemoryDistributedLockRegistry:
         if existing is not None:
             if existing.owner_id == owner_id:
                 return existing
-            raise DistributedLockConflictError(
-                f"lock is owned by {existing.owner_id}: {lock_key}"
-            )
+            raise DistributedLockConflictError(f"lock is owned by {existing.owner_id}: {lock_key}")
         lease = DistributedLockLease(
             lock_key=lock_key,
             owner_id=owner_id,

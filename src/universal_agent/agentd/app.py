@@ -345,7 +345,7 @@ class AgentdApp:
             if metadata is not None and not isinstance(metadata, Mapping):
                 return bad_request("distributed lock metadata must be an object")
             try:
-                lifecycle = self._service.distributed_acquire_lock(
+                lock_lifecycle = self._service.distributed_acquire_lock(
                     lock_key=_distributed_required_string(
                         request.body,
                         key="lock_key",
@@ -359,22 +359,22 @@ class AgentdApp:
                 return conflict(str(exc))
             except ValueError as exc:
                 return bad_request(str(exc))
-            if lifecycle is None:
+            if lock_lifecycle is None:
                 return not_found("distributed runtime coordinator is not configured")
-            return json_response(distributed_lock_lifecycle_body(lifecycle))
+            return json_response(distributed_lock_lifecycle_body(lock_lifecycle))
         distributed_lock_lease_id, distributed_lock_action = _distributed_lock_lease_route(path)
         if distributed_lock_lease_id is not None:
             if method != "POST":
                 return method_not_allowed(("POST",))
             try:
                 if distributed_lock_action == "heartbeat":
-                    lifecycle = self._service.distributed_heartbeat_lock(
+                    lock_lifecycle = self._service.distributed_heartbeat_lock(
                         distributed_lock_lease_id,
                         owner_id=_distributed_lock_owner_id(request.body),
                         ttl_seconds=_distributed_lock_ttl_seconds(request.body),
                     )
                 elif distributed_lock_action == "release":
-                    lifecycle = self._service.distributed_release_lock(
+                    lock_lifecycle = self._service.distributed_release_lock(
                         distributed_lock_lease_id,
                         owner_id=_distributed_lock_owner_id(request.body),
                     )
@@ -384,9 +384,9 @@ class AgentdApp:
                 return not_found(str(exc))
             except ValueError as exc:
                 return bad_request(str(exc))
-            if lifecycle is None:
+            if lock_lifecycle is None:
                 return not_found("distributed runtime coordinator is not configured")
-            return json_response(distributed_lock_lifecycle_body(lifecycle))
+            return json_response(distributed_lock_lifecycle_body(lock_lifecycle))
         distributed_schedule_session_id = _distributed_schedule_session_route(path)
         if distributed_schedule_session_id is not None:
             if method != "POST":
@@ -1006,9 +1006,7 @@ def distributed_worker_record_summary_body(worker: WorkerRecord) -> dict[str, Js
 def distributed_scheduling_body(view: DistributedSchedulingResult) -> JsonMapping:
     return immutable_json(
         {
-            "scheduled_work_item": distributed_work_item_summary_body(
-                view.scheduled_work_item
-            ),
+            "scheduled_work_item": distributed_work_item_summary_body(view.scheduled_work_item),
             "snapshot": dict(distributed_snapshot_body(view.snapshot)),
             "health": dict(distributed_health_body(view.health)),
         }
@@ -1018,9 +1016,7 @@ def distributed_scheduling_body(view: DistributedSchedulingResult) -> JsonMappin
 def distributed_cancellation_body(view: DistributedCancellationResult) -> JsonMapping:
     return immutable_json(
         {
-            "cancelled_work_item": distributed_work_item_summary_body(
-                view.cancelled_work_item
-            ),
+            "cancelled_work_item": distributed_work_item_summary_body(view.cancelled_work_item),
             "snapshot": dict(distributed_snapshot_body(view.snapshot)),
             "health": dict(distributed_health_body(view.health)),
         }
@@ -1052,9 +1048,7 @@ def distributed_snapshot_body(view: DistributedRuntimeSnapshot) -> JsonMapping:
                         "work_item_id": str(item.work_item_id),
                         "kind": item.kind,
                         "status": item.status.value,
-                        "session_id": None
-                        if item.session_id is None
-                        else str(item.session_id),
+                        "session_id": None if item.session_id is None else str(item.session_id),
                         "task_id": None if item.task_id is None else str(item.task_id),
                         "action_id": None if item.action_id is None else str(item.action_id),
                         "priority": item.priority,
@@ -1138,6 +1132,7 @@ def distributed_health_body(view: DistributedHealthReport) -> JsonMapping:
             ],
         }
     )
+
 
 def cost_body(view: RuntimeCostView) -> JsonMapping:
     return immutable_json(
@@ -1657,9 +1652,7 @@ def _distributed_worker_capabilities(body: JsonMapping) -> tuple[str, ...]:
     capabilities: list[str] = []
     for index, item in enumerate(value):
         if not isinstance(item, str) or not item.strip():
-            raise ValueError(
-                f"distributed worker capabilities[{index}] must be a non-empty string"
-            )
+            raise ValueError(f"distributed worker capabilities[{index}] must be a non-empty string")
         capabilities.append(item)
     return tuple(capabilities)
 
