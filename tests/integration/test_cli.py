@@ -271,6 +271,43 @@ def write_evaluation_dataset_file(root: Path) -> None:
     )
 
 
+def write_domain_package_file(root: Path) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "apiVersion": "agent.nantian.dev/v1alpha1",
+                "kind": "DomainPackage",
+                "metadata": {
+                    "name": "kubernetes",
+                    "version": "0.2.0",
+                    "description": "Kubernetes domain package",
+                    "tags": ["kubernetes", "ops"],
+                },
+                "capabilities": ["inspect_workload", "scale_workload"],
+                "required_tools": ["kubernetes_api"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def write_profile_config_file(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "name": "kubernetes-operator",
+                "version": "1.0.0",
+                "description": "Kubernetes operator profile",
+                "domain": {"name": "kubernetes", "version": "0.2.0"},
+                "runtime": {"domain": {"name": "kubernetes", "version": "0.2.0"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 @pytest.mark.asyncio
 async def test_cli_init_writes_parseable_profile_config(tmp_path: Path) -> None:
     output = StringIO()
@@ -512,6 +549,49 @@ async def test_cli_tui_renders_runtime_service_snapshot() -> None:
     assert "ActionStarted" in rendered
     assert "capability=inspect_workload" in rendered
     assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cli_ecosystem_catalog_indexes_local_artifacts(tmp_path: Path) -> None:
+    service, _ = build_cli_service([])
+    domain_root = tmp_path / "domains"
+    dataset_root = tmp_path / "datasets"
+    profile_root = tmp_path / "profiles"
+    write_domain_package_file(domain_root / "kubernetes")
+    write_evaluation_dataset_file(dataset_root / "kubernetes")
+    write_profile_config_file(profile_root / "kubernetes.profile.json")
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "ecosystem",
+            "catalog",
+            "--domain-package-dir",
+            str(domain_root),
+            "--dataset-dir",
+            str(dataset_root),
+            "--profile-dir",
+            str(profile_root),
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["summary"] == {
+        "domain_package_count": 1,
+        "evaluation_dataset_count": 1,
+        "profile_count": 1,
+        "total_items": 3,
+    }
+    assert payload["domain_packages"][0]["name"] == "kubernetes"
+    assert payload["domain_packages"][0]["capability_names"] == [
+        "inspect_workload",
+        "scale_workload",
+    ]
+    assert payload["evaluation_datasets"][0]["name"] == "kubernetes-remediation"
+    assert payload["profiles"][0]["name"] == "kubernetes-operator"
 
 
 @pytest.mark.asyncio

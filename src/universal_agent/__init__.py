@@ -77,6 +77,11 @@ from universal_agent.domain import (
     load_domain_package,
     scaffold_domain_package,
 )
+from universal_agent.ecosystem import (
+    EcosystemCatalog,
+    EcosystemCatalogSummary,
+    load_ecosystem_catalog,
+)
 from universal_agent.evaluation.dataset import (
     AmbiguousEvaluationDatasetError,
     EvaluationDataset,
@@ -191,6 +196,8 @@ __all__ = [
     "DomainPackageScaffoldSpec",
     "DomainPackageValidationError",
     "DomainPackageView",
+    "EcosystemCatalog",
+    "EcosystemCatalogSummary",
     "EvaluationDataset",
     "EvaluationDatasetIdentity",
     "EvaluationDatasetManifest",
@@ -285,6 +292,7 @@ __all__ = [
     "encode_evaluation_dataset_manifest",
     "immutable_json",
     "load_domain_package",
+    "load_ecosystem_catalog",
     "load_evaluation_dataset",
     "load_profile_catalog",
     "render_tui_snapshot",

@@ -72,6 +72,7 @@ from universal_agent.distributed import (
 )
 from universal_agent.domain import (
     DomainLoader,
+    DomainPackage,
     DomainPackageCompatibility,
     DomainPackageNotFoundError,
     DomainPackageScaffoldResult,
@@ -80,6 +81,7 @@ from universal_agent.domain import (
     scaffold_domain_package,
 )
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.ecosystem import EcosystemCatalog, load_ecosystem_catalog
 from universal_agent.evaluation.console import (
     build_evaluation_console_snapshot,
     render_evaluation_console,
@@ -128,7 +130,12 @@ from universal_agent.evaluation.scenario_config import (
 )
 from universal_agent.host import DomainConfig, RuntimeConfig, RuntimeHost
 from universal_agent.model import ScriptedModelAdapter
-from universal_agent.profile import AgentProfile, ProfileConfig
+from universal_agent.profile import (
+    AgentProfile,
+    ProfileCatalogEntry,
+    ProfileConfig,
+    ProfileConfigNotFoundError,
+)
 from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
@@ -258,6 +265,7 @@ async def run_cli(
         StateNotFoundError,
         DomainPackageNotFoundError,
         EvaluationDatasetNotFoundError,
+        ProfileConfigNotFoundError,
         WorkItemNotFoundError,
         WorkerNotFoundError,
         DistributedLockLeaseLostError,
@@ -370,6 +378,13 @@ def build_parser() -> argparse.ArgumentParser:
     tui.add_argument("--session-id")
     tui.add_argument("--session-limit", type=int, default=5)
     tui.add_argument("--event-limit", type=int, default=12)
+
+    ecosystem = commands.add_parser("ecosystem")
+    ecosystem_commands = ecosystem.add_subparsers(dest="ecosystem_command", required=True)
+    ecosystem_catalog = ecosystem_commands.add_parser("catalog")
+    ecosystem_catalog.add_argument("--domain-package-dir")
+    ecosystem_catalog.add_argument("--dataset-dir")
+    ecosystem_catalog.add_argument("--profile-dir")
 
     evaluate = commands.add_parser("eval")
     eval_commands = evaluate.add_subparsers(dest="eval_command", required=True)
@@ -742,6 +757,9 @@ async def _dispatch(
     if command == "tui":
         await _dispatch_tui(args, service, out)
         return
+    if command == "ecosystem":
+        _dispatch_ecosystem(args, out)
+        return
     if command == "eval":
         await _dispatch_eval(args, service, out)
         return
@@ -808,6 +826,19 @@ async def _dispatch_tui(
         event_limit=cast(int, args.event_limit),
     )
     _write_text(out, render_tui_snapshot(snapshot))
+
+
+def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:
+    command = cast(str, args.ecosystem_command)
+    if command == "catalog":
+        catalog = load_ecosystem_catalog(
+            domain_package_root=cast(str | None, args.domain_package_dir),
+            evaluation_dataset_root=cast(str | None, args.dataset_dir),
+            profile_root=cast(str | None, args.profile_dir),
+        )
+        _write_json(out, _ecosystem_catalog_body(catalog))
+        return
+    raise ValueError(f"unknown ecosystem command: {command}")
 
 
 async def _dispatch_eval(
@@ -1464,6 +1495,54 @@ def _evaluation_list_body(
         "suite_tags": list(suite.tags),
         "scenario_count": len(scenarios),
         "scenarios": [_evaluation_scenario_definition_body(item) for item in scenarios],
+    }
+
+
+def _ecosystem_catalog_body(catalog: EcosystemCatalog) -> dict[str, object]:
+    summary = catalog.summary
+    return {
+        "summary": {
+            "domain_package_count": summary.domain_package_count,
+            "evaluation_dataset_count": summary.evaluation_dataset_count,
+            "profile_count": summary.profile_count,
+            "total_items": summary.total_items,
+        },
+        "domain_packages": [
+            _ecosystem_domain_package_body(package) for package in catalog.domain_packages
+        ],
+        "evaluation_datasets": [
+            _evaluation_dataset_body(dataset) for dataset in catalog.evaluation_datasets
+        ],
+        "profiles": [_ecosystem_profile_body(entry) for entry in catalog.profiles],
+    }
+
+
+def _ecosystem_domain_package_body(package: DomainPackage) -> dict[str, object]:
+    manifest = package.manifest
+    return {
+        "name": package.identity.name,
+        "version": package.identity.version,
+        "description": manifest.description,
+        "author": manifest.author,
+        "tags": list(manifest.tags),
+        "capability_names": list(manifest.capabilities),
+        "required_tools": list(manifest.required_tools),
+        "root_path": str(package.root_path),
+        "manifest_path": str(package.manifest_path),
+    }
+
+
+def _ecosystem_profile_body(entry: ProfileCatalogEntry) -> dict[str, object]:
+    profile = entry.profile
+    return {
+        "name": profile.name,
+        "version": profile.version,
+        "description": profile.description,
+        "domains": [
+            {"name": domain.name, "version": domain.version}
+            for domain in profile.configured_domains()
+        ],
+        "path": str(entry.path),
     }
 
 
