@@ -19,10 +19,12 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.distributed import (
+    DistributedCancellationResult,
     DistributedHealthReport,
     DistributedMaintenanceResult,
     DistributedRuntimeCoordinator,
     DistributedRuntimeSnapshot,
+    WorkItemId,
 )
 from universal_agent.domain import ActiveDomain, RuntimeComponents
 from universal_agent.evidence import Evidence
@@ -354,11 +356,29 @@ class RuntimeService:
             return None
         return self._distributed_coordinator.health(now=now)
 
-
-    def distributed_expire(self, *, now: datetime | None = None) -> DistributedMaintenanceResult | None:
+    def distributed_expire(
+        self,
+        *,
+        now: datetime | None = None,
+    ) -> DistributedMaintenanceResult | None:
         if self._distributed_coordinator is None:
             return None
         return self._distributed_coordinator.expire(now=now)
+
+    def distributed_cancel_work_item(
+        self,
+        work_item_id: WorkItemId,
+        *,
+        reason: str = "distributed work item cancelled",
+        now: datetime | None = None,
+    ) -> DistributedCancellationResult | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.cancel_work_item(
+            work_item_id,
+            reason=reason,
+            now=now,
+        )
 
     async def run_goal(self, goal: Goal, task: Task) -> RuntimeRun:
         return await self._runtime_api.run_goal(goal, task)

@@ -21,6 +21,7 @@ from universal_agent import (
     SuccessCriterion,
     Task,
     WorkerId,
+    WorkItemStatus,
     immutable_json,
 )
 from universal_agent.core import (
@@ -164,6 +165,38 @@ def test_runtime_service_exposes_distributed_expiry_sweep() -> None:
     second = service.distributed_expire(now=now + timedelta(seconds=3))
     assert second is not None
     assert second.expired_work_items == ()
+
+
+def test_runtime_service_exposes_distributed_work_item_cancellation() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    service, _ = build_service([])
+    coordinator = DistributedRuntimeCoordinator()
+    scheduled = coordinator.scheduler.schedule_session(SessionId("session-1"), available_at=now)
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=30,
+        now=now,
+    )
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    distributed_service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+        distributed_coordinator=coordinator,
+    )
+
+    result = distributed_service.distributed_cancel_work_item(
+        scheduled.work_item_id,
+        reason="operator cancelled distributed work",
+        now=now + timedelta(seconds=1),
+    )
+
+    assert service.distributed_cancel_work_item(scheduled.work_item_id) is None
+    assert result is not None
+    assert result.cancelled_work_item.status is WorkItemStatus.CANCELLED
+    assert result.cancelled_work_item.last_error == "operator cancelled distributed work"
+    assert result.snapshot.work_queue.cancelled_count == 1
 
 
 @pytest.mark.asyncio

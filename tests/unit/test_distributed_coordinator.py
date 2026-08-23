@@ -67,6 +67,30 @@ def test_distributed_runtime_coordinator_runs_expiry_sweep_with_one_timestamp() 
     assert result.health.status is DistributedHealthStatus.ERROR
 
 
+def test_distributed_runtime_coordinator_cancels_work_item_and_reports_state() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    scheduled = coordinator.scheduler.schedule_session(SessionId("session-1"), available_at=now)
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=30,
+        now=now,
+    )
+
+    result = coordinator.cancel_work_item(
+        scheduled.work_item_id,
+        reason="operator cancelled session work",
+        now=now + timedelta(seconds=1),
+    )
+
+    assert result.cancelled_work_item.status is WorkItemStatus.CANCELLED
+    assert result.cancelled_work_item.last_error == "operator cancelled session work"
+    assert result.snapshot.work_queue.queued_count == 0
+    assert result.snapshot.work_queue.cancelled_count == 1
+    assert result.health.status is DistributedHealthStatus.OK
+
+
 def test_distributed_runtime_coordinator_accepts_injected_primitives() -> None:
     queue = InMemoryWorkQueue()
     locks = InMemoryDistributedLockRegistry()

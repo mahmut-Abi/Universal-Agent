@@ -15,6 +15,7 @@ from universal_agent.agentd.app import (
     capability_body,
     config_body,
     cost_body,
+    distributed_cancellation_body,
     distributed_health_body,
     distributed_maintenance_body,
     distributed_snapshot_body,
@@ -53,7 +54,11 @@ from universal_agent.core import (
     Task,
     immutable_json,
 )
-from universal_agent.distributed import DistributedRuntimeCoordinator
+from universal_agent.distributed import (
+    DistributedRuntimeCoordinator,
+    WorkItemId,
+    WorkItemNotFoundError,
+)
 from universal_agent.domain import DomainLoader, RuntimeBuilder
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.console import (
@@ -224,7 +229,7 @@ async def run_cli(
 
     try:
         await _dispatch(args, runtime_service, out, server_runner=server_runner)
-    except StateNotFoundError as exc:
+    except (StateNotFoundError, WorkItemNotFoundError) as exc:
         _write_error(err, "not_found", str(exc))
         return 1
     except CliExit as exc:
@@ -267,6 +272,12 @@ def build_parser() -> argparse.ArgumentParser:
     distributed_commands.add_parser("snapshot")
     distributed_commands.add_parser("health")
     distributed_commands.add_parser("expire")
+    distributed_cancel = distributed_commands.add_parser("cancel")
+    distributed_cancel.add_argument("work_item_id")
+    distributed_cancel.add_argument(
+        "--reason",
+        default="distributed work item cancelled from CLI",
+    )
 
     init = commands.add_parser("init")
     init.add_argument("--output", default="profile.json")
@@ -513,6 +524,15 @@ async def _dispatch(
             if maintenance is None:
                 raise ValueError("distributed runtime coordinator is not configured")
             _write_json(out, distributed_maintenance_body(maintenance))
+            return
+        if distributed_command == "cancel":
+            cancellation = service.distributed_cancel_work_item(
+                WorkItemId(cast(str, args.work_item_id)),
+                reason=cast(str, args.reason),
+            )
+            if cancellation is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_cancellation_body(cancellation))
             return
         raise ValueError(f"unknown distributed command: {distributed_command}")
     if command == "init":

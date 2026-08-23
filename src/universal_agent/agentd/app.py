@@ -20,9 +20,13 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.distributed import (
+    DistributedCancellationResult,
     DistributedHealthReport,
     DistributedMaintenanceResult,
     DistributedRuntimeSnapshot,
+    WorkItem,
+    WorkItemId,
+    WorkItemNotFoundError,
 )
 from universal_agent.profile import ProfileNotFoundError
 from universal_agent.runtime import (
@@ -283,6 +287,28 @@ class AgentdApp:
             if maintenance is None:
                 return not_found("distributed runtime coordinator is not configured")
             return json_response(distributed_maintenance_body(maintenance))
+        distributed_cancel_work_item_id = _distributed_cancel_route(path)
+        if distributed_cancel_work_item_id is not None:
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            reason = request.body.get(
+                "reason",
+                "distributed work item cancelled from agentd",
+            )
+            if not isinstance(reason, str):
+                return bad_request("distributed cancel reason must be a string")
+            if not reason.strip():
+                return bad_request("distributed cancel reason must not be empty")
+            try:
+                cancellation = self._service.distributed_cancel_work_item(
+                    distributed_cancel_work_item_id,
+                    reason=reason,
+                )
+            except WorkItemNotFoundError as exc:
+                return not_found(str(exc))
+            if cancellation is None:
+                return not_found("distributed runtime coordinator is not configured")
+            return json_response(distributed_cancellation_body(cancellation))
         if path == "/v1/metrics":
             if method != "GET":
                 return method_not_allowed(("GET",))
@@ -767,21 +793,12 @@ def metrics_body(view: RuntimeMetricsView) -> JsonMapping:
     )
 
 
-
-
 def distributed_maintenance_body(view: DistributedMaintenanceResult) -> JsonMapping:
     return immutable_json(
         {
             "ran_at": view.ran_at.isoformat(),
             "expired_work_items": [
-                {
-                    "work_item_id": str(item.work_item_id),
-                    "kind": item.kind,
-                    "status": item.status.value,
-                    "attempts": item.attempts,
-                    "last_error": item.last_error,
-                }
-                for item in view.expired_work_items
+                distributed_work_item_summary_body(item) for item in view.expired_work_items
             ],
             "expired_locks": [
                 {
@@ -803,6 +820,29 @@ def distributed_maintenance_body(view: DistributedMaintenanceResult) -> JsonMapp
             "health": dict(distributed_health_body(view.health)),
         }
     )
+
+
+def distributed_cancellation_body(view: DistributedCancellationResult) -> JsonMapping:
+    return immutable_json(
+        {
+            "cancelled_work_item": distributed_work_item_summary_body(
+                view.cancelled_work_item
+            ),
+            "snapshot": dict(distributed_snapshot_body(view.snapshot)),
+            "health": dict(distributed_health_body(view.health)),
+        }
+    )
+
+
+def distributed_work_item_summary_body(item: WorkItem) -> dict[str, JsonValue]:
+    return {
+        "work_item_id": str(item.work_item_id),
+        "kind": item.kind,
+        "status": item.status.value,
+        "attempts": item.attempts,
+        "last_error": item.last_error,
+    }
+
 
 def distributed_snapshot_body(view: DistributedRuntimeSnapshot) -> JsonMapping:
     return immutable_json(
@@ -1357,6 +1397,18 @@ def _console_domain_route(path: str) -> tuple[str | None, str | None]:
     ):
         return segments[2], segments[3]
     return None, None
+
+
+def _distributed_cancel_route(path: str) -> WorkItemId | None:
+    segments = tuple(segment for segment in path.split("/") if segment)
+    if (
+        len(segments) == 5
+        and segments[:3] == ("v1", "distributed", "work-items")
+        and segments[3].strip()
+        and segments[4] == "cancel"
+    ):
+        return WorkItemId(segments[3])
+    return None
 
 
 def _console_domain_view(

@@ -1,4 +1,5 @@
 from universal_agent.distributed.coordinator import (
+    DistributedCancellationResult,
     DistributedMaintenanceResult,
     DistributedRuntimeCoordinator,
 )
@@ -56,6 +57,7 @@ from universal_agent.distributed.worker_state import (
 )
 
 __all__ = [
+    "DistributedCancellationResult",
     "DistributedCapacityGap",
     "DistributedExpiringLease",
     "DistributedHealthCheck",

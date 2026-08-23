@@ -11,6 +11,7 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.distributed import (
+    DistributedCancellationResult,
     DistributedCapacityGap,
     DistributedExpiringLease,
     DistributedHealthCheck,
@@ -116,6 +117,7 @@ __all__ = [
     "AuditRecordView",
     "Decision",
     "DecisionType",
+    "DistributedCancellationResult",
     "DistributedCapacityGap",
     "DistributedExpiringLease",
     "DistributedHealthCheck",

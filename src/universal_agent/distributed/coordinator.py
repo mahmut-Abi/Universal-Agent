@@ -12,7 +12,7 @@ from universal_agent.distributed.locks import (
     DistributedLockLease,
     InMemoryDistributedLockRegistry,
 )
-from universal_agent.distributed.queue import InMemoryWorkQueue, WorkItem
+from universal_agent.distributed.queue import InMemoryWorkQueue, WorkItem, WorkItemId
 from universal_agent.distributed.scheduler import WorkScheduler
 from universal_agent.distributed.snapshot import (
     DistributedRuntimeSnapshot,
@@ -27,6 +27,13 @@ class DistributedMaintenanceResult:
     expired_work_items: tuple[WorkItem, ...]
     expired_locks: tuple[DistributedLockLease, ...]
     expired_workers: tuple[WorkerRecord, ...]
+    snapshot: DistributedRuntimeSnapshot
+    health: DistributedHealthReport
+
+
+@dataclass(frozen=True, slots=True)
+class DistributedCancellationResult:
+    cancelled_work_item: WorkItem
     snapshot: DistributedRuntimeSnapshot
     health: DistributedHealthReport
 
@@ -110,6 +117,32 @@ class DistributedRuntimeCoordinator:
             expired_work_items=expired_work_items,
             expired_locks=expired_locks,
             expired_workers=expired_workers,
+            snapshot=snapshot,
+            health=health,
+        )
+
+    def cancel_work_item(
+        self,
+        work_item_id: WorkItemId,
+        *,
+        reason: str = "distributed work item cancelled",
+        now: datetime | None = None,
+        queued_backlog_warn_threshold: int = 100,
+        lease_expiry_warn_seconds: float = 10.0,
+        min_online_workers: int = 1,
+    ) -> DistributedCancellationResult:
+        timestamp = now or utc_now()
+        cancelled = self._queue.cancel(work_item_id, reason=reason, now=timestamp)
+        snapshot = self.snapshot()
+        health = build_distributed_health_report(
+            snapshot,
+            now=timestamp,
+            queued_backlog_warn_threshold=queued_backlog_warn_threshold,
+            lease_expiry_warn_seconds=lease_expiry_warn_seconds,
+            min_online_workers=min_online_workers,
+        )
+        return DistributedCancellationResult(
+            cancelled_work_item=cancelled,
             snapshot=snapshot,
             health=health,
         )

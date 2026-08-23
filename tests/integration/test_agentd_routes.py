@@ -692,6 +692,87 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agentd_distributed_cancel_route_cancels_work_item() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    scheduled = coordinator.scheduler.schedule_session(SessionId("session-1"), available_at=now)
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=999_999_999,
+        now=now,
+    )
+    service, _ = build_service([], distributed_coordinator=coordinator)
+    app = AgentdApp(service)
+
+    cancelled = await app.handle(
+        HttpRequest(
+            "POST",
+            f"/v1/distributed/work-items/{scheduled.work_item_id}/cancel",
+            immutable_json({"reason": "operator cancelled distributed work"}),
+        )
+    )
+    wrong_method = await app.handle(
+        HttpRequest("GET", f"/v1/distributed/work-items/{scheduled.work_item_id}/cancel")
+    )
+    invalid_reason = await app.handle(
+        HttpRequest(
+            "POST",
+            f"/v1/distributed/work-items/{scheduled.work_item_id}/cancel",
+            immutable_json({"reason": 42}),
+        )
+    )
+    missing_work = await app.handle(
+        HttpRequest("POST", "/v1/distributed/work-items/work-missing/cancel")
+    )
+    missing_service, _ = build_service([])
+    missing_coordinator = await AgentdApp(missing_service).handle(
+        HttpRequest(
+            "POST",
+            f"/v1/distributed/work-items/{scheduled.work_item_id}/cancel",
+        )
+    )
+
+    assert cancelled.status_code == 200
+    cancelled_item = cancelled.body["cancelled_work_item"]
+    assert isinstance(cancelled_item, dict)
+    assert cancelled_item["work_item_id"] == str(scheduled.work_item_id)
+    assert cancelled_item["status"] == "cancelled"
+    assert cancelled_item["last_error"] == "operator cancelled distributed work"
+    snapshot = cancelled.body["snapshot"]
+    assert isinstance(snapshot, dict)
+    work_queue = snapshot["work_queue"]
+    assert isinstance(work_queue, dict)
+    assert work_queue["queued_count"] == 0
+    assert work_queue["cancelled_count"] == 1
+    health = cancelled.body["health"]
+    assert isinstance(health, dict)
+    checks = health["checks"]
+    assert isinstance(checks, list)
+    assert health["status"] == "ok"
+    assert {check["name"] for check in checks if isinstance(check, dict)} >= {
+        "worker_pool",
+        "worker_registry",
+    }
+    assert wrong_method.status_code == 405
+    assert invalid_reason.status_code == 400
+    assert invalid_reason.body["error"] == {
+        "code": "bad_request",
+        "message": "distributed cancel reason must be a string",
+    }
+    assert missing_work.status_code == 404
+    assert missing_work.body["error"] == {
+        "code": "not_found",
+        "message": "work item not found: work-missing",
+    }
+    assert missing_coordinator.status_code == 404
+    assert missing_coordinator.body["error"] == {
+        "code": "not_found",
+        "message": "distributed runtime coordinator is not configured",
+    }
+
+
+@pytest.mark.asyncio
 async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> None:
     service, backend = build_service(
         [scale_workload(), inspect_workload(), finish()],

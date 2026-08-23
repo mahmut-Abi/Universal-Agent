@@ -600,7 +600,7 @@ async def test_cli_exposes_service_catalog_commands() -> None:
 async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
-    coordinator.scheduler.schedule_session(SessionId("session-1"), available_at=now)
+    scheduled = coordinator.scheduler.schedule_session(SessionId("session-1"), available_at=now)
     coordinator.workers.register(
         WorkerId("worker-a"),
         capabilities=("agent_session",),
@@ -627,6 +627,18 @@ async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
     default_status = await run_cli(["distributed", "health"], stdout=default_output)
     expire_output = StringIO()
     expire_status = await run_cli(["distributed", "expire"], stdout=expire_output)
+    cancel_output = StringIO()
+    cancel_status = await run_cli(
+        [
+            "distributed",
+            "cancel",
+            str(scheduled.work_item_id),
+            "--reason",
+            "operator cancelled distributed work",
+        ],
+        service=service,
+        stdout=cancel_output,
+    )
     missing_status = await run_cli(
         ["distributed", "health"],
         service=build_cli_service([])[0],
@@ -638,6 +650,7 @@ async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
     health = read_json(health_output)
     default_health = read_json(default_output)
     expire = read_json(expire_output)
+    cancel = read_json(cancel_output)
 
     assert snapshot_status == 0
     assert snapshot["work_queue"]["queued_count"] == 1
@@ -648,6 +661,10 @@ async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
     assert default_health["status"] == "ok"
     assert expire_status == 0
     assert expire["expired_work_items"] == []
+    assert cancel_status == 0
+    assert cancel["cancelled_work_item"]["work_item_id"] == str(scheduled.work_item_id)
+    assert cancel["cancelled_work_item"]["status"] == "cancelled"
+    assert cancel["snapshot"]["work_queue"]["cancelled_count"] == 1
     assert missing_status == 2
     assert missing_output.getvalue() == ""
     assert "distributed runtime coordinator is not configured" in missing_error.getvalue()
