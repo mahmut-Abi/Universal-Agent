@@ -1071,6 +1071,40 @@ async def test_cli_distributed_schedule_session_command() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_distributed_worker_run_once_resumes_scheduled_session() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    service, _ = build_cli_service(
+        [wait(), inspect_workload(), finish()],
+        distributed_coordinator=coordinator,
+    )
+    waiting = await service.run_goal(*goal_task())
+    service.distributed_schedule_session(waiting.result.session_id)
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "distributed",
+            "worker-run-once",
+            "worker-a",
+            "--lease-ttl-seconds",
+            "30",
+            "--worker-ttl-seconds",
+            "30",
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+    completed = await service.get_session(waiting.result.session_id)
+
+    assert status == 0
+    assert payload["status"] == "completed"
+    assert payload["worker_id"] == "worker-a"
+    assert payload["work_item"]["status"] == "completed"
+    assert completed.goal_status.value == "completed"
+
+
+@pytest.mark.asyncio
 async def test_cli_distributed_lock_lifecycle_commands() -> None:
     service, _ = build_cli_service([], distributed_coordinator=DistributedRuntimeCoordinator())
     acquire_output = StringIO()

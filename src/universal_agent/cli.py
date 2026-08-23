@@ -22,6 +22,7 @@ from universal_agent.agentd.app import (
     distributed_scheduling_body,
     distributed_snapshot_body,
     distributed_worker_lifecycle_body,
+    distributed_worker_run_body,
     doctor_body,
     domain_body,
     domain_package_body,
@@ -330,6 +331,12 @@ def build_parser() -> argparse.ArgumentParser:
     distributed_heartbeat = distributed_commands.add_parser("worker-heartbeat")
     distributed_heartbeat.add_argument("worker_id")
     distributed_heartbeat.add_argument("--ttl-seconds", type=float, default=30.0)
+
+    distributed_worker_run = distributed_commands.add_parser("worker-run-once")
+    distributed_worker_run.add_argument("worker_id")
+    distributed_worker_run.add_argument("--lease-ttl-seconds", type=float, default=30.0)
+    distributed_worker_run.add_argument("--worker-ttl-seconds", type=float, default=30.0)
+    distributed_worker_run.add_argument("--heartbeat-interval-seconds", type=float)
 
     distributed_drain = distributed_commands.add_parser("worker-drain")
     distributed_drain.add_argument("worker_id")
@@ -697,6 +704,17 @@ async def _dispatch(
             if lifecycle is None:
                 raise ValueError("distributed runtime coordinator is not configured")
             _write_json(out, distributed_worker_lifecycle_body(lifecycle))
+            return
+        if distributed_command == "worker-run-once":
+            run = await service.distributed_run_worker_once(
+                WorkerId(cast(str, args.worker_id)),
+                lease_ttl_seconds=cast(float, args.lease_ttl_seconds),
+                worker_ttl_seconds=cast(float, args.worker_ttl_seconds),
+                heartbeat_interval_seconds=cast(float | None, args.heartbeat_interval_seconds),
+            )
+            if run is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_worker_run_body(run))
             return
         if distributed_command == "worker-drain":
             lifecycle = service.distributed_drain_worker(

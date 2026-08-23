@@ -397,6 +397,7 @@ Python 3.12 or newer is required.
 .venv/bin/python -m universal_agent.cli distributed schedule-session session-1 --priority 5 --max-attempts 2
 .venv/bin/python -m universal_agent.cli distributed worker-register worker-a --capability agent_session
 .venv/bin/python -m universal_agent.cli distributed worker-heartbeat worker-a
+.venv/bin/python -m universal_agent.cli distributed worker-run-once worker-a
 .venv/bin/python -m universal_agent.cli distributed worker-drain worker-a --reason "finish current lease"
 .venv/bin/python -m universal_agent.cli distributed worker-offline worker-a --reason "shutdown complete"
 .venv/bin/python -m universal_agent.cli distributed lock-acquire session/session-1 --owner-id worker-a

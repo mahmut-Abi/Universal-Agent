@@ -35,6 +35,7 @@ from universal_agent.distributed import (
     WorkerId,
     WorkerNotFoundError,
     WorkerRecord,
+    WorkerRunResult,
     WorkItem,
     WorkItemId,
     WorkItemNotFoundError,
@@ -1017,6 +1018,20 @@ def distributed_worker_lifecycle_body(view: DistributedWorkerLifecycleResult) ->
             "worker": distributed_worker_record_summary_body(view.worker),
             "snapshot": dict(distributed_snapshot_body(view.snapshot)),
             "health": dict(distributed_health_body(view.health)),
+        }
+    )
+
+
+def distributed_worker_run_body(view: WorkerRunResult) -> JsonMapping:
+    return immutable_json(
+        {
+            "status": view.status.value,
+            "worker_id": str(view.worker_id),
+            "lease_id": None if view.lease_id is None else str(view.lease_id),
+            "reason": view.reason,
+            "work_item": None
+            if view.work_item is None
+            else distributed_work_item_summary_body(view.work_item),
         }
     )
 
