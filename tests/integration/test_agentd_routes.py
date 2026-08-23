@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -30,7 +31,13 @@ from universal_agent import (
     immutable_json,
 )
 from universal_agent.agentd import AgentdApp, HttpRequest
-from universal_agent.core import ExecutionStatus, JsonMapping, JsonValue, SessionId
+from universal_agent.core import DomainIdentity, ExecutionStatus, JsonMapping, JsonValue, SessionId
+from universal_agent.domain import (
+    DomainPackage,
+    DomainPackageCompatibility,
+    DomainPackageManifest,
+    DomainPackageRegistry,
+)
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 
 
@@ -183,6 +190,7 @@ def build_service(
     *,
     usage: list[ModelUsage] | None = None,
     distributed_coordinator: DistributedRuntimeCoordinator | None = None,
+    domain_packages: DomainPackageRegistry | None = None,
 ) -> tuple[RuntimeService, AgentdBackend]:
     backend = AgentdBackend()
     store = InMemoryStateStore()
@@ -209,7 +217,41 @@ def build_service(
         components=components,
         config=config,
         distributed_coordinator=distributed_coordinator,
+        domain_packages=domain_packages,
     ), backend
+
+
+def package_registry() -> DomainPackageRegistry:
+    package = DomainPackage(
+        manifest=DomainPackageManifest(
+            api_version="agent.nantian.dev/v1alpha1",
+            kind="DomainPackage",
+            name="kubernetes",
+            version="0.2.0",
+            description="Packaged Kubernetes runtime metadata",
+            author="Runtime Team",
+            entrypoint="universal_agent.domains.kubernetes:KubernetesRemediationDomain",
+            ontology=("Deployment", "Pod"),
+            capabilities=("inspect_workload", "scale_workload"),
+            tools=("kubernetes_inspect_workload", "kubernetes_scale_workload"),
+            policies=("kubernetes-scale-safety",),
+            procedures=("diagnose_unhealthy_workload",),
+            knowledge=("kubernetes readiness",),
+            evaluators=("workload-health",),
+            context_providers=("kubernetes_context",),
+            dependencies=(DomainIdentity("observability", "1.0.0"),),
+            required_tools=("kubernetes_api",),
+            compatibility=DomainPackageCompatibility(
+                runtime_api=">=0.1,<1",
+                domain_api="agent.nantian.dev/v1alpha1",
+            ),
+            security=immutable_json({"side_effects": "reversible"}),
+            tags=("kubernetes", "ops"),
+        ),
+        root_path=Path("/domains/kubernetes"),
+        manifest_path=Path("/domains/kubernetes/manifest.json"),
+    )
+    return DomainPackageRegistry((package,))
 
 
 def build_profile_service(decisions: list[Decision]) -> tuple[RuntimeService, AgentdBackend]:
@@ -348,6 +390,44 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
         "limits": {"max_iterations": 12, "max_recovery_steps": 4},
         "domains": [{"name": "kubernetes", "version": "0.2.0", "primary": True}],
     }
+
+
+@pytest.mark.asyncio
+async def test_agentd_domain_package_routes_expose_read_only_catalog() -> None:
+    service, _ = build_service([], domain_packages=package_registry())
+    app = AgentdApp(service)
+
+    listed = await app.handle(HttpRequest("GET", "/v1/domain-packages"))
+    filtered = await app.handle(HttpRequest("GET", "/v1/domain-packages?tag=ops"))
+    missing_filter = await app.handle(HttpRequest("GET", "/v1/domain-packages?tag=database"))
+    detail = await app.handle(HttpRequest("GET", "/v1/domain-packages/kubernetes/0.2.0"))
+    missing = await app.handle(HttpRequest("GET", "/v1/domain-packages/database"))
+    wrong_method = await app.handle(HttpRequest("POST", "/v1/domain-packages"))
+
+    assert listed.status_code == 200
+    packages = json_array(listed.body["domain_packages"])
+    assert len(packages) == 1
+    package = json_object(packages[0])
+    assert package["name"] == "kubernetes"
+    assert package["version"] == "0.2.0"
+    assert package["entrypoint"] == "universal_agent.domains.kubernetes:KubernetesRemediationDomain"
+    assert package["capability_names"] == ["inspect_workload", "scale_workload"]
+    assert package["dependencies"] == [{"name": "observability", "version": "1.0.0"}]
+    assert package["compatibility"] == {
+        "runtime_api": ">=0.1,<1",
+        "domain_api": "agent.nantian.dev/v1alpha1",
+    }
+    assert package["security"] == {"side_effects": "reversible"}
+    assert filtered.body == listed.body
+    assert missing_filter.body == {"domain_packages": []}
+    assert detail.status_code == 200
+    assert detail.body == package
+    assert missing.status_code == 404
+    assert missing.body["error"] == {
+        "code": "not_found",
+        "message": "domain package not registered: database",
+    }
+    assert wrong_method.status_code == 405
 
 
 @pytest.mark.asyncio

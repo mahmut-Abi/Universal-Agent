@@ -24,6 +24,7 @@ from universal_agent.agentd.app import (
     distributed_worker_lifecycle_body,
     doctor_body,
     domain_body,
+    domain_package_body,
     evaluator_body,
     event_batch_body,
     health_body,
@@ -68,7 +69,7 @@ from universal_agent.distributed import (
     WorkItemId,
     WorkItemNotFoundError,
 )
-from universal_agent.domain import DomainLoader, RuntimeBuilder
+from universal_agent.domain import DomainLoader, DomainPackageNotFoundError, RuntimeBuilder
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.console import (
     build_evaluation_console_snapshot,
@@ -240,6 +241,7 @@ async def run_cli(
         await _dispatch(args, runtime_service, out, server_runner=server_runner)
     except (
         StateNotFoundError,
+        DomainPackageNotFoundError,
         WorkItemNotFoundError,
         WorkerNotFoundError,
         DistributedLockLeaseLostError,
@@ -412,6 +414,17 @@ def build_parser() -> argparse.ArgumentParser:
     domain = commands.add_parser("domain")
     domain_commands = domain.add_subparsers(dest="domain_command", required=True)
     domain_commands.add_parser("list")
+
+    domain_packages = commands.add_parser("domain-packages")
+    domain_package_commands = domain_packages.add_subparsers(
+        dest="domain_packages_command",
+        required=True,
+    )
+    domain_package_list = domain_package_commands.add_parser("list")
+    domain_package_list.add_argument("--tag")
+    domain_package_show = domain_package_commands.add_parser("show")
+    domain_package_show.add_argument("name")
+    domain_package_show.add_argument("version", nargs="?")
 
     profile = commands.add_parser("profile")
     profile_commands = profile.add_subparsers(dest="profile_command", required=True)
@@ -679,6 +692,9 @@ async def _dispatch(
         return
     if command == "domain":
         _write_json(out, {"domains": [domain_body(item) for item in service.domains()]})
+        return
+    if command == "domain-packages":
+        _dispatch_domain_packages(args, service, out)
         return
     if command == "profile":
         _dispatch_profile(args, service, out)
@@ -1031,6 +1047,34 @@ def _dispatch_profile(
         _write_json(out, profile_body(service.profile(profile)))
         return
     raise ValueError(f"unknown profile command: {command}")
+
+
+def _dispatch_domain_packages(
+    args: argparse.Namespace,
+    service: RuntimeService,
+    out: TextIO,
+) -> None:
+    command = cast(str, args.domain_packages_command)
+    if command == "list":
+        tag = cast(str | None, args.tag)
+        _write_json(
+            out,
+            {
+                "domain_packages": [
+                    domain_package_body(item) for item in service.domain_packages(tag=tag)
+                ]
+            },
+        )
+        return
+    if command == "show":
+        _write_json(
+            out,
+            domain_package_body(
+                service.domain_package(cast(str, args.name), cast(str | None, args.version))
+            ),
+        )
+        return
+    raise ValueError(f"unknown domain package command: {command}")
 
 
 def _dispatch_config(

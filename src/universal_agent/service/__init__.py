@@ -8,6 +8,7 @@ from universal_agent.operations import (
 )
 from universal_agent.service.runtime import (
     CapabilityView,
+    DomainPackageView,
     DomainView,
     EvaluatorView,
     HealthView,
@@ -27,6 +28,7 @@ __all__ = [
     "AuditRecordView",
     "CapabilityView",
     "DoctorReportView",
+    "DomainPackageView",
     "DomainView",
     "EvaluatorView",
     "HealthView",

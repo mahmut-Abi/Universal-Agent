@@ -32,7 +32,12 @@ from universal_agent.distributed import (
     WorkerId,
     WorkItemId,
 )
-from universal_agent.domain import ActiveDomain, RuntimeComponents
+from universal_agent.domain import (
+    ActiveDomain,
+    DomainPackage,
+    DomainPackageRegistry,
+    RuntimeComponents,
+)
 from universal_agent.evidence import Evidence
 from universal_agent.memory import MemoryKind, MemoryRecord
 from universal_agent.operations import (
@@ -93,6 +98,32 @@ class DomainView:
     ontology: tuple[str, ...]
     capability_names: tuple[str, ...]
     evaluator_names: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DomainPackageView:
+    name: str
+    version: str
+    description: str
+    author: str | None
+    entrypoint: str | None
+    tags: tuple[str, ...]
+    ontology: tuple[str, ...]
+    capability_names: tuple[str, ...]
+    tool_names: tuple[str, ...]
+    policy_names: tuple[str, ...]
+    procedure_names: tuple[str, ...]
+    knowledge_names: tuple[str, ...]
+    evaluator_names: tuple[str, ...]
+    context_provider_names: tuple[str, ...]
+    prompt_names: tuple[str, ...]
+    dependencies: tuple[DomainIdentity, ...]
+    required_tools: tuple[str, ...]
+    runtime_api_compatibility: str | None
+    domain_api_compatibility: str | None
+    security: JsonMapping
+    root_path: str
+    manifest_path: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,12 +243,14 @@ class RuntimeService:
         profiles: tuple[AgentProfile, ...] = (),
         config: RuntimeConfig | None = None,
         distributed_coordinator: DistributedRuntimeCoordinator | None = None,
+        domain_packages: DomainPackageRegistry | None = None,
     ) -> None:
         self._runtime_api = runtime_api
         self._components = components
         self._profiles = ProfileRegistry(profiles)
         self._config = config
         self._distributed_coordinator = distributed_coordinator
+        self._domain_packages = domain_packages or DomainPackageRegistry()
 
     def health(self) -> HealthView:
         return HealthView(status="ok", service="universal-agent-runtime")
@@ -256,6 +289,19 @@ class RuntimeService:
             domain_view(domain, primary=domain.identity == primary)
             for domain in self._components.domain_composition.domains
         )
+
+    def domain_packages(self, *, tag: str | None = None) -> tuple[DomainPackageView, ...]:
+        return tuple(
+            domain_package_view(package) for package in self._domain_packages.list(tag=tag)
+        )
+
+    def domain_package(self, name: str, version: str | None = None) -> DomainPackageView:
+        package = (
+            self._domain_packages.get_by_name(name)
+            if version is None
+            else self._domain_packages.get(DomainIdentity(name, version))
+        )
+        return domain_package_view(package)
 
     def capabilities(self) -> tuple[CapabilityView, ...]:
         views: list[CapabilityView] = []
@@ -717,6 +763,34 @@ def domain_view(domain: ActiveDomain, *, primary: bool) -> DomainView:
         ontology=domain.manifest.ontology,
         capability_names=domain.manifest.capability_names,
         evaluator_names=domain.manifest.evaluator_names,
+    )
+
+
+def domain_package_view(package: DomainPackage) -> DomainPackageView:
+    manifest = package.manifest
+    return DomainPackageView(
+        name=manifest.name,
+        version=manifest.version,
+        description=manifest.description,
+        author=manifest.author,
+        entrypoint=manifest.entrypoint,
+        tags=manifest.tags,
+        ontology=manifest.ontology,
+        capability_names=manifest.capabilities,
+        tool_names=manifest.tools,
+        policy_names=manifest.policies,
+        procedure_names=manifest.procedures,
+        knowledge_names=manifest.knowledge,
+        evaluator_names=manifest.evaluators,
+        context_provider_names=manifest.context_providers,
+        prompt_names=manifest.prompts,
+        dependencies=manifest.dependencies,
+        required_tools=manifest.required_tools,
+        runtime_api_compatibility=manifest.compatibility.runtime_api,
+        domain_api_compatibility=manifest.compatibility.domain_api,
+        security=manifest.security,
+        root_path=str(package.root_path),
+        manifest_path=str(package.manifest_path),
     )
 
 

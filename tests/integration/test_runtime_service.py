@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -27,13 +28,20 @@ from universal_agent import (
     immutable_json,
 )
 from universal_agent.core import (
+    DomainIdentity,
     ExecutionStatus,
     JsonMapping,
     RiskLevel,
     SessionId,
     SideEffect,
 )
-from universal_agent.domain import RuntimeComponents
+from universal_agent.domain import (
+    DomainPackage,
+    DomainPackageCompatibility,
+    DomainPackageManifest,
+    DomainPackageRegistry,
+    RuntimeComponents,
+)
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 
 
@@ -90,12 +98,50 @@ def build_service(
     decisions: list[Decision],
     *,
     usage: list[ModelUsage] | None = None,
+    domain_packages: DomainPackageRegistry | None = None,
 ) -> tuple[RuntimeService, ServiceBackend]:
     backend = ServiceBackend()
     active = DomainLoader().load(KubernetesRemediationDomain(backend, backend))
     components = RuntimeBuilder().build(active)
     api = build_api(components, decisions, usage=usage)
-    return RuntimeService(runtime_api=api, components=components), backend
+    return RuntimeService(
+        runtime_api=api,
+        components=components,
+        domain_packages=domain_packages,
+    ), backend
+
+
+def package_registry() -> DomainPackageRegistry:
+    package = DomainPackage(
+        manifest=DomainPackageManifest(
+            api_version="agent.nantian.dev/v1alpha1",
+            kind="DomainPackage",
+            name="kubernetes",
+            version="0.2.0",
+            description="Packaged Kubernetes runtime metadata",
+            author="Runtime Team",
+            entrypoint="universal_agent.domains.kubernetes:KubernetesRemediationDomain",
+            ontology=("Deployment", "Pod"),
+            capabilities=("inspect_workload", "scale_workload"),
+            tools=("kubernetes_inspect_workload", "kubernetes_scale_workload"),
+            policies=("kubernetes-scale-safety",),
+            procedures=("diagnose_unhealthy_workload",),
+            knowledge=("kubernetes readiness",),
+            evaluators=("workload-health",),
+            context_providers=("kubernetes_context",),
+            dependencies=(DomainIdentity("observability", "1.0.0"),),
+            required_tools=("kubernetes_api",),
+            compatibility=DomainPackageCompatibility(
+                runtime_api=">=0.1,<1",
+                domain_api="agent.nantian.dev/v1alpha1",
+            ),
+            security=immutable_json({"side_effects": "reversible"}),
+            tags=("kubernetes", "ops"),
+        ),
+        root_path=Path("/domains/kubernetes"),
+        manifest_path=Path("/domains/kubernetes/manifest.json"),
+    )
+    return DomainPackageRegistry((package,))
 
 
 def build_api(
@@ -397,6 +443,32 @@ def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     memory_subjects = {item.subject for item in memories}
     assert "kubernetes readiness" in memory_subjects
     assert "unhealthy workload triage" in memory_subjects
+
+
+def test_runtime_service_exposes_domain_package_catalog_without_activation() -> None:
+    service, _ = build_service([], domain_packages=package_registry())
+
+    packages = service.domain_packages()
+    filtered = service.domain_packages(tag="ops")
+    missing = service.domain_packages(tag="database")
+    package = service.domain_package("kubernetes", "0.2.0")
+
+    assert packages == filtered == (package,)
+    assert missing == ()
+    assert package.name == "kubernetes"
+    assert package.version == "0.2.0"
+    assert package.description == "Packaged Kubernetes runtime metadata"
+    assert package.entrypoint == "universal_agent.domains.kubernetes:KubernetesRemediationDomain"
+    assert package.capability_names == ("inspect_workload", "scale_workload")
+    assert package.tool_names == ("kubernetes_inspect_workload", "kubernetes_scale_workload")
+    assert package.policy_names == ("kubernetes-scale-safety",)
+    assert package.dependencies == (DomainIdentity("observability", "1.0.0"),)
+    assert package.required_tools == ("kubernetes_api",)
+    assert package.runtime_api_compatibility == ">=0.1,<1"
+    assert package.domain_api_compatibility == "agent.nantian.dev/v1alpha1"
+    assert package.security["side_effects"] == "reversible"
+    assert package.root_path == "/domains/kubernetes"
+    assert package.manifest_path == "/domains/kubernetes/manifest.json"
 
 
 @pytest.mark.asyncio

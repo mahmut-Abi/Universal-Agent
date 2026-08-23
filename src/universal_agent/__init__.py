@@ -102,6 +102,7 @@ from universal_agent.runtime import (
 from universal_agent.service import (
     AuditRecordView,
     DoctorReportView,
+    DomainPackageView,
     RuntimeConfigDomainView,
     RuntimeConfigView,
     RuntimeCostView,
@@ -160,6 +161,7 @@ __all__ = [
     "DomainPackageNotFoundError",
     "DomainPackageRegistry",
     "DomainPackageValidationError",
+    "DomainPackageView",
     "EventCursorError",
     "EvidenceView",
     "ExecutionResult",

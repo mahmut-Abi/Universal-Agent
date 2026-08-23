@@ -37,7 +37,13 @@ from universal_agent import (
 )
 from universal_agent.agentd import AgentdHttpServer
 from universal_agent.cli import run_cli
-from universal_agent.core import JsonMapping, SessionId
+from universal_agent.core import DomainIdentity, JsonMapping, SessionId
+from universal_agent.domain import (
+    DomainPackage,
+    DomainPackageCompatibility,
+    DomainPackageManifest,
+    DomainPackageRegistry,
+)
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.recording import (
     FileEvaluationReportStore,
@@ -125,6 +131,7 @@ def build_cli_service(
     *,
     usage: list[ModelUsage] | None = None,
     distributed_coordinator: DistributedRuntimeCoordinator | None = None,
+    domain_packages: DomainPackageRegistry | None = None,
 ) -> tuple[RuntimeService, CliBackend]:
     backend = CliBackend()
     components = RuntimeBuilder().build(
@@ -152,7 +159,41 @@ def build_cli_service(
         profiles=(cli_profile(),),
         config=config,
         distributed_coordinator=distributed_coordinator,
+        domain_packages=domain_packages,
     ), backend
+
+
+def package_registry() -> DomainPackageRegistry:
+    package = DomainPackage(
+        manifest=DomainPackageManifest(
+            api_version="agent.nantian.dev/v1alpha1",
+            kind="DomainPackage",
+            name="kubernetes",
+            version="0.2.0",
+            description="Packaged Kubernetes runtime metadata",
+            author="Runtime Team",
+            entrypoint="universal_agent.domains.kubernetes:KubernetesRemediationDomain",
+            ontology=("Deployment", "Pod"),
+            capabilities=("inspect_workload", "scale_workload"),
+            tools=("kubernetes_inspect_workload", "kubernetes_scale_workload"),
+            policies=("kubernetes-scale-safety",),
+            procedures=("diagnose_unhealthy_workload",),
+            knowledge=("kubernetes readiness",),
+            evaluators=("workload-health",),
+            context_providers=("kubernetes_context",),
+            dependencies=(DomainIdentity("observability", "1.0.0"),),
+            required_tools=("kubernetes_api",),
+            compatibility=DomainPackageCompatibility(
+                runtime_api=">=0.1,<1",
+                domain_api="agent.nantian.dev/v1alpha1",
+            ),
+            security=immutable_json({"side_effects": "reversible"}),
+            tags=("kubernetes", "ops"),
+        ),
+        root_path=Path("/domains/kubernetes"),
+        manifest_path=Path("/domains/kubernetes/manifest.json"),
+    )
+    return DomainPackageRegistry((package,))
 
 
 def read_json(buffer: StringIO) -> dict[str, Any]:
@@ -594,6 +635,60 @@ async def test_cli_exposes_service_catalog_commands() -> None:
         "kubernetes readiness",
         "unhealthy workload triage",
     }
+
+
+@pytest.mark.asyncio
+async def test_cli_exposes_domain_package_catalog_commands() -> None:
+    service, _ = build_cli_service([], domain_packages=package_registry())
+    list_output = StringIO()
+    filtered_output = StringIO()
+    show_output = StringIO()
+    missing_output = StringIO()
+    missing_error = StringIO()
+
+    list_status = await run_cli(
+        ["domain-packages", "list"],
+        service=service,
+        stdout=list_output,
+    )
+    filtered_status = await run_cli(
+        ["domain-packages", "list", "--tag", "ops"],
+        service=service,
+        stdout=filtered_output,
+    )
+    show_status = await run_cli(
+        ["domain-packages", "show", "kubernetes", "0.2.0"],
+        service=service,
+        stdout=show_output,
+    )
+    missing_status = await run_cli(
+        ["domain-packages", "show", "database"],
+        service=service,
+        stdout=missing_output,
+        stderr=missing_error,
+    )
+
+    listed = read_json(list_output)
+    filtered = read_json(filtered_output)
+    shown = read_json(show_output)
+    packages = listed["domain_packages"]
+    assert list_status == 0
+    assert filtered_status == 0
+    assert show_status == 0
+    assert missing_status == 1
+    assert missing_output.getvalue() == ""
+    assert "domain package not registered: database" in missing_error.getvalue()
+    assert isinstance(packages, list)
+    assert len(packages) == 1
+    package = packages[0]
+    assert isinstance(package, dict)
+    assert package["name"] == "kubernetes"
+    assert package["version"] == "0.2.0"
+    assert package["capability_names"] == ["inspect_workload", "scale_workload"]
+    assert package["required_tools"] == ["kubernetes_api"]
+    assert package["security"] == {"side_effects": "reversible"}
+    assert filtered == listed
+    assert shown == package
 
 
 @pytest.mark.asyncio

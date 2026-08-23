@@ -39,6 +39,7 @@ from universal_agent.distributed import (
     WorkItemId,
     WorkItemNotFoundError,
 )
+from universal_agent.domain import AmbiguousDomainPackageError, DomainPackageNotFoundError
 from universal_agent.profile import ProfileNotFoundError
 from universal_agent.runtime import (
     EvaluationView,
@@ -56,6 +57,7 @@ from universal_agent.service import (
     AuditRecordView,
     CapabilityView,
     DoctorReportView,
+    DomainPackageView,
     DomainView,
     EvaluatorView,
     HealthView,
@@ -223,6 +225,23 @@ class AgentdApp:
                     {"domains": [domain_body(item) for item in self._service.domains()]}
                 ),
             )
+        if path == "/v1/domain-packages":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                tag = _optional_query_value(request.path, "tag")
+            except ValueError as exc:
+                return bad_request(str(exc))
+            return json_response(
+                immutable_json(
+                    {
+                        "domain_packages": [
+                            domain_package_body(item)
+                            for item in self._service.domain_packages(tag=tag)
+                        ]
+                    }
+                )
+            )
         if path == "/v1/capabilities":
             return self._get(
                 method,
@@ -277,6 +296,18 @@ class AgentdApp:
                 return json_response(profile_body(self._service.profile(profile_name)))
             except ProfileNotFoundError as exc:
                 return not_found(str(exc))
+        package_name, package_version = _domain_package_route(path)
+        if package_name is not None:
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                return json_response(
+                    domain_package_body(self._service.domain_package(package_name, package_version))
+                )
+            except DomainPackageNotFoundError as exc:
+                return not_found(str(exc))
+            except AmbiguousDomainPackageError as exc:
+                return bad_request(str(exc))
         if path == "/v1/distributed/snapshot":
             if method != "GET":
                 return method_not_allowed(("GET",))
@@ -1254,6 +1285,38 @@ def domain_body(view: DomainView) -> dict[str, JsonValue]:
     }
 
 
+def domain_package_body(view: DomainPackageView) -> dict[str, JsonValue]:
+    return {
+        "name": view.name,
+        "version": view.version,
+        "description": view.description,
+        "author": view.author,
+        "entrypoint": view.entrypoint,
+        "tags": list(view.tags),
+        "ontology": list(view.ontology),
+        "capability_names": list(view.capability_names),
+        "tool_names": list(view.tool_names),
+        "policy_names": list(view.policy_names),
+        "procedure_names": list(view.procedure_names),
+        "knowledge_names": list(view.knowledge_names),
+        "evaluator_names": list(view.evaluator_names),
+        "context_provider_names": list(view.context_provider_names),
+        "prompt_names": list(view.prompt_names),
+        "dependencies": [
+            {"name": dependency.name, "version": dependency.version}
+            for dependency in view.dependencies
+        ],
+        "required_tools": list(view.required_tools),
+        "compatibility": {
+            "runtime_api": view.runtime_api_compatibility,
+            "domain_api": view.domain_api_compatibility,
+        },
+        "security": dict(view.security),
+        "root_path": view.root_path,
+        "manifest_path": view.manifest_path,
+    }
+
+
 def capability_body(view: CapabilityView) -> dict[str, JsonValue]:
     return {
         "name": view.name,
@@ -1743,3 +1806,17 @@ def _profile_route(path: str) -> str | None:
     if len(segments) == 3 and segments[:2] == ("v1", "profiles") and segments[2].strip():
         return segments[2]
     return None
+
+
+def _domain_package_route(path: str) -> tuple[str | None, str | None]:
+    segments = tuple(segment for segment in path.split("/") if segment)
+    if len(segments) == 3 and segments[:2] == ("v1", "domain-packages") and segments[2].strip():
+        return segments[2], None
+    if (
+        len(segments) == 4
+        and segments[:2] == ("v1", "domain-packages")
+        and segments[2].strip()
+        and segments[3].strip()
+    ):
+        return segments[2], segments[3]
+    return None, None
