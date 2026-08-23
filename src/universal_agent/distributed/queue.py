@@ -366,9 +366,9 @@ class FileWorkQueue(InMemoryWorkQueue):
     """File-backed local WorkQueue adapter.
 
     The queue semantics stay in the in-memory implementation; this adapter adds
-    local durability by loading one JSON document at startup and atomically
-    replacing it after every mutating operation. It is intentionally a local P6
-    primitive, not a cross-process locking or HA queue implementation.
+    local durability by reloading one JSON document before public operations and
+    atomically replacing it after every mutating operation. It is intentionally a
+    local P6 primitive, not a cross-process locking or HA queue implementation.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -390,6 +390,7 @@ class FileWorkQueue(InMemoryWorkQueue):
         idempotency_key: str | None = None,
         work_item_id: WorkItemId | None = None,
     ) -> WorkItem:
+        self._load()
         item = super().enqueue(
             kind=kind,
             payload=payload,
@@ -413,6 +414,7 @@ class FileWorkQueue(InMemoryWorkQueue):
         now: datetime | None = None,
         accepted_kinds: Collection[str] | None = None,
     ) -> WorkItem:
+        self._load()
         item = super().lease(
             worker_id=worker_id,
             ttl_seconds=ttl_seconds,
@@ -430,6 +432,7 @@ class FileWorkQueue(InMemoryWorkQueue):
         ttl_seconds: float = 30.0,
         now: datetime | None = None,
     ) -> WorkItem:
+        self._load()
         item = super().heartbeat(
             lease_id,
             worker_id=worker_id,
@@ -446,6 +449,7 @@ class FileWorkQueue(InMemoryWorkQueue):
         worker_id: WorkerId,
         now: datetime | None = None,
     ) -> WorkItem:
+        self._load()
         item = super().complete(lease_id, worker_id=worker_id, now=now)
         self._save()
         return item
@@ -459,6 +463,7 @@ class FileWorkQueue(InMemoryWorkQueue):
         retry: bool = True,
         now: datetime | None = None,
     ) -> WorkItem:
+        self._load()
         item = super().fail(
             lease_id,
             worker_id=worker_id,
@@ -476,18 +481,30 @@ class FileWorkQueue(InMemoryWorkQueue):
         reason: str = "cancelled",
         now: datetime | None = None,
     ) -> WorkItem:
+        self._load()
         item = super().cancel(work_item_id, reason=reason, now=now)
         self._save()
         return item
 
     def expire(self, *, now: datetime | None = None) -> tuple[WorkItem, ...]:
+        self._load()
         expired = super().expire(now=now)
         if expired:
             self._save()
         return expired
 
+    def get(self, work_item_id: WorkItemId) -> WorkItem:
+        self._load()
+        return super().get(work_item_id)
+
+    def list(self, *, status: WorkItemStatus | None = None) -> tuple[WorkItem, ...]:
+        self._load()
+        return super().list(status=status)
+
     def _load(self) -> None:
         if not self._path.exists():
+            self._items = {}
+            self._sequence = 0
             return
         with self._path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
@@ -519,7 +536,7 @@ class FileWorkQueue(InMemoryWorkQueue):
         tmp_path = self._path.with_suffix(self._path.suffix + ".tmp")
         payload = {
             "version": 1,
-            "items": [_encode_work_item(item) for item in self.list()],
+            "items": [_encode_work_item(item) for item in super().list()],
         }
         with tmp_path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2, sort_keys=True)

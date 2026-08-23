@@ -122,6 +122,34 @@ def test_file_work_queue_restores_sequence_and_idempotency(tmp_path: Path) -> No
     assert len(FileWorkQueue(path).queued()) == 2
 
 
+def test_file_work_queue_reloads_before_reading_external_changes(tmp_path: Path) -> None:
+    path = tmp_path / "work-queue.json"
+    writer = FileWorkQueue(path)
+    stale_reader = FileWorkQueue(path)
+
+    enqueued = writer.enqueue(kind="agent_session", idempotency_key="session:session-1")
+
+    assert stale_reader.get(enqueued.work_item_id).work_item_id == enqueued.work_item_id
+    assert [item.work_item_id for item in stale_reader.queued()] == [enqueued.work_item_id]
+
+
+def test_file_work_queue_reloads_before_stale_writer_mutates(tmp_path: Path) -> None:
+    path = tmp_path / "work-queue.json"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    owner = FileWorkQueue(path)
+    owner.enqueue(kind="agent_session", available_at=now)
+    stale_writer = FileWorkQueue(path)
+
+    leased = owner.lease(worker_id=WorkerId("worker-a"), ttl_seconds=30, now=now)
+    enqueued = stale_writer.enqueue(kind="task", available_at=now)
+    reloaded = FileWorkQueue(path)
+
+    assert leased.lease is not None
+    assert enqueued.work_item_id == WorkItemId("work-2")
+    assert reloaded.get(leased.work_item_id).status is WorkItemStatus.LEASED
+    assert reloaded.get(enqueued.work_item_id).kind == "task"
+
+
 def test_file_work_queue_rejects_unsupported_file_version(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     path.write_text(json.dumps({"version": 2, "items": []}), encoding="utf-8")
