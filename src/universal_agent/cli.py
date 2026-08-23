@@ -89,10 +89,14 @@ from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.ecosystem import (
     EcosystemCatalog,
     EcosystemCatalogVerificationReport,
+    EcosystemDomainPackageInstallPlan,
+    EcosystemDomainPackageInstallResult,
     EcosystemRegistryNotFoundError,
     encode_ecosystem_registry_manifest,
+    install_ecosystem_domain_packages,
     load_ecosystem_catalog,
     load_ecosystem_registry_index,
+    plan_ecosystem_domain_package_install,
     write_ecosystem_registry_manifest,
 )
 from universal_agent.evaluation.console import (
@@ -472,6 +476,11 @@ def build_parser() -> argparse.ArgumentParser:
     ecosystem_registry = ecosystem_commands.add_parser("registry")
     ecosystem_registry.add_argument("manifest")
     ecosystem_registry.add_argument("--verify", action="store_true")
+    ecosystem_install = ecosystem_commands.add_parser("install")
+    ecosystem_install.add_argument("manifest")
+    ecosystem_install.add_argument("--base-path")
+    ecosystem_install.add_argument("--no-verify", action="store_true")
+    ecosystem_install.add_argument("--plan-only", action="store_true")
 
     evaluate = commands.add_parser("eval")
     eval_commands = evaluate.add_subparsers(dest="eval_command", required=True)
@@ -1016,7 +1025,7 @@ def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:
         if output is None:
             _write_json(out, encode_ecosystem_registry_manifest(manifest))
             return
-        result = write_ecosystem_registry_manifest(
+        write_result = write_ecosystem_registry_manifest(
             output,
             manifest,
             overwrite=cast(bool, args.force),
@@ -1024,9 +1033,9 @@ def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:
         _write_json(
             out,
             {
-                "status": "updated" if result.overwritten else "created",
-                "path": str(result.path),
-                "manifest": encode_ecosystem_registry_manifest(result.manifest),
+                "status": "updated" if write_result.overwritten else "created",
+                "path": str(write_result.path),
+                "manifest": encode_ecosystem_registry_manifest(write_result.manifest),
             },
         )
         return
@@ -1036,6 +1045,21 @@ def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:
             _write_json(out, _ecosystem_verification_report_body(index.verify()))
             return
         _write_json(out, encode_ecosystem_registry_manifest(index.manifest))
+        return
+    if command == "install":
+        index = load_ecosystem_registry_index(cast(str, args.manifest))
+        base_path = cast(str | None, args.base_path)
+        verify = not cast(bool, args.no_verify)
+        if cast(bool, args.plan_only):
+            plan = plan_ecosystem_domain_package_install(index, base_path=base_path, verify=verify)
+            _write_json(out, _ecosystem_install_plan_body(plan))
+            return
+        install_result = install_ecosystem_domain_packages(
+            index,
+            base_path=base_path,
+            verify=verify,
+        )
+        _write_json(out, _ecosystem_install_result_body(install_result))
         return
     raise ValueError(f"unknown ecosystem command: {command}")
 
@@ -1765,6 +1789,31 @@ def _ecosystem_verification_report_body(
                 "message": check.message,
             }
             for check in report.checks
+        ],
+    }
+
+
+def _ecosystem_install_plan_body(
+    plan: EcosystemDomainPackageInstallPlan,
+) -> dict[str, object]:
+    return {
+        "status": "planned",
+        "domain_package_count": len(plan.candidates),
+        "domain_packages": [
+            _ecosystem_domain_package_body(candidate.package) for candidate in plan.candidates
+        ],
+    }
+
+
+def _ecosystem_install_result_body(
+    result: EcosystemDomainPackageInstallResult,
+) -> dict[str, object]:
+    return {
+        "status": "installed",
+        "domain_package_count": len(result.installed_packages),
+        "registry_count": len(result.registry.identities()),
+        "domain_packages": [
+            _ecosystem_domain_package_body(package) for package in result.installed_packages
         ],
     }
 
