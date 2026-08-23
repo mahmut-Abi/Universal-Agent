@@ -91,11 +91,16 @@ from universal_agent.ecosystem import (
     EcosystemCatalogVerificationReport,
     EcosystemDomainPackageInstallPlan,
     EcosystemDomainPackageInstallResult,
+    EcosystemRegistryIndex,
+    EcosystemRegistryManifest,
     EcosystemRegistryNotFoundError,
+    EcosystemRegistryStoreNotFoundError,
+    FileEcosystemRegistryStore,
     encode_ecosystem_registry_manifest,
     install_ecosystem_domain_packages,
     load_ecosystem_catalog,
     load_ecosystem_registry_index,
+    load_ecosystem_registry_manifest,
     plan_ecosystem_domain_package_install,
     write_ecosystem_registry_manifest,
 )
@@ -283,6 +288,7 @@ async def run_cli(
         DomainPackageNotFoundError,
         EvaluationDatasetNotFoundError,
         EcosystemRegistryNotFoundError,
+        EcosystemRegistryStoreNotFoundError,
         ProfileConfigNotFoundError,
         WorkItemNotFoundError,
         WorkerNotFoundError,
@@ -481,6 +487,22 @@ def build_parser() -> argparse.ArgumentParser:
     ecosystem_install.add_argument("--base-path")
     ecosystem_install.add_argument("--no-verify", action="store_true")
     ecosystem_install.add_argument("--plan-only", action="store_true")
+    ecosystem_store = ecosystem_commands.add_parser("store")
+    ecosystem_store_commands = ecosystem_store.add_subparsers(
+        dest="ecosystem_store_command",
+        required=True,
+    )
+    ecosystem_store_save = ecosystem_store_commands.add_parser("save")
+    ecosystem_store_save.add_argument("manifest")
+    ecosystem_store_save.add_argument("--store-dir", required=True)
+    ecosystem_store_save.add_argument("--force", action="store_true")
+    ecosystem_store_list = ecosystem_store_commands.add_parser("list")
+    ecosystem_store_list.add_argument("--store-dir", required=True)
+    ecosystem_store_show = ecosystem_store_commands.add_parser("show")
+    ecosystem_store_show.add_argument("name")
+    ecosystem_store_show.add_argument("version")
+    ecosystem_store_show.add_argument("--store-dir", required=True)
+    ecosystem_store_show.add_argument("--verify", action="store_true")
 
     evaluate = commands.add_parser("eval")
     eval_commands = evaluate.add_subparsers(dest="eval_command", required=True)
@@ -1061,7 +1083,47 @@ def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:
         )
         _write_json(out, _ecosystem_install_result_body(install_result))
         return
+    if command == "store":
+        _dispatch_ecosystem_store(args, out)
+        return
     raise ValueError(f"unknown ecosystem command: {command}")
+
+
+def _dispatch_ecosystem_store(args: argparse.Namespace, out: TextIO) -> None:
+    store = FileEcosystemRegistryStore(cast(str, args.store_dir))
+    command = cast(str, args.ecosystem_store_command)
+    if command == "save":
+        manifest = load_ecosystem_registry_manifest(cast(str, args.manifest))
+        write_result = store.save(manifest, overwrite=cast(bool, args.force))
+        _write_json(
+            out,
+            {
+                "status": "updated" if write_result.overwritten else "created",
+                "path": str(write_result.path),
+                "manifest": _ecosystem_registry_summary_body(write_result.manifest),
+            },
+        )
+        return
+    if command == "list":
+        manifests = store.list_manifests()
+        _write_json(
+            out,
+            {
+                "registry_count": len(manifests),
+                "registries": [_ecosystem_registry_summary_body(item) for item in manifests],
+            },
+        )
+        return
+    if command == "show":
+        manifest = store.load(cast(str, args.name), cast(str, args.version))
+        if cast(bool, args.verify):
+            _write_json(
+                out, _ecosystem_verification_report_body(EcosystemRegistryIndex(manifest).verify())
+            )
+            return
+        _write_json(out, encode_ecosystem_registry_manifest(manifest))
+        return
+    raise ValueError(f"unknown ecosystem store command: {command}")
 
 
 def _load_ecosystem_catalog_from_args(args: argparse.Namespace) -> EcosystemCatalog:
@@ -1790,6 +1852,20 @@ def _ecosystem_verification_report_body(
             }
             for check in report.checks
         ],
+    }
+
+
+def _ecosystem_registry_summary_body(manifest: EcosystemRegistryManifest) -> dict[str, object]:
+    return {
+        "name": manifest.name,
+        "version": manifest.version,
+        "description": manifest.description,
+        "summary": {
+            "domain_package_count": manifest.summary.domain_package_count,
+            "evaluation_dataset_count": manifest.summary.evaluation_dataset_count,
+            "profile_count": manifest.summary.profile_count,
+            "total_items": manifest.summary.total_items,
+        },
     }
 
 

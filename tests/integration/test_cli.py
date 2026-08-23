@@ -908,6 +908,121 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+async def test_cli_ecosystem_store_manages_file_backed_registry_manifests(
+    tmp_path: Path,
+) -> None:
+    service, _ = build_cli_service([])
+    domain_root = tmp_path / "domains"
+    manifest_path = tmp_path / "ecosystem.json"
+    store_dir = tmp_path / "registry-store"
+    write_domain_package_file(domain_root / "kubernetes")
+    export_output = StringIO()
+    save_output = StringIO()
+    list_output = StringIO()
+    show_output = StringIO()
+    verify_output = StringIO()
+    duplicate_output = StringIO()
+    duplicate_error = StringIO()
+    force_output = StringIO()
+
+    export_status = await run_cli(
+        [
+            "ecosystem",
+            "export",
+            "--domain-package-dir",
+            str(domain_root),
+            "--name",
+            "ops-ecosystem",
+            "--version",
+            "1.0.0",
+            "--output",
+            str(manifest_path),
+        ],
+        service=service,
+        stdout=export_output,
+    )
+    save_status = await run_cli(
+        ["ecosystem", "store", "save", str(manifest_path), "--store-dir", str(store_dir)],
+        service=service,
+        stdout=save_output,
+    )
+    list_status = await run_cli(
+        ["ecosystem", "store", "list", "--store-dir", str(store_dir)],
+        service=service,
+        stdout=list_output,
+    )
+    show_status = await run_cli(
+        [
+            "ecosystem",
+            "store",
+            "show",
+            "ops-ecosystem",
+            "1.0.0",
+            "--store-dir",
+            str(store_dir),
+        ],
+        service=service,
+        stdout=show_output,
+    )
+    verify_status = await run_cli(
+        [
+            "ecosystem",
+            "store",
+            "show",
+            "ops-ecosystem",
+            "1.0.0",
+            "--store-dir",
+            str(store_dir),
+            "--verify",
+        ],
+        service=service,
+        stdout=verify_output,
+    )
+    duplicate_status = await run_cli(
+        ["ecosystem", "store", "save", str(manifest_path), "--store-dir", str(store_dir)],
+        service=service,
+        stdout=duplicate_output,
+        stderr=duplicate_error,
+    )
+    force_status = await run_cli(
+        [
+            "ecosystem",
+            "store",
+            "save",
+            str(manifest_path),
+            "--store-dir",
+            str(store_dir),
+            "--force",
+        ],
+        service=service,
+        stdout=force_output,
+    )
+    saved = read_json(save_output)
+    listed = read_json(list_output)
+    shown = read_json(show_output)
+    verified = read_json(verify_output)
+    forced = read_json(force_output)
+
+    assert export_status == 0
+    assert save_status == 0
+    assert list_status == 0
+    assert show_status == 0
+    assert verify_status == 0
+    assert duplicate_status == 2
+    assert force_status == 0
+    assert saved["status"] == "created"
+    assert saved["manifest"]["name"] == "ops-ecosystem"
+    assert listed["registry_count"] == 1
+    assert listed["registries"][0]["version"] == "1.0.0"
+    assert shown["kind"] == "EcosystemRegistry"
+    assert shown["metadata"]["name"] == "ops-ecosystem"
+    assert verified["passed"] is True
+    assert duplicate_output.getvalue() == ""
+    assert "ecosystem registry manifest already exists" in duplicate_error.getvalue()
+    assert forced["status"] == "updated"
+
+
+@pytest.mark.asyncio
 async def test_cli_session_diagnostics_renders_evidence_and_world_facts() -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     run_output = StringIO()

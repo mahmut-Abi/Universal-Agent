@@ -414,6 +414,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p7_ecosystem_registry_manifest.py
 .venv/bin/python examples/p7_ecosystem_registry_store.py
 .venv/bin/python examples/p7_ecosystem_registry_install.py
+.venv/bin/python -m universal_agent.cli ecosystem store list --store-dir .tmp/ecosystem-registries
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli distributed health
 .venv/bin/python -m universal_agent.cli distributed snapshot
