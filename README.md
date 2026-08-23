@@ -294,7 +294,9 @@ event-sourcing model or production migration system.
 - P7 Evaluation Dataset foundation: `EvaluationDatasetManifest` groups reusable evaluation suite
   files into discoverable datasets with Domain, tag, suite and author metadata. `EvaluationDatasetRegistry`
   validates referenced suite configs and lists or retrieves datasets without executing scenarios or
-  coupling dataset cataloging to RuntimeService internals.
+  coupling dataset cataloging to RuntimeService internals. `EvaluationDatasetRegistry.verify()` and
+  `agent eval datasets --verify` re-check local dataset manifests and suite files for CLI/CI without
+  running evaluation scenarios.
 - P7 Profile Catalog foundation: `ProfileCatalog` discovers `profile.json` and `*.profile.json`
   files, validates them through `ProfileConfig`, preserves source paths and exposes a `ProfileRegistry`
   view for application adapters without changing RuntimeHost configuration semantics.
@@ -414,6 +416,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p7_domain_package_registry.py
 .venv/bin/python examples/p7_domain_package_scaffold.py
 .venv/bin/python examples/p7_evaluation_dataset.py
+.venv/bin/python -m universal_agent.cli eval datasets --dataset-dir .tmp/evaluation-datasets --verify
 .venv/bin/python examples/p7_profile_catalog.py
 .venv/bin/python examples/p7_ecosystem_catalog.py
 .venv/bin/python examples/p7_ecosystem_registry_manifest.py

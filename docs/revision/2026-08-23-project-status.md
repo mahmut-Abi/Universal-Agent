@@ -104,6 +104,8 @@ P6 当前遵循设计文档的“先做 local primitives”策略。它已有本
 Dataset Domain 和 Domain Package dependency 引用是否能在本地生态索引中闭合。
 `DomainPackageRegistry.verify()` / `agent domain-packages verify` 已能校验本地 Domain Package
 metadata registry 的依赖闭包，供 CLI/CI 在激活 Domain Runtime 前发现缺失依赖。
+`EvaluationDatasetRegistry.verify()` / `agent eval datasets --verify` 已能重新校验本地 Evaluation
+Dataset manifest 与 suite 文件引用，且不会执行评估场景。
 `plan_ecosystem_install()` / `install_ecosystem()` 已能把 registry manifest 中引用的 Domain
 Package、Evaluation Dataset 和 Profile config 校验后注册到本地 metadata registries。它们不会自动导入
 Domain 代码、激活 Runtime、执行评估或安装外部依赖。
