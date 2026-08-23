@@ -86,7 +86,12 @@ from universal_agent.domain import (
     scaffold_domain_package,
 )
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
-from universal_agent.ecosystem import EcosystemCatalog, load_ecosystem_catalog
+from universal_agent.ecosystem import (
+    EcosystemCatalog,
+    encode_ecosystem_registry_manifest,
+    load_ecosystem_catalog,
+    write_ecosystem_registry_manifest,
+)
 from universal_agent.evaluation.console import (
     build_evaluation_console_snapshot,
     render_evaluation_console,
@@ -448,6 +453,18 @@ def build_parser() -> argparse.ArgumentParser:
     ecosystem_verify.add_argument("--domain-package-dir")
     ecosystem_verify.add_argument("--dataset-dir")
     ecosystem_verify.add_argument("--profile-dir")
+    ecosystem_export = ecosystem_commands.add_parser("export")
+    ecosystem_export.add_argument("--domain-package-dir")
+    ecosystem_export.add_argument("--dataset-dir")
+    ecosystem_export.add_argument("--profile-dir")
+    ecosystem_export.add_argument("--name", default="local-ecosystem")
+    ecosystem_export.add_argument("--version", default="0.1.0")
+    ecosystem_export.add_argument(
+        "--description",
+        default="Local Universal Agent ecosystem registry",
+    )
+    ecosystem_export.add_argument("--output")
+    ecosystem_export.add_argument("--force", action="store_true")
 
     evaluate = commands.add_parser("eval")
     eval_commands = evaluate.add_subparsers(dest="eval_command", required=True)
@@ -980,6 +997,31 @@ def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:
     if command == "verify":
         catalog = _load_ecosystem_catalog_from_args(args)
         _write_json(out, _ecosystem_verification_body(catalog))
+        return
+    if command == "export":
+        catalog = _load_ecosystem_catalog_from_args(args)
+        manifest = catalog.registry_manifest(
+            name=cast(str, args.name),
+            version=cast(str, args.version),
+            description=cast(str, args.description),
+        )
+        output = cast(str | None, args.output)
+        if output is None:
+            _write_json(out, encode_ecosystem_registry_manifest(manifest))
+            return
+        result = write_ecosystem_registry_manifest(
+            output,
+            manifest,
+            overwrite=cast(bool, args.force),
+        )
+        _write_json(
+            out,
+            {
+                "status": "updated" if result.overwritten else "created",
+                "path": str(result.path),
+                "manifest": encode_ecosystem_registry_manifest(result.manifest),
+            },
+        )
         return
     raise ValueError(f"unknown ecosystem command: {command}")
 

@@ -299,7 +299,9 @@ event-sourcing model or production migration system.
   and Profile catalogs into one local read-only index with counts and typed entries. It remains a
   metadata surface only: it does not activate Domains, run scenarios or assemble RuntimeHost objects.
   `EcosystemCatalog.verify()` adds an ecosystem integrity check for missing Profile Domain,
-  Evaluation Dataset Domain and Domain Package dependency references.
+  Evaluation Dataset Domain and Domain Package dependency references. `EcosystemRegistryManifest`
+  exports the discovered package, dataset and Profile references as a stable local registry manifest
+  for CLI/CI and future package-registry adapters.
 
 The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
 is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
@@ -407,6 +409,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p7_evaluation_dataset.py
 .venv/bin/python examples/p7_profile_catalog.py
 .venv/bin/python examples/p7_ecosystem_catalog.py
+.venv/bin/python examples/p7_ecosystem_registry_manifest.py
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli distributed health
 .venv/bin/python -m universal_agent.cli distributed snapshot

@@ -34,6 +34,7 @@ from universal_agent import (
     Task,
     WorkerId,
     immutable_json,
+    load_ecosystem_registry_manifest,
 )
 from universal_agent.agentd import AgentdHttpServer
 from universal_agent.cli import run_cli
@@ -762,6 +763,107 @@ async def test_cli_ecosystem_verify_reports_reference_integrity(tmp_path: Path) 
     assert failing["failed_check_count"] == 2
     assert failed_checks["profile_domains_registered"]["passed"] is False
     assert failed_checks["dataset_domains_registered"]["passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> None:
+    service, _ = build_cli_service([])
+    domain_root = tmp_path / "domains"
+    dataset_root = tmp_path / "datasets"
+    profile_root = tmp_path / "profiles"
+    output_path = tmp_path / "registry" / "ecosystem.json"
+    write_domain_package_file(domain_root / "kubernetes")
+    write_evaluation_dataset_file(dataset_root / "kubernetes")
+    write_profile_config_file(profile_root / "kubernetes.profile.json")
+    inline_output = StringIO()
+    write_output = StringIO()
+    duplicate_output = StringIO()
+    duplicate_error = StringIO()
+    force_output = StringIO()
+
+    inline_status = await run_cli(
+        [
+            "ecosystem",
+            "export",
+            "--domain-package-dir",
+            str(domain_root),
+            "--dataset-dir",
+            str(dataset_root),
+            "--profile-dir",
+            str(profile_root),
+            "--name",
+            "ops-ecosystem",
+            "--version",
+            "1.2.3",
+        ],
+        service=service,
+        stdout=inline_output,
+    )
+    write_status = await run_cli(
+        [
+            "ecosystem",
+            "export",
+            "--domain-package-dir",
+            str(domain_root),
+            "--dataset-dir",
+            str(dataset_root),
+            "--profile-dir",
+            str(profile_root),
+            "--output",
+            str(output_path),
+        ],
+        service=service,
+        stdout=write_output,
+    )
+    duplicate_status = await run_cli(
+        [
+            "ecosystem",
+            "export",
+            "--domain-package-dir",
+            str(domain_root),
+            "--output",
+            str(output_path),
+        ],
+        service=service,
+        stdout=duplicate_output,
+        stderr=duplicate_error,
+    )
+    force_status = await run_cli(
+        [
+            "ecosystem",
+            "export",
+            "--domain-package-dir",
+            str(domain_root),
+            "--output",
+            str(output_path),
+            "--force",
+        ],
+        service=service,
+        stdout=force_output,
+    )
+    inline = read_json(inline_output)
+    written = read_json(write_output)
+    forced = read_json(force_output)
+    loaded = load_ecosystem_registry_manifest(output_path)
+
+    assert inline_status == 0
+    assert write_status == 0
+    assert duplicate_status == 2
+    assert force_status == 0
+    assert inline["kind"] == "EcosystemRegistry"
+    assert inline["metadata"] == {
+        "name": "ops-ecosystem",
+        "version": "1.2.3",
+        "description": "Local Universal Agent ecosystem registry",
+    }
+    assert written["status"] == "created"
+    assert written["path"] == str(output_path)
+    assert written["manifest"]["summary"]["total_items"] == 3
+    assert duplicate_output.getvalue() == ""
+    assert "ecosystem registry manifest already exists" in duplicate_error.getvalue()
+    assert forced["status"] == "updated"
+    assert loaded.kind == "EcosystemRegistry"
+    assert loaded.summary.domain_package_count == 1
 
 
 @pytest.mark.asyncio
