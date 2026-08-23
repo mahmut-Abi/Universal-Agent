@@ -623,6 +623,8 @@ async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
         service=service,
         stdout=health_output,
     )
+    default_output = StringIO()
+    default_status = await run_cli(["distributed", "health"], stdout=default_output)
     missing_status = await run_cli(
         ["distributed", "health"],
         service=build_cli_service([])[0],
@@ -632,12 +634,15 @@ async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
 
     snapshot = read_json(snapshot_output)
     health = read_json(health_output)
+    default_health = read_json(default_output)
 
     assert snapshot_status == 0
     assert snapshot["work_queue"]["queued_count"] == 1
     assert snapshot["workers"]["online_count"] == 1
     assert health_status == 0
     assert health["status"] == "ok"
+    assert default_status == 0
+    assert default_health["status"] == "ok"
     assert missing_status == 2
     assert missing_output.getvalue() == ""
     assert "distributed runtime coordinator is not configured" in missing_error.getvalue()

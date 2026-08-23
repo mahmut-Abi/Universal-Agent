@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from universal_agent.core import DomainIdentity
+from universal_agent.distributed import DistributedRuntimeCoordinator
 from universal_agent.domain import (
     DomainComposition,
     DomainManager,
@@ -52,6 +53,7 @@ class RuntimeHost:
     domain_identity: DomainIdentity
     domain_identities: tuple[DomainIdentity, ...]
     domain_composition: DomainComposition
+    distributed_coordinator: DistributedRuntimeCoordinator
     profile: AgentProfile | None = None
 
     @classmethod
@@ -104,6 +106,7 @@ class RuntimeHost:
             session_store=session_store,
             event_reader=event_store,
         )
+        distributed_coordinator = DistributedRuntimeCoordinator()
         return cls(
             config=config,
             runtime_api=api,
@@ -112,11 +115,13 @@ class RuntimeHost:
                 components=components,
                 profiles=() if profile is None else (profile,),
                 config=config,
+                distributed_coordinator=distributed_coordinator,
             ),
             components=components,
             domain_identity=identity,
             domain_identities=composition.identities,
             domain_composition=composition,
+            distributed_coordinator=distributed_coordinator,
             profile=profile,
         )
 

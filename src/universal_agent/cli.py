@@ -52,6 +52,7 @@ from universal_agent.core import (
     Task,
     immutable_json,
 )
+from universal_agent.distributed import DistributedRuntimeCoordinator
 from universal_agent.domain import DomainLoader, RuntimeBuilder
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.evaluation.console import (
@@ -191,6 +192,7 @@ def build_default_service() -> RuntimeService:
         components=components,
         profiles=(profile,),
         config=profile.runtime,
+        distributed_coordinator=DistributedRuntimeCoordinator(),
     )
 
 

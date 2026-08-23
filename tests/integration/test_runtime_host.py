@@ -187,6 +187,15 @@ async def test_runtime_host_assembles_configured_file_backed_service(tmp_path: P
     waiting = await first.service.run_goal(*remediation_goal_task())
 
     assert ready.ready
+
+    distributed_snapshot = first.service.distributed_snapshot()
+    distributed_health = first.service.distributed_health()
+
+    assert first.distributed_coordinator is not None
+    assert distributed_snapshot is not None
+    assert distributed_health is not None
+    assert distributed_snapshot.work_queue.total_count == 0
+    assert distributed_health.status.value == "ok"
     assert first.domain_identity.name == "kubernetes"
     assert waiting.result.status is ExecutionStatus.WAITING
     assert waiting.session.pending_action is not None
