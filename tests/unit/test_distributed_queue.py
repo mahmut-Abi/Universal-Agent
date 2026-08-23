@@ -218,6 +218,23 @@ def test_file_work_queue_rejects_duplicate_persisted_work_item_ids(tmp_path: Pat
         FileWorkQueue(path)
 
 
+def test_file_work_queue_rejects_leased_item_without_lease_metadata(tmp_path: Path) -> None:
+    path = tmp_path / "work-queue.json"
+    FileWorkQueue(path).enqueue(kind="agent_session")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    items = payload["items"]
+    assert isinstance(items, list)
+    item = items[0]
+    assert isinstance(item, dict)
+    item["status"] = "leased"
+    item["lease"] = None
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="leased work items require a lease"):
+        FileWorkQueue(path)
+
+
 def test_file_work_queue_persists_completion_and_expiry(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     now = datetime(2026, 1, 1, tzinfo=UTC)

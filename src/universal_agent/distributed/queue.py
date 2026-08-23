@@ -81,6 +81,8 @@ class WorkItem:
             raise ValueError("max_attempts must be positive")
         if self.attempts < 0:
             raise ValueError("attempts must be non-negative")
+        if self.status is WorkItemStatus.LEASED and self.lease is None:
+            raise ValueError("leased work items require a lease")
         if self.status is not WorkItemStatus.LEASED and self.lease is not None:
             raise ValueError("only leased work items may carry a lease")
 
