@@ -1018,7 +1018,10 @@ class RuntimeService:
             else len(distributed_health.expiring_leases),
             distributed_invalid_session_work_item_count=None
             if distributed_snapshot is None
-            else self._distributed_invalid_session_work_item_count(sessions, distributed_snapshot),
+            else await self._distributed_invalid_session_work_item_count(
+                sessions,
+                distributed_snapshot,
+            ),
         )
 
     async def audit_records(
@@ -1060,7 +1063,7 @@ class RuntimeService:
             events.extend(await self.list_events(session.session_id))
         return tuple(sorted(events, key=lambda event: event.occurred_at))
 
-    def _distributed_invalid_session_work_item_count(
+    async def _distributed_invalid_session_work_item_count(
         self,
         sessions: tuple[SessionSummaryView, ...],
         snapshot: DistributedRuntimeSnapshot,
@@ -1068,6 +1071,7 @@ class RuntimeService:
         current_task_by_session = {
             session.session_id: session.current_task_id for session in sessions
         }
+        full_session_by_id: dict[SessionId, SessionView] = {}
         invalid_count = 0
         for item in snapshot.work_queue.items:
             if item.kind == WorkKind.AGENT_SESSION.value:
@@ -1084,15 +1088,19 @@ class RuntimeService:
                 invalid_count += 1
                 continue
             if item.kind == WorkKind.TOOL_ACTION.value:
-                session = next(
-                    (
-                        candidate
-                        for candidate in sessions
-                        if candidate.session_id == item.session_id
-                    ),
-                    None,
-                )
-                if item.action_id is None or session is None or not session.pending_action:
+                if item.action_id is None:
+                    invalid_count += 1
+                    continue
+                session = full_session_by_id.get(item.session_id)
+                if session is None:
+                    try:
+                        session = await self.get_session(item.session_id)
+                    except StateNotFoundError:
+                        invalid_count += 1
+                        continue
+                    full_session_by_id[item.session_id] = session
+                pending = session.pending_action
+                if pending is None or pending.action_id != item.action_id:
                     invalid_count += 1
         return invalid_count
 

@@ -601,6 +601,43 @@ async def test_runtime_service_distributed_worker_rejects_mismatched_action_work
     assert backend.mutation_calls == 0
 
 
+@pytest.mark.asyncio
+async def test_runtime_service_doctor_detects_mismatched_distributed_action_work() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("tool_action",),
+        ttl_seconds=999_999_999,
+        now=now,
+    )
+    service, _ = build_service(
+        [scale_workload(), inspect_workload(), finish()],
+        distributed_coordinator=coordinator,
+        environment="production",
+    )
+
+    waiting = await service.run_goal(*goal_task())
+    assert waiting.result.status is ExecutionStatus.WAITING
+    assert waiting.session.pending_action is not None
+    service.distributed_schedule_action(
+        waiting.result.session_id,
+        waiting.session.current_task_id,
+        ActionId("other-action"),
+        confirmed=True,
+        now=now,
+    )
+
+    report = await service.doctor()
+    distributed_queue = next(
+        check for check in report.checks if check.name == "distributed_work_queue"
+    )
+
+    assert report.status == "error"
+    assert distributed_queue.status == "error"
+    assert distributed_queue.message == "invalid_session_work_items=1"
+
+
 def test_runtime_service_rejects_unconfirmed_distributed_action_schedule() -> None:
     service, _ = build_service([], distributed_coordinator=DistributedRuntimeCoordinator())
 
