@@ -218,6 +218,22 @@ def test_file_work_queue_rejects_duplicate_persisted_work_item_ids(tmp_path: Pat
         FileWorkQueue(path)
 
 
+def test_file_work_queue_rejects_attempts_above_max_attempts(tmp_path: Path) -> None:
+    path = tmp_path / "work-queue.json"
+    FileWorkQueue(path).enqueue(kind="agent_session", max_attempts=1)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    items = payload["items"]
+    assert isinstance(items, list)
+    item = items[0]
+    assert isinstance(item, dict)
+    item["attempts"] = 2
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="attempts must not exceed max_attempts"):
+        FileWorkQueue(path)
+
+
 def test_file_work_queue_rejects_leased_item_without_lease_metadata(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     FileWorkQueue(path).enqueue(kind="agent_session")
