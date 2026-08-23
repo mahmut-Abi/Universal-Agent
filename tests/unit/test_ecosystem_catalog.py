@@ -14,7 +14,9 @@ from universal_agent import (
     EcosystemRegistryIndex,
     EcosystemRegistryItemNotFoundError,
     EcosystemRegistryManifest,
+    EcosystemRegistryStoreNotFoundError,
     EcosystemRegistryValidationError,
+    FileEcosystemRegistryStore,
     decode_ecosystem_registry_manifest,
     encode_ecosystem_registry_manifest,
     load_ecosystem_catalog,
@@ -290,3 +292,43 @@ def test_ecosystem_registry_index_verification_reports_missing_references() -> N
     assert "package_dependencies_registered" in failed
     assert "database@1.0.0" in failed["profile_domains_registered"]
     assert "observability@1.0.0" in failed["package_dependencies_registered"]
+
+
+def test_file_ecosystem_registry_store_persists_and_lists_manifests(tmp_path: Path) -> None:
+    first = EcosystemRegistryManifest(
+        api_version="agent.nantian.dev/v1alpha1",
+        kind="EcosystemRegistry",
+        name="ops-ecosystem",
+        version="1.0.0",
+        description="Operations ecosystem registry",
+        domain_packages=(EcosystemDomainPackageRef("kubernetes", "1.0.0", "Kubernetes"),),
+    )
+    second = EcosystemRegistryManifest(
+        api_version="agent.nantian.dev/v1alpha1",
+        kind="EcosystemRegistry",
+        name="ops-ecosystem",
+        version="2.0.0",
+        description="Operations ecosystem registry v2",
+        domain_packages=(EcosystemDomainPackageRef("kubernetes", "2.0.0", "Kubernetes"),),
+    )
+    store = FileEcosystemRegistryStore(tmp_path / "registries")
+
+    first_result = store.save(first)
+    second_result = store.save(second)
+    listed = store.list_manifests()
+
+    assert first_result.overwritten is False
+    assert first_result.path.name == "ops-ecosystem@1.0.0.json"
+    assert second_result.path.name == "ops-ecosystem@2.0.0.json"
+    assert [manifest.version for manifest in listed] == ["1.0.0", "2.0.0"]
+    assert store.load("ops-ecosystem", "1.0.0").description == "Operations ecosystem registry"
+    assert store.index("ops-ecosystem", "2.0.0").domain_package("kubernetes").version == "2.0.0"
+
+    overwritten = store.save(first)
+    assert overwritten.overwritten is True
+
+    with pytest.raises(EcosystemRegistryStoreNotFoundError, match=r"missing@1\.0\.0"):
+        store.load("missing", "1.0.0")
+
+    with pytest.raises(EcosystemRegistryValidationError, match="already exists"):
+        store.save(first, overwrite=False)
