@@ -72,6 +72,52 @@ def test_work_queue_idempotent_enqueue_returns_existing_item() -> None:
     assert len(queue.queued()) == 1
 
 
+@pytest.mark.parametrize(
+    "terminal_status",
+    (
+        WorkItemStatus.COMPLETED,
+        WorkItemStatus.FAILED,
+        WorkItemStatus.CANCELLED,
+    ),
+)
+def test_work_queue_idempotency_ignores_terminal_items(
+    terminal_status: WorkItemStatus,
+) -> None:
+    queue = InMemoryWorkQueue()
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    first = queue.enqueue(
+        kind="agent_session",
+        available_at=now,
+        idempotency_key="session-1:goal-1",
+    )
+
+    if terminal_status is WorkItemStatus.CANCELLED:
+        queue.cancel(first.work_item_id, reason="operator cancelled", now=now)
+    else:
+        leased = queue.lease(worker_id=WorkerId("worker-a"), now=now)
+        assert leased.lease is not None
+        if terminal_status is WorkItemStatus.COMPLETED:
+            queue.complete(
+                leased.lease.lease_id,
+                worker_id=WorkerId("worker-a"),
+                now=now + timedelta(seconds=1),
+            )
+        else:
+            queue.fail(
+                leased.lease.lease_id,
+                worker_id=WorkerId("worker-a"),
+                reason="terminal failure",
+                retry=False,
+                now=now + timedelta(seconds=1),
+            )
+
+    second = queue.enqueue(kind="agent_session", idempotency_key="session-1:goal-1")
+
+    assert queue.get(first.work_item_id).status is terminal_status
+    assert second.work_item_id == WorkItemId("work-2")
+    assert second.status is WorkItemStatus.QUEUED
+
+
 def test_file_work_queue_persists_items_and_lease_state(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     now = datetime(2026, 1, 1, tzinfo=UTC)

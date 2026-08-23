@@ -306,7 +306,7 @@ class InMemoryWorkQueue:
 
     def _find_idempotent(self, idempotency_key: str) -> WorkItem | None:
         for item in self._items.values():
-            if item.idempotency_key == idempotency_key:
+            if item.idempotency_key == idempotency_key and not _is_terminal(item):
                 return item
         return None
 
@@ -561,6 +561,14 @@ def _normalize_accepted_kinds(accepted_kinds: Collection[str] | None) -> frozens
 
 def _sort_key(item: WorkItem) -> tuple[int, datetime, str]:
     return (-item.priority, item.available_at, str(item.work_item_id))
+
+
+def _is_terminal(item: WorkItem) -> bool:
+    return item.status in {
+        WorkItemStatus.COMPLETED,
+        WorkItemStatus.FAILED,
+        WorkItemStatus.CANCELLED,
+    }
 
 
 def _encode_work_item(item: WorkItem) -> dict[str, object]:
