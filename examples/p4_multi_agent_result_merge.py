@@ -10,6 +10,7 @@ from universal_agent.multi_agent import (
     AgentTaskResult,
     AgentTaskResultStatus,
     agent_result_merge_payload,
+    decode_agent_result_merge,
 )
 
 
@@ -36,8 +37,9 @@ def main() -> None:
         ),
     )
     payload = agent_result_merge_payload(merge)
+    decoded = decode_agent_result_merge(payload)
     evidence_ids = cast(list[str], payload["evidence"])
-    print(f"{payload['status']}: {','.join(evidence_ids)}")
+    print(f"{decoded.status.value}: {','.join(evidence_ids)}")
 
 
 if __name__ == "__main__":

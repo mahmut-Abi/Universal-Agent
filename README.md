@@ -348,7 +348,9 @@ event-sourcing models or production migration systems.
   Evidence IDs, missing/failed/waiting task classification and configurable completion policy without
   inventing new Evidence or updating the World Model. `MultiAgentMergeEvaluator` adds deterministic
   checks for merge status, required Evidence IDs, completed task IDs and missing/waiting/failed/review
-  counts. This is a foundation for optional Multi-Agent execution, not a replacement for Domain
+  counts. Conflict resolutions, merge reports and Multi-Agent evaluation reports now provide strict
+  payload encode/decode helpers for persistence, replay and future registry handoff without re-running
+  child Agents. This is a foundation for optional Multi-Agent execution, not a replacement for Domain
   Composition.
 
 The Kubernetes Domain uses injected backends. Most tests and examples use fake backends; no real

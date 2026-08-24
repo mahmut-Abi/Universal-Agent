@@ -9,6 +9,8 @@ from universal_agent.multi_agent import (
     AgentTaskResultStatus,
     MultiAgentEvaluationExpectations,
     MultiAgentMergeEvaluator,
+    decode_multi_agent_evaluation_report,
+    multi_agent_evaluation_report_payload,
 )
 
 
@@ -33,7 +35,8 @@ def main() -> None:
             min_completed_task_count=1,
         ),
     )
-    print(f"passed={report.passed} checks={len(report.checks)}")
+    decoded = decode_multi_agent_evaluation_report(multi_agent_evaluation_report_payload(report))
+    print(f"passed={decoded.passed} checks={len(decoded.checks)}")
 
 
 if __name__ == "__main__":

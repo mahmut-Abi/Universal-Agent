@@ -7,6 +7,8 @@ from universal_agent.multi_agent import (
     AgentId,
     AgentProposalId,
     AgentTaskId,
+    conflict_resolution_payload,
+    decode_conflict_resolution,
 )
 
 
@@ -35,7 +37,8 @@ def main() -> None:
             ),
         )
     )
-    print(f"{resolution.status.value}: {resolution.selected_proposal_id}")
+    decoded = decode_conflict_resolution(conflict_resolution_payload(resolution))
+    print(f"{decoded.status.value}: {decoded.selected_proposal_id}")
 
 
 if __name__ == "__main__":

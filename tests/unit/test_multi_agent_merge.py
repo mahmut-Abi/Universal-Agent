@@ -17,6 +17,7 @@ from universal_agent.multi_agent import (
     ConflictResolution,
     ConflictResolutionStatus,
     agent_result_merge_payload,
+    decode_agent_result_merge,
 )
 
 
@@ -144,3 +145,21 @@ def test_result_merge_payload_is_json_safe() -> None:
     conflicts = cast(list[dict[str, object]], payload["conflict_resolutions"])
     assert results[0]["task_id"] == "agent-task-a"
     assert conflicts[0]["selected_proposal_id"] == "proposal-a"
+
+
+def test_result_merge_payload_round_trips_merge_report() -> None:
+    conflict = ConflictResolution(
+        resource_key="deployment/example",
+        status=ConflictResolutionStatus.REQUIRES_REVIEW,
+        review_proposal_ids=(AgentProposalId("proposal-a"),),
+        supporting_evidence_ids=(EvidenceId("evidence-conflict"),),
+        reason="needs review",
+    )
+    merge = AgentResultMerger().merge((result("agent-task-a"),), conflict_resolutions=(conflict,))
+
+    decoded = decode_agent_result_merge(agent_result_merge_payload(merge))
+
+    assert decoded.status is AgentResultMergeStatus.REQUIRES_REVIEW
+    assert decoded.results[0].task_id == AgentTaskId("agent-task-a")
+    assert decoded.evidence_ids == (EvidenceId("evidence-1"), EvidenceId("evidence-conflict"))
+    assert decoded.conflict_resolutions[0].review_proposal_ids == (AgentProposalId("proposal-a"),)

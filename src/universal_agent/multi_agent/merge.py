@@ -1,20 +1,25 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
+from typing import cast
 
-from universal_agent.core import JsonMapping, JsonValue
+from universal_agent.core import JsonMapping
 from universal_agent.evidence import EvidenceId
 from universal_agent.multi_agent.conflicts import (
     ConflictResolution,
     ConflictResolutionStatus,
+    conflict_resolution_payload,
+    decode_conflict_resolution,
 )
 from universal_agent.multi_agent.contracts import (
     AgentTaskId,
     AgentTaskResult,
     AgentTaskResultStatus,
     agent_task_result_payload,
+    decode_agent_task_result,
 )
 
 
@@ -143,11 +148,41 @@ def agent_result_merge_payload(merge: AgentResultMerge) -> JsonMapping:
             ],
             "results": [dict(agent_task_result_payload(result)) for result in merge.results],
             "conflict_resolutions": [
-                _conflict_resolution_payload(resolution)
+                dict(conflict_resolution_payload(resolution))
                 for resolution in merge.conflict_resolutions
             ],
         }
     )
+
+
+def decode_agent_result_merge(payload: JsonMapping) -> AgentResultMerge:
+    merge = AgentResultMerge(
+        status=_merge_status_value(payload.get("status")),
+        results=tuple(
+            decode_agent_task_result(item)
+            for item in _mapping_list(payload.get("results"), "results")
+        ),
+        evidence_ids=tuple(
+            EvidenceId(value) for value in _string_tuple(payload.get("evidence"), "evidence")
+        ),
+        completed_task_ids=_agent_task_ids(payload.get("completed_task_ids"), "completed_task_ids"),
+        waiting_task_ids=_agent_task_ids(payload.get("waiting_task_ids"), "waiting_task_ids"),
+        failed_task_ids=_agent_task_ids(payload.get("failed_task_ids"), "failed_task_ids"),
+        missing_task_ids=_agent_task_ids(payload.get("missing_task_ids"), "missing_task_ids"),
+        missing_evidence_task_ids=_agent_task_ids(
+            payload.get("missing_evidence_task_ids"),
+            "missing_evidence_task_ids",
+        ),
+        conflict_resolutions=tuple(
+            decode_conflict_resolution(item)
+            for item in _mapping_list(payload.get("conflict_resolutions"), "conflict_resolutions")
+        ),
+        reason=_string(payload.get("reason"), "reason", ""),
+    )
+    passed = _optional_bool(payload.get("passed"), "passed")
+    if passed is not None and passed is not merge.passed:
+        raise ValueError("agent result merge passed flag does not match status")
+    return merge
 
 
 def _merge_status(
@@ -247,23 +282,58 @@ def _duplicate_task_ids(task_ids: tuple[AgentTaskId, ...]) -> tuple[str, ...]:
     return tuple(sorted(duplicates))
 
 
-def _conflict_resolution_payload(resolution: ConflictResolution) -> dict[str, JsonValue]:
-    return {
-        "resource_key": resolution.resource_key,
-        "status": resolution.status.value,
-        "selected_proposal_id": _optional_str(resolution.selected_proposal_id),
-        "rejected_proposal_ids": _json_strings(resolution.rejected_proposal_ids),
-        "review_proposal_ids": _json_strings(resolution.review_proposal_ids),
-        "supporting_evidence_ids": _json_strings(resolution.supporting_evidence_ids),
-        "reason": resolution.reason,
-    }
+def _mapping(value: object, field_name: str) -> JsonMapping:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{field_name} must be an object")
+    if any(not isinstance(key, str) for key in value):
+        raise ValueError(f"{field_name} keys must be strings")
+    return cast(JsonMapping, value)
 
 
-def _json_strings(values: tuple[object, ...]) -> list[JsonValue]:
-    return [str(value) for value in values]
+def _mapping_list(value: object, field_name: str) -> tuple[JsonMapping, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list")
+    return tuple(_mapping(item, f"{field_name}[{index}]") for index, item in enumerate(value))
 
 
-def _optional_str(value: object | None) -> str | None:
+def _string(value: object, field_name: str, default: str | None = None) -> str:
+    if value is None and default is not None:
+        return default
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    return value
+
+
+def _optional_bool(value: object, field_name: str) -> bool | None:
     if value is None:
         return None
-    return str(value)
+    if not isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a boolean")
+    return value
+
+
+def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list")
+    strings: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str):
+            raise ValueError(f"{field_name}[{index}] must be a string")
+        strings.append(item)
+    return tuple(strings)
+
+
+def _agent_task_ids(value: object, field_name: str) -> tuple[AgentTaskId, ...]:
+    return tuple(AgentTaskId(item) for item in _string_tuple(value, field_name))
+
+
+def _merge_status_value(value: object) -> AgentResultMergeStatus:
+    raw = _string(value, "status")
+    try:
+        return AgentResultMergeStatus(raw)
+    except ValueError as exc:
+        raise ValueError(f"unsupported agent result merge status: {raw}") from exc

@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from enum import StrEnum
+from types import MappingProxyType
 from typing import NewType
 
 from universal_agent.core import (
     JsonMapping,
+    JsonValue,
     PolicyEffect,
     RiskLevel,
     SideEffect,
@@ -82,6 +84,49 @@ class ConflictResolution:
     @property
     def requires_review(self) -> bool:
         return self.status is ConflictResolutionStatus.REQUIRES_REVIEW
+
+
+def conflict_resolution_payload(resolution: ConflictResolution) -> JsonMapping:
+    return MappingProxyType(
+        {
+            "resource_key": resolution.resource_key,
+            "status": resolution.status.value,
+            "selected_proposal_id": _optional_str(resolution.selected_proposal_id),
+            "rejected_proposal_ids": _json_strings(resolution.rejected_proposal_ids),
+            "review_proposal_ids": _json_strings(resolution.review_proposal_ids),
+            "supporting_evidence_ids": _json_strings(resolution.supporting_evidence_ids),
+            "reason": resolution.reason,
+        }
+    )
+
+
+def decode_conflict_resolution(payload: JsonMapping) -> ConflictResolution:
+    return ConflictResolution(
+        resource_key=_string(payload.get("resource_key"), "resource_key"),
+        status=_conflict_resolution_status(payload.get("status")),
+        selected_proposal_id=_optional_agent_proposal_id(
+            payload.get("selected_proposal_id"),
+            "selected_proposal_id",
+        ),
+        rejected_proposal_ids=tuple(
+            AgentProposalId(value)
+            for value in _string_tuple(
+                payload.get("rejected_proposal_ids"), "rejected_proposal_ids"
+            )
+        ),
+        review_proposal_ids=tuple(
+            AgentProposalId(value)
+            for value in _string_tuple(payload.get("review_proposal_ids"), "review_proposal_ids")
+        ),
+        supporting_evidence_ids=tuple(
+            EvidenceId(value)
+            for value in _string_tuple(
+                payload.get("supporting_evidence_ids"),
+                "supporting_evidence_ids",
+            )
+        ),
+        reason=_string(payload.get("reason"), "reason", ""),
+    )
 
 
 class AgentConflictResolver:
@@ -236,3 +281,55 @@ def _risk_rank(risk: RiskLevel) -> int:
         RiskLevel.HIGH: 2,
     }
     return ranks[risk]
+
+
+def _json_strings(values: tuple[object, ...]) -> list[JsonValue]:
+    return [str(value) for value in values]
+
+
+def _optional_str(value: object | None) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _string(value: object, field_name: str, default: str | None = None) -> str:
+    if value is None and default is not None:
+        return default
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    return value
+
+
+def _optional_string(value: object, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _string(value, field_name)
+
+
+def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list")
+    strings: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str):
+            raise ValueError(f"{field_name}[{index}] must be a string")
+        strings.append(item)
+    return tuple(strings)
+
+
+def _optional_agent_proposal_id(value: object, field_name: str) -> AgentProposalId | None:
+    raw = _optional_string(value, field_name)
+    if raw is None:
+        return None
+    return AgentProposalId(raw)
+
+
+def _conflict_resolution_status(value: object) -> ConflictResolutionStatus:
+    raw = _string(value, "status")
+    try:
+        return ConflictResolutionStatus(raw)
+    except ValueError as exc:
+        raise ValueError(f"unsupported conflict resolution status: {raw}") from exc

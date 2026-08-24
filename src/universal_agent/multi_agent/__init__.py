@@ -4,6 +4,8 @@ from universal_agent.multi_agent.conflicts import (
     AgentProposalId,
     ConflictResolution,
     ConflictResolutionStatus,
+    conflict_resolution_payload,
+    decode_conflict_resolution,
 )
 from universal_agent.multi_agent.contracts import (
     AGENT_TASK_API_VERSION,
@@ -23,6 +25,9 @@ from universal_agent.multi_agent.evaluation import (
     MultiAgentEvaluationExpectations,
     MultiAgentEvaluationReport,
     MultiAgentMergeEvaluator,
+    decode_multi_agent_evaluation_expectations,
+    decode_multi_agent_evaluation_report,
+    multi_agent_evaluation_expectations_payload,
     multi_agent_evaluation_report_payload,
 )
 from universal_agent.multi_agent.merge import (
@@ -31,6 +36,7 @@ from universal_agent.multi_agent.merge import (
     AgentResultMerger,
     AgentResultMergeStatus,
     agent_result_merge_payload,
+    decode_agent_result_merge,
 )
 from universal_agent.multi_agent.orchestrator import (
     AgentDelegationBatchResult,
@@ -119,13 +125,19 @@ __all__ = [
     "agent_result_merge_payload",
     "agent_task_request_payload",
     "agent_task_result_payload",
+    "conflict_resolution_payload",
     "decode_agent_delegation_batch_result",
     "decode_agent_delegation_spec",
     "decode_agent_instance_record",
     "decode_agent_profile_record",
     "decode_agent_registry_snapshot",
+    "decode_agent_result_merge",
     "decode_agent_task_request",
     "decode_agent_task_result",
+    "decode_conflict_resolution",
+    "decode_multi_agent_evaluation_expectations",
+    "decode_multi_agent_evaluation_report",
+    "multi_agent_evaluation_expectations_payload",
     "multi_agent_evaluation_report_payload",
     "rejected_agent_task_result",
 ]

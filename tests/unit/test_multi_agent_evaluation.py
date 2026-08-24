@@ -18,6 +18,9 @@ from universal_agent.multi_agent import (
     ConflictResolutionStatus,
     MultiAgentEvaluationExpectations,
     MultiAgentMergeEvaluator,
+    decode_multi_agent_evaluation_expectations,
+    decode_multi_agent_evaluation_report,
+    multi_agent_evaluation_expectations_payload,
     multi_agent_evaluation_report_payload,
 )
 
@@ -164,3 +167,28 @@ def test_multi_agent_evaluation_payload_is_json_safe() -> None:
     assert payload["merge_status"] == "completed"
     checks = cast(list[dict[str, object]], payload["checks"])
     assert checks[0]["name"] == "merge_status"
+
+
+def test_multi_agent_evaluation_payload_round_trips_report_and_expectations() -> None:
+    merge = AgentResultMerger().merge(
+        (result("agent-task-a", evidence_ids=(EvidenceId("evidence-a"),)),)
+    )
+    expectations = MultiAgentEvaluationExpectations(
+        required_evidence_ids=(EvidenceId("evidence-a"),),
+        required_completed_task_ids=(AgentTaskId("agent-task-a"),),
+        min_completed_task_count=1,
+    )
+    report = MultiAgentMergeEvaluator().evaluate(merge, expectations)
+
+    decoded_expectations = decode_multi_agent_evaluation_expectations(
+        multi_agent_evaluation_expectations_payload(expectations)
+    )
+    decoded_report = decode_multi_agent_evaluation_report(
+        multi_agent_evaluation_report_payload(report)
+    )
+
+    assert decoded_expectations.required_evidence_ids == (EvidenceId("evidence-a"),)
+    assert decoded_expectations.min_completed_task_count == 1
+    assert decoded_report.passed
+    assert decoded_report.expectations.required_completed_task_ids == (AgentTaskId("agent-task-a"),)
+    assert decoded_report.merge.evidence_ids == (EvidenceId("evidence-a"),)

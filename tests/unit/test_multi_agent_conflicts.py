@@ -12,6 +12,8 @@ from universal_agent.multi_agent import (
     AgentTaskConstraints,
     AgentTaskId,
     ConflictResolutionStatus,
+    conflict_resolution_payload,
+    decode_conflict_resolution,
 )
 
 
@@ -57,6 +59,25 @@ def test_conflict_resolver_reports_no_conflict_when_actions_match() -> None:
     assert result.status is ConflictResolutionStatus.NO_CONFLICT
     assert result.selected_proposal_id == AgentProposalId("a")
     assert result.supporting_evidence_ids == (
+        EvidenceId("evidence-1"),
+        EvidenceId("evidence-2"),
+    )
+
+
+def test_conflict_resolution_payload_round_trips() -> None:
+    result = AgentConflictResolver().resolve(
+        (
+            proposal("a", evidence_ids=(EvidenceId("evidence-1"),)),
+            proposal("b", replicas=4, evidence_ids=(EvidenceId("evidence-2"),)),
+        )
+    )
+
+    decoded = decode_conflict_resolution(conflict_resolution_payload(result))
+
+    assert decoded.resource_key == "deployment/example"
+    assert decoded.status is ConflictResolutionStatus.REQUIRES_REVIEW
+    assert decoded.review_proposal_ids == (AgentProposalId("a"), AgentProposalId("b"))
+    assert decoded.supporting_evidence_ids == (
         EvidenceId("evidence-1"),
         EvidenceId("evidence-2"),
     )
