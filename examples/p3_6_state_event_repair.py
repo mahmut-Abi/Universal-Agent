@@ -84,10 +84,12 @@ async def main() -> None:
     events.events = [event for event in events.events if event.type != "GoalCompleted"]
 
     before = await service.doctor()
+    planned = await service.repair_state_event_consistency(dry_run=True)
     repair = await service.repair_state_event_consistency(confirmed=True)
     after = await service.doctor()
 
     print(f"before={before.status}")
+    print(f"planned={planned.status} planned_events={planned.repaired_event_count}")
     print(f"repair={repair.status} repaired_events={repair.repaired_event_count}")
     print(f"after={after.status}")
 
