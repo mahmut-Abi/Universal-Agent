@@ -224,9 +224,7 @@ def verify_evaluation_dataset_registry(
     registry: EvaluationDatasetRegistry,
 ) -> EvaluationDatasetVerificationReport:
     checks = tuple(
-        check
-        for dataset in registry.list()
-        for check in verify_evaluation_dataset(dataset).checks
+        check for dataset in registry.list() for check in verify_evaluation_dataset(dataset).checks
     )
     return EvaluationDatasetVerificationReport(checks)
 

@@ -1026,8 +1026,7 @@ def _profile_ref_path(
 ) -> Path:
     if not reference.path.strip():
         raise EcosystemRegistryInstallError(
-            "profile registry reference has no local path: "
-            f"{reference.name}@{reference.version}"
+            f"profile registry reference has no local path: {reference.name}@{reference.version}"
         )
     path = Path(reference.path)
     if not path.is_absolute() and base_path is not None:
@@ -1073,8 +1072,7 @@ def _reject_evaluation_dataset_install_duplicates(
     if duplicates:
         formatted = ", ".join(f"{name}@{version}" for name, version in sorted(duplicates))
         raise EcosystemRegistryInstallError(
-            "evaluation datasets already registered or duplicated in install plan: "
-            f"{formatted}"
+            f"evaluation datasets already registered or duplicated in install plan: {formatted}"
         )
 
 
