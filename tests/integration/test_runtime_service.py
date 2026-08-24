@@ -11,6 +11,7 @@ from universal_agent import (
     DecisionType,
     DistributedLockOwnerId,
     DistributedRuntimeCoordinator,
+    DomainConfig,
     DomainLoader,
     Goal,
     InMemoryEventSink,
@@ -18,6 +19,7 @@ from universal_agent import (
     ModelUsage,
     RuntimeAPI,
     RuntimeBuilder,
+    RuntimeConfig,
     RuntimeService,
     ScriptedModelAdapter,
     SuccessCriterion,
@@ -145,6 +147,35 @@ def build_service(
         domain_packages=domain_packages,
         distributed_coordinator=distributed_coordinator,
     ), backend
+
+
+def test_runtime_service_config_redacts_sensitive_environment_values() -> None:
+    backend = ServiceBackend()
+    active = DomainLoader().load(KubernetesRemediationDomain(backend, backend))
+    components = RuntimeBuilder().build(active)
+    config = RuntimeConfig(
+        environment=immutable_json(
+            {
+                "environment": "production",
+                "api_token": "token-value",
+                "nested": {"password": "pw-value", "safe": "visible"},
+                "items": [{"secret_key": "secret-value", "name": "kept"}],
+            }
+        ),
+        domain=DomainConfig("kubernetes", "0.2.0"),
+    )
+    service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+        config=config,
+    )
+
+    assert service.config().environment == {
+        "environment": "production",
+        "api_token": "<redacted>",
+        "nested": {"password": "<redacted>", "safe": "visible"},
+        "items": [{"secret_key": "<redacted>", "name": "kept"}],
+    }
 
 
 def package_registry() -> DomainPackageRegistry:

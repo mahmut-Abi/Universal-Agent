@@ -225,7 +225,7 @@ event-sourcing models or production migration systems.
   `RuntimeService` now adds framework-free `agentd` foundation metadata: health, readiness, domains,
   capabilities, tools, delegated execution, runnable examples, an `AgentdApp` route adapter for
   HTTP-shaped goal submission, cursor session listing, JSON and SSE-formatted session/event reads,
-  pause/resume/cancel routes, runtime configuration reads,
+  pause/resume/cancel routes, runtime configuration reads with redacted sensitive environment values,
   Profile catalog reads, a standard-library `AgentdHttpServer` bridge, file-backed session/event
   stores for local recovery, a local CLI adapter, and typed
   `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, memory/file/SQLite store backends,

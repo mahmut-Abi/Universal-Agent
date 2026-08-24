@@ -224,6 +224,19 @@ class ProfileView:
     domains: tuple[DomainIdentity, ...] = ()
 
 
+REDACTED_ENVIRONMENT_VALUE = "<redacted>"
+SENSITIVE_ENVIRONMENT_KEY_PARTS = (
+    "api_key",
+    "apikey",
+    "access_key",
+    "credential",
+    "password",
+    "private_key",
+    "secret",
+    "token",
+)
+
+
 @dataclass(frozen=True, slots=True)
 class RuntimeConfigDomainView:
     name: str
@@ -485,7 +498,7 @@ class RuntimeService:
             if domain.name is not None and domain.version is not None
         )
         return RuntimeConfigView(
-            environment=immutable_json(self._config.environment),
+            environment=redact_environment(self._config.environment),
             store_backend=self._config.store.backend.value,
             store_path=self._config.store.path,
             distributed_queue_backend=self._config.distributed_queue.backend.value,
@@ -1454,6 +1467,31 @@ def _distributed_session_lock_owner(item: WorkItem) -> DistributedLockOwnerId:
 
 def _format_identities(identities: tuple[DomainIdentity, ...]) -> str:
     return ", ".join(f"{identity.name}@{identity.version}" for identity in identities) or "<none>"
+
+
+def redact_environment(environment: JsonMapping) -> JsonMapping:
+    return immutable_json(
+        {key: _redact_environment_item(key, value) for key, value in environment.items()}
+    )
+
+
+def _redact_environment_item(key: str, value: JsonValue) -> JsonValue:
+    if _is_sensitive_environment_key(key):
+        return REDACTED_ENVIRONMENT_VALUE
+    return _redact_environment_value(value)
+
+
+def _redact_environment_value(value: JsonValue) -> JsonValue:
+    if isinstance(value, Mapping):
+        return {key: _redact_environment_item(key, item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_environment_value(item) for item in value]
+    return value
+
+
+def _is_sensitive_environment_key(key: str) -> bool:
+    normalized = key.lower().replace("-", "_")
+    return any(part in normalized for part in SENSITIVE_ENVIRONMENT_KEY_PARTS)
 
 
 def runtime_config_domain_views(

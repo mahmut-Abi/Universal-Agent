@@ -191,6 +191,7 @@ def build_service(
     usage: list[ModelUsage] | None = None,
     distributed_coordinator: DistributedRuntimeCoordinator | None = None,
     domain_packages: DomainPackageRegistry | None = None,
+    environment: JsonMapping | None = None,
 ) -> tuple[RuntimeService, AgentdBackend]:
     backend = AgentdBackend()
     store = InMemoryStateStore()
@@ -198,16 +199,19 @@ def build_service(
     components = RuntimeBuilder().build(
         DomainLoader().load(KubernetesRemediationDomain(backend, backend))
     )
+    environment = (
+        environment if environment is not None else immutable_json({"environment": "staging"})
+    )
     runtime = AgentRuntime(
         model=ScriptedModelAdapter(decisions, usage=usage or ()),
         state_store=store,
         components=components,
         event_sink=events,
-        environment=immutable_json({"environment": "staging"}),
+        environment=environment,
     )
     api = RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
     config = RuntimeConfig(
-        environment=immutable_json({"environment": "staging"}),
+        environment=environment,
         store=StoreConfig.memory(),
         limits=RuntimeLimitsConfig(max_iterations=12, max_recovery_steps=4),
         domain=DomainConfig("kubernetes", "0.2.0"),
@@ -336,6 +340,33 @@ def find_named(items: JsonValue, name: str) -> dict[str, JsonValue]:
         if item["name"] == name:
             return item
     raise AssertionError(f"missing item: {name}")
+
+
+@pytest.mark.asyncio
+async def test_agentd_config_route_redacts_sensitive_environment_values() -> None:
+    service, _ = build_service(
+        [],
+        environment=immutable_json(
+            {
+                "environment": "staging",
+                "password": "pw-value",
+                "nested": {"api_token": "token-value", "safe": "visible"},
+            }
+        ),
+    )
+    app = AgentdApp(service)
+
+    config = await app.handle(HttpRequest("GET", "/v1/config"))
+
+    assert config.status_code == 200
+    assert config.body is not None
+    environment = config.body["environment"]
+    assert isinstance(environment, dict)
+    assert environment == {
+        "environment": "staging",
+        "password": "<redacted>",
+        "nested": {"api_token": "<redacted>", "safe": "visible"},
+    }
 
 
 @pytest.mark.asyncio
