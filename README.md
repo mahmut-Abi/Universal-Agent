@@ -338,7 +338,10 @@ event-sourcing models or production migration systems.
   adapts a target `RuntimeAPI` without creating a second Agent loop or bypassing the target Runtime's
   policy/evaluation path. `AgentConflictResolver` resolves structured action proposals by policy,
   read-only constraints, side effect, risk and explicit priority, and requires review for equal-rank
-  conflicts instead of using last-result-wins. This is a foundation for optional Multi-Agent
+  conflicts instead of using last-result-wins. `AgentResultMerger` then combines child
+  `AgentTaskResult` objects and conflict resolutions into a read-only merge report with deduplicated
+  Evidence IDs, missing/failed/waiting task classification and configurable completion policy without
+  inventing new Evidence or updating the World Model. This is a foundation for optional Multi-Agent
   execution, not a replacement for Domain Composition.
 
 The Kubernetes Domain uses injected backends. Most tests and examples use fake backends; no real
@@ -370,7 +373,8 @@ The design roadmap now separates semantic runtime maturity from productization:
 - P3.6-P3.7: Operations and Evaluation — OpenTelemetry, metrics, audit, cost tracking, runtime
   doctor, evaluation suites, quality gates, replay, and deterministic test mode.
 - P4: Multi-Agent foundation — structured Agent Task / Result contracts, Agent Profile vs Instance
-  registry, delegation limits, conflict resolution, and a RuntimeAPI executor adapter.
+  registry, delegation limits, conflict resolution, result/evidence merge, and a RuntimeAPI executor
+  adapter.
 - P5: Read-only TUI/Web application views for runtime, session, evidence, world, domain and settings inspection.
 - P6: Distributed Runtime foundations — typed local Scheduler, Work Queue, Worker Registry, Worker Lease, capability-aware Worker handler
   execution, scheduled Goal execution, current Task resume, leased lock, Runtime Snapshot, Health Report, Coordinator, Heartbeat, retry, cancellation and lease expiry primitives.

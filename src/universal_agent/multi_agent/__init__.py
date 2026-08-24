@@ -16,6 +16,13 @@ from universal_agent.multi_agent.contracts import (
     agent_task_request_payload,
     agent_task_result_payload,
 )
+from universal_agent.multi_agent.merge import (
+    AgentResultMerge,
+    AgentResultMergePolicy,
+    AgentResultMerger,
+    AgentResultMergeStatus,
+    agent_result_merge_payload,
+)
 from universal_agent.multi_agent.orchestrator import (
     AgentDelegationError,
     AgentDelegationLimitError,
@@ -58,6 +65,10 @@ __all__ = [
     "AgentRegistry",
     "AgentRegistryError",
     "AgentRegistrySnapshot",
+    "AgentResultMerge",
+    "AgentResultMergePolicy",
+    "AgentResultMergeStatus",
+    "AgentResultMerger",
     "AgentTaskConstraints",
     "AgentTaskId",
     "AgentTaskRequest",
@@ -67,6 +78,7 @@ __all__ = [
     "ConflictResolutionStatus",
     "NoEligibleAgentError",
     "RuntimeAgentExecutor",
+    "agent_result_merge_payload",
     "agent_task_request_payload",
     "agent_task_result_payload",
     "rejected_agent_task_result",
