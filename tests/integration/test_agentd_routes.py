@@ -875,6 +875,13 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
     expire_get = await app.handle(HttpRequest("GET", "/v1/distributed/expire"))
     missing_service, _ = build_service([])
     missing = await AgentdApp(missing_service).handle(HttpRequest("GET", "/v1/distributed/health"))
+    gap_coordinator = DistributedRuntimeCoordinator()
+    gap_coordinator.scheduler.schedule_session(
+        SessionId("session-without-worker"),
+        available_at=now,
+    )
+    gap_service, _ = build_service([], distributed_coordinator=gap_coordinator)
+    gap_health = await AgentdApp(gap_service).handle(HttpRequest("GET", "/v1/distributed/health"))
 
     assert snapshot.status_code == 200
     work_queue = snapshot.body["work_queue"]
@@ -902,7 +909,20 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
     first_check = checks[0]
     assert isinstance(first_check, dict)
     assert health.body["status"] == "ok"
+    assert health.body["recommendations"] == []
     assert first_check["name"] == "worker_pool"
+    recommendations = json_array(gap_health.body["recommendations"])
+    assert {
+        (
+            json_string(recommendation["code"]),
+            json_string(recommendation["severity"]),
+            recommendation["target"],
+        )
+        for recommendation in (json_object(item) for item in recommendations)
+    } == {
+        ("start_worker_pool", "error", None),
+        ("start_capable_worker", "error", "agent_session"),
+    }
     assert missing.status_code == 404
     error = missing.body["error"]
     assert isinstance(error, dict)

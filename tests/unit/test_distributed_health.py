@@ -39,6 +39,7 @@ def test_distributed_health_report_is_ok_when_work_has_capable_workers() -> None
     assert report.status is DistributedHealthStatus.OK
     assert report.capacity_gaps == ()
     assert report.expiring_leases == ()
+    assert report.recommendations == ()
     assert checks["capacity"] is DistributedHealthStatus.OK
 
 
@@ -69,6 +70,10 @@ def test_distributed_health_report_detects_missing_worker_capacity() -> None:
     assert [
         (gap.kind, gap.queued_count, gap.capable_online_workers) for gap in report.capacity_gaps
     ] == [("tool_action", 1, 0)]
+    assert [
+        (recommendation.code, recommendation.severity, recommendation.target)
+        for recommendation in report.recommendations
+    ] == [("start_capable_worker", DistributedHealthStatus.ERROR, "tool_action")]
     assert checks["capacity"] is DistributedHealthStatus.ERROR
 
 
@@ -114,6 +119,12 @@ def test_distributed_health_report_warns_on_backlog_and_expiring_leases() -> Non
         ("work_item", str(leased.work_item_id)),
         ("worker", "worker-a"),
     ]
+    assert [
+        (recommendation.code, recommendation.severity) for recommendation in report.recommendations
+    ] == [
+        ("drain_queue_backlog", DistributedHealthStatus.WARN),
+        ("renew_expiring_leases", DistributedHealthStatus.WARN),
+    ]
 
 
 def test_distributed_health_report_detects_stale_leases_and_lost_workers() -> None:
@@ -140,6 +151,14 @@ def test_distributed_health_report_detects_stale_leases_and_lost_workers() -> No
     assert checks["leased_work_owners"] is DistributedHealthStatus.ERROR
     assert checks["worker_registry"] is DistributedHealthStatus.WARN
     assert report.expiring_leases[0].seconds_remaining == -1.0
+    assert [
+        (recommendation.code, recommendation.severity) for recommendation in report.recommendations
+    ] == [
+        ("start_worker_pool", DistributedHealthStatus.ERROR),
+        ("run_expiry_sweep", DistributedHealthStatus.ERROR),
+        ("inspect_leased_work_owners", DistributedHealthStatus.ERROR),
+        ("inspect_worker_registry", DistributedHealthStatus.WARN),
+    ]
 
 
 def test_distributed_health_report_validates_thresholds() -> None:

@@ -45,11 +45,20 @@ class DistributedExpiringLease:
 
 
 @dataclass(frozen=True, slots=True)
+class DistributedHealthRecommendation:
+    code: str
+    severity: DistributedHealthStatus
+    target: str | None
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
 class DistributedHealthReport:
     status: DistributedHealthStatus
     checks: tuple[DistributedHealthCheck, ...]
     capacity_gaps: tuple[DistributedCapacityGap, ...]
     expiring_leases: tuple[DistributedExpiringLease, ...]
+    recommendations: tuple[DistributedHealthRecommendation, ...]
 
 
 def build_distributed_health_report(
@@ -91,6 +100,11 @@ def build_distributed_health_report(
         checks=checks,
         capacity_gaps=capacity_gaps,
         expiring_leases=expiring_leases,
+        recommendations=_recommendations(
+            checks=checks,
+            capacity_gaps=capacity_gaps,
+            expiring_leases=expiring_leases,
+        ),
     )
 
 
@@ -233,6 +247,87 @@ def _worker_registry_check(snapshot: DistributedRuntimeSnapshot) -> DistributedH
         DistributedHealthStatus.OK,
         f"workers registered={snapshot.workers.total_count}",
     )
+
+
+def _recommendations(
+    *,
+    checks: tuple[DistributedHealthCheck, ...],
+    capacity_gaps: tuple[DistributedCapacityGap, ...],
+    expiring_leases: tuple[DistributedExpiringLease, ...],
+) -> tuple[DistributedHealthRecommendation, ...]:
+    check_by_name = {check.name: check for check in checks}
+    recommendations: list[DistributedHealthRecommendation] = []
+    worker_pool = check_by_name["worker_pool"]
+    if worker_pool.status is DistributedHealthStatus.ERROR:
+        recommendations.append(
+            DistributedHealthRecommendation(
+                code="start_worker_pool",
+                severity=DistributedHealthStatus.ERROR,
+                target=None,
+                message="register at least one online worker before processing active work",
+            )
+        )
+    queue_backlog = check_by_name["queue_backlog"]
+    if queue_backlog.status is DistributedHealthStatus.WARN:
+        recommendations.append(
+            DistributedHealthRecommendation(
+                code="drain_queue_backlog",
+                severity=DistributedHealthStatus.WARN,
+                target=None,
+                message="run capable workers or raise worker capacity to reduce queued backlog",
+            )
+        )
+    for gap in capacity_gaps:
+        recommendations.append(
+            DistributedHealthRecommendation(
+                code="start_capable_worker",
+                severity=DistributedHealthStatus.ERROR,
+                target=gap.kind,
+                message=f"start or register an online worker that handles {gap.kind}",
+            )
+        )
+    expired_count = sum(1 for lease in expiring_leases if lease.seconds_remaining <= 0)
+    if expired_count:
+        recommendations.append(
+            DistributedHealthRecommendation(
+                code="run_expiry_sweep",
+                severity=DistributedHealthStatus.ERROR,
+                target=None,
+                message="run distributed expire to reconcile expired work, lock and worker leases",
+            )
+        )
+    elif expiring_leases:
+        recommendations.append(
+            DistributedHealthRecommendation(
+                code="renew_expiring_leases",
+                severity=DistributedHealthStatus.WARN,
+                target=None,
+                message="heartbeat active leases or run distributed expire before leases lapse",
+            )
+        )
+    leased_work_owners = check_by_name["leased_work_owners"]
+    if leased_work_owners.status is not DistributedHealthStatus.OK:
+        recommendations.append(
+            DistributedHealthRecommendation(
+                code="inspect_leased_work_owners",
+                severity=leased_work_owners.status,
+                target=None,
+                message="inspect leased work owners before retrying or cancelling affected work",
+            )
+        )
+    worker_registry = check_by_name["worker_registry"]
+    if worker_registry.status is not DistributedHealthStatus.OK:
+        recommendations.append(
+            DistributedHealthRecommendation(
+                code="inspect_worker_registry",
+                severity=worker_registry.status,
+                target=None,
+                message=(
+                    "inspect lost, offline or draining workers and restart or mark them offline"
+                ),
+            )
+        )
+    return tuple(recommendations)
 
 
 def _capacity_gaps(snapshot: DistributedRuntimeSnapshot) -> tuple[DistributedCapacityGap, ...]:

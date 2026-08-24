@@ -48,6 +48,13 @@ def main() -> None:
     print(f"status={report.status.value}")
     print("checks=" + ",".join(f"{check.name}:{check.status.value}" for check in report.checks))
     print(f"expiring_leases={len(report.expiring_leases)}")
+    print(
+        "recommendations="
+        + ",".join(
+            f"{item.code}:{item.severity.value}:{item.target or '-'}"
+            for item in report.recommendations
+        )
+    )
 
 
 if __name__ == "__main__":

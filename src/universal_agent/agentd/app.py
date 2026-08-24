@@ -1409,6 +1409,15 @@ def distributed_health_body(view: DistributedHealthReport) -> JsonMapping:
                 }
                 for lease in view.expiring_leases
             ],
+            "recommendations": [
+                {
+                    "code": recommendation.code,
+                    "severity": recommendation.severity.value,
+                    "target": recommendation.target,
+                    "message": recommendation.message,
+                }
+                for recommendation in view.recommendations
+            ],
         }
     )
 
