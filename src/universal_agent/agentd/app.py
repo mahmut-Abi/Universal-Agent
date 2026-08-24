@@ -128,17 +128,27 @@ class GoalSubmission:
 @dataclass(frozen=True, slots=True)
 class AgentdAuthPolicy:
     bearer_token: str | None = None
+    read_only_bearer_token: str | None = None
     public_paths: tuple[str, ...] = ("/health", "/ready")
 
     def __post_init__(self) -> None:
-        if self.bearer_token is not None and not self.bearer_token.strip():
-            raise ValueError("agentd bearer token must not be empty")
+        _validate_bearer_token(self.bearer_token, "agentd bearer token")
+        _validate_bearer_token(
+            self.read_only_bearer_token,
+            "agentd read-only bearer token",
+        )
+        if (
+            self.bearer_token is not None
+            and self.read_only_bearer_token is not None
+            and hmac.compare_digest(self.bearer_token, self.read_only_bearer_token)
+        ):
+            raise ValueError("agentd bearer token and read-only bearer token must differ")
         if any(not path.startswith("/") or not path.strip() for path in self.public_paths):
             raise ValueError("agentd public paths must be absolute non-empty paths")
 
     @property
     def enabled(self) -> bool:
-        return self.bearer_token is not None
+        return self.bearer_token is not None or self.read_only_bearer_token is not None
 
 
 class AgentdApp:
@@ -157,7 +167,7 @@ class AgentdApp:
         method = request.method.upper()
         path = _normalize_path(request.path)
 
-        auth_response = _authenticate(self._auth, request, path)
+        auth_response = _authenticate(self._auth, request, path, method=method)
         if auth_response is not None:
             return auth_response
 
@@ -927,6 +937,10 @@ def unauthorized() -> HttpResponse:
     )
 
 
+def forbidden(message: str) -> HttpResponse:
+    return json_response(error_body("forbidden", message), status_code=403)
+
+
 def bad_request(message: str) -> HttpResponse:
     return json_response(error_body("bad_request", message), status_code=400)
 
@@ -957,16 +971,32 @@ def _authenticate(
     policy: AgentdAuthPolicy,
     request: HttpRequest,
     path: str,
+    *,
+    method: str,
 ) -> HttpResponse | None:
     if not policy.enabled or path in policy.public_paths:
         return None
-    expected = policy.bearer_token
-    if expected is None:
-        return None
     token = _bearer_token(_header_value(request.headers, "authorization"))
-    if token is None or not hmac.compare_digest(token, expected):
+    if token is None:
         return unauthorized()
-    return None
+    if _token_matches(token, policy.bearer_token):
+        return None
+    if _token_matches(token, policy.read_only_bearer_token):
+        if method == "GET":
+            return None
+        return forbidden("insufficient bearer token scope")
+    return unauthorized()
+
+
+def _validate_bearer_token(value: str | None, field: str) -> None:
+    if value is not None and not value.strip():
+        raise ValueError(f"{field} must not be empty")
+
+
+def _token_matches(token: str, expected: str | None) -> bool:
+    if expected is None:
+        return False
+    return hmac.compare_digest(token, expected)
 
 
 def _header_value(headers: Mapping[str, str], name: str) -> str | None:

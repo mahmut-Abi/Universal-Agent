@@ -372,7 +372,13 @@ async def test_agentd_config_route_redacts_sensitive_environment_values() -> Non
 @pytest.mark.asyncio
 async def test_agentd_auth_policy_protects_non_public_routes() -> None:
     service, _ = build_service([])
-    app = AgentdApp(service, auth=AgentdAuthPolicy("local-token"))
+    app = AgentdApp(
+        service,
+        auth=AgentdAuthPolicy(
+            bearer_token="local-token",
+            read_only_bearer_token="reader-token",
+        ),
+    )
 
     health = await app.handle(HttpRequest("GET", "/health"))
     missing = await app.handle(HttpRequest("GET", "/v1/config"))
@@ -390,6 +396,20 @@ async def test_agentd_auth_policy_protects_non_public_routes() -> None:
             headers={"AUTHORIZATION": "Bearer local-token"},
         )
     )
+    read_allowed = await app.handle(
+        HttpRequest(
+            "GET",
+            "/v1/config",
+            headers={"authorization": "Bearer reader-token"},
+        )
+    )
+    read_denied = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/sessions",
+            headers={"authorization": "Bearer reader-token"},
+        )
+    )
 
     assert health.status_code == 200
     assert missing.status_code == 401
@@ -400,6 +420,20 @@ async def test_agentd_auth_policy_protects_non_public_routes() -> None:
     }
     assert missing.headers["www-authenticate"] == 'Bearer realm="agentd"'
     assert authorized.status_code == 200
+    assert read_allowed.status_code == 200
+    assert read_denied.status_code == 403
+    assert read_denied.body["error"] == {
+        "code": "forbidden",
+        "message": "insufficient bearer token scope",
+    }
+
+
+def test_agentd_auth_policy_rejects_ambiguous_token_scopes() -> None:
+    with pytest.raises(ValueError, match="must differ"):
+        AgentdAuthPolicy(
+            bearer_token="same-token",
+            read_only_bearer_token="same-token",
+        )
 
 
 @pytest.mark.asyncio

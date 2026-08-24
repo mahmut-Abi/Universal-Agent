@@ -47,7 +47,13 @@ def build_service() -> RuntimeService:
 
 
 async def main() -> None:
-    app = AgentdApp(build_service(), auth=AgentdAuthPolicy("local-token"))
+    app = AgentdApp(
+        build_service(),
+        auth=AgentdAuthPolicy(
+            bearer_token="local-token",
+            read_only_bearer_token="reader-token",
+        ),
+    )
 
     public = await app.handle(HttpRequest("GET", "/health"))
     denied = await app.handle(HttpRequest("GET", "/v1/config"))
@@ -58,10 +64,26 @@ async def main() -> None:
             headers={"authorization": "Bearer local-token"},
         )
     )
+    read_only_allowed = await app.handle(
+        HttpRequest(
+            "GET",
+            "/v1/config",
+            headers={"authorization": "Bearer reader-token"},
+        )
+    )
+    read_only_denied = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/sessions",
+            headers={"authorization": "Bearer reader-token"},
+        )
+    )
 
     print(f"health_status={public.status_code}")
     print(f"unauthorized_status={denied.status_code}")
     print(f"authorized_status={allowed.status_code}")
+    print(f"read_only_authorized_status={read_only_allowed.status_code}")
+    print(f"read_only_write_status={read_only_denied.status_code}")
     print(f"auth_header={denied.headers['www-authenticate']}")
 
 

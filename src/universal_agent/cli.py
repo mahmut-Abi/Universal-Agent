@@ -458,6 +458,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--auth-token")
+    serve.add_argument("--read-only-auth-token")
 
     run = commands.add_parser("run")
     run.add_argument("profile")
@@ -1685,8 +1686,15 @@ def _dispatch_serve(
     host = cast(str, args.host)
     port = cast(int, args.port)
     auth_token = cast(str | None, args.auth_token)
+    read_only_auth_token = cast(str | None, args.read_only_auth_token)
     server = AgentdHttpServer(
-        AgentdApp(service, auth=AgentdAuthPolicy(auth_token)),
+        AgentdApp(
+            service,
+            auth=AgentdAuthPolicy(
+                bearer_token=auth_token,
+                read_only_bearer_token=read_only_auth_token,
+            ),
+        ),
         AgentdServerConfig(host=host, port=port),
     )
     try:
@@ -1697,7 +1705,8 @@ def _dispatch_serve(
                 "base_url": server.base_url,
                 "host": host,
                 "port": server.server_address[1],
-                "auth_required": auth_token is not None,
+                "auth_required": auth_token is not None or read_only_auth_token is not None,
+                "read_only_auth_enabled": read_only_auth_token is not None,
             },
         )
         out.flush()
