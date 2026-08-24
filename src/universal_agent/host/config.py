@@ -74,12 +74,16 @@ class RuntimeLimitsConfig:
 class DomainConfig:
     name: str | None = None
     version: str | None = None
+    backend: str | None = None
+    settings: JsonMapping = field(default_factory=immutable_json)
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> DomainConfig:
         config = cls(
             name=_optional_string(values.get("name"), "name"),
             version=_optional_string(values.get("version"), "version"),
+            backend=_optional_string(values.get("backend"), "backend"),
+            settings=immutable_json(_object(values.get("settings", {}), "settings")),
         )
         config.validate()
         return config
@@ -89,6 +93,8 @@ class DomainConfig:
             raise ValueError("domain name must not be empty")
         if self.version is not None and not self.version:
             raise ValueError("domain version must not be empty")
+        if self.backend is not None and not self.backend.strip():
+            raise ValueError("domain backend must not be empty")
 
     def identity(self) -> DomainIdentity:
         if self.name is None or self.version is None:

@@ -61,6 +61,30 @@ def test_profile_config_from_mapping_parses_runtime_and_domain() -> None:
     assert profile.runtime.environment["environment"] == "production"
 
 
+def test_profile_config_matches_domains_by_identity_when_runtime_has_backend() -> None:
+    config = ProfileConfig.from_mapping(
+        {
+            "name": "kubectl-operator",
+            "version": "1.0.0",
+            "domain": {"name": "kubernetes", "version": "0.2.0"},
+            "runtime": {
+                "domain": {
+                    "name": "kubernetes",
+                    "version": "0.2.0",
+                    "backend": "kubectl",
+                    "settings": {"default_namespace": "prod"},
+                }
+            },
+        }
+    )
+
+    profile = config.to_profile()
+
+    assert profile.domain == DomainConfig("kubernetes", "0.2.0")
+    assert profile.runtime.domain.backend == "kubectl"
+    assert profile.runtime.domain.settings["default_namespace"] == "prod"
+
+
 def test_profile_config_from_mapping_parses_multi_domain_profile() -> None:
     config = ProfileConfig.from_mapping(
         {

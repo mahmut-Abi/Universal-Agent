@@ -60,6 +60,7 @@ from universal_agent.core import (
     ExecutionStatus,
     Goal,
     JsonMapping,
+    JsonValue,
     SessionId,
     SuccessCriterion,
     Task,
@@ -88,7 +89,12 @@ from universal_agent.domain import (
     RuntimeBuilder,
     scaffold_domain_package,
 )
-from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.domains.kubernetes import (
+    KubectlBackend,
+    KubernetesBackend,
+    KubernetesMutationBackend,
+    KubernetesRemediationDomain,
+)
 from universal_agent.ecosystem import (
     EcosystemCatalog,
     EcosystemCatalogVerificationReport,
@@ -264,13 +270,39 @@ def build_default_service() -> RuntimeService:
 
 def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
     profile = ProfileConfig.from_json_file(profile_config_path).to_profile()
-    backend = _DefaultCliBackend()
+    backend = _configured_kubernetes_backend(
+        profile.runtime.configured_domains() or (profile.domain,)
+    )
     host = RuntimeHost.from_profile(
         profile=profile,
         model=ScriptedModelAdapter(_default_decisions()),
-        domain=KubernetesRemediationDomain(backend, backend),
+        domain=KubernetesRemediationDomain(
+            cast(KubernetesBackend, backend),
+            cast(KubernetesMutationBackend, backend),
+        ),
     )
     return host.service
+
+
+def _configured_kubernetes_backend(domains: tuple[DomainConfig, ...]) -> object:
+    if not domains:
+        return _DefaultCliBackend()
+    primary = domains[0]
+    backend = primary.backend or "fake"
+    if backend == "fake":
+        return _DefaultCliBackend()
+    if backend == "kubectl":
+        return KubectlBackend(
+            default_namespace=_setting_string(
+                primary.settings,
+                "default_namespace",
+                default="default",
+            ),
+            context=_optional_setting_string(primary.settings, "context"),
+            kubeconfig=_optional_setting_string(primary.settings, "kubeconfig"),
+            timeout_seconds=_setting_float(primary.settings, "timeout_seconds", default=10.0),
+        )
+    raise ValueError(f"unsupported Kubernetes domain backend: {backend}")
 
 
 async def run_cli(
@@ -448,6 +480,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="memory",
     )
     init.add_argument("--distributed-workers-path", default=".universal-agent/workers.json")
+    init.add_argument("--domain-backend", choices=("fake", "kubectl"), default="fake")
+    init.add_argument("--kubectl-namespace", default="default")
+    init.add_argument("--kubectl-context")
+    init.add_argument("--kubectl-kubeconfig")
+    init.add_argument("--kubectl-timeout-seconds", type=float, default=10.0)
     init.add_argument("--force", action="store_true")
 
     config = commands.add_parser("config")
@@ -1624,6 +1661,11 @@ def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
         distributed_locks_path=cast(str, args.distributed_locks_path),
         distributed_workers_backend=cast(str, args.distributed_workers_backend),
         distributed_workers_path=cast(str, args.distributed_workers_path),
+        domain_backend=cast(str, args.domain_backend),
+        kubectl_namespace=cast(str, args.kubectl_namespace),
+        kubectl_context=cast(str | None, args.kubectl_context),
+        kubectl_kubeconfig=cast(str | None, args.kubectl_kubeconfig),
+        kubectl_timeout_seconds=cast(float, args.kubectl_timeout_seconds),
     )
     tmp_path = output.with_name(output.name + ".tmp")
     with tmp_path.open("w", encoding="utf-8") as handle:
@@ -1645,8 +1687,19 @@ def _profile_config_payload(
     distributed_locks_path: str,
     distributed_workers_backend: str,
     distributed_workers_path: str,
+    domain_backend: str,
+    kubectl_namespace: str,
+    kubectl_context: str | None,
+    kubectl_kubeconfig: str | None,
+    kubectl_timeout_seconds: float,
 ) -> dict[str, object]:
-    domain = {"name": "kubernetes", "version": "0.2.0"}
+    domain = _profile_domain_config(
+        domain_backend=domain_backend,
+        kubectl_namespace=kubectl_namespace,
+        kubectl_context=kubectl_context,
+        kubectl_kubeconfig=kubectl_kubeconfig,
+        kubectl_timeout_seconds=kubectl_timeout_seconds,
+    )
     store: dict[str, str] = {"backend": store_backend}
     if store_backend != "memory":
         store["path"] = store_path
@@ -1674,6 +1727,55 @@ def _profile_config_payload(
             "domain": domain,
         },
     }
+
+
+def _profile_domain_config(
+    *,
+    domain_backend: str,
+    kubectl_namespace: str,
+    kubectl_context: str | None,
+    kubectl_kubeconfig: str | None,
+    kubectl_timeout_seconds: float,
+) -> dict[str, object]:
+    domain: dict[str, object] = {"name": "kubernetes", "version": "0.2.0"}
+    if domain_backend == "fake":
+        return domain
+    if domain_backend != "kubectl":
+        raise ValueError(f"unsupported domain backend: {domain_backend}")
+    settings: dict[str, object] = {
+        "default_namespace": kubectl_namespace,
+        "timeout_seconds": kubectl_timeout_seconds,
+    }
+    if kubectl_context:
+        settings["context"] = kubectl_context
+    if kubectl_kubeconfig:
+        settings["kubeconfig"] = kubectl_kubeconfig
+    domain["backend"] = "kubectl"
+    domain["settings"] = settings
+    return domain
+
+
+def _setting_string(settings: JsonMapping, key: str, *, default: str) -> str:
+    value = settings.get(key, default)
+    if isinstance(value, str) and value.strip():
+        return value
+    raise ValueError(f"domain setting {key} must be a non-empty string")
+
+
+def _optional_setting_string(settings: JsonMapping, key: str) -> str | None:
+    value = settings.get(key)
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip():
+        return value
+    raise ValueError(f"domain setting {key} must be a non-empty string")
+
+
+def _setting_float(settings: JsonMapping, key: str, *, default: float) -> float:
+    value: JsonValue = settings.get(key, default)
+    if isinstance(value, int | float) and not isinstance(value, bool) and value > 0:
+        return float(value)
+    raise ValueError(f"domain setting {key} must be a positive number")
 
 
 def _dispatch_serve(

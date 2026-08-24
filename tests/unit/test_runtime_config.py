@@ -65,6 +65,33 @@ def test_runtime_config_from_mapping_parses_multi_domain_values() -> None:
     )
 
 
+def test_runtime_config_from_mapping_parses_domain_backend_settings() -> None:
+    config = RuntimeConfig.from_mapping(
+        {
+            "domain": {
+                "name": "kubernetes",
+                "version": "0.2.0",
+                "backend": "kubectl",
+                "settings": {
+                    "default_namespace": "prod",
+                    "context": "prod-cluster",
+                    "kubeconfig": "/tmp/kubeconfig",
+                    "timeout_seconds": 3.5,
+                },
+            },
+        }
+    )
+
+    assert config.domain.backend == "kubectl"
+    assert config.domain.settings == {
+        "default_namespace": "prod",
+        "context": "prod-cluster",
+        "kubeconfig": "/tmp/kubeconfig",
+        "timeout_seconds": 3.5,
+    }
+    assert config.domain.identity().name == "kubernetes"
+
+
 def test_runtime_config_from_json_file_parses_typed_values(tmp_path: Path) -> None:
     path = tmp_path / "runtime-config.json"
     path.write_text(

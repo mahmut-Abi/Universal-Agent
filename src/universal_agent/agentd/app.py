@@ -70,6 +70,7 @@ from universal_agent.service import (
     PolicyView,
     ProfileView,
     ReadyView,
+    RuntimeConfigDomainView,
     RuntimeConfigView,
     RuntimeCostView,
     RuntimeLogRecordView,
@@ -1219,16 +1220,22 @@ def config_body(view: RuntimeConfigView) -> JsonMapping:
                 "max_iterations": view.max_iterations,
                 "max_recovery_steps": view.max_recovery_steps,
             },
-            "domains": [
-                {
-                    "name": domain.name,
-                    "version": domain.version,
-                    "primary": domain.primary,
-                }
-                for domain in view.domains
-            ],
+            "domains": [_runtime_config_domain_body(domain) for domain in view.domains],
         }
     )
+
+
+def _runtime_config_domain_body(view: RuntimeConfigDomainView) -> dict[str, JsonValue]:
+    body: dict[str, JsonValue] = {
+        "name": view.name,
+        "version": view.version,
+        "primary": view.primary,
+    }
+    if view.backend is not None:
+        body["backend"] = view.backend
+    if view.settings:
+        body["settings"] = _json_value(view.settings)
+    return body
 
 
 def metrics_body(view: RuntimeMetricsView) -> JsonMapping:

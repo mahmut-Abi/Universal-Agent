@@ -90,8 +90,9 @@ class ProfileConfig:
         if duplicates:
             raise ValueError("duplicate profile domains: " + ", ".join(duplicates))
         self.runtime.validate()
-        runtime_domains = self.runtime.configured_domains()
-        if runtime_domains and runtime_domains != self.configured_domains():
+        runtime_domains = _domain_identities(self.runtime.configured_domains())
+        profile_domains = _domain_identities(self.configured_domains())
+        if runtime_domains and runtime_domains != profile_domains:
             raise ValueError("profile domains must match runtime configured domains")
 
     def to_profile(self) -> AgentProfile:
@@ -300,6 +301,12 @@ def _duplicate_domain_configs(domains: tuple[DomainConfig, ...]) -> tuple[str, .
             duplicates.add(key)
         seen.add(key)
     return tuple(f"{name or ''}@{version or ''}" for name, version in sorted(duplicates))
+
+
+def _domain_identities(
+    domains: tuple[DomainConfig, ...],
+) -> tuple[tuple[str | None, str | None], ...]:
+    return tuple((domain.name, domain.version) for domain in domains)
 
 
 def _profile_identity(profile: AgentProfile) -> str:

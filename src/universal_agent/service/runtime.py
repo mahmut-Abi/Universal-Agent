@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
@@ -92,7 +92,7 @@ from universal_agent.state import StateNotFoundError
 from universal_agent.world import InMemoryWorldModel, WorldFact
 
 if TYPE_CHECKING:
-    from universal_agent.host.config import RuntimeConfig
+    from universal_agent.host.config import DomainConfig, RuntimeConfig
 
 
 _DISTRIBUTED_SESSION_LOCK_TTL_SECONDS = 300.0
@@ -242,6 +242,8 @@ class RuntimeConfigDomainView:
     name: str
     version: str
     primary: bool
+    backend: str | None = None
+    settings: JsonMapping = field(default_factory=immutable_json)
 
 
 @dataclass(frozen=True, slots=True)
@@ -492,11 +494,6 @@ class RuntimeService:
                 max_recovery_steps=8,
                 domains=runtime_config_domain_views(identities),
             )
-        configured = tuple(
-            DomainIdentity(domain.name, domain.version)
-            for domain in self._config.configured_domains()
-            if domain.name is not None and domain.version is not None
-        )
         return RuntimeConfigView(
             environment=redact_environment(self._config.environment),
             store_backend=self._config.store.backend.value,
@@ -509,7 +506,10 @@ class RuntimeService:
             distributed_workers_path=self._config.distributed_workers.path,
             max_iterations=self._config.limits.max_iterations,
             max_recovery_steps=self._config.limits.max_recovery_steps,
-            domains=runtime_config_domain_views(configured or identities),
+            domains=runtime_config_domain_views(
+                identities,
+                self._config.configured_domains(),
+            ),
         )
 
     def distributed_snapshot(self) -> DistributedRuntimeSnapshot | None:
@@ -1499,9 +1499,25 @@ def _is_sensitive_environment_key(key: str) -> bool:
 
 def runtime_config_domain_views(
     identities: tuple[DomainIdentity, ...],
+    configs: tuple[DomainConfig, ...] = (),
 ) -> tuple[RuntimeConfigDomainView, ...]:
+    config_by_identity = {
+        DomainIdentity(config.name, config.version): config
+        for config in configs
+        if config.name is not None and config.version is not None
+    }
     return tuple(
-        RuntimeConfigDomainView(identity.name, identity.version, index == 0)
+        RuntimeConfigDomainView(
+            identity.name,
+            identity.version,
+            index == 0,
+            backend=config.backend if (config := config_by_identity.get(identity)) else None,
+            settings=(
+                redact_environment(config.settings)
+                if (config := config_by_identity.get(identity))
+                else immutable_json()
+            ),
+        )
         for index, identity in enumerate(identities)
     )
 

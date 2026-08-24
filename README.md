@@ -215,7 +215,8 @@ event-sourcing models or production migration systems.
 - P3.2: Kubernetes remediation — policy-gated `scale_workload`, deterministic confirmation,
   capability-scoped timeout recovery, dynamic remediation tasks, fresh health verification, and an
   optional `KubectlBackend` adapter for real `kubectl` inspection/mutation behind the existing
-  injected backend protocols. Mutation receipts never substitute for verification evidence.
+  injected backend protocols plus explicit Profile/CLI opt-in. Mutation receipts never substitute
+  for verification evidence.
 - P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
   projections, lightweight cursor-aware `SessionSummaryView` listing, cursor-aware `EventReader`,
   `RuntimeSessionBatch` / `RuntimeEventBatch`, action idempotency metadata (`idempotency_key`,
@@ -325,8 +326,10 @@ The Kubernetes Domain uses injected backends. Most tests and examples use fake b
 cluster is accessed unless a caller explicitly wires `KubectlBackend`. `KubectlBackend` implements
 the same `KubernetesBackend` / `KubernetesMutationBackend` protocols with subprocess-backed
 `kubectl` calls and can be tested through an injected command runner. See
-`examples/p3_2_kubectl_backend.py` for the adapter shape. The read-only `KubernetesDomain` remains
-available, while `KubernetesRemediationDomain` adds the policy-gated mutation path. Multi-domain operation now
+`examples/p3_2_kubectl_backend.py` for the adapter shape. Profile configs can now opt in with
+`domain.backend = "kubectl"` and domain settings for namespace, context, kubeconfig and timeout;
+the local CLI writes that form with `agent init --domain-backend kubectl` and still defaults to the
+fake backend. The read-only `KubernetesDomain` remains available, while `KubernetesRemediationDomain` adds the policy-gated mutation path. Multi-domain operation now
 has a conservative `DomainManager` / `DomainComposition` foundation: Domain identities,
 capabilities and tools are validated before activation, Domain Loader rejects empty evaluator sets,
 Observation processing routes Evidence extraction, World updating, Task expansion and evaluation
@@ -457,6 +460,8 @@ Python 3.12 or newer is required.
 .venv/bin/python -m universal_agent.cli distributed cancel work-1 --reason "operator cancelled queued work"
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-profile.json --store-backend sqlite --store-path .tmp/runtime.sqlite3 --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-profile.json config show
+.venv/bin/python -m universal_agent.cli init --output .tmp/kubectl-profile.json --domain-backend kubectl --kubectl-namespace prod --kubectl-context prod-cluster --force
+.venv/bin/python -m universal_agent.cli --profile-config .tmp/kubectl-profile.json config show
 .venv/bin/python -m universal_agent.cli init --output .tmp/file-queue-profile.json --distributed-queue-backend file --distributed-queue-path .tmp/work-queue.json --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/file-queue-profile.json config show
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-locks-profile.json --distributed-locks-backend sqlite --distributed-locks-path .tmp/distributed-locks.sqlite3 --force

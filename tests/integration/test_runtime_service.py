@@ -178,6 +178,38 @@ def test_runtime_service_config_redacts_sensitive_environment_values() -> None:
     }
 
 
+def test_runtime_service_config_exposes_domain_backend_settings() -> None:
+    backend = ServiceBackend()
+    active = DomainLoader().load(KubernetesRemediationDomain(backend, backend))
+    components = RuntimeBuilder().build(active)
+    config = RuntimeConfig(
+        domain=DomainConfig(
+            "kubernetes",
+            "0.2.0",
+            backend="kubectl",
+            settings=immutable_json(
+                {
+                    "default_namespace": "prod",
+                    "api_token": "secret-token",
+                }
+            ),
+        ),
+    )
+    service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+        config=config,
+    )
+
+    domain = service.config().domains[0]
+
+    assert domain.backend == "kubectl"
+    assert domain.settings == {
+        "default_namespace": "prod",
+        "api_token": "<redacted>",
+    }
+
+
 def package_registry() -> DomainPackageRegistry:
     package = DomainPackage(
         manifest=DomainPackageManifest(

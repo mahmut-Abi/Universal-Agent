@@ -510,6 +510,42 @@ async def test_cli_init_can_write_memory_profile_config(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_init_can_write_kubectl_domain_backend_config(tmp_path: Path) -> None:
+    output = StringIO()
+    profile_path = tmp_path / "kubectl-profile.json"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--domain-backend",
+            "kubectl",
+            "--kubectl-namespace",
+            "prod",
+            "--kubectl-context",
+            "prod-cluster",
+            "--kubectl-kubeconfig",
+            "/tmp/kubeconfig",
+            "--kubectl-timeout-seconds",
+            "4.5",
+        ],
+        stdout=output,
+    )
+    profile = ProfileConfig.from_json_file(profile_path).to_profile()
+
+    assert status == 0
+    assert profile.domain.backend == "kubectl"
+    assert profile.runtime.domain.backend == "kubectl"
+    assert profile.runtime.domain.settings == {
+        "default_namespace": "prod",
+        "context": "prod-cluster",
+        "kubeconfig": "/tmp/kubeconfig",
+        "timeout_seconds": 4.5,
+    }
+
+
+@pytest.mark.asyncio
 async def test_cli_init_rejects_existing_profile_without_force(tmp_path: Path) -> None:
     output = StringIO()
     error = StringIO()
@@ -619,6 +655,48 @@ async def test_cli_profile_config_drives_run_and_persisted_session_reads(tmp_pat
     assert config_payload["distributed_workers"] == {"backend": "memory", "path": None}
     assert list((store_path / "sessions").glob("*.json"))
     assert (store_path / "events.jsonl").exists()
+
+
+@pytest.mark.asyncio
+async def test_cli_config_show_exposes_kubectl_domain_backend_config(tmp_path: Path) -> None:
+    profile_path = tmp_path / "kubectl-profile.json"
+    init_output = StringIO()
+    config_output = StringIO()
+
+    await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--domain-backend",
+            "kubectl",
+            "--kubectl-namespace",
+            "prod",
+            "--kubectl-context",
+            "prod-cluster",
+        ],
+        stdout=init_output,
+    )
+    status = await run_cli(
+        ["--profile-config", str(profile_path), "config", "show"],
+        stdout=config_output,
+    )
+    config_payload = read_json(config_output)
+
+    assert status == 0
+    assert config_payload["domains"] == [
+        {
+            "name": "kubernetes",
+            "version": "0.2.0",
+            "primary": True,
+            "backend": "kubectl",
+            "settings": {
+                "default_namespace": "prod",
+                "context": "prod-cluster",
+                "timeout_seconds": 10.0,
+            },
+        }
+    ]
 
 
 @pytest.mark.asyncio
