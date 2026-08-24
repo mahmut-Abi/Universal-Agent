@@ -44,6 +44,7 @@ from universal_agent.agentd.app import (
     session_explorer_body,
     session_world_body,
     sse_event_batch_text,
+    state_event_repair_body,
     tool_body,
     trace_spans_body,
 )
@@ -331,6 +332,10 @@ def build_parser() -> argparse.ArgumentParser:
     traces.add_argument("--format", choices=("runtime", "otlp"), default="runtime")
     commands.add_parser("doctor")
     commands.add_parser("audit")
+    repair = commands.add_parser("repair")
+    repair_commands = repair.add_subparsers(dest="repair_command", required=True)
+    repair_state_events = repair_commands.add_parser("state-events")
+    repair_state_events.add_argument("--confirmed", choices=("true", "false"), required=True)
 
     distributed = commands.add_parser("distributed")
     distributed_commands = distributed.add_subparsers(
@@ -762,6 +767,18 @@ async def _dispatch(
     if command == "audit":
         _write_json(out, audit_records_body(await service.audit_records()))
         return
+    if command == "repair":
+        repair_command = cast(str, args.repair_command)
+        if repair_command == "state-events":
+            confirmed = cast(str, args.confirmed) == "true"
+            _write_json(
+                out,
+                state_event_repair_body(
+                    await service.repair_state_event_consistency(confirmed=confirmed)
+                ),
+            )
+            return
+        raise ValueError(f"unknown repair command: {repair_command}")
     if command == "distributed":
         distributed_command = cast(str, args.distributed_command)
         if distributed_command == "snapshot":

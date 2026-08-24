@@ -76,6 +76,7 @@ from universal_agent.service import (
     RuntimeService,
     RuntimeTraceSpanView,
     SessionExplorerView,
+    StateEventRepairReport,
     ToolView,
     WorldFactView,
 )
@@ -673,6 +674,19 @@ class AgentdApp:
             if method != "GET":
                 return method_not_allowed(("GET",))
             return json_response(await self._service.opentelemetry_traces())
+        if path == "/v1/doctor/state-events/repair":
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            confirmed = request.body.get("confirmed")
+            if not isinstance(confirmed, bool):
+                return bad_request("state/event repair confirmed must be a boolean")
+            try:
+                report = await self._service.repair_state_event_consistency(
+                    confirmed=confirmed,
+                )
+            except ValueError as exc:
+                return bad_request(str(exc))
+            return json_response(state_event_repair_body(report))
         if path == "/v1/doctor":
             if method != "GET":
                 return method_not_allowed(("GET",))
@@ -1432,6 +1446,31 @@ def doctor_body(view: DoctorReportView) -> JsonMapping:
                     "message": check.message,
                 }
                 for check in view.checks
+            ],
+        }
+    )
+
+
+def state_event_repair_body(view: StateEventRepairReport) -> JsonMapping:
+    return immutable_json(
+        {
+            "status": view.status,
+            "repaired_event_count": view.repaired_event_count,
+            "skipped_item_count": view.skipped_item_count,
+            "repairs": [
+                {
+                    "event": event_body(repair.event),
+                    "reason": repair.reason,
+                }
+                for repair in view.repairs
+            ],
+            "skipped": [
+                {
+                    "session_id": str(skip.session_id),
+                    "event_id": skip.event_id,
+                    "reason": skip.reason,
+                }
+                for skip in view.skipped
             ],
         }
     )

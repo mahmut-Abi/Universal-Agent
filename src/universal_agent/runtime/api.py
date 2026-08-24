@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 from universal_agent.core import (
     ActionId,
@@ -28,7 +28,7 @@ from universal_agent.core import (
 )
 from universal_agent.evidence import Evidence, EvidenceId
 from universal_agent.runtime.agent import AgentRuntime
-from universal_agent.runtime.events import EventReader
+from universal_agent.runtime.events import EventReader, EventSink
 from universal_agent.state import SessionSnapshot, SessionStore
 
 
@@ -157,6 +157,10 @@ class RuntimeSessionBatch:
     next_cursor: str | None
 
 
+class RuntimeEventRepairUnavailableError(RuntimeError):
+    pass
+
+
 class RuntimeAPI:
     """Stable in-process interface for applications and future service adapters.
 
@@ -171,10 +175,14 @@ class RuntimeAPI:
         runtime: AgentRuntime,
         session_store: SessionStore,
         event_reader: EventReader,
+        event_sink: EventSink | None = None,
     ) -> None:
         self._runtime = runtime
         self._session_store = session_store
         self._event_reader = event_reader
+        self._event_sink = event_sink
+        if self._event_sink is None and hasattr(event_reader, "emit"):
+            self._event_sink = cast(EventSink, event_reader)
 
     async def run_goal(self, goal: Goal, task: Task) -> RuntimeRun:
         result = await self._runtime.run(goal, task)
@@ -265,6 +273,16 @@ class RuntimeAPI:
             views,
             views[-1].event_id if views else _cursor_value(after_event_id),
         )
+
+    async def record_repair_events(
+        self,
+        events: tuple[RuntimeEvent, ...],
+    ) -> tuple[RuntimeEventView, ...]:
+        if self._event_sink is None:
+            raise RuntimeEventRepairUnavailableError("runtime event repair requires an event sink")
+        for event in events:
+            await self._event_sink.emit(event)
+        return tuple(event_view(event) for event in events)
 
 
 def session_view(snapshot: SessionSnapshot) -> SessionView:

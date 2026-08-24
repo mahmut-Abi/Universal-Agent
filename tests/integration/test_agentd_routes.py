@@ -449,6 +449,36 @@ async def test_agentd_domain_package_routes_expose_read_only_catalog() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agentd_state_event_repair_route_requires_confirmation_and_reports_clean() -> None:
+    service, _ = build_service([])
+    app = AgentdApp(service)
+
+    repaired = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/doctor/state-events/repair",
+            immutable_json({"confirmed": True}),
+        )
+    )
+    rejected = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/doctor/state-events/repair",
+            immutable_json({"confirmed": False}),
+        )
+    )
+    wrong_method = await app.handle(HttpRequest("GET", "/v1/doctor/state-events/repair"))
+
+    assert repaired.status_code == 200
+    assert repaired.body["status"] == "clean"
+    assert repaired.body["repaired_event_count"] == 0
+    assert repaired.body["skipped_item_count"] == 0
+    assert rejected.status_code == 400
+    assert "confirmed=true" in json_string(json_object(rejected.body["error"])["message"])
+    assert wrong_method.status_code == 405
+
+
+@pytest.mark.asyncio
 async def test_agentd_profile_route_exposes_profile_catalog() -> None:
     service, _ = build_profile_service([])
     app = AgentdApp(service)

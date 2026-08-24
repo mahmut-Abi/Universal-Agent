@@ -867,6 +867,55 @@ async def test_runtime_service_doctor_detects_orphan_events_from_full_event_stre
 
 
 @pytest.mark.asyncio
+async def test_runtime_service_repairs_missing_terminal_event_history() -> None:
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    api, _, events = build_api_with_stores(components, [inspect_workload(), finish()])
+    service = RuntimeService(runtime_api=api, components=components)
+
+    await service.run_goal(*goal_task())
+    events.events = [event for event in events.events if event.type != "GoalCompleted"]
+
+    before = await service.doctor()
+    repair = await service.repair_state_event_consistency(confirmed=True)
+    after = await service.doctor()
+    repaired_event_types = [event.event.type for event in repair.repairs]
+
+    assert before.status == "error"
+    assert repair.status == "repaired"
+    assert repair.repaired_event_count == 1
+    assert repair.skipped_item_count == 0
+    assert repaired_event_types == ["GoalCompleted"]
+    assert repair.repairs[0].event.data["repair_source"] == "state_event_consistency"
+    assert after.status == "ok"
+
+
+@pytest.mark.asyncio
+async def test_runtime_service_blocks_state_event_repair_when_orphan_events_exist() -> None:
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    api, _, events = build_api_with_stores(components, [inspect_workload(), finish()])
+    service = RuntimeService(runtime_api=api, components=components)
+
+    await service.run_goal(*goal_task())
+    await events.emit(
+        RuntimeEvent(
+            "GoalCreated",
+            SessionId("orphan-session"),
+            GoalId("orphan-goal"),
+            TaskId("orphan-task"),
+        )
+    )
+
+    repair = await service.repair_state_event_consistency(confirmed=True)
+
+    assert repair.status == "blocked"
+    assert repair.repaired_event_count == 0
+    assert repair.skipped_item_count == 1
+    assert repair.skipped[0].reason.startswith("orphan event cannot be repaired automatically")
+
+
+@pytest.mark.asyncio
 async def test_runtime_service_doctor_detects_distributed_session_work_without_session() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()

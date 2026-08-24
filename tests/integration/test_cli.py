@@ -1180,6 +1180,32 @@ async def test_cli_profile_show_rejects_unknown_profile() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_repair_state_events_requires_confirmation_and_reports_clean() -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+    rejected_error = StringIO()
+
+    status = await run_cli(
+        ["repair", "state-events", "--confirmed", "true"],
+        service=service,
+        stdout=output,
+    )
+    rejected = await run_cli(
+        ["repair", "state-events", "--confirmed", "false"],
+        service=service,
+        stderr=rejected_error,
+    )
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["status"] == "clean"
+    assert payload["repaired_event_count"] == 0
+    assert payload["skipped_item_count"] == 0
+    assert rejected == 2
+    assert "confirmed=true" in read_json(rejected_error)["error"]["message"]
+
+
+@pytest.mark.asyncio
 async def test_cli_exposes_service_catalog_commands() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
