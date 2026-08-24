@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import cast
 
 import pytest
@@ -7,7 +8,10 @@ import pytest
 from universal_agent.core import DomainIdentity, ErrorCode, SessionId, immutable_json
 from universal_agent.multi_agent import (
     AGENT_TASK_API_VERSION,
+    AgentDelegationBatchStatus,
+    AgentDelegationDependencyError,
     AgentDelegationLimitError,
+    AgentDelegationSpec,
     AgentExecutorNotRegisteredError,
     AgentExpectedOutput,
     AgentId,
@@ -44,6 +48,39 @@ class RecordingExecutor:
             reason="completed by test executor",
             session_id=SessionId("session-child"),
         )
+
+
+class StatusExecutor:
+    def __init__(
+        self,
+        status: AgentTaskResultStatus,
+        events: list[str] | None = None,
+        label: str = "executor",
+    ) -> None:
+        self.status = status
+        self.events = events
+        self.label = label
+
+    async def execute_agent_task(self, request: AgentTaskRequest) -> AgentTaskResult:
+        if self.events is not None:
+            self.events.append(f"start:{self.label}")
+        await asyncio.sleep(0)
+        if self.events is not None:
+            self.events.append(f"finish:{self.label}")
+        return AgentTaskResult(
+            task_id=request.task_id,
+            status=self.status,
+            result=immutable_json({"label": self.label}),
+            reason=f"{self.label} settled",
+            error_code=None
+            if self.status is AgentTaskResultStatus.COMPLETED
+            else ErrorCode.TOOL_FAILURE,
+        )
+
+
+class RaisingExecutor:
+    async def execute_agent_task(self, request: AgentTaskRequest) -> AgentTaskResult:
+        raise RuntimeError(f"executor unavailable for {request.task_id}")
 
 
 def output() -> AgentExpectedOutput:
@@ -275,3 +312,211 @@ def test_rejected_agent_task_result_uses_policy_denied_by_default() -> None:
 
     assert result.status is AgentTaskResultStatus.REJECTED
     assert result.error_code is ErrorCode.POLICY_DENIED
+
+
+def batch_request(task_id: str, *, parent_task_id: AgentTaskId | None = None) -> AgentTaskRequest:
+    return AgentTaskRequest(
+        goal=f"Run {task_id}",
+        input=immutable_json({"task": task_id}),
+        constraints=AgentTaskConstraints(read_only=True, max_children=3),
+        expected_output=output(),
+        task_id=AgentTaskId(task_id),
+        parent_task_id=parent_task_id,
+    )
+
+
+@pytest.mark.asyncio
+async def test_agent_orchestrator_delegates_many_ready_tasks_in_parallel() -> None:
+    events: list[str] = []
+    registry = AgentRegistry(
+        (profile(),),
+        (
+            instance("agent-1"),
+            instance("agent-2"),
+        ),
+    )
+    orchestrator = AgentOrchestrator(
+        registry,
+        {
+            AgentId("agent-1"): StatusExecutor(AgentTaskResultStatus.COMPLETED, events, "a"),
+            AgentId("agent-2"): StatusExecutor(AgentTaskResultStatus.COMPLETED, events, "b"),
+        },
+    )
+
+    result = await orchestrator.delegate_many(
+        (
+            AgentDelegationSpec(batch_request("agent-task-a"), agent_id=AgentId("agent-1")),
+            AgentDelegationSpec(batch_request("agent-task-b"), agent_id=AgentId("agent-2")),
+        )
+    )
+
+    assert result.status is AgentDelegationBatchStatus.COMPLETED
+    assert [item.task_id for item in result.results] == [
+        AgentTaskId("agent-task-a"),
+        AgentTaskId("agent-task-b"),
+    ]
+    assert events.index("start:b") < events.index("finish:a")
+
+
+@pytest.mark.asyncio
+async def test_agent_orchestrator_delegates_many_respects_dependencies() -> None:
+    events: list[str] = []
+    registry = AgentRegistry((profile(),), (instance("agent-1"), instance("agent-2")))
+    orchestrator = AgentOrchestrator(
+        registry,
+        {
+            AgentId("agent-1"): StatusExecutor(AgentTaskResultStatus.COMPLETED, events, "parent"),
+            AgentId("agent-2"): StatusExecutor(AgentTaskResultStatus.COMPLETED, events, "child"),
+        },
+    )
+
+    result = await orchestrator.delegate_many(
+        (
+            AgentDelegationSpec(batch_request("parent"), agent_id=AgentId("agent-1")),
+            AgentDelegationSpec(
+                batch_request("child"),
+                agent_id=AgentId("agent-2"),
+                depends_on=(AgentTaskId("parent"),),
+            ),
+        )
+    )
+
+    assert result.completed
+    assert events.index("finish:parent") < events.index("start:child")
+
+
+@pytest.mark.asyncio
+async def test_agent_orchestrator_delegates_many_skips_failed_dependencies() -> None:
+    registry = AgentRegistry(
+        (profile(),), (instance("agent-1"), instance("agent-2"), instance("agent-3"))
+    )
+    orchestrator = AgentOrchestrator(
+        registry,
+        {
+            AgentId("agent-1"): StatusExecutor(AgentTaskResultStatus.FAILED, label="parent"),
+            AgentId("agent-2"): StatusExecutor(AgentTaskResultStatus.COMPLETED, label="child"),
+            AgentId("agent-3"): StatusExecutor(AgentTaskResultStatus.COMPLETED, label="grandchild"),
+        },
+    )
+
+    result = await orchestrator.delegate_many(
+        (
+            AgentDelegationSpec(batch_request("parent"), agent_id=AgentId("agent-1")),
+            AgentDelegationSpec(
+                batch_request("child"),
+                agent_id=AgentId("agent-2"),
+                depends_on=(AgentTaskId("parent"),),
+            ),
+            AgentDelegationSpec(
+                batch_request("grandchild"),
+                agent_id=AgentId("agent-3"),
+                depends_on=(AgentTaskId("child"),),
+            ),
+        )
+    )
+
+    assert result.status is AgentDelegationBatchStatus.FAILED
+    assert result.skipped_task_ids == (AgentTaskId("child"), AgentTaskId("grandchild"))
+    assert [item.status for item in result.results] == [
+        AgentTaskResultStatus.FAILED,
+        AgentTaskResultStatus.REJECTED,
+        AgentTaskResultStatus.REJECTED,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_agent_orchestrator_delegates_many_collects_executor_failures() -> None:
+    registry = AgentRegistry(
+        (profile(),),
+        (instance("agent-1"), instance("agent-2"), instance("agent-3")),
+    )
+    orchestrator = AgentOrchestrator(
+        registry,
+        {
+            AgentId("agent-1"): RaisingExecutor(),
+            AgentId("agent-2"): StatusExecutor(AgentTaskResultStatus.COMPLETED, label="child"),
+            AgentId("agent-3"): StatusExecutor(
+                AgentTaskResultStatus.COMPLETED, label="independent"
+            ),
+        },
+    )
+
+    result = await orchestrator.delegate_many(
+        (
+            AgentDelegationSpec(batch_request("parent"), agent_id=AgentId("agent-1")),
+            AgentDelegationSpec(
+                batch_request("child"),
+                agent_id=AgentId("agent-2"),
+                depends_on=(AgentTaskId("parent"),),
+            ),
+            AgentDelegationSpec(batch_request("independent"), agent_id=AgentId("agent-3")),
+        )
+    )
+
+    assert result.status is AgentDelegationBatchStatus.PARTIAL
+    assert result.skipped_task_ids == (AgentTaskId("child"),)
+    assert result.results[0].status is AgentTaskResultStatus.FAILED
+    assert result.results[0].error_code is ErrorCode.UNKNOWN_EXECUTION
+    assert result.results[1].status is AgentTaskResultStatus.REJECTED
+    assert result.results[2].status is AgentTaskResultStatus.COMPLETED
+
+
+def test_agent_orchestrator_delegates_many_rejects_invalid_dependencies() -> None:
+    with pytest.raises(ValueError, match="cannot depend on itself"):
+        AgentDelegationSpec(
+            batch_request("agent-task-a"),
+            depends_on=(AgentTaskId("agent-task-a"),),
+        )
+
+    registry = AgentRegistry((profile(),), (instance("agent-1"), instance("agent-2")))
+    orchestrator = AgentOrchestrator(registry)
+
+    with pytest.raises(ValueError, match="duplicate agent delegation task ids"):
+        asyncio.run(
+            orchestrator.delegate_many(
+                (
+                    AgentDelegationSpec(batch_request("agent-task-a")),
+                    AgentDelegationSpec(batch_request("agent-task-a")),
+                )
+            )
+        )
+
+    with pytest.raises(ValueError, match="unknown agent delegation dependencies"):
+        asyncio.run(
+            orchestrator.delegate_many(
+                (
+                    AgentDelegationSpec(
+                        batch_request("agent-task-a"),
+                        depends_on=(AgentTaskId("missing"),),
+                    ),
+                )
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_agent_orchestrator_delegates_many_detects_cycles() -> None:
+    registry = AgentRegistry((profile(),), (instance("agent-1"), instance("agent-2")))
+    orchestrator = AgentOrchestrator(
+        registry,
+        {
+            AgentId("agent-1"): RecordingExecutor(),
+            AgentId("agent-2"): RecordingExecutor(),
+        },
+    )
+
+    with pytest.raises(AgentDelegationDependencyError):
+        await orchestrator.delegate_many(
+            (
+                AgentDelegationSpec(
+                    batch_request("agent-task-a"),
+                    agent_id=AgentId("agent-1"),
+                    depends_on=(AgentTaskId("agent-task-b"),),
+                ),
+                AgentDelegationSpec(
+                    batch_request("agent-task-b"),
+                    agent_id=AgentId("agent-2"),
+                    depends_on=(AgentTaskId("agent-task-a"),),
+                ),
+            )
+        )

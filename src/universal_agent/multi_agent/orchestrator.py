@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from collections.abc import Mapping
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import Protocol
 
 from universal_agent.core import ErrorCode, ExecutionStatus, Goal, JsonValue, SuccessCriterion, Task
@@ -41,6 +44,39 @@ class AgentDelegationLimitError(AgentDelegationError):
     pass
 
 
+class AgentDelegationDependencyError(AgentDelegationError):
+    pass
+
+
+class AgentDelegationBatchStatus(StrEnum):
+    COMPLETED = "completed"
+    PARTIAL = "partial"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class AgentDelegationSpec:
+    request: AgentTaskRequest
+    agent_id: AgentId | None = None
+    depends_on: tuple[AgentTaskId, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.request.task_id in self.depends_on:
+            raise ValueError("agent delegation spec cannot depend on itself")
+
+
+@dataclass(frozen=True, slots=True)
+class AgentDelegationBatchResult:
+    status: AgentDelegationBatchStatus
+    results: tuple[AgentTaskResult, ...]
+    skipped_task_ids: tuple[AgentTaskId, ...] = ()
+    reason: str = ""
+
+    @property
+    def completed(self) -> bool:
+        return self.status is AgentDelegationBatchStatus.COMPLETED
+
+
 class AgentOrchestrator:
     """Optional Multi-Agent delegation layer above independent Runtime instances."""
 
@@ -71,6 +107,73 @@ class AgentOrchestrator:
             )
         self._reserve_child_slot(request)
         return await executor.execute_agent_task(request)
+
+    async def delegate_many(
+        self,
+        specs: tuple[AgentDelegationSpec, ...],
+    ) -> AgentDelegationBatchResult:
+        if not specs:
+            raise ValueError("agent delegation batch requires specs")
+        _validate_delegation_specs(specs)
+        pending = {spec.request.task_id: spec for spec in specs}
+        results: dict[AgentTaskId, AgentTaskResult] = {}
+        skipped: list[AgentTaskId] = []
+
+        while pending:
+            blocked = tuple(
+                spec for spec in pending.values() if _has_failed_dependency(spec, results)
+            )
+            for spec in blocked:
+                pending.pop(spec.request.task_id)
+                skipped.append(spec.request.task_id)
+                results[spec.request.task_id] = rejected_agent_task_result(
+                    spec.request,
+                    "dependency did not complete: " + _failed_dependency_reason(spec, results),
+                    error_code=ErrorCode.INVALID_STATE,
+                )
+            if blocked:
+                continue
+
+            ready = tuple(
+                spec for spec in pending.values() if _dependencies_completed(spec, results)
+            )
+            if not ready:
+                if pending:
+                    raise AgentDelegationDependencyError(
+                        "agent delegation dependencies cannot be resolved"
+                    )
+                break
+
+            delegated = await asyncio.gather(*(self._delegate_spec(spec) for spec in ready))
+            for spec, result in zip(ready, delegated, strict=True):
+                pending.pop(spec.request.task_id)
+                results[spec.request.task_id] = result
+
+        ordered = tuple(results[spec.request.task_id] for spec in specs)
+        status = _batch_status(ordered)
+        return AgentDelegationBatchResult(
+            status=status,
+            results=ordered,
+            skipped_task_ids=tuple(skipped),
+            reason=_batch_reason(status),
+        )
+
+    async def _delegate_spec(self, spec: AgentDelegationSpec) -> AgentTaskResult:
+        try:
+            return await self.delegate(spec.request, agent_id=spec.agent_id)
+        except AgentDelegationError as exc:
+            return rejected_agent_task_result(
+                spec.request,
+                str(exc),
+                error_code=ErrorCode.INVALID_STATE,
+            )
+        except Exception as exc:
+            return AgentTaskResult(
+                spec.request.task_id,
+                AgentTaskResultStatus.FAILED,
+                reason=f"agent executor failed: {type(exc).__name__}: {exc}",
+                error_code=ErrorCode.UNKNOWN_EXECUTION,
+            )
 
     def _select_instance(
         self,
@@ -173,3 +276,79 @@ def rejected_agent_task_result(
         reason=reason,
         error_code=error_code,
     )
+
+
+def _validate_delegation_specs(specs: tuple[AgentDelegationSpec, ...]) -> None:
+    task_ids = tuple(spec.request.task_id for spec in specs)
+    duplicates = _duplicates(task_ids)
+    if duplicates:
+        raise ValueError("duplicate agent delegation task ids: " + ", ".join(duplicates))
+    known = set(task_ids)
+    missing = tuple(
+        dependency for spec in specs for dependency in spec.depends_on if dependency not in known
+    )
+    if missing:
+        raise ValueError("unknown agent delegation dependencies: " + _format_task_ids(missing))
+
+
+def _has_failed_dependency(
+    spec: AgentDelegationSpec,
+    results: Mapping[AgentTaskId, AgentTaskResult],
+) -> bool:
+    return any(
+        task_id in results and results[task_id].status is not AgentTaskResultStatus.COMPLETED
+        for task_id in spec.depends_on
+    )
+
+
+def _dependencies_completed(
+    spec: AgentDelegationSpec,
+    results: Mapping[AgentTaskId, AgentTaskResult],
+) -> bool:
+    return all(
+        task_id in results and results[task_id].status is AgentTaskResultStatus.COMPLETED
+        for task_id in spec.depends_on
+    )
+
+
+def _failed_dependency_reason(
+    spec: AgentDelegationSpec,
+    results: Mapping[AgentTaskId, AgentTaskResult],
+) -> str:
+    failed = tuple(
+        task_id
+        for task_id in spec.depends_on
+        if task_id in results and results[task_id].status is not AgentTaskResultStatus.COMPLETED
+    )
+    return _format_task_ids(failed)
+
+
+def _batch_status(results: tuple[AgentTaskResult, ...]) -> AgentDelegationBatchStatus:
+    completed = sum(1 for result in results if result.status is AgentTaskResultStatus.COMPLETED)
+    if completed == len(results):
+        return AgentDelegationBatchStatus.COMPLETED
+    if completed > 0:
+        return AgentDelegationBatchStatus.PARTIAL
+    return AgentDelegationBatchStatus.FAILED
+
+
+def _batch_reason(status: AgentDelegationBatchStatus) -> str:
+    if status is AgentDelegationBatchStatus.COMPLETED:
+        return "all delegated agent tasks completed"
+    if status is AgentDelegationBatchStatus.PARTIAL:
+        return "some delegated agent tasks did not complete"
+    return "no delegated agent tasks completed"
+
+
+def _duplicates(values: tuple[AgentTaskId, ...]) -> tuple[str, ...]:
+    seen: set[AgentTaskId] = set()
+    duplicates: set[str] = set()
+    for value in values:
+        if value in seen:
+            duplicates.add(str(value))
+        seen.add(value)
+    return tuple(sorted(duplicates))
+
+
+def _format_task_ids(task_ids: tuple[AgentTaskId, ...]) -> str:
+    return ", ".join(str(task_id) for task_id in task_ids)

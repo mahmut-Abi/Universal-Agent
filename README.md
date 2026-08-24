@@ -334,11 +334,13 @@ event-sourcing models or production migration systems.
   Agent-to-Agent contract with explicit constraints, expected output, Evidence IDs and result status;
   `AgentRegistry` distinguishes Profile templates from running Agent instances and filters eligible
   instances by read-only, allowed-profile and permission constraints; `AgentOrchestrator` delegates
-  only through registered executors and enforces parent child-count limits. `RuntimeAgentExecutor`
-  adapts a target `RuntimeAPI` without creating a second Agent loop or bypassing the target Runtime's
-  policy/evaluation path. `AgentConflictResolver` resolves structured action proposals by policy,
-  read-only constraints, side effect, risk and explicit priority, and requires review for equal-rank
-  conflicts instead of using last-result-wins. `AgentResultMerger` then combines child
+  only through registered executors and enforces parent child-count limits. It can also execute a
+  dependency-aware batch, running ready child tasks concurrently while rejecting downstream tasks
+  whose dependencies fail. `RuntimeAgentExecutor` adapts a target `RuntimeAPI` without creating a
+  second Agent loop or bypassing the target Runtime's policy/evaluation path. `AgentConflictResolver`
+  resolves structured action proposals by policy, read-only constraints, side effect, risk and
+  explicit priority, and requires review for equal-rank conflicts instead of using last-result-wins.
+  `AgentResultMerger` then combines child
   `AgentTaskResult` objects and conflict resolutions into a read-only merge report with deduplicated
   Evidence IDs, missing/failed/waiting task classification and configurable completion policy without
   inventing new Evidence or updating the World Model. `MultiAgentMergeEvaluator` adds deterministic
@@ -430,6 +432,11 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_7_cli_quality_gates.py
 .venv/bin/python examples/p3_7_suite_file.py
 .venv/bin/python examples/p3_7_deterministic_mode.py
+.venv/bin/python examples/p4_multi_agent_contract.py
+.venv/bin/python examples/p4_multi_agent_batch_delegation.py
+.venv/bin/python examples/p4_multi_agent_conflict_resolution.py
+.venv/bin/python examples/p4_multi_agent_result_merge.py
+.venv/bin/python examples/p4_multi_agent_evaluation.py
 .venv/bin/python examples/p5_evaluation_console.py
 .venv/bin/python examples/p5_tui.py
 .venv/bin/python examples/p5_web_console.py
