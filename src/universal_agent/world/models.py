@@ -38,6 +38,15 @@ class WorldRelation:
 
 
 @dataclass(frozen=True, slots=True)
+class WorldNeighborhood:
+    root: WorldEntity | None
+    facts: tuple[WorldFact, ...] = ()
+    outgoing_relations: tuple[WorldRelation, ...] = ()
+    incoming_relations: tuple[WorldRelation, ...] = ()
+    related_entities: tuple[WorldEntity, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class WorldSnapshot:
     session_id: SessionId
     facts: tuple[WorldFact, ...] = ()
@@ -58,6 +67,19 @@ class WorldSnapshot:
                 return entity
         return None
 
+    def facts_for(
+        self,
+        subject: EntityId | str,
+        *,
+        claims: tuple[str, ...] = (),
+    ) -> tuple[WorldFact, ...]:
+        normalized = str(subject)
+        return tuple(
+            fact
+            for fact in self.facts
+            if fact.subject == normalized and (not claims or fact.claim in claims)
+        )
+
     def relations_for(
         self,
         *,
@@ -73,6 +95,34 @@ class WorldSnapshot:
             if (normalized_source is None or item.source == normalized_source)
             and (relation is None or item.relation == relation)
             and (normalized_target is None or item.target == normalized_target)
+        )
+
+    def neighborhood_for(
+        self,
+        entity_id: EntityId | str,
+        *,
+        relation: str | None = None,
+    ) -> WorldNeighborhood:
+        normalized = EntityId(str(entity_id))
+        outgoing = self.relations_for(source=normalized, relation=relation)
+        incoming = self.relations_for(target=normalized, relation=relation)
+        related_ids = tuple(
+            dict.fromkeys(
+                [
+                    *(item.target for item in outgoing),
+                    *(item.source for item in incoming),
+                ]
+            )
+        )
+        related_entities = tuple(
+            entity for item in related_ids if (entity := self.entity_for(item)) is not None
+        )
+        return WorldNeighborhood(
+            self.entity_for(normalized),
+            self.facts_for(normalized),
+            outgoing,
+            incoming,
+            related_entities,
         )
 
 

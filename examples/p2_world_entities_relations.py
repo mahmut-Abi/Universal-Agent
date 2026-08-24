@@ -48,14 +48,16 @@ def main() -> None:
         evidence("deployment/example", "healthy", True),
         evidence("deployment/example", "kind", "Deployment"),
         evidence("deployment/example", "relation:owns", ["pod/example-1", "pod/example-2"]),
+        evidence("pod/example-1", "kind", "Pod"),
+        evidence("pod/example-2", "kind", "Pod"),
     ):
         updater.apply(model, item)
 
     snapshot = model.snapshot(SessionId("session-world"))
     entity = snapshot.entity_for("deployment/example")
-    relation_targets = ",".join(
-        str(item.target) for item in snapshot.relations_for(relation="owns")
-    )
+    neighborhood = snapshot.neighborhood_for("deployment/example", relation="owns")
+    relation_targets = ",".join(str(item.target) for item in neighborhood.outgoing_relations)
+    related_kinds = ",".join(entity.kind for entity in neighborhood.related_entities)
 
     print(
         f"facts={len(snapshot.facts)} entities={len(snapshot.entities)} "
@@ -64,6 +66,7 @@ def main() -> None:
     print(f"entity={entity.id if entity else ''} kind={entity.kind if entity else ''}")
     print(f"healthy={entity.attributes['healthy'] if entity else ''}")
     print(f"owns={relation_targets}")
+    print(f"related_kinds={related_kinds}")
 
 
 if __name__ == "__main__":

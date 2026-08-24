@@ -112,14 +112,35 @@ class BasicContextCompiler:
     def _world_fragments(self, world: WorldSnapshot | None) -> tuple[ContextFragment, ...]:
         if world is None:
             return ()
-        fragments = (
-            ContextFragment(
-                f"world.{fact.subject}.{fact.claim}",
-                f"{fact.subject} {fact.claim}={fact.value!r} confidence={fact.confidence:.2f}",
-                20,
-            )
-            for fact in world.facts
-        )
+        fragments = [
+            *(
+                ContextFragment(
+                    f"world.{fact.subject}.{fact.claim}",
+                    (
+                        f"{fact.subject} {fact.claim}={fact.value!r} "
+                        f"confidence={fact.confidence:.2f}"
+                    ),
+                    20,
+                )
+                for fact in world.facts
+            ),
+            *(
+                ContextFragment(
+                    f"world.entity.{entity.id}",
+                    f"{entity.id} kind={entity.kind} attributes={dict(entity.attributes)!r}",
+                    21,
+                )
+                for entity in world.entities
+            ),
+            *(
+                ContextFragment(
+                    f"world.relation.{relation.source}.{relation.relation}.{relation.target}",
+                    f"{relation.source} -[{relation.relation}]-> {relation.target}",
+                    22,
+                )
+                for relation in world.relations
+            ),
+        ]
         return self._budget_fragments(fragments)
 
     def _evidence_fragments(

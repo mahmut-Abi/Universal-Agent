@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -784,12 +785,20 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
     assert world.body["world_facts"] == world_items
     assert world.body["world_entities"] == diagnostics.body["world_entities"]
     assert world.body["world_relations"] == diagnostics.body["world_relations"]
-    assert diagnostics.body["world_entities"][0]["entity_id"] == "deployment/example"
-    assert diagnostics.body["world_entities"][0]["kind"] == "Deployment"
-    assert diagnostics.body["world_entities"][0]["attributes"]["healthy"] is True
-    assert diagnostics.body["world_relations"][0]["source"] == "deployment/example"
-    assert diagnostics.body["world_relations"][0]["relation"] == "owns"
-    assert diagnostics.body["world_relations"][0]["target"] == "pod/example-1"
+    world_entities = diagnostics.body["world_entities"]
+    world_relations = diagnostics.body["world_relations"]
+    assert isinstance(world_entities, list)
+    assert isinstance(world_relations, list)
+    first_entity = cast(dict[str, JsonValue], world_entities[0])
+    first_relation = cast(dict[str, JsonValue], world_relations[0])
+    attributes = first_entity["attributes"]
+    assert isinstance(attributes, dict)
+    assert first_entity["entity_id"] == "deployment/example"
+    assert first_entity["kind"] == "Deployment"
+    assert attributes["healthy"] is True
+    assert first_relation["source"] == "deployment/example"
+    assert first_relation["relation"] == "owns"
+    assert first_relation["target"] == "pod/example-1"
     event_items = events.body["events"]
     assert isinstance(event_items, list)
     last_event = event_items[-1]

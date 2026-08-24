@@ -136,3 +136,45 @@ def test_fact_world_updater_projects_relations_from_relation_evidence() -> None:
         EntityId("pod/example-2"),
     ]
     assert snapshot.relations_for(relation="owns")[0].evidence_ids == (relation.id,)
+
+
+def test_world_snapshot_queries_entity_neighborhoods() -> None:
+    model = InMemoryWorldModel()
+    updater = FactWorldUpdater()
+    for item in (
+        make_evidence(value=True, confidence=0.9, seconds=1),
+        make_evidence(value="Deployment", confidence=0.9, seconds=2, claim="kind"),
+        make_evidence(
+            value="pod/example-1",
+            confidence=0.9,
+            seconds=3,
+            claim="relation:owns",
+        ),
+        make_evidence(
+            value="Pod",
+            confidence=0.9,
+            seconds=4,
+            claim="kind",
+            subject="pod/example-1",
+        ),
+    ):
+        updater.apply(model, item)
+
+    snapshot = model.snapshot(SessionId("session-test"))
+    deployment = snapshot.neighborhood_for("deployment/example")
+    pod = snapshot.neighborhood_for("pod/example-1")
+
+    assert deployment.root is not None
+    assert deployment.root.kind == "Deployment"
+    assert [fact.claim for fact in deployment.facts] == ["healthy", "kind", "relation:owns"]
+    assert [relation.target for relation in deployment.outgoing_relations] == [
+        EntityId("pod/example-1")
+    ]
+    assert deployment.incoming_relations == ()
+    assert [entity.kind for entity in deployment.related_entities] == ["Pod"]
+    assert pod.root is not None
+    assert pod.root.kind == "Pod"
+    assert [relation.source for relation in pod.incoming_relations] == [
+        EntityId("deployment/example")
+    ]
+    assert pod.outgoing_relations == ()

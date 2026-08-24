@@ -21,6 +21,7 @@ from universal_agent.core import (
 )
 from universal_agent.memory import MemoryKind, MemoryRecord
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
+from universal_agent.world import EntityId, WorldEntity, WorldFact, WorldRelation, WorldSnapshot
 
 
 def test_decision_contract_rejects_invalid_shapes() -> None:
@@ -91,6 +92,46 @@ def test_basic_context_exposes_capabilities_not_tools() -> None:
     assert context.satisfied_criteria == immutable_json({"healthy": False})
     assert context.capabilities[0].name == "inspect_service"
     assert context.policy_summary == ("read-only",)
+
+
+def test_basic_context_projects_world_entities_and_relations() -> None:
+    observed_at = datetime(2026, 1, 1, tzinfo=UTC)
+    state = AgentState(
+        session_id=new_session_id(),
+        goal=Goal("Verify service graph", (SuccessCriterion("healthy", True),)),
+        current_task=Task("Probe service graph", ("healthy",)),
+    )
+    world = WorldSnapshot(
+        state.session_id,
+        facts=(WorldFact("deployment/example", "healthy", True, 0.9, observed_at, ()),),
+        entities=(
+            WorldEntity(
+                EntityId("deployment/example"),
+                "Deployment",
+                immutable_json({"healthy": True}),
+            ),
+            WorldEntity(EntityId("pod/example-1"), "Pod"),
+        ),
+        relations=(
+            WorldRelation(
+                EntityId("deployment/example"),
+                "owns",
+                EntityId("pod/example-1"),
+            ),
+        ),
+    )
+
+    context = BasicContextCompiler().compile(state, (), (), (), world=world)
+    fragments = {fragment.key: fragment for fragment in context.world_context}
+
+    assert fragments["world.deployment/example.healthy"].priority == 20
+    assert fragments["world.entity.deployment/example"].priority == 21
+    assert fragments["world.relation.deployment/example.owns.pod/example-1"].priority == 22
+    assert "Deployment" in fragments["world.entity.deployment/example"].content
+    assert (
+        "deployment/example -[owns]-> pod/example-1"
+        in fragments["world.relation.deployment/example.owns.pod/example-1"].content
+    )
 
 
 def test_memory_context_uses_advisory_priority_and_independent_budget() -> None:
