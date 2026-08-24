@@ -122,8 +122,10 @@ class AgentRuntime:
         await self._emit(state, "TaskCreated")
         goal.status = GoalStatus.RUNNING
         task.status = TaskStatus.RUNNING
-        await self._save(session)
-        await self._emit(state, "StateUpdated")
+        await self._commit_session_event(
+            session,
+            self._runtime_event(state, "StateUpdated"),
+        )
         return await self._loop(session)
 
     async def resume(
@@ -161,8 +163,10 @@ class AgentRuntime:
         state.goal.status = GoalStatus.RUNNING
         mark_current_task(session, TaskStatus.RUNNING)
         state.termination_reason = None
-        await self._save(session)
-        await self._emit(state, "SessionResumed")
+        await self._commit_session_event(
+            session,
+            self._runtime_event(state, "SessionResumed"),
+        )
         if pending is not None:
             result = await self._drive(session, pending=pending)
             if result is not None:
@@ -434,12 +438,14 @@ class AgentRuntime:
                 "TaskStarted",
                 data={"started_task_id": processed.next_task.id},
             )
-        await self._save(session)
-        await self._emit(
-            state,
-            "StateUpdated",
-            action_id=observation.action_id,
-            data={"task_status": state.current_task.status.value},
+        await self._commit_session_event(
+            session,
+            self._runtime_event(
+                state,
+                "StateUpdated",
+                action_id=observation.action_id,
+                data={"task_status": state.current_task.status.value},
+            ),
         )
         return None
 
@@ -468,12 +474,14 @@ class AgentRuntime:
         if key:
             state.recovery_attempts[key] = recovery.attempt
         # Persist the spent budget before retrying so a crash cannot reset it.
-        await self._save(session)
-        await self._emit(
-            state,
-            "RecoveryExhausted" if recovery.exhausted else "RecoveryPlanned",
-            action_id=pending.action_id,
-            data={"strategy": recovery.strategy.value, "rule": recovery.rule_name},
+        await self._commit_session_event(
+            session,
+            self._runtime_event(
+                state,
+                "RecoveryExhausted" if recovery.exhausted else "RecoveryPlanned",
+                action_id=pending.action_id,
+                data={"strategy": recovery.strategy.value, "rule": recovery.rule_name},
+            ),
         )
         if recovery.strategy in {
             RecoveryStrategy.RETRY_ACTION,

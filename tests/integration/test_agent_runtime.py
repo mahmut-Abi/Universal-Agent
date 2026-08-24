@@ -29,6 +29,7 @@ from universal_agent.core import (
     ExecutionStatus,
     GoalStatus,
     JsonMapping,
+    RuntimeEvent,
     TaskStatus,
     ToolDefinition,
 )
@@ -53,6 +54,22 @@ class FakeKubernetesBackend:
     async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.calls += 1
         return immutable_json({"healthy": next(self._observations)})
+
+
+class RecordingCommitStore(InMemoryStateStore):
+    def __init__(self, events: InMemoryEventSink) -> None:
+        super().__init__()
+        self._events = events
+        self.committed_event_types: list[str] = []
+
+    async def commit_session_event(
+        self,
+        snapshot: SessionSnapshot,
+        event: RuntimeEvent,
+    ) -> None:
+        self.committed_event_types.append(event.type)
+        await self.save_session(snapshot)
+        await self._events.emit(event)
 
 
 class StaticTool:
@@ -208,6 +225,35 @@ def health_goal_and_task() -> tuple[Goal, Task]:
         Goal("Verify workload health", (SuccessCriterion("healthy", True),)),
         Task("Inspect workload", ("healthy",)),
     )
+
+
+@pytest.mark.asyncio
+async def test_runtime_commits_state_events_through_store_seam() -> None:
+    backend = FakeKubernetesBackend([True])
+    active = DomainLoader().load(KubernetesDomain(backend))
+    components = RuntimeBuilder().build(active)
+    model = ScriptedModelAdapter([execute_probe(), finish()])
+    events = InMemoryEventSink()
+    store = RecordingCommitStore(events)
+    runtime = AgentRuntime(
+        model=model,
+        state_store=store,
+        components=components,
+        event_sink=events,
+    )
+
+    result = await runtime.run(*health_goal_and_task())
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert store.committed_event_types == [
+        "StateUpdated",
+        "StateUpdated",
+        "GoalCompleted",
+    ]
+    assert [event.type for event in events.events if event.type == "StateUpdated"] == [
+        "StateUpdated",
+        "StateUpdated",
+    ]
 
 
 @pytest.mark.asyncio
