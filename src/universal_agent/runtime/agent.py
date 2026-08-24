@@ -35,7 +35,7 @@ from universal_agent.runtime.actions import (
     ConfirmationRequired,
 )
 from universal_agent.runtime.events import EventSink
-from universal_agent.runtime.processing import EvaluationRoutingError, ObservationProcessor
+from universal_agent.runtime.processing import ObservationProcessor, ObservationRoutingError
 from universal_agent.runtime.session import (
     SessionHydrationError,
     SessionRuntimeState,
@@ -371,7 +371,7 @@ class AgentRuntime:
                 observation,
                 action=outcome.pending,
             )
-        except EvaluationRoutingError as exc:
+        except ObservationRoutingError as exc:
             return await self._settle(
                 session,
                 fail(session, ErrorCode.EVALUATION_FAILED, str(exc)),

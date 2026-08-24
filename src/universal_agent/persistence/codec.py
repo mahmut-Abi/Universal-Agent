@@ -364,6 +364,8 @@ def _encode_evidence(evidence: Evidence) -> JsonObject:
         "confidence": evidence.confidence,
         "id": str(evidence.id),
         "observed_at": evidence.observed_at.isoformat(),
+        "domain_name": evidence.domain_name,
+        "domain_version": evidence.domain_version,
     }
 
 
@@ -380,6 +382,8 @@ def _decode_evidence(payload: JsonObject) -> Evidence:
         _float(_required(payload, "confidence"), "evidence.confidence"),
         EvidenceId(_string(_required(payload, "id"), "evidence.id")),
         _datetime(_required(payload, "observed_at"), "evidence.observed_at"),
+        _optional_string(payload.get("domain_name")) or "",
+        _optional_string(payload.get("domain_version")) or "",
     )
 
 

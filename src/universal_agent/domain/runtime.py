@@ -127,11 +127,23 @@ class DomainComposition:
     def evidence_extractors(self) -> tuple[EvidenceExtractor, ...]:
         return tuple(item for domain in self.domains for item in domain.evidence_extractors)
 
+    def evidence_extractors_for(self, identity: DomainIdentity) -> tuple[EvidenceExtractor, ...]:
+        domain = self.domain_for(identity)
+        return () if domain is None else domain.evidence_extractors
+
     def world_updaters(self) -> tuple[WorldUpdater, ...]:
         return tuple(item for domain in self.domains for item in domain.world_updaters)
 
+    def world_updaters_for(self, identity: DomainIdentity) -> tuple[WorldUpdater, ...]:
+        domain = self.domain_for(identity)
+        return () if domain is None else domain.world_updaters
+
     def task_expanders(self) -> tuple[TaskExpander, ...]:
         return tuple(item for domain in self.domains for item in domain.task_expanders)
+
+    def task_expanders_for(self, identity: DomainIdentity) -> tuple[TaskExpander, ...]:
+        domain = self.domain_for(identity)
+        return () if domain is None else domain.task_expanders
 
     def recovery_rules(self) -> tuple[RecoveryRule, ...]:
         return tuple(item for domain in self.domains for item in domain.recovery_rules)
@@ -143,10 +155,14 @@ class DomainComposition:
         return tuple(name for domain in self.domains for name in domain.manifest.evaluator_names)
 
     def evaluator_names_for(self, identity: DomainIdentity) -> tuple[str, ...]:
+        domain = self.domain_for(identity)
+        return () if domain is None else domain.manifest.evaluator_names
+
+    def domain_for(self, identity: DomainIdentity) -> ActiveDomain | None:
         for domain in self.domains:
             if domain.identity == identity:
-                return domain.manifest.evaluator_names
-        return ()
+                return domain
+        return None
 
     def _validate_unique_identities(self) -> None:
         seen: set[DomainIdentity] = set()

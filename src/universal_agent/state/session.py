@@ -214,6 +214,8 @@ def _copy_evidence(evidence: Evidence) -> Evidence:
         evidence.confidence,
         evidence.id,
         evidence.observed_at,
+        evidence.domain_name,
+        evidence.domain_version,
     )
 
 

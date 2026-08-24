@@ -61,13 +61,15 @@ Goal → Task → Context → Decision → Capability Resolution → Policy
 - Domain Loader 现在拒绝空 evaluator；
 - `finish()` 现在同时要求 EvaluationStatus completed、Task completed 和
   `goal_completed=True`；
-- Observation processing 会依据执行 Action 所属的 Domain 选择 evaluator；
+- Observation processing 会依据执行 Action 所属的 Domain 路由 Evidence extractor、
+  World updater、Task expander 和 evaluator；
 - 已增加双 Domain evaluator routing 示例和集成覆盖；
 - Snapshot 会保存完整 Domain composition，并在恢复时校验；
 - Profile 选择现在只接受绑定到当前 RuntimeService composition 的 Profile。
 
-仍需注意：Evidence extractor、World updater、Task expander 目前仍是 composition-wide 合并，
-尚未像 evaluator 一样具备完整的 owner/routing 语义。
+Evidence 会记录产生它的 Domain owner；Session hydrate / replay 会使用 Evidence owner
+选择对应 Domain 的 World updater，旧 Evidence 没有 owner metadata 时仍保留 composition-wide
+兼容重放。
 
 ### 3. P3.5–P3.7 本地产品化
 
@@ -236,8 +238,7 @@ pytest-asyncio event loop 弃用警告；这些警告目前不影响测试结果
 
 1. 设计 State/Event 原子提交或 outbox；
 2. 将 resource version 从 metadata 升级为可验证的 optimistic concurrency contract；
-3. 为 extractor/updater/expander 增加 Domain owner/routing；
-4. 补充 pause/resume/cancel、unknown execution、重复提交和多 Worker 压力测试。
+3. 补充 pause/resume/cancel、unknown execution、重复提交和多 Worker 压力测试。
 
 ### P2：生产适配
 

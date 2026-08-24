@@ -319,8 +319,9 @@ is accessed and no `kubectl` command is executed. The read-only `KubernetesDomai
 while `KubernetesRemediationDomain` adds the fake-backed mutation path. Multi-domain operation now
 has a conservative `DomainManager` / `DomainComposition` foundation: Domain identities,
 capabilities and tools are validated before activation, Domain Loader rejects empty evaluator sets,
-Observation processing routes evaluation by the executed action's Domain, Profiles may declare
-ordered Domain sets, and snapshots persist the activated composition for safe resume.
+Observation processing routes Evidence extraction, World updating, Task expansion and evaluation
+by the executed action's Domain, Profiles may declare ordered Domain sets, and snapshots persist
+the activated composition for safe resume.
 Cross-domain World Model reasoning,
 production database migration systems, packaging, marketplace behavior, optional Multi-Agent Runtime, and real
 Kubernetes API remediation remain outside P3.2. Persistence includes in-memory stores plus local file-backed and SQLite-backed session/event adapters with

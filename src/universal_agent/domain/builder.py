@@ -6,9 +6,16 @@ from dataclasses import dataclass
 from universal_agent.capability import CapabilityRegistry, CapabilityResolver
 from universal_agent.context import DomainContextProvider
 from universal_agent.coordination import ResourceLockRegistry
+from universal_agent.core import DomainIdentity
 from universal_agent.domain.runtime import ActiveDomain, DomainComposition
 from universal_agent.evaluation import CriteriaEvaluator, EvaluatorRegistry
-from universal_agent.evidence import EvidenceExtractor, EvidenceStore, InMemoryEvidenceStore
+from universal_agent.evidence import (
+    Evidence,
+    EvidenceExtractor,
+    EvidenceStore,
+    InMemoryEvidenceStore,
+    StructuredEvidenceExtractor,
+)
 from universal_agent.memory import (
     InMemoryMemoryStore,
     KeywordRelevanceFilter,
@@ -56,6 +63,8 @@ class RuntimeComponents:
     evidence_store: EvidenceStore
     world_model: WorldModel
     world_updaters: tuple[WorldUpdater, ...]
+    default_evidence_extractors: tuple[EvidenceExtractor, ...]
+    default_world_updaters: tuple[WorldUpdater, ...]
     recovery_manager: RecoveryManager
     active_domain: ActiveDomain
     domain_composition: DomainComposition
@@ -68,6 +77,39 @@ class RuntimeComponents:
     memory_retriever: StoreMemoryRetriever
     memory_filter: RelevanceFilter
     resource_locks: ResourceLockRegistry
+
+    def evidence_extractors_for_domain(
+        self,
+        identity: DomainIdentity | None,
+    ) -> tuple[EvidenceExtractor, ...]:
+        if identity is None:
+            return self.evidence_extractors or self.default_evidence_extractors
+        extractors = self.domain_composition.evidence_extractors_for(identity)
+        return extractors or self.default_evidence_extractors
+
+    def world_updaters_for_domain(
+        self,
+        identity: DomainIdentity | None,
+    ) -> tuple[WorldUpdater, ...]:
+        if identity is None:
+            return self.world_updaters
+        updaters = self.domain_composition.world_updaters_for(identity)
+        return updaters or self.default_world_updaters
+
+    def world_updaters_for_evidence(self, evidence: Evidence) -> tuple[WorldUpdater, ...]:
+        if evidence.domain_name and evidence.domain_version:
+            return self.world_updaters_for_domain(
+                DomainIdentity(evidence.domain_name, evidence.domain_version)
+            )
+        return self.world_updaters
+
+    def task_expanders_for_domain(
+        self,
+        identity: DomainIdentity | None,
+    ) -> tuple[TaskExpander, ...]:
+        if identity is None:
+            return self.task_expanders
+        return self.domain_composition.task_expanders_for(identity)
 
 
 class RuntimeBuilder:
@@ -129,6 +171,8 @@ class RuntimeBuilder:
             evidence_store=self._evidence_store_factory(),
             world_model=self._world_model_factory(),
             world_updaters=composition.world_updaters() or (FactWorldUpdater(),),
+            default_evidence_extractors=(StructuredEvidenceExtractor(),),
+            default_world_updaters=(FactWorldUpdater(),),
             recovery_manager=RecoveryManager(composition.recovery_rules()),
             active_domain=composition.primary,
             domain_composition=composition,

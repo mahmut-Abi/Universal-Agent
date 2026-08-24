@@ -113,6 +113,8 @@ def test_session_snapshot_codec_preserves_rebuildable_runtime_state() -> None:
         0.99,
         EvidenceId("evidence-1"),
         observed_at,
+        "kubernetes",
+        "0.2.0",
     )
     snapshot = SessionSnapshot(
         state,
@@ -154,8 +156,16 @@ def test_session_snapshot_codec_preserves_rebuildable_runtime_state() -> None:
     assert restored.state.latest_evaluation.evaluator_name == "workload-health"
     assert restored.state.recovery_attempts == {"task-root:timeout:kubernetes-timeout-retry": 1}
     assert restored.task_graph.nodes[1].depends_on == (root.id,)
+    encoded_evidence = encoded["evidence"]
+    assert isinstance(encoded_evidence, list)
+    encoded_evidence_item = encoded_evidence[0]
+    assert isinstance(encoded_evidence_item, dict)
+    assert encoded_evidence_item["domain_name"] == "kubernetes"
+    assert encoded_evidence_item["domain_version"] == "0.2.0"
     assert restored.evidence[0].id == evidence.id
     assert restored.evidence[0].value is False
+    assert restored.evidence[0].domain_name == "kubernetes"
+    assert restored.evidence[0].domain_version == "0.2.0"
 
 
 def test_session_snapshot_codec_defaults_legacy_pending_action_metadata() -> None:
@@ -201,6 +211,50 @@ def test_session_snapshot_codec_defaults_legacy_pending_action_metadata() -> Non
     assert restored.state.pending_action.idempotency_key == ""
     assert restored.state.pending_action.parameters_hash == ""
     assert restored.state.pending_action.attempt == 1
+
+
+def test_session_snapshot_codec_defaults_legacy_evidence_domain_metadata() -> None:
+    observed_at = datetime(2026, 8, 22, 10, 30, tzinfo=UTC)
+    task = Task("Inspect", (), TaskId("task-legacy"), TaskStatus.WAITING, observed_at)
+    evidence = Evidence(
+        SessionId("session-legacy"),
+        task.id,
+        ActionId("action-legacy"),
+        ObservationId("observation-legacy"),
+        "deployment/example",
+        "healthy",
+        True,
+        "legacy-source",
+        0.9,
+        EvidenceId("evidence-legacy"),
+        observed_at,
+        "kubernetes",
+        "0.2.0",
+    )
+    snapshot = SessionSnapshot(
+        AgentState(
+            session_id=SessionId("session-legacy"),
+            goal=Goal("Legacy", (), GoalId("goal-legacy"), GoalStatus.WAITING, observed_at),
+            current_task=task,
+            tasks=[task],
+        ),
+        TaskGraphSnapshot((TaskNodeSnapshot("task-legacy", task),), task.id),
+        (evidence,),
+        "kubernetes",
+        "0.2.0",
+    )
+    encoded = encode_session_snapshot(snapshot)
+    payload_evidence = encoded["evidence"]
+    assert isinstance(payload_evidence, list)
+    legacy_evidence = payload_evidence[0]
+    assert isinstance(legacy_evidence, dict)
+    del legacy_evidence["domain_name"]
+    del legacy_evidence["domain_version"]
+
+    restored = decode_session_snapshot(encoded)
+
+    assert restored.evidence[0].domain_name == ""
+    assert restored.evidence[0].domain_version == ""
 
 
 def test_session_snapshot_codec_accepts_legacy_single_domain_payload() -> None:

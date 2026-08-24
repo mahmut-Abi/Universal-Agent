@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from universal_agent.core import (
     DomainIdentity,
@@ -12,11 +12,7 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.domain import RuntimeComponents
-from universal_agent.evidence import (
-    Evidence,
-    EvidenceContext,
-    StructuredEvidenceExtractor,
-)
+from universal_agent.evidence import Evidence, EvidenceContext
 from universal_agent.runtime.session import (
     SessionRuntimeState,
     complete_current_task,
@@ -33,7 +29,11 @@ class ProcessingResult:
     next_task: Task | None
 
 
-class EvaluationRoutingError(ValueError):
+class ObservationRoutingError(ValueError):
+    pass
+
+
+class EvaluationRoutingError(ObservationRoutingError):
     pass
 
 
@@ -49,9 +49,17 @@ class ObservationProcessor:
         action: PendingAction | None = None,
     ) -> ProcessingResult:
         state = session.state
-        extractors = self._components.evidence_extractors or (StructuredEvidenceExtractor(),)
+        identity = self._action_domain(action)
+        if (
+            identity is not None
+            and self._components.domain_composition.domain_for(identity) is None
+        ):
+            raise ObservationRoutingError(
+                f"no domain registered for action domain: {identity.name}@{identity.version}"
+            )
+        extractors = self._components.evidence_extractors_for_domain(identity)
         extracted = tuple(
-            evidence
+            self._stamp_evidence_owner(evidence, identity)
             for extractor in extractors
             for evidence in extractor.extract(
                 EvidenceContext(state.session_id, state.current_task, observation)
@@ -60,7 +68,7 @@ class ObservationProcessor:
         for evidence in extracted:
             if not session.record(evidence):
                 continue
-            session.apply(evidence, self._components)
+            session.apply(evidence, self._components.world_updaters_for_evidence(evidence))
 
         # Task-scoped, so this is the evidence the current task has accumulated,
         # not just what this one observation produced.
@@ -69,13 +77,13 @@ class ObservationProcessor:
         created = session.tasks.expand(
             tuple(
                 spec
-                for expander in self._components.task_expanders
+                for expander in self._components.task_expanders_for_domain(identity)
                 for spec in expander.expand(
                     TaskExpansionContext(state.current_task, accumulated, world)
                 )
             )
         )
-        evaluator_name = self._select_evaluator_name(action)
+        evaluator_name = self._select_evaluator_name(identity)
         evaluator = self._components.evaluators.resolve(evaluator_name)
         criteria = {
             fact.claim: fact.value
@@ -105,13 +113,38 @@ class ObservationProcessor:
         session.sync_current_task()
         return ProcessingResult(extracted, evaluation, created, next_task)
 
-    def _select_evaluator_name(self, action: PendingAction | None) -> str:
+    def _action_domain(self, action: PendingAction | None) -> DomainIdentity | None:
         if action is None or not action.domain_name or not action.domain_version:
+            return None
+        return DomainIdentity(action.domain_name, action.domain_version)
+
+    def _select_evaluator_name(self, identity: DomainIdentity | None) -> str:
+        if identity is None:
             return self._components.evaluator_names[0]
-        identity = DomainIdentity(action.domain_name, action.domain_version)
         names = self._components.domain_composition.evaluator_names_for(identity)
         if not names:
             raise EvaluationRoutingError(
                 f"no evaluator registered for action domain: {identity.name}@{identity.version}"
             )
         return names[0]
+
+    def _stamp_evidence_owner(
+        self,
+        evidence: Evidence,
+        identity: DomainIdentity | None,
+    ) -> Evidence:
+        if identity is None:
+            return evidence
+        if evidence.domain_name == identity.name and evidence.domain_version == identity.version:
+            return evidence
+        if evidence.domain_name or evidence.domain_version:
+            raise ObservationRoutingError(
+                "evidence owner does not match action domain: "
+                f"{evidence.domain_name}@{evidence.domain_version} != "
+                f"{identity.name}@{identity.version}"
+            )
+        return replace(
+            evidence,
+            domain_name=identity.name,
+            domain_version=identity.version,
+        )

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from universal_agent.core import AgentState, DomainIdentity, TaskStatus
+from universal_agent.core import AgentState, DomainIdentity, SessionId, TaskStatus
 from universal_agent.domain import RuntimeComponents
 from universal_agent.evidence import Evidence, EvidenceQuery, EvidenceStore
 from universal_agent.state import SessionSnapshot
 from universal_agent.tasks import TaskManager
-from universal_agent.world import WorldModel, WorldSnapshot
+from universal_agent.world import WorldModel, WorldSnapshot, WorldUpdater
 
 
 class SessionHydrationError(ValueError):
@@ -38,8 +38,8 @@ class SessionRuntimeState:
     def record(self, evidence: Evidence) -> bool:
         return self.evidence_store.add(evidence)
 
-    def apply(self, evidence: Evidence, components: RuntimeComponents) -> None:
-        for updater in components.world_updaters:
+    def apply(self, evidence: Evidence, updaters: tuple[WorldUpdater, ...]) -> None:
+        for updater in updaters:
             updater.apply(self.world_model, evidence)
 
     def query(self, *, task_scoped: bool = True, limit: int | None = None) -> tuple[Evidence, ...]:
@@ -104,11 +104,10 @@ def hydrate_session(
     except ValueError as exc:
         raise SessionHydrationError(f"invalid session snapshot task graph: {exc}") from exc
     components.evidence_store.replace(snapshot.state.session_id, snapshot.evidence)
-    components.world_model.rebuild(
-        snapshot.state.session_id,
-        snapshot.evidence,
-        components.world_updaters,
-    )
+    components.world_model.forget(snapshot.state.session_id)
+    for evidence in _ordered_evidence(snapshot.state.session_id, snapshot.evidence):
+        for updater in components.world_updaters_for_evidence(evidence):
+            updater.apply(components.world_model, evidence)
     session = SessionRuntimeState(
         snapshot.state,
         tasks,
@@ -149,6 +148,18 @@ def _validate_snapshot_domains(
 
 def _format_domains(identities: tuple[DomainIdentity, ...]) -> str:
     return ", ".join(f"{item.name}@{item.version}" for item in identities) or "<none>"
+
+
+def _ordered_evidence(
+    session_id: SessionId,
+    evidence: tuple[Evidence, ...],
+) -> tuple[Evidence, ...]:
+    return tuple(
+        sorted(
+            (item for item in evidence if item.session_id == session_id),
+            key=lambda item: (item.observed_at, str(item.id)),
+        )
+    )
 
 
 def complete_current_task(session: SessionRuntimeState) -> None:

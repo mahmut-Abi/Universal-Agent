@@ -36,6 +36,8 @@ class Evidence:
     confidence: float = 1.0
     id: EvidenceId = field(default_factory=new_evidence_id)
     observed_at: datetime = field(default_factory=utc_now)
+    domain_name: str = ""
+    domain_version: str = ""
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.confidence <= 1.0:
