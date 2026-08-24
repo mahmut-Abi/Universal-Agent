@@ -436,6 +436,47 @@ def test_sqlite_work_queue_lease_persists_expiry_when_no_work_is_available(
     assert persisted.last_error == f"lease expired: {leased.lease.lease_id}"
 
 
+@pytest.mark.parametrize("operation", ("heartbeat", "complete", "fail"))
+def test_sqlite_work_queue_persists_expiry_when_worker_loses_lease(
+    tmp_path: Path,
+    operation: str,
+) -> None:
+    path = tmp_path / "runtime.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    queue = SQLiteWorkQueue(path)
+    queue.enqueue(kind="agent_session", max_attempts=2, available_at=now)
+    leased = queue.lease(worker_id=WorkerId("worker-a"), ttl_seconds=5, now=now)
+    assert leased.lease is not None
+
+    with pytest.raises(LeaseLostError, match="lease expired"):
+        if operation == "heartbeat":
+            queue.heartbeat(
+                leased.lease.lease_id,
+                worker_id=WorkerId("worker-a"),
+                now=now + timedelta(seconds=6),
+            )
+        elif operation == "complete":
+            queue.complete(
+                leased.lease.lease_id,
+                worker_id=WorkerId("worker-a"),
+                now=now + timedelta(seconds=6),
+            )
+        else:
+            queue.fail(
+                leased.lease.lease_id,
+                worker_id=WorkerId("worker-a"),
+                reason="late failure",
+                now=now + timedelta(seconds=6),
+            )
+
+    reloaded = SQLiteWorkQueue(path)
+    persisted = reloaded.get(leased.work_item_id)
+    assert persisted.status is WorkItemStatus.QUEUED
+    assert persisted.lease is None
+    assert persisted.last_error == f"lease expired: {leased.lease.lease_id}"
+    assert reloaded.lease(worker_id=WorkerId("worker-b"), now=now + timedelta(seconds=7))
+
+
 def test_work_queue_heartbeat_extends_active_lease_and_rejects_wrong_worker() -> None:
     queue = InMemoryWorkQueue()
     now = datetime(2026, 1, 1, tzinfo=UTC)

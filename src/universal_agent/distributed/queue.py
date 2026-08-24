@@ -668,7 +668,7 @@ class SQLiteWorkQueue(InMemoryWorkQueue):
         ttl_seconds: float = 30.0,
         now: datetime | None = None,
     ) -> WorkItem:
-        with self._transaction() as connection:
+        with self._transaction(commit_on=(LeaseLostError,)) as connection:
             self._load(connection)
             item = super().heartbeat(
                 lease_id,
@@ -686,7 +686,7 @@ class SQLiteWorkQueue(InMemoryWorkQueue):
         worker_id: WorkerId,
         now: datetime | None = None,
     ) -> WorkItem:
-        with self._transaction() as connection:
+        with self._transaction(commit_on=(LeaseLostError,)) as connection:
             self._load(connection)
             item = super().complete(lease_id, worker_id=worker_id, now=now)
             self._save(connection)
@@ -701,7 +701,7 @@ class SQLiteWorkQueue(InMemoryWorkQueue):
         retry: bool = True,
         now: datetime | None = None,
     ) -> WorkItem:
-        with self._transaction() as connection:
+        with self._transaction(commit_on=(LeaseLostError,)) as connection:
             self._load(connection)
             item = super().fail(
                 lease_id,
