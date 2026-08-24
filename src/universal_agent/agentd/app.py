@@ -80,7 +80,9 @@ from universal_agent.service import (
     SessionExplorerView,
     StateEventRepairReport,
     ToolView,
+    WorldEntityView,
     WorldFactView,
+    WorldRelationView,
 )
 from universal_agent.state import StateNotFoundError
 from universal_agent.web import (
@@ -1812,6 +1814,8 @@ def session_explorer_body(view: SessionExplorerView) -> JsonMapping:
             "session": dict(session_body(view.session)),
             "evidence": [evidence_body(item) for item in view.evidence],
             "world_facts": [world_fact_body(item) for item in view.world_facts],
+            "world_entities": [world_entity_body(item) for item in view.world_entities],
+            "world_relations": [world_relation_body(item) for item in view.world_relations],
         }
     )
 
@@ -1830,6 +1834,8 @@ def session_world_body(view: SessionExplorerView) -> JsonMapping:
         {
             "session_id": str(view.session.session_id),
             "world_facts": [world_fact_body(item) for item in view.world_facts],
+            "world_entities": [world_entity_body(item) for item in view.world_entities],
+            "world_relations": [world_relation_body(item) for item in view.world_relations],
         }
     )
 
@@ -1857,6 +1863,24 @@ def world_fact_body(view: WorldFactView) -> dict[str, JsonValue]:
         "value": _json_value(view.value),
         "confidence": view.confidence,
         "observed_at": view.observed_at.isoformat(),
+        "evidence_ids": list(view.evidence_ids),
+    }
+
+
+def world_entity_body(view: WorldEntityView) -> dict[str, JsonValue]:
+    return {
+        "entity_id": view.entity_id,
+        "kind": view.kind,
+        "attributes": _json_value(view.attributes),
+        "evidence_ids": list(view.evidence_ids),
+    }
+
+
+def world_relation_body(view: WorldRelationView) -> dict[str, JsonValue]:
+    return {
+        "source": view.source,
+        "relation": view.relation,
+        "target": view.target,
         "evidence_ids": list(view.evidence_ids),
     }
 

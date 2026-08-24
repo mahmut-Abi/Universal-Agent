@@ -61,7 +61,14 @@ class CliBackend:
     async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.inspect_calls += 1
         assert capability == "inspect_workload"
-        return immutable_json({"resource": "deployment/example", "healthy": True})
+        return immutable_json(
+            {
+                "resource": "deployment/example",
+                "healthy": True,
+                "kind": "Deployment",
+                "relation:owns": ["pod/example-1"],
+            }
+        )
 
     async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.mutation_calls += 1
@@ -1170,8 +1177,16 @@ async def test_cli_session_diagnostics_renders_evidence_and_world_facts() -> Non
     assert world["session_id"] == session_id
     assert evidence["evidence"] == diagnostics["evidence"]
     assert world["world_facts"] == diagnostics["world_facts"]
+    assert world["world_entities"] == diagnostics["world_entities"]
+    assert world["world_relations"] == diagnostics["world_relations"]
     assert evidence_claims["healthy"]["value"] is True
     assert world_claims["healthy"]["value"] is True
+    assert diagnostics["world_entities"][0]["entity_id"] == "deployment/example"
+    assert diagnostics["world_entities"][0]["kind"] == "Deployment"
+    assert diagnostics["world_entities"][0]["attributes"]["healthy"] is True
+    assert diagnostics["world_relations"][0]["source"] == "deployment/example"
+    assert diagnostics["world_relations"][0]["relation"] == "owns"
+    assert diagnostics["world_relations"][0]["target"] == "pod/example-1"
     assert backend.inspect_calls == 1
 
 
@@ -2114,6 +2129,8 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
     assert isinstance(world_items, list)
     assert evidence_items == []
     assert world_items == []
+    assert world_payload["world_entities"] == []
+    assert world_payload["world_relations"] == []
     assert "event: GoalCreated\n" in sse_events
     assert "data: " in sse_events
     assert ": next_cursor=" in sse_events
@@ -2641,14 +2658,19 @@ async def test_cli_eval_run_executes_suite_and_persists_report(tmp_path: Path) -
     scenario_payload = payload["suite"]["scenarios"][0]
     assert scenario_payload["kind"] == "regression"
     assert scenario_payload["tags"] == ["smoke", "kubernetes"]
-    assert scenario_payload["evidence_claims"] == ["resource", "healthy"]
+    assert scenario_payload["evidence_claims"] == ["resource", "healthy", "kind", "relation:owns"]
     assert payload["gate"]["passed"] is True
     assert payload["report_dir"] == str(report_dir)
     assert stored.suite_name == "local evaluation suite"
     assert stored.scenarios[0].kind is not None
     assert stored.scenarios[0].kind.value == "regression"
     assert stored.scenarios[0].tags == ("smoke", "kubernetes")
-    assert stored.scenarios[0].evidence_claims == ("resource", "healthy")
+    assert stored.scenarios[0].evidence_claims == (
+        "resource",
+        "healthy",
+        "kind",
+        "relation:owns",
+    )
     assert backend.inspect_calls == 1
 
 

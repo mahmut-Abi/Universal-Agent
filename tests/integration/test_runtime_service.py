@@ -62,7 +62,14 @@ class ServiceBackend:
     async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.inspect_calls += 1
         assert capability == "inspect_workload"
-        return immutable_json({"resource": "deployment/example", "healthy": True})
+        return immutable_json(
+            {
+                "resource": "deployment/example",
+                "healthy": True,
+                "kind": "Deployment",
+                "relation:owns": ["pod/example-1"],
+            }
+        )
 
     async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.mutation_calls += 1
@@ -1190,6 +1197,12 @@ async def test_runtime_service_builds_session_explorer_projection() -> None:
     assert str(evidence_claims["healthy"].evidence_id) in {
         evidence_id for fact in explorer.world_facts for evidence_id in fact.evidence_ids
     }
+    assert explorer.world_entities[0].entity_id == "deployment/example"
+    assert explorer.world_entities[0].kind == "Deployment"
+    assert explorer.world_entities[0].attributes["healthy"] is True
+    assert explorer.world_relations[0].source == "deployment/example"
+    assert explorer.world_relations[0].relation == "owns"
+    assert explorer.world_relations[0].target == "pod/example-1"
     assert backend.inspect_calls == 1
 
 

@@ -40,7 +40,9 @@ from universal_agent.service import (
     RuntimeConfigView,
     SessionExplorerView,
     ToolView,
+    WorldEntityView,
     WorldFactView,
+    WorldRelationView,
 )
 from universal_agent.tui import TuiSnapshot, render_tui_snapshot
 
@@ -229,6 +231,22 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
                     ("evidence-1",),
                 ),
             ),
+            (
+                WorldEntityView(
+                    "deployment/example",
+                    "Deployment",
+                    MappingProxyType({"healthy": True}),
+                    ("evidence-2",),
+                ),
+            ),
+            (
+                WorldRelationView(
+                    "deployment/example",
+                    "owns",
+                    "pod/example-1",
+                    ("evidence-3",),
+                ),
+            ),
         ),
         events=(
             RuntimeEventView(
@@ -282,6 +300,10 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
     assert "Satisfied Criteria: healthy=True" in rendered
     assert "World Facts" in rendered
     assert "deployment/example healthy=True confidence=0.99 evidence=evidence-1" in rendered
+    assert "World Entities" in rendered
+    assert 'deployment/example kind=Deployment attributes={"healthy": true}' in rendered
+    assert "World Relations" in rendered
+    assert "deployment/example -[owns]-> pod/example-1 evidence=evidence-3" in rendered
     assert "Session Evidence" in rendered
     assert "evidence-1 subject=deployment/example claim=healthy value=True" in rendered
     assert "ActionStarted" in rendered

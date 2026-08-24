@@ -48,7 +48,14 @@ class AgentdBackend:
     async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.inspect_calls += 1
         assert capability == "inspect_workload"
-        return immutable_json({"resource": "deployment/example", "healthy": True})
+        return immutable_json(
+            {
+                "resource": "deployment/example",
+                "healthy": True,
+                "kind": "Deployment",
+                "relation:owns": ["pod/example-1"],
+            }
+        )
 
     async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         assert capability == "scale_workload"
@@ -775,6 +782,14 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
     assert world_claims["healthy"]["value"] is True
     assert evidence.body["evidence"] == evidence_items
     assert world.body["world_facts"] == world_items
+    assert world.body["world_entities"] == diagnostics.body["world_entities"]
+    assert world.body["world_relations"] == diagnostics.body["world_relations"]
+    assert diagnostics.body["world_entities"][0]["entity_id"] == "deployment/example"
+    assert diagnostics.body["world_entities"][0]["kind"] == "Deployment"
+    assert diagnostics.body["world_entities"][0]["attributes"]["healthy"] is True
+    assert diagnostics.body["world_relations"][0]["source"] == "deployment/example"
+    assert diagnostics.body["world_relations"][0]["relation"] == "owns"
+    assert diagnostics.body["world_relations"][0]["target"] == "pod/example-1"
     event_items = events.body["events"]
     assert isinstance(event_items, list)
     last_event = event_items[-1]

@@ -40,7 +40,9 @@ from universal_agent.service import (
     RuntimeConfigView,
     SessionExplorerView,
     ToolView,
+    WorldEntityView,
     WorldFactView,
+    WorldRelationView,
 )
 from universal_agent.web import (
     WebConsoleSnapshot,
@@ -238,6 +240,22 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
                     ("evidence-1",),
                 ),
             ),
+            (
+                WorldEntityView(
+                    "deployment/example",
+                    "Deployment",
+                    MappingProxyType({"healthy": True}),
+                    ("evidence-2",),
+                ),
+            ),
+            (
+                WorldRelationView(
+                    "deployment/example",
+                    "owns",
+                    "pod/example-1",
+                    ("evidence-3",),
+                ),
+            ),
         ),
         events=(
             RuntimeEventView(
@@ -294,6 +312,8 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert 'href="/console/settings"' in rendered
     assert 'href="/console/sessions/session-1"' in rendered
     assert "World Facts" in rendered
+    assert "World Entities" in rendered
+    assert "World Relations" in rendered
     assert "Session Evidence" in rendered
     assert "deployment/example" in rendered
     assert "evidence-1" in rendered
@@ -313,6 +333,8 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "task-1" in session_detail
     assert "healthy" in session_detail
     assert "World Facts" in session_detail
+    assert "World Entities" in session_detail
+    assert "World Relations" in session_detail
     assert "Session Evidence" in session_detail
     assert "ActionStarted" in session_detail
     assert "allow:allow-read" in session_detail
@@ -329,6 +351,8 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "evidence-1" in evidence_explorer
     assert "deployment/example" in evidence_explorer
     assert "World Facts" in evidence_explorer
+    assert "World Entities" in evidence_explorer
+    assert "World Relations" in evidence_explorer
 
     world_explorer = render_web_world_model_explorer(snapshot)
 
@@ -339,7 +363,11 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "<script>alert(1)</script>" not in world_explorer
     assert 'href="/console/sessions/session-1/evidence"' in world_explorer
     assert "World Facts" in world_explorer
+    assert "World Entities" in world_explorer
+    assert "World Relations" in world_explorer
     assert "deployment/example" in world_explorer
+    assert "Deployment" in world_explorer
+    assert "pod/example-1" in world_explorer
     assert "healthy" in world_explorer
     assert "Session Evidence" in world_explorer
 

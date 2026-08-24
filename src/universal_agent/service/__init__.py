@@ -25,7 +25,9 @@ from universal_agent.service.runtime import (
     StateEventRepairSkipView,
     StateEventRepairView,
     ToolView,
+    WorldEntityView,
     WorldFactView,
+    WorldRelationView,
 )
 
 __all__ = [
@@ -53,5 +55,7 @@ __all__ = [
     "StateEventRepairSkipView",
     "StateEventRepairView",
     "ToolView",
+    "WorldEntityView",
     "WorldFactView",
+    "WorldRelationView",
 ]

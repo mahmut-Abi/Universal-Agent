@@ -74,6 +74,8 @@ def render_web_console(snapshot: WebConsoleSnapshot) -> str:
             _sessions(snapshot.sessions),
             _selected_session(snapshot.selected_session),
             _world_facts(snapshot.session_explorer),
+            _world_entities(snapshot.session_explorer),
+            _world_relations(snapshot.session_explorer),
             _evidence(snapshot.session_explorer),
             _events(snapshot.events),
             _audit(snapshot.audit_records),
@@ -105,11 +107,14 @@ def render_web_session_detail(snapshot: WebConsoleSnapshot) -> str:
             _metric_card("Events", len(snapshot.events)),
             _metric_card("Evidence", _selected_evidence_count(snapshot.session_explorer)),
             _metric_card("World Facts", _selected_world_fact_count(snapshot.session_explorer)),
+            _metric_card("World Entities", _selected_world_entity_count(snapshot.session_explorer)),
             _metric_card("Audit", len(snapshot.audit_records)),
             "</section>",
             _selected_session(snapshot.selected_session),
             _task_timeline(snapshot.selected_session),
             _world_facts(snapshot.session_explorer),
+            _world_entities(snapshot.session_explorer),
+            _world_relations(snapshot.session_explorer),
             _evidence(snapshot.session_explorer),
             _events(snapshot.events),
             _audit(snapshot.audit_records),
@@ -138,12 +143,15 @@ def render_web_evidence_explorer(snapshot: WebConsoleSnapshot) -> str:
             '<section class="grid cards" aria-label="Evidence summary">',
             _metric_card("Evidence", _selected_evidence_count(snapshot.session_explorer)),
             _metric_card("World Facts", _selected_world_fact_count(snapshot.session_explorer)),
+            _metric_card("World Entities", _selected_world_entity_count(snapshot.session_explorer)),
             _metric_card("Events", len(snapshot.events)),
             _metric_card("Audit", len(snapshot.audit_records)),
             "</section>",
             _selected_session(snapshot.selected_session),
             _evidence(snapshot.session_explorer),
             _world_facts(snapshot.session_explorer),
+            _world_entities(snapshot.session_explorer),
+            _world_relations(snapshot.session_explorer),
             _events(snapshot.events),
             "</main>",
             "</body>",
@@ -169,12 +177,18 @@ def render_web_world_model_explorer(snapshot: WebConsoleSnapshot) -> str:
             _session_scoped_hero(snapshot, "World Model Explorer"),
             '<section class="grid cards" aria-label="World model summary">',
             _metric_card("World Facts", _selected_world_fact_count(snapshot.session_explorer)),
+            _metric_card("World Entities", _selected_world_entity_count(snapshot.session_explorer)),
+            _metric_card(
+                "World Relations", _selected_world_relation_count(snapshot.session_explorer)
+            ),
             _metric_card("Evidence", _selected_evidence_count(snapshot.session_explorer)),
             _metric_card("Events", len(snapshot.events)),
             _metric_card("Audit", len(snapshot.audit_records)),
             "</section>",
             _selected_session(snapshot.selected_session),
             _world_facts(snapshot.session_explorer),
+            _world_entities(snapshot.session_explorer),
+            _world_relations(snapshot.session_explorer),
             _evidence(snapshot.session_explorer),
             _events(snapshot.events),
             "</main>",
@@ -761,6 +775,54 @@ def _world_facts(explorer: SessionExplorerView | None) -> str:
     )
 
 
+def _world_entities(explorer: SessionExplorerView | None) -> str:
+    rows = []
+    if explorer is not None:
+        rows = [
+            "\n".join(
+                (
+                    "<tr>",
+                    f"<td>{_html(entity.entity_id)}</td>",
+                    f"<td>{_html(entity.kind)}</td>",
+                    f"<td>{_html(_value_text(entity.attributes))}</td>",
+                    f"<td>{_html(', '.join(entity.evidence_ids))}</td>",
+                    "</tr>",
+                )
+            )
+            for entity in explorer.world_entities
+        ]
+    if not rows:
+        rows.append('<tr><td colspan="4">No world entities</td></tr>')
+    return _section(
+        "World Entities",
+        _table(("Entity", "Kind", "Attributes", "Evidence"), tuple(rows)),
+    )
+
+
+def _world_relations(explorer: SessionExplorerView | None) -> str:
+    rows = []
+    if explorer is not None:
+        rows = [
+            "\n".join(
+                (
+                    "<tr>",
+                    f"<td>{_html(relation.source)}</td>",
+                    f"<td>{_html(relation.relation)}</td>",
+                    f"<td>{_html(relation.target)}</td>",
+                    f"<td>{_html(', '.join(relation.evidence_ids))}</td>",
+                    "</tr>",
+                )
+            )
+            for relation in explorer.world_relations
+        ]
+    if not rows:
+        rows.append('<tr><td colspan="4">No world relations</td></tr>')
+    return _section(
+        "World Relations",
+        _table(("Source", "Relation", "Target", "Evidence"), tuple(rows)),
+    )
+
+
 def _evidence(explorer: SessionExplorerView | None) -> str:
     rows = []
     if explorer is not None:
@@ -929,6 +991,18 @@ def _selected_world_fact_count(explorer: SessionExplorerView | None) -> int:
     return len(explorer.world_facts)
 
 
+def _selected_world_entity_count(explorer: SessionExplorerView | None) -> int:
+    if explorer is None:
+        return 0
+    return len(explorer.world_entities)
+
+
+def _selected_world_relation_count(explorer: SessionExplorerView | None) -> int:
+    if explorer is None:
+        return 0
+    return len(explorer.world_relations)
+
+
 def _selected_domain(
     snapshot: WebConsoleSnapshot,
     domain_name: str,
@@ -1056,7 +1130,9 @@ def _enum_tuple_text(values: tuple[Any, ...]) -> str:
 
 
 def _value_text(value: object) -> str:
-    if isinstance(value, dict | list):
+    if isinstance(value, Mapping):
+        return json.dumps(dict(value), sort_keys=True)
+    if isinstance(value, list):
         return json.dumps(value, sort_keys=True)
     return str(value)
 

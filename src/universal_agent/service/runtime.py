@@ -89,7 +89,7 @@ from universal_agent.runtime import (
     event_view,
 )
 from universal_agent.state import StateNotFoundError
-from universal_agent.world import InMemoryWorldModel, WorldFact
+from universal_agent.world import InMemoryWorldModel, WorldEntity, WorldFact, WorldRelation
 
 if TYPE_CHECKING:
     from universal_agent.host.config import DomainConfig, RuntimeConfig
@@ -301,6 +301,22 @@ class WorldFactView:
 
 
 @dataclass(frozen=True, slots=True)
+class WorldEntityView:
+    entity_id: str
+    kind: str
+    attributes: JsonMapping
+    evidence_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class WorldRelationView:
+    source: str
+    relation: str
+    target: str
+    evidence_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class DistributedPendingActionSchedulingResult:
     scheduled_work_items: tuple[WorkItem, ...]
     snapshot: DistributedRuntimeSnapshot
@@ -312,6 +328,8 @@ class SessionExplorerView:
     session: SessionView
     evidence: tuple[EvidenceView, ...]
     world_facts: tuple[WorldFactView, ...]
+    world_entities: tuple[WorldEntityView, ...] = ()
+    world_relations: tuple[WorldRelationView, ...] = ()
 
 
 class RuntimeService:
@@ -1089,10 +1107,16 @@ class RuntimeService:
 
     async def session_explorer(self, session_id: SessionId) -> SessionExplorerView:
         diagnostics = await self._runtime_api.get_session_diagnostics(session_id)
+        world_facts, world_entities, world_relations = self._world_projection_views(
+            session_id,
+            diagnostics.evidence,
+        )
         return SessionExplorerView(
             diagnostics.session,
             diagnostics.evidence,
-            self._world_fact_views(session_id, diagnostics.evidence),
+            world_facts,
+            world_entities,
+            world_relations,
         )
 
     async def list_sessions(
@@ -1333,20 +1357,27 @@ class RuntimeService:
                     invalid_count += 1
         return invalid_count
 
-    def _world_fact_views(
+    def _world_projection_views(
         self,
         session_id: SessionId,
         evidence: tuple[EvidenceView, ...],
-    ) -> tuple[WorldFactView, ...]:
+    ) -> tuple[
+        tuple[WorldFactView, ...], tuple[WorldEntityView, ...], tuple[WorldRelationView, ...]
+    ]:
         if not evidence or not self._components.world_updaters:
-            return ()
+            return (), (), ()
         world_model = InMemoryWorldModel()
         world_model.rebuild(
             session_id,
             tuple(_evidence_from_view(item) for item in evidence),
             self._components.world_updaters,
         )
-        return tuple(world_fact_view(item) for item in world_model.snapshot(session_id).facts)
+        snapshot = world_model.snapshot(session_id)
+        return (
+            tuple(world_fact_view(item) for item in snapshot.facts),
+            tuple(world_entity_view(item) for item in snapshot.entities),
+            tuple(world_relation_view(item) for item in snapshot.relations),
+        )
 
 
 def domain_view(domain: ActiveDomain, *, primary: bool) -> DomainView:
@@ -1530,6 +1561,24 @@ def world_fact_view(fact: WorldFact) -> WorldFactView:
         fact.confidence,
         fact.observed_at,
         tuple(str(item) for item in fact.evidence_ids),
+    )
+
+
+def world_entity_view(entity: WorldEntity) -> WorldEntityView:
+    return WorldEntityView(
+        str(entity.id),
+        entity.kind,
+        immutable_json({key: _copy_json_value(value) for key, value in entity.attributes.items()}),
+        tuple(str(item) for item in entity.evidence_ids),
+    )
+
+
+def world_relation_view(relation: WorldRelation) -> WorldRelationView:
+    return WorldRelationView(
+        str(relation.source),
+        relation.relation,
+        str(relation.target),
+        tuple(str(item) for item in relation.evidence_ids),
     )
 
 

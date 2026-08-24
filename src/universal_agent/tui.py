@@ -94,6 +94,10 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
     lines.extend(_selected_session_lines(snapshot.selected_session))
     lines.extend(("", "World Facts", _rule()))
     lines.extend(_world_fact_lines(snapshot.session_explorer))
+    lines.extend(("", "World Entities", _rule()))
+    lines.extend(_world_entity_lines(snapshot.session_explorer))
+    lines.extend(("", "World Relations", _rule()))
+    lines.extend(_world_relation_lines(snapshot.session_explorer))
     lines.extend(("", "Session Evidence", _rule()))
     lines.extend(_evidence_lines(snapshot.session_explorer))
     lines.extend(("", "Recent Events", _rule()))
@@ -260,6 +264,31 @@ def _world_fact_lines(explorer: SessionExplorerView | None) -> list[str]:
     ]
 
 
+def _world_entity_lines(explorer: SessionExplorerView | None) -> list[str]:
+    if explorer is None or not explorer.world_entities:
+        return ["- none"]
+    return [
+        (
+            f"- {entity.entity_id} kind={entity.kind}"
+            f" attributes={_value_text(entity.attributes)}"
+            f" evidence={_tuple_text(entity.evidence_ids)}"
+        )
+        for entity in explorer.world_entities
+    ]
+
+
+def _world_relation_lines(explorer: SessionExplorerView | None) -> list[str]:
+    if explorer is None or not explorer.world_relations:
+        return ["- none"]
+    return [
+        (
+            f"- {relation.source} -[{relation.relation}]-> {relation.target}"
+            f" evidence={_tuple_text(relation.evidence_ids)}"
+        )
+        for relation in explorer.world_relations
+    ]
+
+
 def _evidence_lines(explorer: SessionExplorerView | None) -> list[str]:
     if explorer is None or not explorer.evidence:
         return ["- none"]
@@ -369,7 +398,9 @@ def _enum_tuple_text(values: tuple[Any, ...]) -> str:
 
 
 def _value_text(value: object) -> str:
-    if isinstance(value, dict | list):
+    if isinstance(value, Mapping):
+        return json.dumps(dict(value), sort_keys=True)
+    if isinstance(value, list):
         return json.dumps(value, sort_keys=True)
     return str(value)
 

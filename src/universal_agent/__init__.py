@@ -201,7 +201,9 @@ from universal_agent.service import (
     StateEventRepairReport,
     StateEventRepairSkipView,
     StateEventRepairView,
+    WorldEntityView,
     WorldFactView,
+    WorldRelationView,
 )
 from universal_agent.state import InMemoryStateStore, StateStore
 from universal_agent.tools import Tool
@@ -381,7 +383,9 @@ __all__ = [
     "WorkerRunStatus",
     "WorkerSnapshot",
     "WorkerStatus",
+    "WorldEntityView",
     "WorldFactView",
+    "WorldRelationView",
     "build_distributed_health_report",
     "build_distributed_runtime_snapshot",
     "build_domain_package_manifest",
