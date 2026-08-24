@@ -83,6 +83,17 @@ class RaisingExecutor:
         raise RuntimeError(f"executor unavailable for {request.task_id}")
 
 
+class SlowExecutor:
+    async def execute_agent_task(self, request: AgentTaskRequest) -> AgentTaskResult:
+        await asyncio.sleep(1)
+        return AgentTaskResult(
+            task_id=request.task_id,
+            status=AgentTaskResultStatus.COMPLETED,
+            result=immutable_json({"slow": True}),
+            reason="slow executor completed",
+        )
+
+
 def output() -> AgentExpectedOutput:
     return AgentExpectedOutput("security_report")
 
@@ -305,6 +316,25 @@ async def test_agent_orchestrator_missing_executor_does_not_consume_child_limit(
     result = await orchestrator.delegate(request(constraints=constraints, parent_task_id=parent))
 
     assert result.status is AgentTaskResultStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_agent_orchestrator_enforces_duration_limit() -> None:
+    registry = AgentRegistry((profile(),), (instance(),))
+    orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): SlowExecutor()})
+
+    result = await orchestrator.delegate(
+        request(
+            constraints=AgentTaskConstraints(
+                read_only=True,
+                max_duration_seconds=0.001,
+            )
+        )
+    )
+
+    assert result.status is AgentTaskResultStatus.FAILED
+    assert result.error_code is ErrorCode.TIMEOUT
+    assert result.reason == "agent task exceeded max_duration_seconds=0.001"
 
 
 def test_rejected_agent_task_result_uses_policy_denied_by_default() -> None:

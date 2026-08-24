@@ -106,7 +106,7 @@ class AgentOrchestrator:
                 f"agent executor not registered: {instance.agent_id}"
             )
         self._reserve_child_slot(request)
-        return await executor.execute_agent_task(request)
+        return await _execute_agent_task(executor, request)
 
     async def delegate_many(
         self,
@@ -276,6 +276,29 @@ def rejected_agent_task_result(
         reason=reason,
         error_code=error_code,
     )
+
+
+async def _execute_agent_task(
+    executor: AgentExecutor,
+    request: AgentTaskRequest,
+) -> AgentTaskResult:
+    try:
+        if request.constraints.max_duration_seconds is None:
+            return await executor.execute_agent_task(request)
+        return await asyncio.wait_for(
+            executor.execute_agent_task(request),
+            timeout=request.constraints.max_duration_seconds,
+        )
+    except TimeoutError:
+        return AgentTaskResult(
+            request.task_id,
+            AgentTaskResultStatus.FAILED,
+            reason=(
+                "agent task exceeded max_duration_seconds="
+                f"{request.constraints.max_duration_seconds}"
+            ),
+            error_code=ErrorCode.TIMEOUT,
+        )
 
 
 def _validate_delegation_specs(specs: tuple[AgentDelegationSpec, ...]) -> None:
