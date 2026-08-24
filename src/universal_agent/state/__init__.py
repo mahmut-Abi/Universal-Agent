@@ -4,6 +4,7 @@ from universal_agent.state.store import (
     InMemoryStateStore,
     SessionStore,
     SessionVersionConflictError,
+    StateEventCommitter,
     StateNotFoundError,
     StateStore,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "SessionSnapshot",
     "SessionStore",
     "SessionVersionConflictError",
+    "StateEventCommitter",
     "StateNotFoundError",
     "StateStore",
     "copy_session",

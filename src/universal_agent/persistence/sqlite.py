@@ -121,33 +121,8 @@ class SQLiteEventStore:
         self._path = Path(path)
 
     async def emit(self, event: RuntimeEvent) -> None:
-        payload = _encode_json(encode_runtime_event(event))
         with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO runtime_events(
-                    event_id,
-                    session_id,
-                    goal_id,
-                    task_id,
-                    action_id,
-                    type,
-                    occurred_at,
-                    payload
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(event.id),
-                    str(event.session_id),
-                    str(event.goal_id),
-                    str(event.task_id),
-                    None if event.action_id is None else str(event.action_id),
-                    event.type,
-                    event.occurred_at.isoformat(),
-                    payload,
-                ),
-            )
+            _insert_runtime_event(connection, event)
 
     async def list_events(
         self,
@@ -186,6 +161,48 @@ class SQLiteEventStore:
         return connection
 
 
+class SQLiteRuntimeStore(SQLiteSessionStore, SQLiteEventStore):
+    """SQLite adapter that can commit a SessionSnapshot and RuntimeEvent atomically."""
+
+    async def commit_session_event(
+        self,
+        snapshot: SessionSnapshot,
+        event: RuntimeEvent,
+    ) -> None:
+        original_version = snapshot.version
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT payload FROM sessions WHERE session_id = ?",
+                (str(snapshot.state.session_id),),
+            ).fetchone()
+            if row is None:
+                raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
+            stored = decode_session_snapshot(json_mapping(json.loads(row[0])))
+            if snapshot.version != stored.version:
+                raise SessionVersionConflictError(
+                    f"session version conflict: {snapshot.state.session_id} expected "
+                    f"{stored.version}, got {snapshot.version}"
+                )
+            snapshot.version = stored.version + 1
+            try:
+                connection.execute(
+                    """
+                    UPDATE sessions
+                    SET created_at = ?, payload = ?
+                    WHERE session_id = ?
+                    """,
+                    (
+                        snapshot.state.goal.created_at.isoformat(),
+                        _encode_json(encode_session_snapshot(snapshot)),
+                        str(snapshot.state.session_id),
+                    ),
+                )
+                _insert_runtime_event(connection, event)
+            except Exception:
+                snapshot.version = original_version
+                raise
+
+
 def _ensure_schema(connection: sqlite3.Connection) -> None:
     connection.execute(
         """
@@ -221,3 +238,32 @@ def _ensure_schema(connection: sqlite3.Connection) -> None:
 
 def _encode_json(payload: object) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _insert_runtime_event(connection: sqlite3.Connection, event: RuntimeEvent) -> None:
+    payload = _encode_json(encode_runtime_event(event))
+    connection.execute(
+        """
+        INSERT INTO runtime_events(
+            event_id,
+            session_id,
+            goal_id,
+            task_id,
+            action_id,
+            type,
+            occurred_at,
+            payload
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            str(event.id),
+            str(event.session_id),
+            str(event.goal_id),
+            str(event.task_id),
+            None if event.action_id is None else str(event.action_id),
+            event.type,
+            event.occurred_at.isoformat(),
+            payload,
+        ),
+    )

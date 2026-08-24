@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from universal_agent.core import AgentState, SessionId
+from universal_agent.core import AgentState, RuntimeEvent, SessionId
 from universal_agent.state.session import (
     SessionSnapshot,
     copy_session,
@@ -35,6 +35,14 @@ class SessionStore(StateStore, Protocol):
     async def load_session(self, session_id: SessionId) -> SessionSnapshot: ...
 
     async def save_session(self, snapshot: SessionSnapshot) -> None: ...
+
+
+class StateEventCommitter(Protocol):
+    async def commit_session_event(
+        self,
+        snapshot: SessionSnapshot,
+        event: RuntimeEvent,
+    ) -> None: ...
 
 
 class InMemorySessionStore:

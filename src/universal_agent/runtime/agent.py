@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from typing import cast
 
 from universal_agent.context import BasicContextCompiler, ContextCompiler
 from universal_agent.core import (
@@ -53,7 +54,12 @@ from universal_agent.runtime.transitions import (
     cancel as cancel_transition,
 )
 from universal_agent.runtime.transitions import pause as pause_transition
-from universal_agent.state import SessionSnapshot, SessionStore, session_from_state
+from universal_agent.state import (
+    SessionSnapshot,
+    SessionStore,
+    StateEventCommitter,
+    session_from_state,
+)
 
 
 class AgentRuntime:
@@ -84,6 +90,11 @@ class AgentRuntime:
         self._state_store = state_store
         self._components = components
         self._event_sink = event_sink
+        self._state_event_committer = (
+            cast(StateEventCommitter, state_store)
+            if hasattr(state_store, "commit_session_event")
+            else None
+        )
         self._context_compiler = context_compiler or BasicContextCompiler()
         self._observation_processor = ObservationProcessor(components)
         self._max_iterations = max_iterations
@@ -506,13 +517,13 @@ class AgentRuntime:
                 self._emitter(session),
             )
         self._record_episodic(session, transition)
-        await self._save(session)
-        await self._emit(
+        event = self._runtime_event(
             session.state,
             transition.event_type,
             action_id=transition.action_id,
             data=transition.event_data,
         )
+        await self._commit_session_event(session, event)
         return transition.result
 
     def _recall(self, session: SessionRuntimeState) -> tuple[MemoryRecord, ...]:
@@ -573,12 +584,16 @@ class AgentRuntime:
             domain_identities=snapshot.domains,
         )
         failed_snapshot.version = snapshot.version
-        await self._state_store.save_session(failed_snapshot)
-        await self._emit(
+        event = self._runtime_event(
             state,
             "GoalFailed",
             data={"error_code": ErrorCode.INVALID_STATE.value, "reason": reason},
         )
+        if self._state_event_committer is None:
+            await self._state_store.save_session(failed_snapshot)
+            await self._event_sink.emit(event)
+        else:
+            await self._state_event_committer.commit_session_event(failed_snapshot, event)
         return build_result(
             state,
             ExecutionStatus.FAILED,
@@ -589,6 +604,20 @@ class AgentRuntime:
     async def _save(self, session: SessionRuntimeState) -> None:
         snapshot = session.snapshot()
         await self._state_store.save_session(snapshot)
+        session.version = snapshot.version
+
+    async def _commit_session_event(
+        self,
+        session: SessionRuntimeState,
+        event: RuntimeEvent,
+    ) -> None:
+        snapshot = session.snapshot()
+        if self._state_event_committer is None:
+            await self._state_store.save_session(snapshot)
+            session.version = snapshot.version
+            await self._event_sink.emit(event)
+            return
+        await self._state_event_committer.commit_session_event(snapshot, event)
         session.version = snapshot.version
 
     def _emitter(
@@ -615,12 +644,22 @@ class AgentRuntime:
         data: dict[str, object] | None = None,
     ) -> None:
         await self._event_sink.emit(
-            RuntimeEvent(
-                type=event_type,
-                session_id=state.session_id,
-                goal_id=state.goal.id,
-                task_id=state.current_task.id,
-                action_id=action_id,
-                data=data or {},
-            )
+            self._runtime_event(state, event_type, action_id=action_id, data=data)
+        )
+
+    def _runtime_event(
+        self,
+        state: AgentState,
+        event_type: str,
+        *,
+        action_id: ActionId | None = None,
+        data: dict[str, object] | None = None,
+    ) -> RuntimeEvent:
+        return RuntimeEvent(
+            type=event_type,
+            session_id=state.session_id,
+            goal_id=state.goal.id,
+            task_id=state.current_task.id,
+            action_id=action_id,
+            data=data or {},
         )

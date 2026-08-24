@@ -29,8 +29,7 @@ from universal_agent.model import ModelAdapter
 from universal_agent.persistence import (
     FileEventStore,
     FileSessionStore,
-    SQLiteEventStore,
-    SQLiteSessionStore,
+    SQLiteRuntimeStore,
 )
 from universal_agent.profile import AgentProfile
 from universal_agent.runtime import (
@@ -235,7 +234,8 @@ def _build_stores(config: RuntimeConfig) -> tuple[SessionStore, _EventStore]:
         return FileSessionStore(config.store.path), FileEventStore(config.store.path)
     if config.store.backend is StoreBackend.SQLITE:
         assert config.store.path is not None
-        return SQLiteSessionStore(config.store.path), SQLiteEventStore(config.store.path)
+        store = SQLiteRuntimeStore(config.store.path)
+        return store, store
     raise ValueError(f"unsupported store backend: {config.store.backend}")
 
 

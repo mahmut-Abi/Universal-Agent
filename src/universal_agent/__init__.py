@@ -155,6 +155,7 @@ from universal_agent.persistence import (
     FileEventStore,
     FileSessionStore,
     SQLiteEventStore,
+    SQLiteRuntimeStore,
     SQLiteSessionStore,
 )
 from universal_agent.profile import (
@@ -335,6 +336,7 @@ __all__ = [
     "RuntimeTraceSpanView",
     "SQLiteDistributedLockRegistry",
     "SQLiteEventStore",
+    "SQLiteRuntimeStore",
     "SQLiteSessionStore",
     "SQLiteWorkQueue",
     "SQLiteWorkerRegistry",

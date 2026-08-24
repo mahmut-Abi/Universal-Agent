@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ from universal_agent import (
     RuntimeBuilder,
     ScriptedModelAdapter,
     SQLiteEventStore,
+    SQLiteRuntimeStore,
     SQLiteSessionStore,
     SuccessCriterion,
     Task,
@@ -27,6 +29,7 @@ from universal_agent.core import (
     ExecutionStatus,
     GoalStatus,
     JsonMapping,
+    RuntimeEvent,
     new_session_id,
 )
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
@@ -138,6 +141,49 @@ async def test_persistent_session_stores_reject_stale_snapshot_versions(
     latest = await store.load_session(snapshot.state.session_id)
     assert latest.version == 1
     assert latest.state.iteration == 1
+
+
+@pytest.mark.asyncio
+async def test_sqlite_runtime_store_commits_session_and_event_atomically(
+    tmp_path: Path,
+) -> None:
+    store = SQLiteRuntimeStore(tmp_path / "runtime.sqlite3")
+    goal = Goal("Atomic state event", (SuccessCriterion("healthy", True),))
+    task = Task("Inspect", ("healthy",))
+    snapshot = session_from_state(goal_state(goal, task))
+    await store.create_session(snapshot)
+
+    first = await store.load_session(snapshot.state.session_id)
+    first.state.iteration = 1
+    event = RuntimeEvent(
+        "StateUpdated",
+        first.state.session_id,
+        first.state.goal.id,
+        first.state.current_task.id,
+        id=EventId("event-1"),
+    )
+
+    await store.commit_session_event(first, event)
+
+    latest = await store.load_session(snapshot.state.session_id)
+    events = await store.list_events(snapshot.state.session_id)
+    assert first.version == 1
+    assert latest.version == 1
+    assert latest.state.iteration == 1
+    assert [item.id for item in events] == [EventId("event-1")]
+
+    duplicate_event_snapshot = await store.load_session(snapshot.state.session_id)
+    duplicate_event_snapshot.state.iteration = 2
+    with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
+        await store.commit_session_event(duplicate_event_snapshot, event)
+
+    after_duplicate = await store.load_session(snapshot.state.session_id)
+    assert duplicate_event_snapshot.version == 1
+    assert after_duplicate.version == 1
+    assert after_duplicate.state.iteration == 1
+    assert [item.id for item in await store.list_events(snapshot.state.session_id)] == [
+        EventId("event-1")
+    ]
 
 
 def goal_state(goal: Goal, task: Task) -> AgentState:
