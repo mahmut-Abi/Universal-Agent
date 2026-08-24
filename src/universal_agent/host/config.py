@@ -15,6 +15,39 @@ class StoreBackend(StrEnum):
     SQLITE = "sqlite"
 
 
+class SecretSource(StrEnum):
+    ENV = "env"
+
+
+@dataclass(frozen=True, slots=True)
+class SecretRef:
+    name: str
+    source: SecretSource
+    key: str
+    required: bool = True
+
+    @classmethod
+    def env(cls, name: str, key: str, *, required: bool = True) -> SecretRef:
+        return cls(name, SecretSource.ENV, key, required)
+
+    @classmethod
+    def from_mapping(cls, name: str, values: Mapping[str, JsonValue]) -> SecretRef:
+        ref = cls(
+            name=name,
+            source=SecretSource(_string(values.get("source", SecretSource.ENV.value), "source")),
+            key=_string(values.get("key"), "key"),
+            required=_bool(values.get("required", True), "required"),
+        )
+        ref.validate()
+        return ref
+
+    def validate(self) -> None:
+        if not self.name.strip():
+            raise ValueError("secret name must not be empty")
+        if not self.key.strip():
+            raise ValueError(f"secret {self.name} key must not be empty")
+
+
 @dataclass(frozen=True, slots=True)
 class StoreConfig:
     backend: StoreBackend = StoreBackend.MEMORY
@@ -105,6 +138,7 @@ class DomainConfig:
 @dataclass(frozen=True, slots=True)
 class RuntimeConfig:
     environment: JsonMapping = field(default_factory=immutable_json)
+    secrets: tuple[SecretRef, ...] = ()
     store: StoreConfig = field(default_factory=StoreConfig.memory)
     distributed_queue: StoreConfig = field(default_factory=StoreConfig.memory)
     distributed_locks: StoreConfig = field(default_factory=StoreConfig.memory)
@@ -130,6 +164,7 @@ class RuntimeConfig:
         )
         config = cls(
             environment=immutable_json(_object(values.get("environment", {}), "environment")),
+            secrets=_secret_refs(values.get("secrets")),
             store=StoreConfig.from_mapping(_object(values.get("store", {}), "store")),
             distributed_queue=StoreConfig.from_mapping(
                 _object(values.get("distributed_queue", {}), "distributed_queue")
@@ -148,6 +183,11 @@ class RuntimeConfig:
         return config
 
     def validate(self) -> None:
+        for secret in self.secrets:
+            secret.validate()
+        duplicate_secrets = _duplicates(tuple(secret.name for secret in self.secrets))
+        if duplicate_secrets:
+            raise ValueError("duplicate runtime secrets: " + ", ".join(duplicate_secrets))
         self.store.validate()
         self.distributed_queue.validate()
         self.distributed_locks.validate()
@@ -178,6 +218,16 @@ def _object(value: JsonValue, field: str) -> Mapping[str, JsonValue]:
     raise ValueError(f"{field} must be an object")
 
 
+def _secret_refs(value: JsonValue) -> tuple[SecretRef, ...]:
+    if value is None:
+        return ()
+    secrets = _object(value, "secrets")
+    return tuple(
+        SecretRef.from_mapping(name, _object(body, f"secrets.{name}"))
+        for name, body in sorted(secrets.items())
+    )
+
+
 def _domain_configs(value: JsonValue) -> tuple[DomainConfig, ...]:
     if value is None:
         return ()
@@ -187,14 +237,17 @@ def _domain_configs(value: JsonValue) -> tuple[DomainConfig, ...]:
 
 
 def _duplicate_domain_configs(domains: tuple[DomainConfig, ...]) -> tuple[str, ...]:
-    seen: set[tuple[str | None, str | None]] = set()
-    duplicates: set[tuple[str | None, str | None]] = set()
-    for domain in domains:
-        key = (domain.name, domain.version)
-        if key in seen:
-            duplicates.add(key)
-        seen.add(key)
-    return tuple(f"{name or ''}@{version or ''}" for name, version in sorted(duplicates))
+    return _duplicates(tuple(f"{domain.name or ''}@{domain.version or ''}" for domain in domains))
+
+
+def _duplicates(values: tuple[str, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for value in values:
+        if value in seen:
+            duplicates.add(value)
+        seen.add(value)
+    return tuple(sorted(duplicates))
 
 
 def _json_value(value: object, field: str) -> JsonValue:
@@ -228,6 +281,12 @@ def _int(value: JsonValue, field: str) -> int:
     if isinstance(value, int) and not isinstance(value, bool):
         return value
     raise ValueError(f"{field} must be an integer")
+
+
+def _bool(value: JsonValue, field: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"{field} must be a boolean")
 
 
 def _list(value: JsonValue, field: str) -> list[JsonValue]:

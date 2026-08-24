@@ -2,6 +2,8 @@ from universal_agent.host.config import (
     DomainConfig,
     RuntimeConfig,
     RuntimeLimitsConfig,
+    SecretRef,
+    SecretSource,
     StoreBackend,
     StoreConfig,
 )
@@ -12,6 +14,8 @@ __all__ = [
     "RuntimeConfig",
     "RuntimeHost",
     "RuntimeLimitsConfig",
+    "SecretRef",
+    "SecretSource",
     "StoreBackend",
     "StoreConfig",
 ]

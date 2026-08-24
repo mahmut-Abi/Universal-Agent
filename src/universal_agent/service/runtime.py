@@ -101,7 +101,7 @@ from universal_agent.world import (
 )
 
 if TYPE_CHECKING:
-    from universal_agent.host.config import DomainConfig, RuntimeConfig
+    from universal_agent.host.config import DomainConfig, RuntimeConfig, SecretRef
 
 
 _DISTRIBUTED_SESSION_LOCK_TTL_SECONDS = 300.0
@@ -256,6 +256,14 @@ class RuntimeConfigDomainView:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeSecretRefView:
+    name: str
+    source: str
+    key: str
+    required: bool
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeConfigView:
     environment: JsonMapping
     store_backend: str
@@ -269,6 +277,7 @@ class RuntimeConfigView:
     max_iterations: int
     max_recovery_steps: int
     domains: tuple[RuntimeConfigDomainView, ...]
+    secrets: tuple[RuntimeSecretRefView, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -547,6 +556,7 @@ class RuntimeService:
         if self._config is None:
             return RuntimeConfigView(
                 environment=immutable_json(),
+                secrets=(),
                 store_backend="memory",
                 store_path=None,
                 distributed_queue_backend="memory",
@@ -561,6 +571,7 @@ class RuntimeService:
             )
         return RuntimeConfigView(
             environment=redact_environment(self._config.environment),
+            secrets=runtime_secret_ref_views(self._config.secrets),
             store_backend=self._config.store.backend.value,
             store_path=self._config.store.path,
             distributed_queue_backend=self._config.distributed_queue.backend.value,
@@ -1638,6 +1649,18 @@ def runtime_config_domain_views(
             ),
         )
         for index, identity in enumerate(identities)
+    )
+
+
+def runtime_secret_ref_views(secrets: tuple[SecretRef, ...]) -> tuple[RuntimeSecretRefView, ...]:
+    return tuple(
+        RuntimeSecretRefView(
+            secret.name,
+            secret.source.value,
+            secret.key,
+            secret.required,
+        )
+        for secret in secrets
     )
 
 

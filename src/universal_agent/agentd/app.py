@@ -1235,6 +1235,15 @@ def config_body(view: RuntimeConfigView) -> JsonMapping:
                 "max_recovery_steps": view.max_recovery_steps,
             },
             "domains": [_runtime_config_domain_body(domain) for domain in view.domains],
+            "secrets": [
+                {
+                    "name": secret.name,
+                    "source": secret.source,
+                    "key": secret.key,
+                    "required": secret.required,
+                }
+                for secret in view.secrets
+            ],
         }
     )
 

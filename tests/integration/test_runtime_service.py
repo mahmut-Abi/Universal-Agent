@@ -22,6 +22,7 @@ from universal_agent import (
     RuntimeConfig,
     RuntimeService,
     ScriptedModelAdapter,
+    SecretRef,
     SuccessCriterion,
     Task,
     WorkerId,
@@ -183,6 +184,30 @@ def test_runtime_service_config_redacts_sensitive_environment_values() -> None:
         "nested": {"password": "<redacted>", "safe": "visible"},
         "items": [{"secret_key": "<redacted>", "name": "kept"}],
     }
+
+
+def test_runtime_service_config_exposes_secret_references_without_values() -> None:
+    backend = ServiceBackend()
+    active = DomainLoader().load(KubernetesRemediationDomain(backend, backend))
+    components = RuntimeBuilder().build(active)
+    config = RuntimeConfig(
+        environment=immutable_json({"environment": "production"}),
+        secrets=(SecretRef.env("openai_api_key", "OPENAI_API_KEY"),),
+        domain=DomainConfig("kubernetes", "0.2.0"),
+    )
+    service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+        config=config,
+    )
+
+    projected = service.config()
+
+    assert projected.environment == {"environment": "production"}
+    assert projected.secrets[0].name == "openai_api_key"
+    assert projected.secrets[0].source == "env"
+    assert projected.secrets[0].key == "OPENAI_API_KEY"
+    assert projected.secrets[0].required is True
 
 
 def test_runtime_service_config_exposes_domain_backend_settings() -> None:

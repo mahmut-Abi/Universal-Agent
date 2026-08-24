@@ -25,6 +25,7 @@ from universal_agent import (
     RuntimeLimitsConfig,
     RuntimeService,
     ScriptedModelAdapter,
+    SecretRef,
     StoreConfig,
     SuccessCriterion,
     Task,
@@ -200,6 +201,7 @@ def build_service(
     distributed_coordinator: DistributedRuntimeCoordinator | None = None,
     domain_packages: DomainPackageRegistry | None = None,
     environment: JsonMapping | None = None,
+    secrets: tuple[SecretRef, ...] = (),
 ) -> tuple[RuntimeService, AgentdBackend]:
     backend = AgentdBackend()
     store = InMemoryStateStore()
@@ -220,6 +222,7 @@ def build_service(
     api = RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
     config = RuntimeConfig(
         environment=environment,
+        secrets=secrets,
         store=StoreConfig.memory(),
         limits=RuntimeLimitsConfig(max_iterations=12, max_recovery_steps=4),
         domain=DomainConfig("kubernetes", "0.2.0"),
@@ -375,6 +378,28 @@ async def test_agentd_config_route_redacts_sensitive_environment_values() -> Non
         "password": "<redacted>",
         "nested": {"api_token": "<redacted>", "safe": "visible"},
     }
+    assert config.body["secrets"] == []
+
+
+@pytest.mark.asyncio
+async def test_agentd_config_route_exposes_secret_references_without_values() -> None:
+    service, _ = build_service(
+        [],
+        secrets=(SecretRef.env("openai_api_key", "OPENAI_API_KEY"),),
+    )
+    app = AgentdApp(service)
+
+    config = await app.handle(HttpRequest("GET", "/v1/config"))
+
+    assert config.status_code == 200
+    assert config.body["secrets"] == [
+        {
+            "name": "openai_api_key",
+            "source": "env",
+            "key": "OPENAI_API_KEY",
+            "required": True,
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -522,6 +547,7 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     assert config.status_code == 200
     assert config.body == {
         "environment": {"environment": "staging"},
+        "secrets": [],
         "store": {"backend": "memory", "path": None},
         "distributed_queue": {"backend": "memory", "path": None},
         "distributed_locks": {"backend": "memory", "path": None},

@@ -121,6 +121,13 @@ async def main() -> None:
                     "domain": {"name": "kubernetes", "version": "0.2.0"},
                     "runtime": {
                         "environment": {"environment": "production"},
+                        "secrets": {
+                            "openai_api_key": {
+                                "source": "env",
+                                "key": "OPENAI_API_KEY",
+                                "required": True,
+                            }
+                        },
                         "store": {"backend": "file", "path": str(root / "store")},
                         "limits": {"max_iterations": 8, "max_recovery_steps": 4},
                         "domain": {"name": "kubernetes", "version": "0.2.0"},
@@ -181,6 +188,7 @@ async def main() -> None:
 
         print(f"profile={profile_path}")
         print(f"store_backend={profile.runtime.store.backend.value}")
+        print(f"secret_ref_count={len(first.service.config().secrets)}")
         print(f"domain={second.domain_identity.name}@{second.domain_identity.version}")
         print(f"profile_count={len(profile_items)}")
         print(f"ready={ready.body['ready']}")

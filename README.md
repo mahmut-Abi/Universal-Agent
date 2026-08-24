@@ -232,10 +232,11 @@ event-sourcing models or production migration systems.
   `RuntimeService` now adds framework-free `agentd` foundation metadata: health, readiness, domains,
   capabilities, tools, delegated execution, runnable examples, an `AgentdApp` route adapter for
   HTTP-shaped goal submission, cursor session listing, JSON and SSE-formatted session/event reads,
-  pause/resume/cancel routes, runtime configuration reads with redacted sensitive environment values,
-  Profile catalog reads, a standard-library `AgentdHttpServer` bridge, file-backed session/event
-  stores for local recovery, a local CLI adapter, and typed
-  `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for environment, limits, memory/file/SQLite store backends,
+  pause/resume/cancel routes, runtime configuration reads with redacted sensitive environment values
+  and secret-reference metadata that never includes secret values, Profile catalog reads, a
+  standard-library `AgentdHttpServer` bridge, file-backed session/event stores for local recovery,
+  a local CLI adapter, and typed `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for
+  environment, secret references, limits, memory/file/SQLite store backends,
   Domain identity validation, multi-Domain composition activation, and CLI loading of generated
   Profile config files through `RuntimeHost`.
 - P3.6/P3.7 foundation: event-derived `metrics`, Prometheus metrics text export, `cost`, `logs`,

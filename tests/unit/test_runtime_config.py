@@ -8,6 +8,8 @@ from universal_agent import (
     DomainConfig,
     RuntimeConfig,
     RuntimeLimitsConfig,
+    SecretRef,
+    SecretSource,
     StoreBackend,
     StoreConfig,
 )
@@ -36,6 +38,7 @@ def test_runtime_config_from_mapping_parses_typed_values() -> None:
     )
 
     assert config.environment["environment"] == "production"
+    assert config.secrets == ()
     assert config.store == StoreConfig.file("/tmp/universal-agent")
     assert config.distributed_queue == StoreConfig.file("/tmp/universal-agent/work-queue.json")
     assert config.distributed_locks == StoreConfig.file(
@@ -46,6 +49,51 @@ def test_runtime_config_from_mapping_parses_typed_values() -> None:
     assert config.limits == RuntimeLimitsConfig(max_iterations=7, max_recovery_steps=3)
     assert config.domain == DomainConfig("kubernetes", "0.2.0")
     assert config.configured_domains() == (DomainConfig("kubernetes", "0.2.0"),)
+
+
+def test_runtime_config_from_mapping_parses_secret_refs() -> None:
+    config = RuntimeConfig.from_mapping(
+        {
+            "secrets": {
+                "openai_api_key": {
+                    "source": "env",
+                    "key": "OPENAI_API_KEY",
+                    "required": True,
+                },
+                "optional_token": {
+                    "source": "env",
+                    "key": "OPTIONAL_TOKEN",
+                    "required": False,
+                },
+            }
+        }
+    )
+
+    assert config.secrets == (
+        SecretRef("openai_api_key", SecretSource.ENV, "OPENAI_API_KEY", True),
+        SecretRef("optional_token", SecretSource.ENV, "OPTIONAL_TOKEN", False),
+    )
+
+
+def test_runtime_config_rejects_invalid_secret_refs() -> None:
+    with pytest.raises(ValueError, match="secrets must be an object"):
+        RuntimeConfig.from_mapping({"secrets": []})
+
+    with pytest.raises(ValueError, match="key must be a string"):
+        RuntimeConfig.from_mapping({"secrets": {"api_key": {"source": "env"}}})
+
+    with pytest.raises(ValueError, match="required must be a boolean"):
+        RuntimeConfig.from_mapping(
+            {"secrets": {"api_key": {"source": "env", "key": "API_KEY", "required": "yes"}}}
+        )
+
+    with pytest.raises(ValueError, match="duplicate runtime secrets"):
+        RuntimeConfig(
+            secrets=(
+                SecretRef.env("api_key", "API_KEY"),
+                SecretRef.env("api_key", "API_KEY_2"),
+            )
+        ).validate()
 
 
 def test_runtime_config_from_mapping_parses_multi_domain_values() -> None:
@@ -109,6 +157,7 @@ def test_runtime_config_from_json_file_parses_typed_values(tmp_path: Path) -> No
     config = RuntimeConfig.from_json_file(path)
 
     assert config.environment["environment"] == "production"
+    assert config.secrets == ()
     assert config.store == StoreConfig.file("/tmp/universal-agent")
     assert config.limits == RuntimeLimitsConfig(max_iterations=7, max_recovery_steps=3)
     assert config.domain == DomainConfig("kubernetes", "0.2.0")
