@@ -14,10 +14,10 @@ Evaluation Harness / Replay foundation, the first read-only TUI and Web Console 
 foundations, the first P6 local scheduler, queue, worker registry, worker, lock, snapshot, health,
 and coordinator primitives, and the first P7 Domain Package registry metadata plus SDK scaffold,
 Evaluation Dataset catalog, Profile Catalog and unified Ecosystem Catalog foundations, plus the first
-P4 Multi-Agent task contract, registry and delegation foundation. The v3.0 design document also
-defines later productization layers such as production database persistence, long-lived event
-delivery, OpenTelemetry exporters, deeper Multi-Agent orchestration, distributed runtime, and
-ecosystem packaging.
+P4 Multi-Agent task contract, registry, delegation and conflict-resolution foundation. The v3.0
+design document also defines later productization layers such as production database persistence,
+long-lived event delivery, OpenTelemetry exporters, deeper Multi-Agent orchestration, distributed
+runtime, and ecosystem packaging.
 
 ## Architectural boundaries
 
@@ -336,8 +336,10 @@ event-sourcing models or production migration systems.
   instances by read-only, allowed-profile and permission constraints; `AgentOrchestrator` delegates
   only through registered executors and enforces parent child-count limits. `RuntimeAgentExecutor`
   adapts a target `RuntimeAPI` without creating a second Agent loop or bypassing the target Runtime's
-  policy/evaluation path. This is a foundation for optional Multi-Agent execution, not a replacement
-  for Domain Composition.
+  policy/evaluation path. `AgentConflictResolver` resolves structured action proposals by policy,
+  read-only constraints, side effect, risk and explicit priority, and requires review for equal-rank
+  conflicts instead of using last-result-wins. This is a foundation for optional Multi-Agent
+  execution, not a replacement for Domain Composition.
 
 The Kubernetes Domain uses injected backends. Most tests and examples use fake backends; no real
 cluster is accessed unless a caller explicitly wires `KubectlBackend`. `KubectlBackend` implements
@@ -368,7 +370,7 @@ The design roadmap now separates semantic runtime maturity from productization:
 - P3.6-P3.7: Operations and Evaluation — OpenTelemetry, metrics, audit, cost tracking, runtime
   doctor, evaluation suites, quality gates, replay, and deterministic test mode.
 - P4: Multi-Agent foundation — structured Agent Task / Result contracts, Agent Profile vs Instance
-  registry, delegation limits, and a RuntimeAPI executor adapter.
+  registry, delegation limits, conflict resolution, and a RuntimeAPI executor adapter.
 - P5: Read-only TUI/Web application views for runtime, session, evidence, world, domain and settings inspection.
 - P6: Distributed Runtime foundations — typed local Scheduler, Work Queue, Worker Registry, Worker Lease, capability-aware Worker handler
   execution, scheduled Goal execution, current Task resume, leased lock, Runtime Snapshot, Health Report, Coordinator, Heartbeat, retry, cancellation and lease expiry primitives.

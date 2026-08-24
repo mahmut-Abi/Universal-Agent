@@ -156,6 +156,8 @@ from universal_agent.host import (
 from universal_agent.model import ModelAdapter, ModelUsage, ModelUsageProvider, ScriptedModelAdapter
 from universal_agent.multi_agent import (
     AGENT_TASK_API_VERSION,
+    AgentActionProposal,
+    AgentConflictResolver,
     AgentDelegationError,
     AgentDelegationLimitError,
     AgentExecutor,
@@ -168,6 +170,7 @@ from universal_agent.multi_agent import (
     AgentOrchestrator,
     AgentProfileNotRegisteredError,
     AgentProfileRecord,
+    AgentProposalId,
     AgentRegistry,
     AgentRegistryError,
     AgentRegistrySnapshot,
@@ -176,6 +179,8 @@ from universal_agent.multi_agent import (
     AgentTaskRequest,
     AgentTaskResult,
     AgentTaskResultStatus,
+    ConflictResolution,
+    ConflictResolutionStatus,
     NoEligibleAgentError,
     RuntimeAgentExecutor,
     agent_task_request_payload,
@@ -265,6 +270,8 @@ from universal_agent.web import (
 
 __all__ = [
     "AGENT_TASK_API_VERSION",
+    "AgentActionProposal",
+    "AgentConflictResolver",
     "AgentDelegationError",
     "AgentDelegationLimitError",
     "AgentExecutor",
@@ -278,6 +285,7 @@ __all__ = [
     "AgentProfile",
     "AgentProfileNotRegisteredError",
     "AgentProfileRecord",
+    "AgentProposalId",
     "AgentRegistry",
     "AgentRegistryError",
     "AgentRegistrySnapshot",
@@ -291,6 +299,8 @@ __all__ = [
     "AmbiguousEcosystemRegistryItemError",
     "AmbiguousEvaluationDatasetError",
     "AuditRecordView",
+    "ConflictResolution",
+    "ConflictResolutionStatus",
     "Decision",
     "DecisionType",
     "DistributedCancellationResult",

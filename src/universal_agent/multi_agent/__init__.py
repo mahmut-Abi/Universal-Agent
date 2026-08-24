@@ -1,3 +1,10 @@
+from universal_agent.multi_agent.conflicts import (
+    AgentActionProposal,
+    AgentConflictResolver,
+    AgentProposalId,
+    ConflictResolution,
+    ConflictResolutionStatus,
+)
 from universal_agent.multi_agent.contracts import (
     AGENT_TASK_API_VERSION,
     AgentExpectedOutput,
@@ -33,6 +40,8 @@ from universal_agent.multi_agent.registry import (
 
 __all__ = [
     "AGENT_TASK_API_VERSION",
+    "AgentActionProposal",
+    "AgentConflictResolver",
     "AgentDelegationError",
     "AgentDelegationLimitError",
     "AgentExecutor",
@@ -45,6 +54,7 @@ __all__ = [
     "AgentOrchestrator",
     "AgentProfileNotRegisteredError",
     "AgentProfileRecord",
+    "AgentProposalId",
     "AgentRegistry",
     "AgentRegistryError",
     "AgentRegistrySnapshot",
@@ -53,6 +63,8 @@ __all__ = [
     "AgentTaskRequest",
     "AgentTaskResult",
     "AgentTaskResultStatus",
+    "ConflictResolution",
+    "ConflictResolutionStatus",
     "NoEligibleAgentError",
     "RuntimeAgentExecutor",
     "agent_task_request_payload",
