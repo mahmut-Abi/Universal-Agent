@@ -1139,6 +1139,29 @@ async def test_cli_profile_show_exposes_one_profile() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_profile_verify_checks_profile_config_catalog(tmp_path: Path) -> None:
+    service, _ = build_cli_service([])
+    profile_dir = tmp_path / "profiles"
+    write_profile_config_file(profile_dir / "kubernetes.profile.json")
+    output = StringIO()
+
+    status = await run_cli(
+        ["profile", "verify", "--profile-dir", str(profile_dir)],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["passed"] is True
+    assert payload["failed_check_count"] == 0
+    assert {check["name"] for check in payload["checks"]} == {
+        "profile_config_exists",
+        "profile_config_matches_identity",
+    }
+
+
+@pytest.mark.asyncio
 async def test_cli_profile_show_rejects_unknown_profile() -> None:
     service, _ = build_cli_service([])
     output = StringIO()

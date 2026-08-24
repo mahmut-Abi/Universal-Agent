@@ -160,11 +160,15 @@ from universal_agent.persistence import (
 from universal_agent.profile import (
     AgentProfile,
     ProfileCatalog,
+    ProfileCatalogCheck,
     ProfileCatalogEntry,
+    ProfileCatalogVerificationReport,
     ProfileConfig,
     ProfileConfigNotFoundError,
     ProfileRegistry,
     load_profile_catalog,
+    verify_profile_catalog,
+    verify_profile_catalog_entry,
 )
 from universal_agent.runtime import (
     AgentRuntime,
@@ -303,7 +307,9 @@ __all__ = [
     "ModelUsageProvider",
     "NoWorkAvailable",
     "ProfileCatalog",
+    "ProfileCatalogCheck",
     "ProfileCatalogEntry",
+    "ProfileCatalogVerificationReport",
     "ProfileConfig",
     "ProfileConfigNotFoundError",
     "ProfileRegistry",
@@ -398,5 +404,7 @@ __all__ = [
     "verify_domain_package_registry",
     "verify_evaluation_dataset",
     "verify_evaluation_dataset_registry",
+    "verify_profile_catalog",
+    "verify_profile_catalog_entry",
     "write_ecosystem_registry_manifest",
 ]

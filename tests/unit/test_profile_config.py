@@ -12,6 +12,7 @@ from universal_agent import (
     ProfileRegistry,
     StoreConfig,
     load_profile_catalog,
+    verify_profile_catalog_entry,
 )
 
 
@@ -201,3 +202,24 @@ def test_profile_catalog_rejects_missing_configs_and_duplicate_names(tmp_path: P
     write_profile(tmp_path / "two" / "profile.json", "duplicate")
     with pytest.raises(ValueError, match="duplicate profiles: duplicate"):
         load_profile_catalog(tmp_path)
+
+
+def test_profile_catalog_verification_checks_local_config_identity(tmp_path: Path) -> None:
+    profile_path = tmp_path / "operator.profile.json"
+    write_profile(profile_path, "operator")
+    catalog = load_profile_catalog(tmp_path)
+    entry = catalog.get("operator")
+
+    passing = catalog.verify()
+    write_profile(profile_path, "renamed")
+    failing = verify_profile_catalog_entry(entry)
+    failed_checks = {check.name: check.message for check in failing.failed_checks}
+
+    assert passing.passed is True
+    assert {check.name for check in passing.checks} == {
+        "profile_config_exists",
+        "profile_config_matches_identity",
+    }
+    assert failing.passed is False
+    assert "profile_config_matches_identity" in failed_checks
+    assert "identity mismatch" in failed_checks["profile_config_matches_identity"]

@@ -125,6 +125,26 @@ class ProfileCatalogEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class ProfileCatalogCheck:
+    name: str
+    passed: bool
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileCatalogVerificationReport:
+    checks: tuple[ProfileCatalogCheck, ...]
+
+    @property
+    def passed(self) -> bool:
+        return all(check.passed for check in self.checks)
+
+    @property
+    def failed_checks(self) -> tuple[ProfileCatalogCheck, ...]:
+        return tuple(check for check in self.checks if not check.passed)
+
+
+@dataclass(frozen=True, slots=True)
 class ProfileCatalog:
     entries: tuple[ProfileCatalogEntry, ...] = ()
 
@@ -141,6 +161,9 @@ class ProfileCatalog:
 
     def registry(self) -> ProfileRegistry:
         return ProfileRegistry(tuple(entry.profile for entry in self.all()))
+
+    def verify(self) -> ProfileCatalogVerificationReport:
+        return verify_profile_catalog(self)
 
     def get(self, name: str) -> ProfileCatalogEntry:
         for entry in self.all():
@@ -180,9 +203,62 @@ def load_profile_catalog(root: str | Path) -> ProfileCatalog:
     return ProfileCatalog.discover(root)
 
 
+def verify_profile_catalog_entry(entry: ProfileCatalogEntry) -> ProfileCatalogVerificationReport:
+    return ProfileCatalogVerificationReport(
+        (
+            _profile_config_exists(entry),
+            _profile_config_matches_identity(entry),
+        )
+    )
+
+
+def verify_profile_catalog(catalog: ProfileCatalog) -> ProfileCatalogVerificationReport:
+    checks = tuple(
+        check for entry in catalog.all() for check in verify_profile_catalog_entry(entry).checks
+    )
+    return ProfileCatalogVerificationReport(checks)
+
+
 def _load_profile_entry(path: Path) -> ProfileCatalogEntry:
     config = ProfileConfig.from_json_file(path)
     return ProfileCatalogEntry(config.to_profile(), config, path)
+
+
+def _profile_config_exists(entry: ProfileCatalogEntry) -> ProfileCatalogCheck:
+    if entry.path.is_file():
+        return ProfileCatalogCheck(
+            "profile_config_exists",
+            True,
+            f"profile config exists: {_profile_identity(entry.profile)}",
+        )
+    return ProfileCatalogCheck(
+        "profile_config_exists",
+        False,
+        f"profile config missing or not a file: {entry.path}",
+    )
+
+
+def _profile_config_matches_identity(entry: ProfileCatalogEntry) -> ProfileCatalogCheck:
+    try:
+        loaded = ProfileConfig.from_json_file(entry.path).to_profile()
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        return ProfileCatalogCheck(
+            "profile_config_matches_identity",
+            False,
+            f"profile config could not be loaded: {exc}",
+        )
+    if (loaded.name, loaded.version) == (entry.profile.name, entry.profile.version):
+        return ProfileCatalogCheck(
+            "profile_config_matches_identity",
+            True,
+            f"profile config identity matches: {_profile_identity(entry.profile)}",
+        )
+    return ProfileCatalogCheck(
+        "profile_config_matches_identity",
+        False,
+        "profile config identity mismatch: "
+        f"expected {_profile_identity(entry.profile)}, loaded {_profile_identity(loaded)}",
+    )
 
 
 def _profile_config_paths(root: Path) -> tuple[Path, ...]:
@@ -224,6 +300,10 @@ def _duplicate_domain_configs(domains: tuple[DomainConfig, ...]) -> tuple[str, .
             duplicates.add(key)
         seen.add(key)
     return tuple(f"{name or ''}@{version or ''}" for name, version in sorted(duplicates))
+
+
+def _profile_identity(profile: AgentProfile) -> str:
+    return f"{profile.name}@{profile.version}"
 
 
 def _json_value(value: object, field: str) -> JsonValue:

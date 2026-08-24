@@ -157,8 +157,10 @@ from universal_agent.model import ScriptedModelAdapter
 from universal_agent.profile import (
     AgentProfile,
     ProfileCatalogEntry,
+    ProfileCatalogVerificationReport,
     ProfileConfig,
     ProfileConfigNotFoundError,
+    load_profile_catalog,
 )
 from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI
 from universal_agent.service import RuntimeService
@@ -623,6 +625,8 @@ def build_parser() -> argparse.ArgumentParser:
     profile_commands.add_parser("list")
     profile_show = profile_commands.add_parser("show")
     profile_show.add_argument("profile")
+    profile_verify = profile_commands.add_parser("verify")
+    profile_verify.add_argument("--profile-dir", required=True)
 
     capabilities = commands.add_parser("capabilities")
     capabilities_commands = capabilities.add_subparsers(
@@ -1464,6 +1468,10 @@ def _dispatch_profile(
             raise ValueError(f"unknown profile: {profile}")
         _write_json(out, profile_body(service.profile(profile)))
         return
+    if command == "verify":
+        catalog = load_profile_catalog(cast(str, args.profile_dir))
+        _write_json(out, profile_catalog_verification_body(catalog.verify()))
+        return
     raise ValueError(f"unknown profile command: {command}")
 
 
@@ -1890,8 +1898,7 @@ def _ecosystem_install_plan_body(plan: EcosystemInstallPlan) -> dict[str, object
             for candidate in plan.domain_packages.candidates
         ],
         "evaluation_datasets": [
-            _evaluation_dataset_body(candidate.dataset)
-            for candidate in plan.evaluation_datasets
+            _evaluation_dataset_body(candidate.dataset) for candidate in plan.evaluation_datasets
         ],
         "profiles": [_ecosystem_profile_body(candidate.entry) for candidate in plan.profiles],
     }
@@ -1909,12 +1916,10 @@ def _ecosystem_install_result_body(result: EcosystemInstallResult) -> dict[str, 
         "evaluation_dataset_registry_count": len(result.evaluation_datasets.identities()),
         "profile_registry_count": len(result.profiles.all()),
         "domain_packages": [
-            _ecosystem_domain_package_body(package)
-            for package in result.installed_domain_packages
+            _ecosystem_domain_package_body(package) for package in result.installed_domain_packages
         ],
         "evaluation_datasets": [
-            _evaluation_dataset_body(dataset)
-            for dataset in result.installed_evaluation_datasets
+            _evaluation_dataset_body(dataset) for dataset in result.installed_evaluation_datasets
         ],
         "profiles": [_ecosystem_profile_body(entry) for entry in result.installed_profiles],
     }
@@ -1959,6 +1964,23 @@ def domain_package_verification_body(
 
 def evaluation_dataset_verification_body(
     report: EvaluationDatasetVerificationReport,
+) -> dict[str, object]:
+    return {
+        "passed": report.passed,
+        "failed_check_count": len(report.failed_checks),
+        "checks": [
+            {
+                "name": check.name,
+                "passed": check.passed,
+                "message": check.message,
+            }
+            for check in report.checks
+        ],
+    }
+
+
+def profile_catalog_verification_body(
+    report: ProfileCatalogVerificationReport,
 ) -> dict[str, object]:
     return {
         "passed": report.passed,
