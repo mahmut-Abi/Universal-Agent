@@ -32,10 +32,13 @@ from universal_agent.multi_agent import (
     NoEligibleAgentError,
     agent_delegation_batch_result_payload,
     agent_delegation_spec_payload,
+    agent_registry_from_snapshot,
+    agent_registry_snapshot_payload,
     agent_task_request_payload,
     agent_task_result_payload,
     decode_agent_delegation_batch_result,
     decode_agent_delegation_spec,
+    decode_agent_registry_snapshot,
     decode_agent_task_request,
     decode_agent_task_result,
     rejected_agent_task_result,
@@ -269,6 +272,67 @@ def test_agent_registry_distinguishes_profiles_from_instances() -> None:
     assert registry.instance(AgentId("agent-1")).profile_name == "security-auditor"
     assert registry.snapshot().profiles[0].name == "security-auditor"
     assert registry.snapshot().instances[0].agent_id == AgentId("agent-1")
+
+
+def test_agent_registry_snapshot_payload_round_trips_profiles_and_instances() -> None:
+    registry = AgentRegistry(
+        (
+            AgentProfileRecord(
+                name="security-auditor",
+                version="1.0.0",
+                domains=(DomainIdentity("kubernetes", "0.2.0"),),
+                permissions=("read_only", "security_review"),
+                capabilities=("inspect_workload", "inspect_policy"),
+                description="Read-only security checks",
+            ),
+        ),
+        (
+            AgentInstanceRecord(
+                AgentId("agent-1"),
+                "security-auditor",
+                "1.0.0",
+                status=AgentInstanceStatus.DRAINING,
+                session_id=SessionId("session-agent-1"),
+                endpoint="http://localhost:9000",
+            ),
+        ),
+    )
+
+    decoded = decode_agent_registry_snapshot(agent_registry_snapshot_payload(registry.snapshot()))
+    restored = agent_registry_from_snapshot(decoded)
+
+    assert decoded.profiles[0].capabilities == ("inspect_workload", "inspect_policy")
+    assert decoded.instances[0].status is AgentInstanceStatus.DRAINING
+    assert decoded.instances[0].session_id == SessionId("session-agent-1")
+    assert restored.profile("security-auditor", "1.0.0").description == (
+        "Read-only security checks"
+    )
+    assert restored.instance(AgentId("agent-1")).endpoint == "http://localhost:9000"
+
+
+def test_agent_registry_snapshot_decoder_rejects_invalid_status() -> None:
+    with pytest.raises(ValueError, match="unsupported agent instance status"):
+        decode_agent_registry_snapshot(
+            immutable_json(
+                {
+                    "profiles": [
+                        {
+                            "name": "security-auditor",
+                            "version": "1.0.0",
+                            "domains": [{"name": "kubernetes", "version": "0.2.0"}],
+                        }
+                    ],
+                    "instances": [
+                        {
+                            "agent_id": "agent-1",
+                            "profile_name": "security-auditor",
+                            "profile_version": "1.0.0",
+                            "status": "missing",
+                        }
+                    ],
+                }
+            )
+        )
 
 
 def test_agent_registry_rejects_unknown_profile_and_duplicate_instances() -> None:

@@ -333,8 +333,9 @@ event-sourcing models or production migration systems.
 - P4 Multi-Agent foundation: `AgentTaskRequest` / `AgentTaskResult` define the structured
   Agent-to-Agent contract with explicit constraints, expected output, Evidence IDs, result status and
   strict payload encode/decode helpers. `AgentRegistry` distinguishes Profile templates from running
-  Agent instances and filters eligible instances by read-only, allowed-profile and permission
-  constraints; `AgentOrchestrator` delegates only through registered executors, marks instances busy
+  Agent instances, round-trips registry snapshots as structured payloads, and filters eligible
+  instances by read-only, allowed-profile and permission constraints; `AgentOrchestrator` delegates
+  only through registered executors, marks instances busy
   while they run, and enforces parent
   child-count and duration limits. It can also execute a dependency-aware batch with structured
   spec/result payload helpers, running ready child tasks concurrently while rejecting downstream
@@ -438,6 +439,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p4_multi_agent_batch_delegation.py
 .venv/bin/python examples/p4_multi_agent_timeout.py
 .venv/bin/python examples/p4_multi_agent_lifecycle.py
+.venv/bin/python examples/p4_multi_agent_registry_snapshot.py
 .venv/bin/python examples/p4_multi_agent_conflict_resolution.py
 .venv/bin/python examples/p4_multi_agent_result_merge.py
 .venv/bin/python examples/p4_multi_agent_evaluation.py
