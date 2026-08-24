@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import quote
 
 from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
@@ -27,6 +28,20 @@ from universal_agent.profile import (
 )
 
 ECOSYSTEM_REGISTRY_KIND = "EcosystemRegistry"
+
+
+class _DatasetSuiteLike(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def path(self) -> str: ...
+
+    @property
+    def description(self) -> str: ...
+
+    @property
+    def tags(self) -> tuple[str, ...]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -1025,6 +1040,7 @@ def _evaluation_dataset_install_candidate(
             f"registry expected {reference.name}@{reference.version}, "
             f"manifest loaded {dataset.identity.name}@{dataset.identity.version}"
         )
+    _verify_evaluation_dataset_ref_metadata(reference, dataset)
     return EcosystemEvaluationDatasetInstallCandidate(reference, dataset)
 
 
@@ -1065,6 +1081,7 @@ def _profile_install_candidate(
             f"registry expected {reference.name}@{reference.version}, "
             f"config loaded {entry.profile.name}@{entry.profile.version}"
         )
+    _verify_profile_ref_metadata(reference, entry)
     return EcosystemProfileInstallCandidate(reference, entry)
 
 
@@ -1157,6 +1174,61 @@ def _verify_domain_package_ref_metadata(
             "domain package metadata mismatch: "
             f"{_format_domain_identity(reference.identity)} fields " + ", ".join(mismatches)
         )
+
+
+def _verify_evaluation_dataset_ref_metadata(
+    reference: EcosystemEvaluationDatasetRef,
+    dataset: EvaluationDataset,
+) -> None:
+    manifest = dataset.manifest
+    mismatches: list[str] = []
+    if reference.description and reference.description != manifest.description:
+        mismatches.append("description")
+    if reference.author is not None and reference.author != manifest.author:
+        mismatches.append("author")
+    if reference.tags and reference.tags != manifest.tags:
+        mismatches.append("tags")
+    if reference.domains and reference.domains != manifest.domains:
+        mismatches.append("domains")
+    if reference.suites and _dataset_suite_metadata(reference.suites) != _dataset_suite_metadata(
+        manifest.suites
+    ):
+        mismatches.append("suites")
+    if mismatches:
+        raise EcosystemRegistryInstallError(
+            f"evaluation dataset metadata mismatch: {reference.name}@{reference.version} fields "
+            + ", ".join(mismatches)
+        )
+
+
+def _verify_profile_ref_metadata(
+    reference: EcosystemProfileRef,
+    entry: ProfileCatalogEntry,
+) -> None:
+    mismatches: list[str] = []
+    if reference.description and reference.description != entry.profile.description:
+        mismatches.append("description")
+    if reference.domains and reference.domains != _profile_domain_identities(entry):
+        mismatches.append("domains")
+    if mismatches:
+        raise EcosystemRegistryInstallError(
+            f"profile metadata mismatch: {reference.name}@{reference.version} fields "
+            + ", ".join(mismatches)
+        )
+
+
+def _dataset_suite_metadata(
+    suites: Iterable[_DatasetSuiteLike],
+) -> tuple[tuple[str, str, str, tuple[str, ...]], ...]:
+    return tuple(
+        (
+            suite.name,
+            suite.path,
+            suite.description,
+            tuple(suite.tags),
+        )
+        for suite in suites
+    )
 
 
 def _verify_domain_package_install_dependencies(

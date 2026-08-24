@@ -320,8 +320,10 @@ event-sourcing models or production migration systems.
   exports the discovered package, dataset and Profile references as a stable local registry manifest
   with Domain package compatibility/security metadata, a read-only query index, file-backed registry
   store, local Domain Package install plan and full ecosystem install plan/result that validates
-  referenced package manifests, evaluation datasets and Profile configs before registering metadata
-  for CLI/CI and future package-registry adapters. `agent ecosystem install` now exposes that full
+  referenced package manifests, evaluation datasets and Profile configs before registering metadata;
+  install planning rejects sha256 drift, identity mismatch and registry metadata mismatch across
+  Domain Package, Evaluation Dataset and Profile artifacts for CLI/CI and future package-registry
+  adapters. `agent ecosystem install` now exposes that full
   package/dataset/Profile metadata install surface from registry manifests.
 
 The Kubernetes Domain uses injected backends. Most tests and examples use fake backends; no real

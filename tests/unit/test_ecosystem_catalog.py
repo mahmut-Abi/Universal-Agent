@@ -11,6 +11,8 @@ from universal_agent import (
     DomainPackageRegistry,
     EcosystemCatalog,
     EcosystemDomainPackageRef,
+    EcosystemEvaluationDatasetRef,
+    EcosystemEvaluationDatasetSuiteRef,
     EcosystemProfileRef,
     EcosystemRegistryIndex,
     EcosystemRegistryInstallError,
@@ -628,6 +630,59 @@ def test_ecosystem_registry_install_refuses_tampered_domain_manifest(
         install_ecosystem_domain_packages(manifest)
 
 
+def test_ecosystem_registry_install_refuses_tampered_dataset_manifest(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    dataset_root = tmp_path / "datasets"
+    write_domain_package(domain_root / "kubernetes")
+    write_evaluation_dataset(dataset_root / "kubernetes")
+    catalog = load_ecosystem_catalog(
+        domain_package_root=domain_root,
+        evaluation_dataset_root=dataset_root,
+    )
+    manifest = catalog.registry_manifest()
+    write_json(
+        dataset_root / "kubernetes" / "dataset.json",
+        {
+            "apiVersion": "agent.nantian.dev/v1alpha1",
+            "kind": "EvaluationDataset",
+            "metadata": {
+                "name": "kubernetes-remediation",
+                "version": "1.0.0",
+                "description": "Tampered Kubernetes remediation evaluation dataset",
+            },
+            "domains": [{"name": "kubernetes", "version": "1.0.0"}],
+            "suites": [{"name": "healthy", "path": "suites/healthy.json"}],
+        },
+    )
+
+    with pytest.raises(EcosystemRegistryInstallError, match="sha256 mismatch"):
+        plan_ecosystem_install(manifest)
+
+
+def test_ecosystem_registry_install_refuses_tampered_profile_config(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    profile_root = tmp_path / "profiles"
+    profile_path = profile_root / "kubernetes.profile.json"
+    write_domain_package(domain_root / "kubernetes")
+    write_profile(profile_path)
+    catalog = load_ecosystem_catalog(
+        domain_package_root=domain_root,
+        profile_root=profile_root,
+    )
+    manifest = catalog.registry_manifest()
+    write_profile(profile_path)
+    loaded = json.loads(profile_path.read_text(encoding="utf-8"))
+    loaded["description"] = "Tampered Kubernetes operator profile"
+    profile_path.write_text(json.dumps(loaded, indent=2), encoding="utf-8")
+
+    with pytest.raises(EcosystemRegistryInstallError, match="sha256 mismatch"):
+        plan_ecosystem_install(manifest)
+
+
 def test_ecosystem_registry_install_refuses_identity_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -675,6 +730,91 @@ def test_ecosystem_registry_install_refuses_domain_package_metadata_mismatch(
 
     with pytest.raises(EcosystemRegistryInstallError, match="metadata mismatch"):
         install_ecosystem_domain_packages(manifest)
+
+
+def test_ecosystem_registry_install_refuses_evaluation_dataset_metadata_mismatch(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    dataset_root = tmp_path / "datasets"
+    write_domain_package(domain_root / "kubernetes")
+    write_evaluation_dataset(dataset_root / "kubernetes")
+    manifest = EcosystemRegistryManifest(
+        api_version="agent.nantian.dev/v1alpha1",
+        kind="EcosystemRegistry",
+        name="dataset-metadata-mismatch-registry",
+        version="1.0.0",
+        description="Dataset metadata mismatch registry",
+        domain_packages=(
+            EcosystemDomainPackageRef(
+                "kubernetes",
+                "1.0.0",
+                "Kubernetes",
+                manifest_path=str(domain_root / "kubernetes" / "manifest.json"),
+            ),
+        ),
+        evaluation_datasets=(
+            EcosystemEvaluationDatasetRef(
+                "kubernetes-remediation",
+                "1.0.0",
+                "Kubernetes remediation evaluation dataset",
+                domains=(DomainIdentity("kubernetes", "1.0.0"),),
+                suites=(
+                    EcosystemEvaluationDatasetSuiteRef(
+                        "healthy",
+                        "suites/renamed.json",
+                    ),
+                ),
+                manifest_path=str(dataset_root / "kubernetes" / "dataset.json"),
+            ),
+        ),
+    )
+
+    with pytest.raises(EcosystemRegistryInstallError, match=r"metadata mismatch:.*suites"):
+        plan_ecosystem_install(manifest)
+
+
+def test_ecosystem_registry_install_refuses_profile_metadata_mismatch(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    profile_path = tmp_path / "profiles" / "kubernetes.profile.json"
+    write_domain_package(domain_root / "database", name="database")
+    write_domain_package(domain_root / "kubernetes")
+    write_profile(profile_path)
+    manifest = EcosystemRegistryManifest(
+        api_version="agent.nantian.dev/v1alpha1",
+        kind="EcosystemRegistry",
+        name="profile-metadata-mismatch-registry",
+        version="1.0.0",
+        description="Profile metadata mismatch registry",
+        domain_packages=(
+            EcosystemDomainPackageRef(
+                "database",
+                "1.0.0",
+                "Database",
+                manifest_path=str(domain_root / "database" / "manifest.json"),
+            ),
+            EcosystemDomainPackageRef(
+                "kubernetes",
+                "1.0.0",
+                "Kubernetes",
+                manifest_path=str(domain_root / "kubernetes" / "manifest.json"),
+            ),
+        ),
+        profiles=(
+            EcosystemProfileRef(
+                "kubernetes-operator",
+                "1.0.0",
+                "Kubernetes operator profile",
+                (DomainIdentity("database", "1.0.0"),),
+                str(profile_path),
+            ),
+        ),
+    )
+
+    with pytest.raises(EcosystemRegistryInstallError, match=r"metadata mismatch:.*domains"):
+        plan_ecosystem_install(manifest)
 
 
 def test_ecosystem_registry_install_refuses_missing_paths_and_duplicates(
