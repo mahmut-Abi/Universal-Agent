@@ -78,10 +78,12 @@ from universal_agent.service import (
     RuntimeService,
     RuntimeTraceSpanView,
     SessionExplorerView,
+    SessionWorldView,
     StateEventRepairReport,
     ToolView,
     WorldEntityView,
     WorldFactView,
+    WorldNeighborhoodView,
     WorldRelationView,
 )
 from universal_agent.state import StateNotFoundError
@@ -791,8 +793,16 @@ class AgentdApp:
                 return method_not_allowed(("GET",))
             try:
                 return json_response(
-                    session_world_body(await self._service.session_explorer(session_id))
+                    session_world_body(
+                        await self._service.session_world(
+                            session_id,
+                            entity_id=_optional_query_value(request.path, "entity_id"),
+                            relation=_optional_query_value(request.path, "relation"),
+                        )
+                    )
                 )
+            except ValueError as exc:
+                return bad_request(str(exc))
             except StateNotFoundError as exc:
                 return not_found(str(exc))
         if session_id is not None and suffix == "events":
@@ -1829,13 +1839,16 @@ def session_evidence_body(view: SessionExplorerView) -> JsonMapping:
     )
 
 
-def session_world_body(view: SessionExplorerView) -> JsonMapping:
+def session_world_body(view: SessionWorldView) -> JsonMapping:
     return immutable_json(
         {
-            "session_id": str(view.session.session_id),
+            "session_id": str(view.session_id),
             "world_facts": [world_fact_body(item) for item in view.world_facts],
             "world_entities": [world_entity_body(item) for item in view.world_entities],
             "world_relations": [world_relation_body(item) for item in view.world_relations],
+            "neighborhood": (
+                None if view.neighborhood is None else world_neighborhood_body(view.neighborhood)
+            ),
         }
     )
 
@@ -1882,6 +1895,16 @@ def world_relation_body(view: WorldRelationView) -> dict[str, JsonValue]:
         "relation": view.relation,
         "target": view.target,
         "evidence_ids": list(view.evidence_ids),
+    }
+
+
+def world_neighborhood_body(view: WorldNeighborhoodView) -> dict[str, JsonValue]:
+    return {
+        "root": None if view.root is None else world_entity_body(view.root),
+        "facts": [world_fact_body(item) for item in view.facts],
+        "outgoing_relations": [world_relation_body(item) for item in view.outgoing_relations],
+        "incoming_relations": [world_relation_body(item) for item in view.incoming_relations],
+        "related_entities": [world_entity_body(item) for item in view.related_entities],
     }
 
 

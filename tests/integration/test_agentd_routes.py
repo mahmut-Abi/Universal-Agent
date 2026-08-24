@@ -752,6 +752,12 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
     diagnostics = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/diagnostics"))
     evidence = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/evidence"))
     world = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/world"))
+    world_neighborhood = await app.handle(
+        HttpRequest(
+            "GET",
+            f"/v1/sessions/{session_id}/world?entity_id=deployment/example&relation=owns",
+        )
+    )
 
     assert fetched.status_code == 200
     assert fetched.body["session_id"] == session_id
@@ -771,6 +777,7 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
     assert diagnostics.status_code == 200
     assert evidence.status_code == 200
     assert world.status_code == 200
+    assert world_neighborhood.status_code == 200
     assert evidence.body["session_id"] == session_id
     assert world.body["session_id"] == session_id
     evidence_items = diagnostics.body["evidence"]
@@ -799,6 +806,16 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
     assert first_relation["source"] == "deployment/example"
     assert first_relation["relation"] == "owns"
     assert first_relation["target"] == "pod/example-1"
+    neighborhood = world_neighborhood.body["neighborhood"]
+    assert isinstance(neighborhood, dict)
+    root = neighborhood["root"]
+    outgoing_relations = neighborhood["outgoing_relations"]
+    assert isinstance(root, dict)
+    assert isinstance(outgoing_relations, list)
+    first_outgoing = cast(dict[str, JsonValue], outgoing_relations[0])
+    assert root["entity_id"] == "deployment/example"
+    assert first_outgoing["relation"] == "owns"
+    assert first_outgoing["target"] == "pod/example-1"
     event_items = events.body["events"]
     assert isinstance(event_items, list)
     last_event = event_items[-1]

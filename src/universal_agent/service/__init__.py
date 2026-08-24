@@ -21,12 +21,14 @@ from universal_agent.service.runtime import (
     RuntimeConfigView,
     RuntimeService,
     SessionExplorerView,
+    SessionWorldView,
     StateEventRepairReport,
     StateEventRepairSkipView,
     StateEventRepairView,
     ToolView,
     WorldEntityView,
     WorldFactView,
+    WorldNeighborhoodView,
     WorldRelationView,
 )
 
@@ -51,11 +53,13 @@ __all__ = [
     "RuntimeService",
     "RuntimeTraceSpanView",
     "SessionExplorerView",
+    "SessionWorldView",
     "StateEventRepairReport",
     "StateEventRepairSkipView",
     "StateEventRepairView",
     "ToolView",
     "WorldEntityView",
     "WorldFactView",
+    "WorldNeighborhoodView",
     "WorldRelationView",
 ]

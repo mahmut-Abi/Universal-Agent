@@ -1203,6 +1203,17 @@ async def test_runtime_service_builds_session_explorer_projection() -> None:
     assert explorer.world_relations[0].source == "deployment/example"
     assert explorer.world_relations[0].relation == "owns"
     assert explorer.world_relations[0].target == "pod/example-1"
+    world = await service.session_world(
+        run.result.session_id,
+        entity_id="deployment/example",
+        relation="owns",
+    )
+    assert world.session_id == run.result.session_id
+    assert world.neighborhood is not None
+    assert world.neighborhood.root is not None
+    assert world.neighborhood.root.entity_id == "deployment/example"
+    assert [item.target for item in world.neighborhood.outgoing_relations] == ["pod/example-1"]
+    assert world.neighborhood.incoming_relations == ()
     assert backend.inspect_calls == 1
 
 

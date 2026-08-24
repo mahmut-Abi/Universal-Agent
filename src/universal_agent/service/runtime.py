@@ -89,7 +89,14 @@ from universal_agent.runtime import (
     event_view,
 )
 from universal_agent.state import StateNotFoundError
-from universal_agent.world import InMemoryWorldModel, WorldEntity, WorldFact, WorldRelation
+from universal_agent.world import (
+    InMemoryWorldModel,
+    WorldEntity,
+    WorldFact,
+    WorldNeighborhood,
+    WorldRelation,
+    WorldSnapshot,
+)
 
 if TYPE_CHECKING:
     from universal_agent.host.config import DomainConfig, RuntimeConfig
@@ -314,6 +321,24 @@ class WorldRelationView:
     relation: str
     target: str
     evidence_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class WorldNeighborhoodView:
+    root: WorldEntityView | None
+    facts: tuple[WorldFactView, ...]
+    outgoing_relations: tuple[WorldRelationView, ...]
+    incoming_relations: tuple[WorldRelationView, ...]
+    related_entities: tuple[WorldEntityView, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SessionWorldView:
+    session_id: SessionId
+    world_facts: tuple[WorldFactView, ...]
+    world_entities: tuple[WorldEntityView, ...]
+    world_relations: tuple[WorldRelationView, ...]
+    neighborhood: WorldNeighborhoodView | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1119,6 +1144,33 @@ class RuntimeService:
             world_relations,
         )
 
+    async def session_world(
+        self,
+        session_id: SessionId,
+        *,
+        entity_id: str | None = None,
+        relation: str | None = None,
+    ) -> SessionWorldView:
+        if relation is not None and entity_id is None:
+            raise ValueError("world relation filter requires entity_id")
+        diagnostics = await self._runtime_api.get_session_diagnostics(session_id)
+        snapshot = self._world_snapshot(session_id, diagnostics.evidence)
+        world_facts, world_entities, world_relations = _world_projection_views_from_snapshot(
+            snapshot
+        )
+        neighborhood = (
+            None
+            if entity_id is None
+            else world_neighborhood_view(snapshot.neighborhood_for(entity_id, relation=relation))
+        )
+        return SessionWorldView(
+            diagnostics.session.session_id,
+            world_facts,
+            world_entities,
+            world_relations,
+            neighborhood,
+        )
+
     async def list_sessions(
         self,
         *,
@@ -1364,20 +1416,22 @@ class RuntimeService:
     ) -> tuple[
         tuple[WorldFactView, ...], tuple[WorldEntityView, ...], tuple[WorldRelationView, ...]
     ]:
-        if not evidence or not self._components.world_updaters:
-            return (), (), ()
+        return _world_projection_views_from_snapshot(self._world_snapshot(session_id, evidence))
+
+    def _world_snapshot(
+        self,
+        session_id: SessionId,
+        evidence: tuple[EvidenceView, ...],
+    ) -> WorldSnapshot:
+        if not self._components.world_updaters:
+            return WorldSnapshot(session_id)
         world_model = InMemoryWorldModel()
         world_model.rebuild(
             session_id,
             tuple(_evidence_from_view(item) for item in evidence),
             self._components.world_updaters,
         )
-        snapshot = world_model.snapshot(session_id)
-        return (
-            tuple(world_fact_view(item) for item in snapshot.facts),
-            tuple(world_entity_view(item) for item in snapshot.entities),
-            tuple(world_relation_view(item) for item in snapshot.relations),
-        )
+        return world_model.snapshot(session_id)
 
 
 def domain_view(domain: ActiveDomain, *, primary: bool) -> DomainView:
@@ -1579,6 +1633,26 @@ def world_relation_view(relation: WorldRelation) -> WorldRelationView:
         relation.relation,
         str(relation.target),
         tuple(str(item) for item in relation.evidence_ids),
+    )
+
+
+def world_neighborhood_view(neighborhood: WorldNeighborhood) -> WorldNeighborhoodView:
+    return WorldNeighborhoodView(
+        None if neighborhood.root is None else world_entity_view(neighborhood.root),
+        tuple(world_fact_view(item) for item in neighborhood.facts),
+        tuple(world_relation_view(item) for item in neighborhood.outgoing_relations),
+        tuple(world_relation_view(item) for item in neighborhood.incoming_relations),
+        tuple(world_entity_view(item) for item in neighborhood.related_entities),
+    )
+
+
+def _world_projection_views_from_snapshot(
+    snapshot: WorldSnapshot,
+) -> tuple[tuple[WorldFactView, ...], tuple[WorldEntityView, ...], tuple[WorldRelationView, ...]]:
+    return (
+        tuple(world_fact_view(item) for item in snapshot.facts),
+        tuple(world_entity_view(item) for item in snapshot.entities),
+        tuple(world_relation_view(item) for item in snapshot.relations),
     )
 
 

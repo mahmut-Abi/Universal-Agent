@@ -715,6 +715,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     world = session_commands.add_parser("world")
     world.add_argument("session_id")
+    world.add_argument("--entity")
+    world.add_argument("--relation")
 
     events = session_commands.add_parser("events")
     events.add_argument("session_id")
@@ -1854,7 +1856,16 @@ async def _dispatch_session(
         return
     if command == "world":
         session_id = SessionId(cast(str, args.session_id))
-        _write_json(out, session_world_body(await service.session_explorer(session_id)))
+        _write_json(
+            out,
+            session_world_body(
+                await service.session_world(
+                    session_id,
+                    entity_id=cast(str | None, args.entity),
+                    relation=cast(str | None, args.relation),
+                )
+            ),
+        )
         return
     if command == "events":
         session_id = SessionId(cast(str, args.session_id))

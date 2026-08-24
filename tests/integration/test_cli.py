@@ -1137,6 +1137,7 @@ async def test_cli_session_diagnostics_renders_evidence_and_world_facts() -> Non
     diagnostics_output = StringIO()
     evidence_output = StringIO()
     world_output = StringIO()
+    neighborhood_output = StringIO()
 
     run_status = await run_cli(
         ["run", "production-operator", "Verify workload health"],
@@ -1162,9 +1163,23 @@ async def test_cli_session_diagnostics_renders_evidence_and_world_facts() -> Non
         service=service,
         stdout=world_output,
     )
+    neighborhood_status = await run_cli(
+        [
+            "session",
+            "world",
+            session_id,
+            "--entity",
+            "deployment/example",
+            "--relation",
+            "owns",
+        ],
+        service=service,
+        stdout=neighborhood_output,
+    )
     diagnostics = read_json(diagnostics_output)
     evidence = read_json(evidence_output)
     world = read_json(world_output)
+    neighborhood = read_json(neighborhood_output)
     evidence_claims = {item["claim"]: item for item in diagnostics["evidence"]}
     world_claims = {item["claim"]: item for item in diagnostics["world_facts"]}
 
@@ -1172,6 +1187,7 @@ async def test_cli_session_diagnostics_renders_evidence_and_world_facts() -> Non
     assert diagnostics_status == 0
     assert evidence_status == 0
     assert world_status == 0
+    assert neighborhood_status == 0
     assert diagnostics["session"]["session_id"] == session_id
     assert evidence["session_id"] == session_id
     assert world["session_id"] == session_id
@@ -1187,6 +1203,9 @@ async def test_cli_session_diagnostics_renders_evidence_and_world_facts() -> Non
     assert diagnostics["world_relations"][0]["source"] == "deployment/example"
     assert diagnostics["world_relations"][0]["relation"] == "owns"
     assert diagnostics["world_relations"][0]["target"] == "pod/example-1"
+    assert neighborhood["neighborhood"]["root"]["entity_id"] == "deployment/example"
+    assert neighborhood["neighborhood"]["outgoing_relations"][0]["relation"] == "owns"
+    assert neighborhood["neighborhood"]["outgoing_relations"][0]["target"] == "pod/example-1"
     assert backend.inspect_calls == 1
 
 
