@@ -464,6 +464,32 @@ def test_ecosystem_registry_installs_domain_packages_from_relative_paths(
     assert result.registry.identities() == (DomainIdentity("kubernetes", "1.0.0"),)
 
 
+def test_ecosystem_registry_install_refuses_paths_outside_registry_base(
+    tmp_path: Path,
+) -> None:
+    base_root = tmp_path / "registry"
+    outside_root = tmp_path / "outside"
+    write_domain_package(outside_root / "domains" / "kubernetes")
+    manifest = EcosystemRegistryManifest(
+        api_version="agent.nantian.dev/v1alpha1",
+        kind="EcosystemRegistry",
+        name="escaping-registry",
+        version="1.0.0",
+        description="Escaping path registry",
+        domain_packages=(
+            EcosystemDomainPackageRef(
+                "kubernetes",
+                "1.0.0",
+                "Kubernetes",
+                manifest_path="../outside/domains/kubernetes/manifest.json",
+            ),
+        ),
+    )
+
+    with pytest.raises(EcosystemRegistryInstallError, match="escapes registry base path"):
+        install_ecosystem_domain_packages(manifest, base_path=base_root)
+
+
 def test_ecosystem_registry_install_refuses_identity_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -485,6 +511,31 @@ def test_ecosystem_registry_install_refuses_identity_mismatch(
     )
 
     with pytest.raises(EcosystemRegistryInstallError, match="identity mismatch"):
+        install_ecosystem_domain_packages(manifest)
+
+
+def test_ecosystem_registry_install_refuses_domain_package_metadata_mismatch(
+    tmp_path: Path,
+) -> None:
+    write_domain_package(tmp_path / "domains" / "kubernetes")
+    manifest = EcosystemRegistryManifest(
+        api_version="agent.nantian.dev/v1alpha1",
+        kind="EcosystemRegistry",
+        name="metadata-mismatch-registry",
+        version="1.0.0",
+        description="Metadata mismatch registry",
+        domain_packages=(
+            EcosystemDomainPackageRef(
+                "kubernetes",
+                "1.0.0",
+                "Kubernetes",
+                capability_names=("restart_workload",),
+                manifest_path=str(tmp_path / "domains" / "kubernetes" / "manifest.json"),
+            ),
+        ),
+    )
+
+    with pytest.raises(EcosystemRegistryInstallError, match="metadata mismatch"):
         install_ecosystem_domain_packages(manifest)
 
 

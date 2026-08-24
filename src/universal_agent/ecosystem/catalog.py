@@ -949,6 +949,7 @@ def _domain_package_install_candidate(
             f"registry expected {_format_domain_identity(reference.identity)}, "
             f"manifest loaded {_format_domain_identity(package.identity)}"
         )
+    _verify_domain_package_ref_metadata(reference, package)
     return EcosystemDomainPackageInstallCandidate(reference, package)
 
 
@@ -963,10 +964,11 @@ def _domain_package_ref_path(
             "domain package registry reference has no local path: "
             f"{_format_domain_identity(reference.identity)}"
         )
-    path = Path(path_value)
-    if not path.is_absolute() and base_path is not None:
-        path = Path(base_path) / path
-    return path
+    return _resolve_registry_path(
+        path_value,
+        base_path=base_path,
+        label=f"domain package {_format_domain_identity(reference.identity)}",
+    )
 
 
 def _evaluation_dataset_install_candidate(
@@ -996,10 +998,11 @@ def _evaluation_dataset_ref_path(
             "evaluation dataset registry reference has no local path: "
             f"{reference.name}@{reference.version}"
         )
-    path = Path(path_value)
-    if not path.is_absolute() and base_path is not None:
-        path = Path(base_path) / path
-    return path
+    return _resolve_registry_path(
+        path_value,
+        base_path=base_path,
+        label=f"evaluation dataset {reference.name}@{reference.version}",
+    )
 
 
 def _profile_install_candidate(
@@ -1028,10 +1031,63 @@ def _profile_ref_path(
         raise EcosystemRegistryInstallError(
             f"profile registry reference has no local path: {reference.name}@{reference.version}"
         )
-    path = Path(reference.path)
-    if not path.is_absolute() and base_path is not None:
-        path = Path(base_path) / path
-    return path
+    return _resolve_registry_path(
+        reference.path,
+        base_path=base_path,
+        label=f"profile {reference.name}@{reference.version}",
+    )
+
+
+def _resolve_registry_path(
+    path_value: str,
+    *,
+    base_path: str | Path | None,
+    label: str,
+) -> Path:
+    path = Path(path_value)
+    if base_path is None:
+        return path
+    base = Path(base_path).resolve()
+    resolved = (path if path.is_absolute() else base / path).resolve()
+    try:
+        resolved.relative_to(base)
+    except ValueError as exc:
+        raise EcosystemRegistryInstallError(
+            f"{label} path escapes registry base path: {path_value}"
+        ) from exc
+    return resolved
+
+
+def _verify_domain_package_ref_metadata(
+    reference: EcosystemDomainPackageRef,
+    package: DomainPackage,
+) -> None:
+    manifest = package.manifest
+    mismatches: list[str] = []
+    if reference.capability_names and reference.capability_names != manifest.capabilities:
+        mismatches.append("capability_names")
+    if reference.required_tools and reference.required_tools != manifest.required_tools:
+        mismatches.append("required_tools")
+    if reference.dependencies and reference.dependencies != manifest.dependencies:
+        mismatches.append("dependencies")
+    if (
+        reference.compatibility.runtime_api is not None
+        and reference.compatibility.runtime_api != manifest.compatibility.runtime_api
+    ):
+        mismatches.append("compatibility.runtime_api")
+    if (
+        reference.compatibility.domain_api is not None
+        and reference.compatibility.domain_api != manifest.compatibility.domain_api
+    ):
+        mismatches.append("compatibility.domain_api")
+    if reference.security and dict(reference.security) != dict(manifest.security):
+        mismatches.append("security")
+    if mismatches:
+        raise EcosystemRegistryInstallError(
+            "domain package metadata mismatch: "
+            f"{_format_domain_identity(reference.identity)} fields "
+            + ", ".join(mismatches)
+        )
 
 
 def _reject_registry_install_duplicates(
