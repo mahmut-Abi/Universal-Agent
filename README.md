@@ -117,7 +117,8 @@ Policy/Evaluator/Memory catalog reads via `GET /v1/policies`, `GET /v1/evaluator
 `POST /v1/sessions/{id}/resume`, explicit pause via `POST /v1/sessions/{id}/pause`, cancellation via
 `POST /v1/sessions/{id}/cancel`, operations reads via `/v1/metrics`,
 `/v1/metrics/prometheus`, `/v1/cost`, `/v1/logs`, `/v1/traces`, `/v1/traces/otlp`,
-`/v1/doctor` and `/v1/audit`, per-session audit/cost/log/trace
+`/v1/doctor`, `POST /v1/doctor/state-events/repair` for dry-run or confirmed state/event
+consistency repair, and `/v1/audit`, per-session audit/cost/log/trace
 reads including `/v1/sessions/{id}/traces/otlp`, `GET /v1/sessions/{id}/diagnostics` for
 session/evidence/world fact inspection, dedicated `GET /v1/sessions/{id}/evidence` and
 `GET /v1/sessions/{id}/world` explorer routes, and cursor session/event reads with `after` / `limit`
@@ -137,8 +138,9 @@ list/show/diagnostics/evidence/world/events/pause/resume/cancel commands through
 can also load an
 `agent init` Profile JSON through `--profile-config` and assemble the service through
 `RuntimeHost`, so generated memory/file/SQLite store settings are used by subsequent CLI commands.
-It also exposes operations commands for metrics, cost, logs, traces, doctor and audit
-projections; `agent metrics --format prometheus` emits Prometheus text exposition, while
+It also exposes operations commands for metrics, cost, logs, traces, doctor, audit and
+`agent repair state-events --dry-run` / `--confirmed true` projections;
+`agent metrics --format prometheus` emits Prometheus text exposition, while
 `agent traces --format otlp` and `agent session traces <id> --format otlp` emit OTLP
 JSON-compatible trace payloads from the same event-derived span projection. `agent serve` starts the
 standard-library `AgentdHttpServer` around the same service; `agent eval run` executes the
