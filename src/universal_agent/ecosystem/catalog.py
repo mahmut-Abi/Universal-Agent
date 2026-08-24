@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -97,6 +98,7 @@ class EcosystemDomainPackageRef:
     security: JsonMapping = field(default_factory=immutable_json)
     root_path: str = ""
     manifest_path: str = ""
+    manifest_sha256: str = ""
 
     def __post_init__(self) -> None:
         _require_non_empty(self.name, "domain_packages[].name")
@@ -105,6 +107,7 @@ class EcosystemDomainPackageRef:
         _validate_strings("domain_packages[].tags", self.tags)
         _validate_strings("domain_packages[].capability_names", self.capability_names)
         _validate_strings("domain_packages[].required_tools", self.required_tools)
+        _validate_optional_sha256("domain_packages[].manifest_sha256", self.manifest_sha256)
         for index, dependency in enumerate(self.dependencies):
             _require_non_empty(
                 dependency.name,
@@ -144,12 +147,17 @@ class EcosystemEvaluationDatasetRef:
     suites: tuple[EcosystemEvaluationDatasetSuiteRef, ...] = ()
     root_path: str = ""
     manifest_path: str = ""
+    manifest_sha256: str = ""
 
     def __post_init__(self) -> None:
         _require_non_empty(self.name, "evaluation_datasets[].name")
         _require_non_empty(self.version, "evaluation_datasets[].version")
         _require_non_empty(self.description, "evaluation_datasets[].description")
         _validate_strings("evaluation_datasets[].tags", self.tags)
+        _validate_optional_sha256(
+            "evaluation_datasets[].manifest_sha256",
+            self.manifest_sha256,
+        )
         if not self.suites:
             raise EcosystemRegistryValidationError(
                 "evaluation_datasets[] must include at least one suite"
@@ -170,12 +178,14 @@ class EcosystemProfileRef:
     description: str
     domains: tuple[DomainIdentity, ...]
     path: str
+    config_sha256: str = ""
 
     def __post_init__(self) -> None:
         _require_non_empty(self.name, "profiles[].name")
         _require_non_empty(self.version, "profiles[].version")
         if not self.domains:
             raise EcosystemRegistryValidationError("profiles[] must include at least one domain")
+        _validate_optional_sha256("profiles[].config_sha256", self.config_sha256)
         for index, domain in enumerate(self.domains):
             _require_non_empty(domain.name, f"profiles[].domains[{index}].name")
             _require_non_empty(domain.version, f"profiles[].domains[{index}].version")
@@ -694,6 +704,7 @@ def encode_ecosystem_registry_manifest(manifest: EcosystemRegistryManifest) -> d
                 "security": dict(package.security),
                 "root_path": package.root_path,
                 "manifest_path": package.manifest_path,
+                "manifest_sha256": package.manifest_sha256,
             }
             for package in manifest.domain_packages
         ],
@@ -716,6 +727,7 @@ def encode_ecosystem_registry_manifest(manifest: EcosystemRegistryManifest) -> d
                 ],
                 "root_path": dataset.root_path,
                 "manifest_path": dataset.manifest_path,
+                "manifest_sha256": dataset.manifest_sha256,
             }
             for dataset in manifest.evaluation_datasets
         ],
@@ -726,6 +738,7 @@ def encode_ecosystem_registry_manifest(manifest: EcosystemRegistryManifest) -> d
                 "description": profile.description,
                 "domains": [_identity_body(item) for item in profile.domains],
                 "path": profile.path,
+                "config_sha256": profile.config_sha256,
             }
             for profile in manifest.profiles
         ],
@@ -825,6 +838,7 @@ def _domain_package_ref(package: DomainPackage) -> EcosystemDomainPackageRef:
         security=manifest.security,
         root_path=str(package.root_path),
         manifest_path=str(package.manifest_path),
+        manifest_sha256=_file_sha256(package.manifest_path),
     )
 
 
@@ -847,6 +861,7 @@ def _evaluation_dataset_ref(dataset: EvaluationDataset) -> EcosystemEvaluationDa
         ),
         root_path=str(dataset.root_path),
         manifest_path=str(dataset.manifest_path),
+        manifest_sha256=_file_sha256(dataset.manifest_path),
     )
 
 
@@ -861,6 +876,7 @@ def _profile_ref(entry: ProfileCatalogEntry) -> EcosystemProfileRef:
             for domain in profile.configured_domains()
         ),
         path=str(entry.path),
+        config_sha256=_file_sha256(entry.path),
     )
 
 
@@ -942,6 +958,11 @@ def _domain_package_install_candidate(
     base_path: str | Path | None,
 ) -> EcosystemDomainPackageInstallCandidate:
     package_path = _domain_package_ref_path(reference, base_path=base_path)
+    _verify_registry_file_sha256(
+        _domain_package_manifest_path(package_path),
+        reference.manifest_sha256,
+        label=f"domain package {_format_domain_identity(reference.identity)} manifest",
+    )
     package = load_domain_package(package_path)
     if package.identity != reference.identity:
         raise EcosystemRegistryInstallError(
@@ -977,6 +998,11 @@ def _evaluation_dataset_install_candidate(
     base_path: str | Path | None,
 ) -> EcosystemEvaluationDatasetInstallCandidate:
     dataset_path = _evaluation_dataset_ref_path(reference, base_path=base_path)
+    _verify_registry_file_sha256(
+        _evaluation_dataset_manifest_path(dataset_path),
+        reference.manifest_sha256,
+        label=f"evaluation dataset {reference.name}@{reference.version} manifest",
+    )
     dataset = load_evaluation_dataset(dataset_path)
     if (dataset.identity.name, dataset.identity.version) != reference.identity:
         raise EcosystemRegistryInstallError(
@@ -1011,6 +1037,11 @@ def _profile_install_candidate(
     base_path: str | Path | None,
 ) -> EcosystemProfileInstallCandidate:
     profile_path = _profile_ref_path(reference, base_path=base_path)
+    _verify_registry_file_sha256(
+        profile_path,
+        reference.config_sha256,
+        label=f"profile {reference.name}@{reference.version} config",
+    )
     config = ProfileConfig.from_json_file(profile_path)
     entry = ProfileCatalogEntry(config.to_profile(), config, profile_path)
     if (entry.profile.name, entry.profile.version) != reference.identity:
@@ -1058,6 +1089,30 @@ def _resolve_registry_path(
     return resolved
 
 
+def _domain_package_manifest_path(path: Path) -> Path:
+    if path.is_dir():
+        return path / "manifest.json"
+    return path
+
+
+def _evaluation_dataset_manifest_path(path: Path) -> Path:
+    if path.is_dir():
+        return path / "dataset.json"
+    return path
+
+
+def _verify_registry_file_sha256(path: Path, expected: str, *, label: str) -> None:
+    if not expected:
+        return
+    if not path.is_file():
+        raise EcosystemRegistryInstallError(f"{label} file not found for sha256 check: {path}")
+    actual = _file_sha256(path)
+    if actual != expected:
+        raise EcosystemRegistryInstallError(
+            f"{label} sha256 mismatch: expected {expected}, got {actual}"
+        )
+
+
 def _verify_domain_package_ref_metadata(
     reference: EcosystemDomainPackageRef,
     package: DomainPackage,
@@ -1085,8 +1140,7 @@ def _verify_domain_package_ref_metadata(
     if mismatches:
         raise EcosystemRegistryInstallError(
             "domain package metadata mismatch: "
-            f"{_format_domain_identity(reference.identity)} fields "
-            + ", ".join(mismatches)
+            f"{_format_domain_identity(reference.identity)} fields " + ", ".join(mismatches)
         )
 
 
@@ -1276,6 +1330,12 @@ def _domain_package_refs(payload: JsonMapping) -> tuple[EcosystemDomainPackageRe
                 field_name=f"domain_packages[{index}].manifest_path",
             )
             or "",
+            manifest_sha256=_optional_string_allow_empty(
+                item,
+                "manifest_sha256",
+                field_name=f"domain_packages[{index}].manifest_sha256",
+            )
+            or "",
         )
         for index, item in enumerate(_object_list(payload, "domain_packages"))
     )
@@ -1315,6 +1375,12 @@ def _evaluation_dataset_refs(payload: JsonMapping) -> tuple[EcosystemEvaluationD
                 field_name=f"evaluation_datasets[{index}].manifest_path",
             )
             or "",
+            manifest_sha256=_optional_string_allow_empty(
+                item,
+                "manifest_sha256",
+                field_name=f"evaluation_datasets[{index}].manifest_sha256",
+            )
+            or "",
         )
         for index, item in enumerate(_object_list(payload, "evaluation_datasets"))
     )
@@ -1350,6 +1416,12 @@ def _profile_refs(payload: JsonMapping) -> tuple[EcosystemProfileRef, ...]:
             ),
             domains=_identity_tuple(item, "domains", field_name=f"profiles[{index}].domains"),
             path=_optional_string_allow_empty(item, "path", field_name=f"profiles[{index}].path")
+            or "",
+            config_sha256=_optional_string_allow_empty(
+                item,
+                "config_sha256",
+                field_name=f"profiles[{index}].config_sha256",
+            )
             or "",
         )
         for index, item in enumerate(_object_list(payload, "profiles"))
@@ -1593,6 +1665,21 @@ def _validate_strings(field_name: str, values: tuple[str, ...]) -> None:
             raise EcosystemRegistryValidationError(
                 f"{field_name}[{index}] must be a non-empty string"
             )
+
+
+def _validate_optional_sha256(field_name: str, value: str) -> None:
+    if not value:
+        return
+    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+        raise EcosystemRegistryValidationError(f"{field_name} must be a lowercase sha256 hex")
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 __all__ = [

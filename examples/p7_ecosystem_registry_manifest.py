@@ -115,6 +115,8 @@ def main() -> None:
         print(f"name={loaded.name}")
         print(f"total_items={loaded.summary.total_items}")
         print(f"domain_packages={encoded['summary']['domain_package_count']}")
+        print(f"package_sha256={loaded.domain_packages[0].manifest_sha256[:12]}")
+        print(f"profile_sha256={loaded.profiles[0].config_sha256[:12]}")
         print(f"path={output}")
 
 

@@ -205,6 +205,11 @@ def test_ecosystem_registry_manifest_round_trips_catalog_metadata(tmp_path: Path
     assert decoded.domain_packages[0].compatibility.runtime_api == ">=0.1,<1"
     assert decoded.domain_packages[0].compatibility.domain_api == "agent.nantian.dev/v1alpha1"
     assert decoded.domain_packages[0].security["side_effects"] == "none"
+    assert len(decoded.domain_packages[0].manifest_sha256) == 64
+    assert decoded.domain_packages[0].manifest_sha256 == cast(
+        str,
+        encoded["domain_packages"][0]["manifest_sha256"],
+    )
     assert encoded["domain_packages"][0]["compatibility"] == {
         "domain_api": "agent.nantian.dev/v1alpha1",
         "runtime_api": ">=0.1,<1",
@@ -214,7 +219,9 @@ def test_ecosystem_registry_manifest_round_trips_catalog_metadata(tmp_path: Path
         "side_effects": "none",
     }
     assert decoded.evaluation_datasets[0].domains[0].name == "kubernetes"
+    assert len(decoded.evaluation_datasets[0].manifest_sha256) == 64
     assert decoded.profiles[0].domains[0].name == "kubernetes"
+    assert len(decoded.profiles[0].config_sha256) == 64
 
     output_path = tmp_path / "registry" / "ecosystem.json"
     result = write_ecosystem_registry_manifest(output_path, manifest)
@@ -256,6 +263,7 @@ def test_ecosystem_registry_manifest_accepts_legacy_package_refs_without_optiona
     assert decoded.domain_packages[0].compatibility.runtime_api is None
     assert decoded.domain_packages[0].compatibility.domain_api is None
     assert decoded.domain_packages[0].security == {}
+    assert decoded.domain_packages[0].manifest_sha256 == ""
 
 
 def test_ecosystem_registry_index_queries_exported_manifest(tmp_path: Path) -> None:
@@ -488,6 +496,41 @@ def test_ecosystem_registry_install_refuses_paths_outside_registry_base(
 
     with pytest.raises(EcosystemRegistryInstallError, match="escapes registry base path"):
         install_ecosystem_domain_packages(manifest, base_path=base_root)
+
+
+def test_ecosystem_registry_install_refuses_tampered_domain_manifest(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    write_domain_package(domain_root / "kubernetes")
+    catalog = load_ecosystem_catalog(domain_package_root=domain_root)
+    manifest = catalog.registry_manifest()
+    write_json(
+        domain_root / "kubernetes" / "manifest.json",
+        {
+            "apiVersion": "agent.nantian.dev/v1alpha1",
+            "kind": "DomainPackage",
+            "metadata": {
+                "name": "kubernetes",
+                "version": "1.0.0",
+                "description": "Tampered Kubernetes domain package",
+                "tags": ["kubernetes"],
+            },
+            "capabilities": ["inspect_workload"],
+            "required_tools": ["kubernetes_api"],
+            "compatibility": {
+                "runtime_api": ">=0.1,<1",
+                "domain_api": "agent.nantian.dev/v1alpha1",
+            },
+            "security": {
+                "requires_confirmation": False,
+                "side_effects": "none",
+            },
+        },
+    )
+
+    with pytest.raises(EcosystemRegistryInstallError, match="sha256 mismatch"):
+        install_ecosystem_domain_packages(manifest)
 
 
 def test_ecosystem_registry_install_refuses_identity_mismatch(
