@@ -16,6 +16,7 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView
+from universal_agent.security import scan_for_secrets
 
 _TERMINAL_EVENT_BY_GOAL_STATUS = {
     GoalStatus.COMPLETED: "GoalCompleted",
@@ -357,6 +358,7 @@ def build_doctor_report(
     distributed_expiring_lease_count: int | None = None,
     distributed_recommendation_count: int | None = None,
     distributed_invalid_session_work_item_count: int | None = None,
+    secret_scan_payload: object | None = None,
 ) -> DoctorReportView:
     metrics = build_runtime_metrics(sessions, events)
     cost = build_runtime_cost(events)
@@ -382,6 +384,7 @@ def build_doctor_report(
             max_iterations=max_iterations,
             max_recovery_steps=max_recovery_steps,
         ),
+        _secret_scanning_check(secret_scan_payload),
         DoctorCheckView("session_store", "ok", f"sessions listed: {len(sessions)}"),
         _event_stream_check(sessions, events),
         _state_event_consistency_check(sessions, events),
@@ -410,6 +413,20 @@ def build_doctor_report(
         ),
     )
     return DoctorReportView(_aggregate_status(checks), checks)
+
+
+def _secret_scanning_check(payload: object | None) -> DoctorCheckView:
+    if payload is None:
+        return DoctorCheckView("secret_scanning", "ok", "no secret scan payload provided")
+    report = scan_for_secrets(payload)
+    if report.passed:
+        return DoctorCheckView("secret_scanning", "ok", "no unredacted secret-like values found")
+    sample = ", ".join(report.paths[:5])
+    return DoctorCheckView(
+        "secret_scanning",
+        "error",
+        f"unredacted secret-like values found: count={len(report.findings)} paths={sample}",
+    )
 
 
 def build_audit_records(

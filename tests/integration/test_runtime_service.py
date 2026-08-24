@@ -963,6 +963,30 @@ async def test_runtime_service_doctor_detects_orphan_events_from_full_event_stre
 
 
 @pytest.mark.asyncio
+async def test_runtime_service_doctor_detects_unredacted_secret_events() -> None:
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    api, _, events = build_api_with_stores(components, [])
+    service = RuntimeService(runtime_api=api, components=components)
+    await events.emit(
+        RuntimeEvent(
+            "ExternalDiagnostic",
+            SessionId("session-1"),
+            GoalId("goal-1"),
+            TaskId("task-1"),
+            data={"api_token": "secret-token"},
+        )
+    )
+
+    report = await service.doctor()
+    secret_scanning = next(check for check in report.checks if check.name == "secret_scanning")
+
+    assert report.status == "error"
+    assert secret_scanning.status == "error"
+    assert "$.events[0].api_token" in secret_scanning.message
+
+
+@pytest.mark.asyncio
 async def test_runtime_service_repairs_missing_terminal_event_history() -> None:
     active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
     components = RuntimeBuilder().build(active)

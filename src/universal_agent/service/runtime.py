@@ -1320,6 +1320,7 @@ class RuntimeService:
                 sessions,
                 distributed_snapshot,
             ),
+            secret_scan_payload=_secret_scan_payload(config, events),
         )
 
     async def repair_state_event_consistency(
@@ -1583,6 +1584,35 @@ def memory_view(record: MemoryRecord) -> MemoryView:
         source_session_id=record.source_session_id,
         created_at=record.created_at,
     )
+
+
+def _secret_scan_payload(
+    config: RuntimeConfigView,
+    events: tuple[RuntimeEventView, ...],
+) -> dict[str, object]:
+    return {
+        "config": {
+            "environment": config.environment,
+            "domains": [
+                {
+                    "name": domain.name,
+                    "version": domain.version,
+                    "settings": domain.settings,
+                }
+                for domain in config.domains
+            ],
+            "secrets": [
+                {
+                    "name": secret.name,
+                    "source": secret.source,
+                    "key": secret.key,
+                    "required": secret.required,
+                }
+                for secret in config.secrets
+            ],
+        },
+        "events": [dict(event.data) for event in events],
+    }
 
 
 def _distributed_session_lock_key(session_id: SessionId) -> str:

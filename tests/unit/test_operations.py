@@ -567,6 +567,7 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
         "readiness",
         "catalog",
         "runtime_config",
+        "secret_scanning",
         "session_store",
         "event_stream",
         "state_event_consistency",
@@ -588,6 +589,27 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
     assert next(check for check in report.checks if check.name == "traces").status == "warn"
     assert next(check for check in report.checks if check.name == "resource_locks").status == "ok"
     assert next(check for check in report.checks if check.name == "runtime_config").status == "ok"
+    assert next(check for check in report.checks if check.name == "secret_scanning").status == "ok"
+
+
+def test_doctor_report_errors_on_unredacted_secret_payloads() -> None:
+    report = build_doctor_report(
+        health_status="ok",
+        ready=True,
+        ready_reason="ready",
+        domain_count=1,
+        capability_count=2,
+        tool_count=2,
+        sessions=(),
+        events=(),
+        secret_scan_payload={"events": [{"api_token": "secret-token"}]},
+    )
+
+    secret_scanning = next(check for check in report.checks if check.name == "secret_scanning")
+
+    assert report.status == "error"
+    assert secret_scanning.status == "error"
+    assert "$.events[0].api_token" in secret_scanning.message
 
 
 def test_doctor_report_errors_on_state_event_consistency_gaps() -> None:
