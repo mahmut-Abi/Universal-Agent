@@ -16,6 +16,13 @@ from universal_agent.core import (
     ToolResult,
     immutable_json,
 )
+from universal_agent.security import (
+    EnvSecretProvider,
+    SecretProvider,
+    SecretResolutionError,
+    SecretResolutionReport,
+    resolve_secret_arguments,
+)
 
 
 class Tool(Protocol):
@@ -85,8 +92,16 @@ class ToolRegistry:
 
 
 class ToolRuntime:
-    def __init__(self, registry: ToolRegistry) -> None:
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        *,
+        secret_provider: SecretProvider | None = None,
+        secret_resolution: SecretResolutionReport | None = None,
+    ) -> None:
         self._registry = registry
+        self._secret_provider = secret_provider or EnvSecretProvider()
+        self._secret_resolution = secret_resolution
 
     async def execute(self, call: ToolCall) -> ToolResult:
         try:
@@ -119,7 +134,19 @@ class ToolRuntime:
                 error=f"tool does not implement capability: {call.capability}",
                 error_code=ErrorCode.VALIDATION_ERROR,
             )
-        validation_error = validate_tool_arguments(tool.definition, call.arguments)
+        try:
+            arguments = resolve_secret_arguments(
+                call.arguments,
+                provider=self._secret_provider,
+                resolution=self._secret_resolution,
+            )
+        except SecretResolutionError as exc:
+            return ToolResult(
+                status=ObservationStatus.FAILED,
+                error=str(exc),
+                error_code=ErrorCode.VALIDATION_ERROR,
+            )
+        validation_error = validate_tool_arguments(tool.definition, arguments)
         if validation_error is not None:
             return ToolResult(
                 status=ObservationStatus.FAILED,
@@ -128,7 +155,7 @@ class ToolRuntime:
             )
         try:
             output = await asyncio.wait_for(
-                tool.execute(call.arguments),
+                tool.execute(arguments),
                 timeout=tool.definition.timeout_seconds,
             )
         except TimeoutError:

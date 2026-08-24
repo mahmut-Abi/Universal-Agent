@@ -112,6 +112,8 @@ class RuntimeHost:
             max_iterations=config.limits.max_iterations,
             max_recovery_steps=config.limits.max_recovery_steps,
             environment=config.environment,
+            secret_provider=secret_provider,
+            secret_resolution=secret_resolution,
         )
         api = RuntimeAPI(
             runtime=runtime,

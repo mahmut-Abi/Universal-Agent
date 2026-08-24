@@ -54,6 +54,7 @@ from universal_agent.runtime.transitions import (
     cancel as cancel_transition,
 )
 from universal_agent.runtime.transitions import pause as pause_transition
+from universal_agent.security import SecretProvider, SecretResolutionReport
 from universal_agent.state import (
     SessionSnapshot,
     SessionStore,
@@ -81,6 +82,8 @@ class AgentRuntime:
         max_iterations: int = 20,
         max_recovery_steps: int = 8,
         environment: JsonMapping | None = None,
+        secret_provider: SecretProvider | None = None,
+        secret_resolution: SecretResolutionReport | None = None,
     ) -> None:
         if max_iterations < 1:
             raise ValueError("max_iterations must be positive")
@@ -100,7 +103,12 @@ class AgentRuntime:
         self._max_iterations = max_iterations
         self._max_recovery_steps = max_recovery_steps
         self._environment = immutable_json(environment)
-        self._actions = ActionExecutor(components, self._environment)
+        self._actions = ActionExecutor(
+            components,
+            self._environment,
+            secret_provider=secret_provider,
+            secret_resolution=secret_resolution,
+        )
 
     async def run(self, goal: Goal, task: Task) -> ExecutionResult:
         state = AgentState(session_id=new_session_id(), goal=goal, current_task=task)

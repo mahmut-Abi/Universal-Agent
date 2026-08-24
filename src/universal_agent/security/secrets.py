@@ -6,6 +6,8 @@ from enum import StrEnum
 from os import environ
 from typing import Protocol
 
+from universal_agent.core import JsonMapping, JsonValue, immutable_json
+
 REDACTED_SECRET_VALUES = frozenset({"", "<redacted>", "[REDACTED]", "***"})
 PUBLIC_TOKEN_KEYS = frozenset(
     {
@@ -60,6 +62,10 @@ class SecretScanReport:
 
 def scan_for_secrets(value: object, *, path: str = "$") -> SecretScanReport:
     return SecretScanReport(tuple(_scan_value(value, path)))
+
+
+class SecretResolutionError(ValueError):
+    pass
 
 
 class SecretResolutionStatus(StrEnum):
@@ -155,6 +161,25 @@ def resolve_secret_refs(
     )
 
 
+def resolve_secret_arguments(
+    arguments: JsonMapping,
+    *,
+    provider: SecretProvider,
+    resolution: SecretResolutionReport | None,
+) -> JsonMapping:
+    return immutable_json(
+        {
+            key: _resolve_secret_argument_value(
+                value,
+                provider=provider,
+                resolution=resolution,
+                path=f"$.{key}",
+            )
+            for key, value in arguments.items()
+        }
+    )
+
+
 def is_sensitive_key(key: str) -> bool:
     normalized = key.lower().replace("-", "_")
     if normalized in PUBLIC_TOKEN_KEYS or normalized in SECRET_REFERENCE_CONTAINER_KEYS:
@@ -187,6 +212,77 @@ def _resolve_secret_ref(
 def _source_name(source: object) -> str:
     value = getattr(source, "value", source)
     return str(value)
+
+
+def _resolve_secret_argument_value(
+    value: JsonValue,
+    *,
+    provider: SecretProvider,
+    resolution: SecretResolutionReport | None,
+    path: str,
+) -> JsonValue:
+    if isinstance(value, Mapping):
+        secret_name = _secret_reference_name(value, path)
+        if secret_name is not None:
+            return _resolve_declared_secret(
+                secret_name,
+                provider=provider,
+                resolution=resolution,
+                path=path,
+            )
+        return {
+            str(key): _resolve_secret_argument_value(
+                item,
+                provider=provider,
+                resolution=resolution,
+                path=f"{path}.{key}",
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _resolve_secret_argument_value(
+                item,
+                provider=provider,
+                resolution=resolution,
+                path=f"{path}[{index}]",
+            )
+            for index, item in enumerate(value)
+        ]
+    return value
+
+
+def _secret_reference_name(value: Mapping[str, JsonValue], path: str) -> str | None:
+    if "secret_ref" not in value and "secret_reference" not in value:
+        return None
+    if len(value) != 1:
+        raise SecretResolutionError(f"{path} secret reference must not include extra fields")
+    raw_name = value.get("secret_ref", value.get("secret_reference"))
+    if not isinstance(raw_name, str) or not raw_name.strip():
+        raise SecretResolutionError(f"{path} secret reference name must be a non-empty string")
+    return raw_name
+
+
+def _resolve_declared_secret(
+    name: str,
+    *,
+    provider: SecretProvider,
+    resolution: SecretResolutionReport | None,
+    path: str,
+) -> str:
+    if resolution is None:
+        raise SecretResolutionError(f"{path} secret reference has no runtime secret registry")
+    declared = resolution.get(name)
+    if declared is None:
+        raise SecretResolutionError(f"{path} references unknown runtime secret: {name}")
+    if declared.status is SecretResolutionStatus.UNSUPPORTED_SOURCE:
+        raise SecretResolutionError(
+            f"{path} references unsupported secret source: {declared.source}"
+        )
+    value = provider.get_secret(declared.key)
+    if value is None:
+        raise SecretResolutionError(f"{path} references unavailable runtime secret: {name}")
+    return value
 
 
 def _scan_value(value: object, path: str) -> tuple[SecretFinding, ...]:

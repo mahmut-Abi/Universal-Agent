@@ -36,6 +36,7 @@ from universal_agent.core import (
 from universal_agent.domain import ActionArgumentContext, RuntimeComponents
 from universal_agent.observation import ObservationFactory
 from universal_agent.runtime.session import SessionRuntimeState
+from universal_agent.security import SecretProvider, SecretResolutionReport
 from universal_agent.tools import ToolRuntime
 
 EmitFn = Callable[[str, ActionId | None, dict[str, object]], Awaitable[None]]
@@ -75,11 +76,17 @@ class ActionExecutor:
 
     components: RuntimeComponents
     environment: JsonMapping
+    secret_provider: SecretProvider | None = None
+    secret_resolution: SecretResolutionReport | None = None
     _tool_runtime: ToolRuntime = field(init=False)
     _observations: ObservationFactory = field(init=False)
 
     def __post_init__(self) -> None:
-        self._tool_runtime = ToolRuntime(self.components.tools)
+        self._tool_runtime = ToolRuntime(
+            self.components.tools,
+            secret_provider=self.secret_provider,
+            secret_resolution=self.secret_resolution,
+        )
         self._observations = ObservationFactory()
 
     async def prepare(

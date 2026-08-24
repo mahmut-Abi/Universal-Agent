@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 
+from universal_agent import SecretRef
 from universal_agent.core import (
     DomainIdentity,
     ErrorCode,
@@ -14,6 +15,7 @@ from universal_agent.core import (
     immutable_json,
     new_action_id,
 )
+from universal_agent.security import EnvSecretProvider, resolve_secret_refs
 from universal_agent.tools import (
     DuplicateToolError,
     ToolRegistry,
@@ -80,6 +82,21 @@ class UncertainTool:
 
     async def execute(self, arguments: JsonMapping) -> JsonMapping:
         raise UncertainToolExecutionError("connection closed after dispatch")
+
+
+class SecretTool:
+    def __init__(self) -> None:
+        self.calls: list[JsonMapping] = []
+        self.definition = ToolDefinition(
+            name="secret",
+            description="Use a runtime secret",
+            capabilities=("use_secret",),
+            required_arguments=("token",),
+        )
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        self.calls.append(immutable_json(arguments))
+        return immutable_json({"accepted": arguments["token"] == "secret-value"})
 
 
 def call(tool: str, capability: str, arguments: JsonMapping | None = None) -> ToolCall:
@@ -170,6 +187,48 @@ async def test_tool_runtime_rejects_domain_mismatch() -> None:
         )
     )
     assert partial.error_code is ErrorCode.VALIDATION_ERROR
+
+
+@pytest.mark.asyncio
+async def test_tool_runtime_resolves_secret_refs_at_execution_boundary() -> None:
+    provider = EnvSecretProvider({"API_KEY": "secret-value"})
+    resolution = resolve_secret_refs(
+        (SecretRef.env("api_key", "API_KEY"),),
+        provider=provider,
+    )
+    registry = ToolRegistry()
+    tool = SecretTool()
+    registry.register(tool)
+    runtime = ToolRuntime(
+        registry,
+        secret_provider=provider,
+        secret_resolution=resolution,
+    )
+
+    result = await runtime.execute(
+        call("secret", "use_secret", {"token": {"secret_ref": "api_key"}})
+    )
+
+    assert result.status is ObservationStatus.SUCCEEDED
+    assert result.output == {"accepted": True}
+    assert tool.calls == [{"token": "secret-value"}]
+
+
+@pytest.mark.asyncio
+async def test_tool_runtime_rejects_unavailable_secret_refs_before_tool_execution() -> None:
+    registry = ToolRegistry()
+    tool = SecretTool()
+    registry.register(tool)
+
+    result = await ToolRuntime(registry).execute(
+        call("secret", "use_secret", {"token": {"secret_ref": "api_key"}})
+    )
+
+    assert result.status is ObservationStatus.FAILED
+    assert result.error_code is ErrorCode.VALIDATION_ERROR
+    assert result.error is not None
+    assert "no runtime secret registry" in result.error
+    assert tool.calls == []
 
 
 @pytest.mark.asyncio

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import pytest
+
 from universal_agent import SecretRef
 from universal_agent.security import (
     EnvSecretProvider,
+    SecretResolutionError,
     SecretResolutionStatus,
     is_sensitive_key,
+    resolve_secret_arguments,
     resolve_secret_refs,
     scan_for_secrets,
 )
@@ -78,3 +82,47 @@ def test_secret_resolver_blocks_missing_required_env_secrets() -> None:
     assert report.missing_required_names == ("openai_api_key",)
     assert resolved is not None
     assert resolved.status is SecretResolutionStatus.MISSING_REQUIRED
+
+
+def test_secret_argument_resolver_replaces_declared_secret_refs() -> None:
+    provider = EnvSecretProvider({"API_KEY": "secret-value"})
+    report = resolve_secret_refs(
+        (SecretRef.env("api_key", "API_KEY"),),
+        provider=provider,
+    )
+
+    resolved = resolve_secret_arguments(
+        {
+            "headers": {"authorization": {"secret_ref": "api_key"}},
+            "safe": "visible",
+        },
+        provider=provider,
+        resolution=report,
+    )
+
+    assert resolved == {
+        "headers": {"authorization": "secret-value"},
+        "safe": "visible",
+    }
+
+
+def test_secret_argument_resolver_rejects_unknown_or_malformed_refs() -> None:
+    provider = EnvSecretProvider({"API_KEY": "secret-value"})
+    report = resolve_secret_refs(
+        (SecretRef.env("api_key", "API_KEY"),),
+        provider=provider,
+    )
+
+    with pytest.raises(SecretResolutionError, match="unknown runtime secret"):
+        resolve_secret_arguments(
+            {"token": {"secret_ref": "missing"}},
+            provider=provider,
+            resolution=report,
+        )
+
+    with pytest.raises(SecretResolutionError, match="must not include extra fields"):
+        resolve_secret_arguments(
+            {"token": {"secret_ref": "api_key", "label": "extra"}},
+            provider=provider,
+            resolution=report,
+        )
