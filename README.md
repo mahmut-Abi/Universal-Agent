@@ -212,9 +212,10 @@ event-sourcing models or production migration systems.
   transitions, and a dedicated context budget. Memory is advisory only: it never becomes Evidence,
   never updates the World Model, never enters the evaluator, and never alone completes a Task or
   Goal. It is excluded from `SessionSnapshot` so the World stays replayable from Evidence alone.
-- P3.2: fake-backed Kubernetes remediation — policy-gated `scale_workload`, deterministic
-  confirmation, capability-scoped timeout recovery, dynamic remediation tasks, and fresh health
-  verification. Mutation receipts never substitute for verification evidence.
+- P3.2: Kubernetes remediation — policy-gated `scale_workload`, deterministic confirmation,
+  capability-scoped timeout recovery, dynamic remediation tasks, fresh health verification, and an
+  optional `KubectlBackend` adapter for real `kubectl` inspection/mutation behind the existing
+  injected backend protocols. Mutation receipts never substitute for verification evidence.
 - P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
   projections, lightweight cursor-aware `SessionSummaryView` listing, cursor-aware `EventReader`,
   `RuntimeSessionBatch` / `RuntimeEventBatch`, action idempotency metadata (`idempotency_key`,
@@ -320,9 +321,12 @@ event-sourcing models or production migration systems.
   for CLI/CI and future package-registry adapters. `agent ecosystem install` now exposes that full
   package/dataset/Profile metadata install surface from registry manifests.
 
-The Kubernetes Domain uses injected backends. Tests and examples use fake backends; no real cluster
-is accessed and no `kubectl` command is executed. The read-only `KubernetesDomain` remains available,
-while `KubernetesRemediationDomain` adds the fake-backed mutation path. Multi-domain operation now
+The Kubernetes Domain uses injected backends. Most tests and examples use fake backends; no real
+cluster is accessed unless a caller explicitly wires `KubectlBackend`. `KubectlBackend` implements
+the same `KubernetesBackend` / `KubernetesMutationBackend` protocols with subprocess-backed
+`kubectl` calls and can be tested through an injected command runner. See
+`examples/p3_2_kubectl_backend.py` for the adapter shape. The read-only `KubernetesDomain` remains
+available, while `KubernetesRemediationDomain` adds the policy-gated mutation path. Multi-domain operation now
 has a conservative `DomainManager` / `DomainComposition` foundation: Domain identities,
 capabilities and tools are validated before activation, Domain Loader rejects empty evaluator sets,
 Observation processing routes Evidence extraction, World updating, Task expansion and evaluation
