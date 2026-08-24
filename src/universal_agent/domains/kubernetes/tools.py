@@ -26,6 +26,8 @@ class KubernetesScaleTool:
                         "name": {"type": "string", "minLength": 1},
                         "namespace": {"type": "string", "minLength": 1},
                         "replicas": {"type": "integer", "minimum": 0},
+                        "current_replicas": {"type": "integer", "minimum": 0},
+                        "resource_version": {"type": ["string", "integer"], "minLength": 1},
                     },
                     "additionalProperties": False,
                 }

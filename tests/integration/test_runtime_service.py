@@ -1104,6 +1104,13 @@ def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     assert isinstance(replicas_schema, dict)
     assert replicas_schema["type"] == "integer"
     assert replicas_schema["minimum"] == 0
+    current_replicas_schema = schema_properties["current_replicas"]
+    assert isinstance(current_replicas_schema, dict)
+    assert current_replicas_schema["type"] == "integer"
+    assert current_replicas_schema["minimum"] == 0
+    resource_version_schema = schema_properties["resource_version"]
+    assert isinstance(resource_version_schema, dict)
+    assert resource_version_schema["type"] == ["string", "integer"]
     assert scale_tool.side_effect is SideEffect.REVERSIBLE
 
     scale_policy = next(item for item in policies if item.name == "kubernetes-scale-safety")

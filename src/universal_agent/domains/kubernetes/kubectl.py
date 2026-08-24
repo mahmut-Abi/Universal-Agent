@@ -283,6 +283,9 @@ class KubectlBackend:
         current = _optional_int(arguments.get("current_replicas"))
         if current is not None:
             command.append(f"--current-replicas={current}")
+        resource_version = _optional_resource_version(arguments.get("resource_version"))
+        if resource_version is not None:
+            command.append(f"--resource-version={resource_version}")
         result = await self._run(*command)
         return immutable_json(
             {
@@ -519,6 +522,14 @@ def _positive_int(value: JsonValue | None, *, default: int) -> int:
 def _optional_int(value: JsonValue | None) -> int | None:
     if isinstance(value, int) and not isinstance(value, bool):
         return value
+    return None
+
+
+def _optional_resource_version(value: JsonValue | None) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
     return None
 
 

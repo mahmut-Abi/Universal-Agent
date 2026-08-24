@@ -490,6 +490,13 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     assert isinstance(replicas_schema, dict)
     assert replicas_schema["type"] == "integer"
     assert replicas_schema["minimum"] == 0
+    current_replicas_schema = schema_properties["current_replicas"]
+    assert isinstance(current_replicas_schema, dict)
+    assert current_replicas_schema["type"] == "integer"
+    assert current_replicas_schema["minimum"] == 0
+    resource_version_schema = schema_properties["resource_version"]
+    assert isinstance(resource_version_schema, dict)
+    assert resource_version_schema["type"] == ["string", "integer"]
 
     scale_policy = find_named(policies.body["policies"], "kubernetes-scale-safety")
     assert scale_policy["policy_type"] == "KubernetesScalePolicy"

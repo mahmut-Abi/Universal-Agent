@@ -4,8 +4,17 @@ import json
 
 import pytest
 
-from universal_agent.core import JsonValue, immutable_json
+from universal_agent.core import (
+    JsonMapping,
+    JsonValue,
+    ObservationStatus,
+    ToolCall,
+    immutable_json,
+    new_action_id,
+)
 from universal_agent.domains.kubernetes import KubectlBackend, KubectlCommandError, KubectlResult
+from universal_agent.domains.kubernetes.tools import KubernetesScaleTool
+from universal_agent.tools import ToolRegistry, ToolRuntime
 
 
 class RecordingKubectlRunner:
@@ -36,6 +45,15 @@ class RecordingKubectlRunner:
             stderr="",
             returncode=0,
         )
+
+
+class RecordingScaleBackend:
+    def __init__(self) -> None:
+        self.arguments: JsonMapping | None = None
+
+    async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
+        self.arguments = arguments
+        return immutable_json({"resource": "deployment/api", "mutation_applied": True})
 
 
 @pytest.mark.asyncio
@@ -231,6 +249,7 @@ async def test_kubectl_backend_scales_workload_with_current_replicas_guard() -> 
                 "prod",
                 "--replicas=5",
                 "--current-replicas=3",
+                "--resource-version=rv-before",
             ): KubectlResult((), "deployment.apps/api scaled", "", 0),
         }
     )
@@ -238,7 +257,15 @@ async def test_kubectl_backend_scales_workload_with_current_replicas_guard() -> 
 
     result = await backend.mutate(
         "scale_workload",
-        immutable_json({"name": "api", "namespace": "prod", "replicas": 5, "current_replicas": 3}),
+        immutable_json(
+            {
+                "name": "api",
+                "namespace": "prod",
+                "replicas": 5,
+                "current_replicas": 3,
+                "resource_version": "rv-before",
+            }
+        ),
     )
 
     assert result["resource"] == "deployment/api"
@@ -247,6 +274,35 @@ async def test_kubectl_backend_scales_workload_with_current_replicas_guard() -> 
     assert result["replicas"] == 5
     assert result["resource_version"] == "rv-before"
     assert result["mutation_id"] == "kubectl-scale:deployment.apps/api scaled"
+
+
+@pytest.mark.asyncio
+async def test_scale_tool_schema_accepts_concurrency_guards() -> None:
+    backend = RecordingScaleBackend()
+    registry = ToolRegistry()
+    registry.register(KubernetesScaleTool(backend))
+
+    result = await ToolRuntime(registry).execute(
+        call=ToolCall(
+            new_action_id(),
+            "kubernetes_scale_workload",
+            "scale_workload",
+            immutable_json(
+                {
+                    "name": "api",
+                    "namespace": "prod",
+                    "replicas": 5,
+                    "current_replicas": 3,
+                    "resource_version": "rv-before",
+                }
+            ),
+        )
+    )
+
+    assert result.status is ObservationStatus.SUCCEEDED
+    assert backend.arguments is not None
+    assert backend.arguments["current_replicas"] == 3
+    assert backend.arguments["resource_version"] == "rv-before"
 
 
 @pytest.mark.asyncio
