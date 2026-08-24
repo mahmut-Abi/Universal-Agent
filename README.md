@@ -336,10 +336,10 @@ event-sourcing models or production migration systems.
   Agent instances and filters eligible instances by read-only, allowed-profile and permission
   constraints; `AgentOrchestrator` delegates only through registered executors, marks instances busy
   while they run, and enforces parent
-  child-count and duration limits. It can also execute a dependency-aware batch, running ready child
-  tasks concurrently while rejecting downstream tasks whose dependencies fail. `RuntimeAgentExecutor`
-  adapts a target `RuntimeAPI` without creating a second Agent loop or bypassing the target Runtime's
-  policy/evaluation path.
+  child-count and duration limits. It can also execute a dependency-aware batch with structured
+  spec/result payload helpers, running ready child tasks concurrently while rejecting downstream
+  tasks whose dependencies fail. `RuntimeAgentExecutor` adapts a target `RuntimeAPI` without creating
+  a second Agent loop or bypassing the target Runtime's policy/evaluation path.
   `AgentConflictResolver` resolves structured action proposals by policy, read-only constraints,
   side effect, risk and explicit priority, and requires review for equal-rank conflicts instead of
   using last-result-wins. `AgentResultMerger` then combines child

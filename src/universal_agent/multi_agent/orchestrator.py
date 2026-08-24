@@ -5,14 +5,27 @@ from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from types import MappingProxyType
+from typing import Protocol, cast
 
-from universal_agent.core import ErrorCode, ExecutionStatus, Goal, JsonValue, SuccessCriterion, Task
+from universal_agent.core import (
+    ErrorCode,
+    ExecutionStatus,
+    Goal,
+    JsonMapping,
+    JsonValue,
+    SuccessCriterion,
+    Task,
+)
 from universal_agent.multi_agent.contracts import (
     AgentTaskId,
     AgentTaskRequest,
     AgentTaskResult,
     AgentTaskResultStatus,
+    agent_task_request_payload,
+    agent_task_result_payload,
+    decode_agent_task_request,
+    decode_agent_task_result,
 )
 from universal_agent.multi_agent.registry import (
     AgentId,
@@ -75,6 +88,53 @@ class AgentDelegationBatchResult:
     @property
     def completed(self) -> bool:
         return self.status is AgentDelegationBatchStatus.COMPLETED
+
+
+def agent_delegation_spec_payload(spec: AgentDelegationSpec) -> JsonMapping:
+    return MappingProxyType(
+        {
+            "request": dict(agent_task_request_payload(spec.request)),
+            "agent_id": _optional_str(spec.agent_id),
+            "depends_on": [str(task_id) for task_id in spec.depends_on],
+        }
+    )
+
+
+def decode_agent_delegation_spec(payload: JsonMapping) -> AgentDelegationSpec:
+    return AgentDelegationSpec(
+        request=decode_agent_task_request(_mapping(payload.get("request"), "request")),
+        agent_id=_optional_agent_id(payload.get("agent_id")),
+        depends_on=tuple(
+            AgentTaskId(value) for value in _string_list(payload.get("depends_on"), "depends_on")
+        ),
+    )
+
+
+def agent_delegation_batch_result_payload(result: AgentDelegationBatchResult) -> JsonMapping:
+    return MappingProxyType(
+        {
+            "status": result.status.value,
+            "completed": result.completed,
+            "reason": result.reason,
+            "skipped_task_ids": [str(task_id) for task_id in result.skipped_task_ids],
+            "results": [dict(agent_task_result_payload(item)) for item in result.results],
+        }
+    )
+
+
+def decode_agent_delegation_batch_result(payload: JsonMapping) -> AgentDelegationBatchResult:
+    return AgentDelegationBatchResult(
+        status=_batch_status_value(payload.get("status")),
+        results=tuple(
+            decode_agent_task_result(item)
+            for item in _mapping_list(payload.get("results"), "results")
+        ),
+        skipped_task_ids=tuple(
+            AgentTaskId(value)
+            for value in _string_list(payload.get("skipped_task_ids"), "skipped_task_ids")
+        ),
+        reason=_string(payload.get("reason"), "reason", ""),
+    )
 
 
 class AgentOrchestrator:
@@ -311,6 +371,63 @@ async def _execute_agent_task(
             ),
             error_code=ErrorCode.TIMEOUT,
         )
+
+
+def _mapping(value: object, field_name: str) -> JsonMapping:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{field_name} must be an object")
+    if any(not isinstance(key, str) for key in value):
+        raise ValueError(f"{field_name} keys must be strings")
+    return cast(JsonMapping, value)
+
+
+def _mapping_list(value: object, field_name: str) -> tuple[JsonMapping, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list")
+    return tuple(_mapping(item, f"{field_name}[{index}]") for index, item in enumerate(value))
+
+
+def _string(value: object, field_name: str, default: str | None = None) -> str:
+    if value is None and default is not None:
+        return default
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    return value
+
+
+def _optional_str(value: object | None) -> JsonValue:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _string_list(value: object, field_name: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list")
+    strings: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str):
+            raise ValueError(f"{field_name}[{index}] must be a string")
+        strings.append(item)
+    return tuple(strings)
+
+
+def _optional_agent_id(value: object) -> AgentId | None:
+    if value is None:
+        return None
+    return AgentId(_string(value, "agent_id"))
+
+
+def _batch_status_value(value: object) -> AgentDelegationBatchStatus:
+    raw = _string(value, "status")
+    try:
+        return AgentDelegationBatchStatus(raw)
+    except ValueError as exc:
+        raise ValueError(f"unsupported agent delegation batch status: {raw}") from exc
 
 
 def _validate_delegation_specs(specs: tuple[AgentDelegationSpec, ...]) -> None:

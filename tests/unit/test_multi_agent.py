@@ -9,6 +9,7 @@ from universal_agent.core import DomainIdentity, ErrorCode, SessionId, immutable
 from universal_agent.evidence import EvidenceId
 from universal_agent.multi_agent import (
     AGENT_TASK_API_VERSION,
+    AgentDelegationBatchResult,
     AgentDelegationBatchStatus,
     AgentDelegationDependencyError,
     AgentDelegationLimitError,
@@ -29,8 +30,12 @@ from universal_agent.multi_agent import (
     AgentTaskResult,
     AgentTaskResultStatus,
     NoEligibleAgentError,
+    agent_delegation_batch_result_payload,
+    agent_delegation_spec_payload,
     agent_task_request_payload,
     agent_task_result_payload,
+    decode_agent_delegation_batch_result,
+    decode_agent_delegation_spec,
     decode_agent_task_request,
     decode_agent_task_result,
     rejected_agent_task_result,
@@ -454,6 +459,60 @@ def batch_request(task_id: str, *, parent_task_id: AgentTaskId | None = None) ->
         task_id=AgentTaskId(task_id),
         parent_task_id=parent_task_id,
     )
+
+
+def test_agent_delegation_spec_payload_round_trips_dependencies() -> None:
+    spec = AgentDelegationSpec(
+        batch_request("child"),
+        agent_id=AgentId("agent-1"),
+        depends_on=(AgentTaskId("parent"),),
+    )
+
+    decoded = decode_agent_delegation_spec(agent_delegation_spec_payload(spec))
+
+    assert decoded.request.task_id == AgentTaskId("child")
+    assert decoded.agent_id == AgentId("agent-1")
+    assert decoded.depends_on == (AgentTaskId("parent"),)
+
+
+def test_agent_delegation_batch_result_payload_round_trips_result_collector_state() -> None:
+    batch = AgentDelegationBatchResult(
+        status=AgentDelegationBatchStatus.PARTIAL,
+        results=(
+            AgentTaskResult(
+                AgentTaskId("agent-task-a"),
+                AgentTaskResultStatus.COMPLETED,
+                result=immutable_json({"done": True}),
+                evidence_ids=(EvidenceId("evidence-a"),),
+            ),
+            AgentTaskResult(
+                AgentTaskId("agent-task-b"),
+                AgentTaskResultStatus.REJECTED,
+                reason="dependency did not complete",
+                error_code=ErrorCode.INVALID_STATE,
+            ),
+        ),
+        skipped_task_ids=(AgentTaskId("agent-task-b"),),
+        reason="some delegated agent tasks did not complete",
+    )
+
+    decoded = decode_agent_delegation_batch_result(agent_delegation_batch_result_payload(batch))
+
+    assert decoded.status is AgentDelegationBatchStatus.PARTIAL
+    assert decoded.skipped_task_ids == (AgentTaskId("agent-task-b"),)
+    assert [item.task_id for item in decoded.results] == [
+        AgentTaskId("agent-task-a"),
+        AgentTaskId("agent-task-b"),
+    ]
+    assert decoded.results[0].evidence_ids == (EvidenceId("evidence-a"),)
+    assert decoded.results[1].error_code is ErrorCode.INVALID_STATE
+
+
+def test_agent_delegation_batch_result_decoder_rejects_invalid_status() -> None:
+    with pytest.raises(ValueError, match="unsupported agent delegation batch status"):
+        decode_agent_delegation_batch_result(
+            immutable_json({"status": "missing", "results": [], "reason": "bad status"})
+        )
 
 
 @pytest.mark.asyncio

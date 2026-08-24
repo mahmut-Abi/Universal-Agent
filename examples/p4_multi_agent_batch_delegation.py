@@ -17,6 +17,10 @@ from universal_agent.multi_agent import (
     AgentTaskRequest,
     AgentTaskResult,
     AgentTaskResultStatus,
+    agent_delegation_batch_result_payload,
+    agent_delegation_spec_payload,
+    decode_agent_delegation_batch_result,
+    decode_agent_delegation_spec,
 )
 
 
@@ -94,41 +98,46 @@ async def main() -> None:
         },
     )
 
-    batch = await orchestrator.delegate_many(
-        (
-            AgentDelegationSpec(
-                request(
-                    "inspect-health",
-                    "Inspect workload health",
-                    profile="reliability-diagnoser",
-                    permission="diagnose",
-                ),
-                agent_id=AgentId("reliability-1"),
+    specs = (
+        AgentDelegationSpec(
+            request(
+                "inspect-health",
+                "Inspect workload health",
+                profile="reliability-diagnoser",
+                permission="diagnose",
             ),
-            AgentDelegationSpec(
-                request(
-                    "inspect-risk",
-                    "Inspect workload security risk",
-                    profile="security-auditor",
-                    permission="security_review",
-                ),
-                agent_id=AgentId("security-1"),
+            agent_id=AgentId("reliability-1"),
+        ),
+        AgentDelegationSpec(
+            request(
+                "inspect-risk",
+                "Inspect workload security risk",
+                profile="security-auditor",
+                permission="security_review",
             ),
-            AgentDelegationSpec(
-                request(
-                    "summarize-remediation",
-                    "Summarize safe remediation options",
-                    profile="reliability-diagnoser",
-                    permission="diagnose",
-                ),
-                agent_id=AgentId("reliability-1"),
-                depends_on=(AgentTaskId("inspect-health"), AgentTaskId("inspect-risk")),
+            agent_id=AgentId("security-1"),
+        ),
+        AgentDelegationSpec(
+            request(
+                "summarize-remediation",
+                "Summarize safe remediation options",
+                profile="reliability-diagnoser",
+                permission="diagnose",
             ),
-        )
+            agent_id=AgentId("reliability-1"),
+            depends_on=(AgentTaskId("inspect-health"), AgentTaskId("inspect-risk")),
+        ),
+    )
+    decoded_specs = tuple(
+        decode_agent_delegation_spec(agent_delegation_spec_payload(spec)) for spec in specs
+    )
+    batch = await orchestrator.delegate_many(decoded_specs)
+    decoded_batch = decode_agent_delegation_batch_result(
+        agent_delegation_batch_result_payload(batch)
     )
 
-    print(f"batch={batch.status.value}: {batch.reason}")
-    print("results=" + ",".join(result.status.value for result in batch.results))
+    print(f"batch={decoded_batch.status.value}: {decoded_batch.reason}")
+    print("results=" + ",".join(result.status.value for result in decoded_batch.results))
     print("events=" + " > ".join(events))
 
 
