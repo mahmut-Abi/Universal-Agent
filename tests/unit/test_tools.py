@@ -35,6 +35,31 @@ class EchoTool:
         return immutable_json({"value": arguments["value"]})
 
 
+class SchemaTool:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.definition = ToolDefinition(
+            name="schema",
+            description="Validate structured arguments",
+            capabilities=("schema_value",),
+            argument_schema=immutable_json(
+                {
+                    "required": ["name", "count", "mode"],
+                    "properties": {
+                        "name": {"type": "string", "minLength": 1},
+                        "count": {"type": "integer", "minimum": 1, "maximum": 3},
+                        "mode": {"type": "string", "enum": ["safe", "fast"]},
+                    },
+                    "additionalProperties": False,
+                }
+            ),
+        )
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        self.calls += 1
+        return immutable_json({"accepted": True})
+
+
 class BrokenTool:
     definition = ToolDefinition("broken", "Fail", ("break",))
 
@@ -75,6 +100,43 @@ async def test_tool_runtime_validates_required_arguments() -> None:
     result = await ToolRuntime(registry).execute(call("echo", "echo_value"))
     assert result.status is ObservationStatus.FAILED
     assert result.error_code is ErrorCode.VALIDATION_ERROR
+
+
+@pytest.mark.asyncio
+async def test_tool_runtime_validates_argument_schema_before_execution() -> None:
+    registry = ToolRegistry()
+    tool = SchemaTool()
+    registry.register(tool)
+    runtime = ToolRuntime(registry)
+
+    missing = await runtime.execute(call("schema", "schema_value", {"name": "example"}))
+    wrong_type = await runtime.execute(
+        call("schema", "schema_value", {"name": "example", "count": "2", "mode": "safe"})
+    )
+    out_of_range = await runtime.execute(
+        call("schema", "schema_value", {"name": "example", "count": 0, "mode": "safe"})
+    )
+    bad_enum = await runtime.execute(
+        call("schema", "schema_value", {"name": "example", "count": 1, "mode": "unsafe"})
+    )
+    unexpected = await runtime.execute(
+        call(
+            "schema",
+            "schema_value",
+            {"name": "example", "count": 1, "mode": "safe", "extra": True},
+        )
+    )
+    accepted = await runtime.execute(
+        call("schema", "schema_value", {"name": "example", "count": 2, "mode": "safe"})
+    )
+
+    assert missing.error == "missing required arguments: count, mode"
+    assert wrong_type.error == "argument count must be integer"
+    assert out_of_range.error == "argument count must be >= 1"
+    assert bad_enum.error == "argument mode must be one of 'safe', 'fast'"
+    assert unexpected.error == "unexpected arguments: extra"
+    assert accepted.status is ObservationStatus.SUCCEEDED
+    assert tool.calls == 1
 
 
 @pytest.mark.asyncio

@@ -172,6 +172,7 @@ class ToolView:
     description: str
     capabilities: tuple[str, ...]
     required_arguments: tuple[str, ...]
+    argument_schema: JsonMapping
     side_effect: SideEffect
     risk: RiskLevel
     timeout_seconds: float
@@ -411,6 +412,7 @@ class RuntimeService:
                         description=definition.description,
                         capabilities=definition.capabilities,
                         required_arguments=definition.required_arguments,
+                        argument_schema=definition.argument_schema,
                         side_effect=definition.side_effect,
                         risk=definition.risk,
                         timeout_seconds=definition.timeout_seconds,

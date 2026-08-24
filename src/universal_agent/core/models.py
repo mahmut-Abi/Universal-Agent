@@ -251,6 +251,7 @@ class ToolDefinition:
     risk: RiskLevel = RiskLevel.LOW
     timeout_seconds: float = 10.0
     priority: int = 100
+    argument_schema: JsonMapping = field(default_factory=immutable_json)
 
 
 @dataclass(frozen=True, slots=True)

@@ -43,6 +43,16 @@ class KubernetesInspectTool:
             description=f"Kubernetes implementation for {capability}",
             capabilities=(capability,),
             required_arguments=("name",),
+            argument_schema=immutable_json(
+                {
+                    "required": ["name"],
+                    "properties": {
+                        "name": {"type": "string", "minLength": 1},
+                        "namespace": {"type": "string", "minLength": 1},
+                    },
+                    "additionalProperties": True,
+                }
+            ),
         )
         self._capability = capability
         self._backend = backend

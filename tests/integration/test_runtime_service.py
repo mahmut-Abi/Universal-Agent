@@ -1034,6 +1034,12 @@ def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     assert scale_tool.domain_name == "kubernetes"
     assert scale_tool.capabilities == ("scale_workload",)
     assert scale_tool.required_arguments == ("name", "namespace", "replicas")
+    schema_properties = scale_tool.argument_schema["properties"]
+    assert isinstance(schema_properties, dict)
+    replicas_schema = schema_properties["replicas"]
+    assert isinstance(replicas_schema, dict)
+    assert replicas_schema["type"] == "integer"
+    assert replicas_schema["minimum"] == 0
     assert scale_tool.side_effect is SideEffect.REVERSIBLE
 
     scale_policy = next(item for item in policies if item.name == "kubernetes-scale-safety")

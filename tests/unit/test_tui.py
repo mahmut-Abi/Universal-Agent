@@ -123,6 +123,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
                 "Inspect workload with Kubernetes backend",
                 ("inspect_workload",),
                 ("name",),
+                MappingProxyType({}),
                 SideEffect.NONE,
                 RiskLevel.LOW,
                 5.0,

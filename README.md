@@ -216,7 +216,7 @@ event-sourcing models or production migration systems.
   projections, lightweight cursor-aware `SessionSummaryView` listing, cursor-aware `EventReader`,
   `RuntimeSessionBatch` / `RuntimeEventBatch`, action idempotency metadata (`idempotency_key`,
   `parameters_hash`, `attempt`) carried through pending-action views, events and persistence,
-  explicit `UNKNOWN_EXECUTION` observations for uncertain tool outcomes,
+  explicit `UNKNOWN_EXECUTION` observations for uncertain tool outcomes, deterministic Tool argument schema validation,
   runtime-owned resource locking and optimistic resource version checks for side-effecting actions
   (`resource_key`, optional `resource_version`, conflict detection, version check/update events
   and lock lifecycle events), and

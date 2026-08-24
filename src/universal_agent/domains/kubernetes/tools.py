@@ -19,6 +19,17 @@ class KubernetesScaleTool:
             required_arguments=("name", "namespace", "replicas"),
             side_effect=SideEffect.REVERSIBLE,
             risk=RiskLevel.MEDIUM,
+            argument_schema=immutable_json(
+                {
+                    "required": ["name", "namespace", "replicas"],
+                    "properties": {
+                        "name": {"type": "string", "minLength": 1},
+                        "namespace": {"type": "string", "minLength": 1},
+                        "replicas": {"type": "integer", "minimum": 0},
+                    },
+                    "additionalProperties": False,
+                }
+            ),
         )
         self._backend = backend
 

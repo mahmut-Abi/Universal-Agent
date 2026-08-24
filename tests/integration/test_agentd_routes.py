@@ -384,6 +384,14 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     scale_tool = find_named(tools.body["tools"], "kubernetes_scale_workload")
     assert scale_tool["side_effect"] == "reversible"
     assert scale_tool["required_arguments"] == ["name", "namespace", "replicas"]
+    argument_schema = scale_tool["argument_schema"]
+    assert isinstance(argument_schema, dict)
+    schema_properties = argument_schema["properties"]
+    assert isinstance(schema_properties, dict)
+    replicas_schema = schema_properties["replicas"]
+    assert isinstance(replicas_schema, dict)
+    assert replicas_schema["type"] == "integer"
+    assert replicas_schema["minimum"] == 0
 
     scale_policy = find_named(policies.body["policies"], "kubernetes-scale-safety")
     assert scale_policy["policy_type"] == "KubernetesScalePolicy"

@@ -1608,6 +1608,7 @@ def tool_body(view: ToolView) -> dict[str, JsonValue]:
         "description": view.description,
         "capabilities": list(view.capabilities),
         "required_arguments": list(view.required_arguments),
+        "argument_schema": dict(view.argument_schema),
         "side_effect": view.side_effect.value,
         "risk": view.risk.value,
         "timeout_seconds": view.timeout_seconds,

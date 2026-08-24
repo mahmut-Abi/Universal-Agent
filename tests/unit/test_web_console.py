@@ -132,6 +132,7 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
                 "Inspect workload with Kubernetes backend",
                 ("inspect_workload",),
                 ("name",),
+                MappingProxyType({}),
                 SideEffect.NONE,
                 RiskLevel.LOW,
                 5.0,
