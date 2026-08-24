@@ -341,8 +341,10 @@ event-sourcing models or production migration systems.
   conflicts instead of using last-result-wins. `AgentResultMerger` then combines child
   `AgentTaskResult` objects and conflict resolutions into a read-only merge report with deduplicated
   Evidence IDs, missing/failed/waiting task classification and configurable completion policy without
-  inventing new Evidence or updating the World Model. This is a foundation for optional Multi-Agent
-  execution, not a replacement for Domain Composition.
+  inventing new Evidence or updating the World Model. `MultiAgentMergeEvaluator` adds deterministic
+  checks for merge status, required Evidence IDs, completed task IDs and missing/waiting/failed/review
+  counts. This is a foundation for optional Multi-Agent execution, not a replacement for Domain
+  Composition.
 
 The Kubernetes Domain uses injected backends. Most tests and examples use fake backends; no real
 cluster is accessed unless a caller explicitly wires `KubectlBackend`. `KubectlBackend` implements
@@ -373,8 +375,8 @@ The design roadmap now separates semantic runtime maturity from productization:
 - P3.6-P3.7: Operations and Evaluation — OpenTelemetry, metrics, audit, cost tracking, runtime
   doctor, evaluation suites, quality gates, replay, and deterministic test mode.
 - P4: Multi-Agent foundation — structured Agent Task / Result contracts, Agent Profile vs Instance
-  registry, delegation limits, conflict resolution, result/evidence merge, and a RuntimeAPI executor
-  adapter.
+  registry, delegation limits, conflict resolution, result/evidence merge, merge evaluation, and a
+  RuntimeAPI executor adapter.
 - P5: Read-only TUI/Web application views for runtime, session, evidence, world, domain and settings inspection.
 - P6: Distributed Runtime foundations — typed local Scheduler, Work Queue, Worker Registry, Worker Lease, capability-aware Worker handler
   execution, scheduled Goal execution, current Task resume, leased lock, Runtime Snapshot, Health Report, Coordinator, Heartbeat, retry, cancellation and lease expiry primitives.

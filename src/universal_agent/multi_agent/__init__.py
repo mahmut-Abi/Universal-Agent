@@ -16,6 +16,13 @@ from universal_agent.multi_agent.contracts import (
     agent_task_request_payload,
     agent_task_result_payload,
 )
+from universal_agent.multi_agent.evaluation import (
+    MultiAgentEvaluationCheck,
+    MultiAgentEvaluationExpectations,
+    MultiAgentEvaluationReport,
+    MultiAgentMergeEvaluator,
+    multi_agent_evaluation_report_payload,
+)
 from universal_agent.multi_agent.merge import (
     AgentResultMerge,
     AgentResultMergePolicy,
@@ -76,10 +83,15 @@ __all__ = [
     "AgentTaskResultStatus",
     "ConflictResolution",
     "ConflictResolutionStatus",
+    "MultiAgentEvaluationCheck",
+    "MultiAgentEvaluationExpectations",
+    "MultiAgentEvaluationReport",
+    "MultiAgentMergeEvaluator",
     "NoEligibleAgentError",
     "RuntimeAgentExecutor",
     "agent_result_merge_payload",
     "agent_task_request_payload",
     "agent_task_result_payload",
+    "multi_agent_evaluation_report_payload",
     "rejected_agent_task_result",
 ]
