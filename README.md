@@ -146,8 +146,9 @@ It also exposes operations commands for metrics, cost, logs, traces, doctor, aud
 `agent metrics --format prometheus` emits Prometheus text exposition, while
 `agent traces --format otlp` and `agent session traces <id> --format otlp` emit OTLP
 JSON-compatible trace payloads from the same event-derived span projection. `agent serve` starts the
-standard-library `AgentdHttpServer` around the same service and accepts `--auth-token` plus
-`--read-only-auth-token` to enable the same optional bearer-token protection; `agent eval run` executes the
+standard-library `AgentdHttpServer` around the same service and accepts `--auth-token` /
+`--auth-token-env` plus `--read-only-auth-token` / `--read-only-auth-token-env` to enable the same
+optional bearer-token protection without requiring secrets in the process command line; `agent eval run` executes the
 local or file-backed evaluation suite through `EvaluationRunner`, and `agent eval compare` compares
 persisted golden reports for CLI/CI regression checks. `agent eval replay` records and checks
 deterministic golden replay recordings through the same suite selector. `agent eval list`,

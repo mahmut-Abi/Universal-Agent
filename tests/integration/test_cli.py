@@ -2464,6 +2464,93 @@ async def test_cli_serve_can_enable_read_only_agentd_bearer_auth() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_serve_can_enable_agentd_bearer_auth_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+    observed_urls: list[str] = []
+    monkeypatch.setenv("AGENTD_AUTH_TOKEN", "env-token")
+
+    def runner(server: AgentdHttpServer) -> None:
+        observed_urls.append(server.base_url)
+
+    try:
+        status = await run_cli(
+            ["serve", "--port", "0", "--auth-token-env", "AGENTD_AUTH_TOKEN"],
+            service=service,
+            server_runner=runner,
+            stdout=output,
+        )
+    except PermissionError as exc:
+        pytest.skip(f"local socket bind unavailable: {exc}")
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["status"] == "serving"
+    assert payload["base_url"] == observed_urls[0]
+    assert payload["auth_required"] is True
+    assert payload["read_only_auth_enabled"] is False
+    assert "env-token" not in output.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_cli_serve_rejects_missing_agentd_bearer_auth_env() -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+    error = StringIO()
+    observed_urls: list[str] = []
+
+    def runner(server: AgentdHttpServer) -> None:
+        observed_urls.append(server.base_url)
+
+    status = await run_cli(
+        ["serve", "--port", "0", "--auth-token-env", "MISSING_AGENTD_AUTH_TOKEN"],
+        service=service,
+        server_runner=runner,
+        stdout=output,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert observed_urls == []
+    assert output.getvalue() == ""
+    assert "agentd auth token env key is missing or empty" in error.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_cli_serve_rejects_ambiguous_agentd_bearer_auth_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _ = build_cli_service([])
+    error = StringIO()
+    observed_urls: list[str] = []
+    monkeypatch.setenv("AGENTD_AUTH_TOKEN", "env-token")
+
+    def runner(server: AgentdHttpServer) -> None:
+        observed_urls.append(server.base_url)
+
+    status = await run_cli(
+        [
+            "serve",
+            "--port",
+            "0",
+            "--auth-token",
+            "literal-token",
+            "--auth-token-env",
+            "AGENTD_AUTH_TOKEN",
+        ],
+        service=service,
+        server_runner=runner,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert observed_urls == []
+    assert "accepts either a literal value or env key" in error.getvalue()
+
+
+@pytest.mark.asyncio
 async def test_cli_eval_list_applies_kind_and_tag_filters() -> None:
     service, _ = build_cli_service([])
     output = StringIO()

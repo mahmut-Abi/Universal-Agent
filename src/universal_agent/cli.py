@@ -171,6 +171,7 @@ from universal_agent.profile import (
     load_profile_catalog,
 )
 from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI
+from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
 from universal_agent.tui import build_tui_snapshot, render_tui_snapshot
@@ -495,7 +496,9 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--auth-token")
+    serve.add_argument("--auth-token-env")
     serve.add_argument("--read-only-auth-token")
+    serve.add_argument("--read-only-auth-token-env")
 
     run = commands.add_parser("run")
     run.add_argument("profile")
@@ -1789,8 +1792,16 @@ def _dispatch_serve(
 ) -> None:
     host = cast(str, args.host)
     port = cast(int, args.port)
-    auth_token = cast(str | None, args.auth_token)
-    read_only_auth_token = cast(str | None, args.read_only_auth_token)
+    auth_token = _resolve_cli_auth_token(
+        explicit=cast(str | None, args.auth_token),
+        env_key=cast(str | None, args.auth_token_env),
+        label="auth token",
+    )
+    read_only_auth_token = _resolve_cli_auth_token(
+        explicit=cast(str | None, args.read_only_auth_token),
+        env_key=cast(str | None, args.read_only_auth_token_env),
+        label="read-only auth token",
+    )
     server = AgentdHttpServer(
         AgentdApp(
             service,
@@ -1821,6 +1832,24 @@ def _dispatch_serve(
 
 def _serve_forever(server: AgentdHttpServer) -> None:
     server.serve_forever()
+
+
+def _resolve_cli_auth_token(
+    *,
+    explicit: str | None,
+    env_key: str | None,
+    label: str,
+) -> str | None:
+    if explicit is not None and env_key is not None:
+        raise ValueError(f"agentd {label} accepts either a literal value or env key, not both")
+    if explicit is not None:
+        return explicit
+    if env_key is None:
+        return None
+    token = EnvSecretProvider().get_secret(env_key)
+    if token is None:
+        raise ValueError(f"agentd {label} env key is missing or empty: {env_key}")
+    return token
 
 
 async def _dispatch_session(
