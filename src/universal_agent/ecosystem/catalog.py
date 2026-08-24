@@ -460,6 +460,7 @@ class EcosystemRegistryIndex:
                     self.manifest.domain_packages,
                     registered_domains,
                 ),
+                _registry_package_dependencies_acyclic(self.manifest.domain_packages),
             )
         )
 
@@ -483,7 +484,8 @@ def plan_ecosystem_domain_package_install(
         _domain_package_install_candidate(reference, base_path=base_path)
         for reference in manifest.domain_packages
     )
-    return EcosystemDomainPackageInstallPlan(candidates)
+    _verify_domain_package_install_dependencies(candidates)
+    return EcosystemDomainPackageInstallPlan(_sort_domain_package_install_candidates(candidates))
 
 
 def install_ecosystem_domain_packages(
@@ -934,6 +936,19 @@ def _registry_package_dependencies_registered(
     )
 
 
+def _registry_package_dependencies_acyclic(
+    packages: tuple[EcosystemDomainPackageRef, ...],
+) -> EcosystemCatalogCheck:
+    dependency_map = {package.identity: package.dependencies for package in packages}
+    cycles = _dependency_cycles(dependency_map)
+    return _reference_check(
+        "package_dependencies_acyclic",
+        cycles,
+        "Domain package dependencies are acyclic",
+        "Domain package dependencies contain cycles",
+    )
+
+
 def _registry_manifest(
     source: EcosystemRegistryManifest | EcosystemRegistryIndex,
 ) -> EcosystemRegistryManifest:
@@ -1142,6 +1157,56 @@ def _verify_domain_package_ref_metadata(
             "domain package metadata mismatch: "
             f"{_format_domain_identity(reference.identity)} fields " + ", ".join(mismatches)
         )
+
+
+def _verify_domain_package_install_dependencies(
+    candidates: tuple[EcosystemDomainPackageInstallCandidate, ...],
+) -> None:
+    identities = frozenset(candidate.package.identity for candidate in candidates)
+    missing = tuple(
+        f"{candidate.package.identity.name}:{dependency.name}@{dependency.version}"
+        for candidate in candidates
+        for dependency in candidate.package.manifest.dependencies
+        if dependency not in identities
+    )
+    if missing:
+        raise EcosystemRegistryInstallError(
+            "domain package install plan missing dependencies: " + ", ".join(missing)
+        )
+
+
+def _sort_domain_package_install_candidates(
+    candidates: tuple[EcosystemDomainPackageInstallCandidate, ...],
+) -> tuple[EcosystemDomainPackageInstallCandidate, ...]:
+    by_identity = {candidate.package.identity: candidate for candidate in candidates}
+    visiting: set[DomainIdentity] = set()
+    visited: set[DomainIdentity] = set()
+    stack: list[DomainIdentity] = []
+    sorted_candidates: list[EcosystemDomainPackageInstallCandidate] = []
+
+    def visit(identity: DomainIdentity) -> None:
+        if identity in visited:
+            return
+        if identity in visiting:
+            cycle = [*stack[stack.index(identity) :], identity]
+            formatted = " -> ".join(_format_domain_identity(item) for item in cycle)
+            raise EcosystemRegistryInstallError(
+                f"domain package dependency cycle in install plan: {formatted}"
+            )
+        visiting.add(identity)
+        stack.append(identity)
+        candidate = by_identity[identity]
+        for dependency in candidate.package.manifest.dependencies:
+            if dependency in by_identity:
+                visit(dependency)
+        stack.pop()
+        visiting.remove(identity)
+        visited.add(identity)
+        sorted_candidates.append(candidate)
+
+    for candidate in candidates:
+        visit(candidate.package.identity)
+    return tuple(sorted_candidates)
 
 
 def _reject_registry_install_duplicates(
@@ -1617,6 +1682,35 @@ def _profile_identities(
     manifest: EcosystemRegistryManifest,
 ) -> tuple[tuple[str, str], ...]:
     return tuple(profile.identity for profile in manifest.profiles)
+
+
+def _dependency_cycles(
+    dependency_map: dict[DomainIdentity, tuple[DomainIdentity, ...]],
+) -> tuple[str, ...]:
+    visiting: set[DomainIdentity] = set()
+    visited: set[DomainIdentity] = set()
+    stack: list[DomainIdentity] = []
+    cycles: set[str] = set()
+
+    def visit(identity: DomainIdentity) -> None:
+        if identity in visited:
+            return
+        if identity in visiting:
+            cycle = [*stack[stack.index(identity) :], identity]
+            cycles.add(" -> ".join(_format_domain_identity(item) for item in cycle))
+            return
+        visiting.add(identity)
+        stack.append(identity)
+        for dependency in dependency_map.get(identity, ()):
+            if dependency in dependency_map:
+                visit(dependency)
+        stack.pop()
+        visiting.remove(identity)
+        visited.add(identity)
+
+    for identity in dependency_map:
+        visit(identity)
+    return tuple(sorted(cycles))
 
 
 def _reject_duplicates(label: str, identities: tuple[str, ...]) -> None:

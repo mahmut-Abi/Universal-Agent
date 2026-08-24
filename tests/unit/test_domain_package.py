@@ -195,6 +195,26 @@ def test_domain_package_registry_verification_checks_dependency_closure(
     assert passing.passed is True
 
 
+def test_domain_package_registry_verification_reports_dependency_cycles(
+    tmp_path: Path,
+) -> None:
+    alpha = package_payload("alpha")
+    alpha["dependencies"] = [{"name": "beta", "version": "1.0.0"}]
+    beta = package_payload("beta")
+    beta["dependencies"] = [{"name": "alpha", "version": "1.0.0"}]
+    registry = DomainPackageRegistry()
+    registry.install(write_manifest(tmp_path / "alpha-domain", alpha))
+    registry.install(write_manifest(tmp_path / "beta-domain", beta))
+
+    report = registry.verify()
+    failed = {check.name: check.message for check in report.failed_checks}
+
+    assert report.passed is False
+    assert "package_dependencies_acyclic" in failed
+    assert "alpha@1.0.0" in failed["package_dependencies_acyclic"]
+    assert "beta@1.0.0" in failed["package_dependencies_acyclic"]
+
+
 def test_build_domain_package_manifest_encodes_sdk_spec_with_default_entrypoint() -> None:
     manifest = build_domain_package_manifest(
         DomainPackageScaffoldSpec(

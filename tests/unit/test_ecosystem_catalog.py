@@ -38,20 +38,29 @@ def write_json(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def write_domain_package(root: Path) -> None:
+def write_domain_package(
+    root: Path,
+    *,
+    name: str = "kubernetes",
+    dependencies: tuple[DomainIdentity, ...] = (),
+) -> None:
     write_json(
         root / "manifest.json",
         {
             "apiVersion": "agent.nantian.dev/v1alpha1",
             "kind": "DomainPackage",
             "metadata": {
-                "name": "kubernetes",
+                "name": name,
                 "version": "1.0.0",
-                "description": "Kubernetes domain package",
-                "tags": ["kubernetes"],
+                "description": f"{name} domain package",
+                "tags": [name],
             },
             "capabilities": ["inspect_workload"],
             "required_tools": ["kubernetes_api"],
+            "dependencies": [
+                {"name": dependency.name, "version": dependency.version}
+                for dependency in dependencies
+            ],
             "compatibility": {
                 "runtime_api": ">=0.1,<1",
                 "domain_api": "agent.nantian.dev/v1alpha1",
@@ -354,6 +363,40 @@ def test_ecosystem_registry_index_verification_reports_missing_references() -> N
     assert "observability@1.0.0" in failed["package_dependencies_registered"]
 
 
+def test_ecosystem_registry_index_verification_reports_dependency_cycles() -> None:
+    index = EcosystemRegistryIndex(
+        EcosystemRegistryManifest(
+            api_version="agent.nantian.dev/v1alpha1",
+            kind="EcosystemRegistry",
+            name="cyclic-registry",
+            version="1.0.0",
+            description="Registry with cyclic package references",
+            domain_packages=(
+                EcosystemDomainPackageRef(
+                    "alpha",
+                    "1.0.0",
+                    "Alpha",
+                    dependencies=(DomainIdentity("beta", "1.0.0"),),
+                ),
+                EcosystemDomainPackageRef(
+                    "beta",
+                    "1.0.0",
+                    "Beta",
+                    dependencies=(DomainIdentity("alpha", "1.0.0"),),
+                ),
+            ),
+        )
+    )
+
+    report = index.verify()
+    failed = {check.name: check.message for check in report.failed_checks}
+
+    assert report.passed is False
+    assert "package_dependencies_acyclic" in failed
+    assert "alpha@1.0.0" in failed["package_dependencies_acyclic"]
+    assert "beta@1.0.0" in failed["package_dependencies_acyclic"]
+
+
 def test_file_ecosystem_registry_store_persists_and_lists_manifests(tmp_path: Path) -> None:
     first = EcosystemRegistryManifest(
         api_version="agent.nantian.dev/v1alpha1",
@@ -409,6 +452,58 @@ def test_ecosystem_registry_plans_and_installs_domain_packages(
     assert plan.candidates[0].reference.name == "kubernetes"
     assert result.installed_packages[0].identity == DomainIdentity("kubernetes", "1.0.0")
     assert result.registry.get_by_name("kubernetes").manifest.capabilities == ("inspect_workload",)
+
+
+def test_ecosystem_registry_domain_package_install_plan_sorts_dependencies_first(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    write_domain_package(
+        domain_root / "kubernetes",
+        dependencies=(DomainIdentity("observability", "1.0.0"),),
+    )
+    write_domain_package(domain_root / "observability", name="observability")
+    catalog = load_ecosystem_catalog(domain_package_root=domain_root)
+    manifest = catalog.registry_manifest()
+
+    plan = plan_ecosystem_domain_package_install(manifest)
+
+    assert tuple(reference.identity for reference in manifest.domain_packages) == (
+        DomainIdentity("kubernetes", "1.0.0"),
+        DomainIdentity("observability", "1.0.0"),
+    )
+    assert plan.identities == (
+        DomainIdentity("observability", "1.0.0"),
+        DomainIdentity("kubernetes", "1.0.0"),
+    )
+
+
+def test_ecosystem_registry_domain_package_install_checks_loaded_manifest_dependencies(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    write_domain_package(
+        domain_root / "kubernetes",
+        dependencies=(DomainIdentity("observability", "1.0.0"),),
+    )
+    manifest = EcosystemRegistryManifest(
+        api_version="agent.nantian.dev/v1alpha1",
+        kind="EcosystemRegistry",
+        name="legacy-dependency-gap",
+        version="1.0.0",
+        description="Legacy registry with missing loaded dependency metadata",
+        domain_packages=(
+            EcosystemDomainPackageRef(
+                "kubernetes",
+                "1.0.0",
+                "Kubernetes",
+                manifest_path=str(domain_root / "kubernetes" / "manifest.json"),
+            ),
+        ),
+    )
+
+    with pytest.raises(EcosystemRegistryInstallError, match="missing dependencies"):
+        plan_ecosystem_domain_package_install(manifest)
 
 
 def test_ecosystem_registry_plans_and_installs_full_ecosystem_artifacts(

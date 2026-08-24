@@ -403,7 +403,10 @@ def verify_domain_package_registry(
     packages = registry.list()
     registered_domains = frozenset(package.identity for package in packages)
     return DomainPackageVerificationReport(
-        (_package_dependencies_registered(packages, registered_domains),)
+        (
+            _package_dependencies_registered(packages, registered_domains),
+            _package_dependencies_acyclic(packages),
+        )
     )
 
 
@@ -550,6 +553,51 @@ def _package_dependencies_registered(
         False,
         "Domain packages reference missing dependencies: " + ", ".join(missing),
     )
+
+
+def _package_dependencies_acyclic(packages: tuple[DomainPackage, ...]) -> DomainPackageCheck:
+    dependency_map = {package.identity: package.manifest.dependencies for package in packages}
+    cycles = _dependency_cycles(dependency_map)
+    if not cycles:
+        return DomainPackageCheck(
+            "package_dependencies_acyclic",
+            True,
+            "Domain package dependencies are acyclic",
+        )
+    return DomainPackageCheck(
+        "package_dependencies_acyclic",
+        False,
+        "Domain package dependencies contain cycles: " + ", ".join(cycles),
+    )
+
+
+def _dependency_cycles(
+    dependency_map: dict[DomainIdentity, tuple[DomainIdentity, ...]],
+) -> tuple[str, ...]:
+    visiting: set[DomainIdentity] = set()
+    visited: set[DomainIdentity] = set()
+    stack: list[DomainIdentity] = []
+    cycles: set[str] = set()
+
+    def visit(identity: DomainIdentity) -> None:
+        if identity in visited:
+            return
+        if identity in visiting:
+            cycle = [*stack[stack.index(identity) :], identity]
+            cycles.add(" -> ".join(_format_identity(item) for item in cycle))
+            return
+        visiting.add(identity)
+        stack.append(identity)
+        for dependency in dependency_map.get(identity, ()):
+            if dependency in dependency_map:
+                visit(dependency)
+        stack.pop()
+        visiting.remove(identity)
+        visited.add(identity)
+
+    for identity in dependency_map:
+        visit(identity)
+    return tuple(sorted(cycles))
 
 
 def _write_json_manifest(path: Path, payload: JsonMapping) -> None:
