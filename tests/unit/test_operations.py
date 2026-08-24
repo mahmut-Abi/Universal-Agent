@@ -769,13 +769,16 @@ def test_doctor_report_includes_distributed_runtime_health() -> None:
         distributed_health_check_count=6,
         distributed_capacity_gap_count=1,
         distributed_expiring_lease_count=2,
+        distributed_recommendation_count=3,
     )
 
     distributed = next(check for check in report.checks if check.name == "distributed_runtime")
 
     assert report.status == "warn"
     assert distributed.status == "warn"
-    assert distributed.message == ("status=warn checks=6 capacity_gaps=1 expiring_leases=2")
+    assert distributed.message == (
+        "status=warn checks=6 capacity_gaps=1 expiring_leases=2 recommendations=3"
+    )
 
 
 def test_doctor_report_errors_on_invalid_distributed_session_work_items() -> None:

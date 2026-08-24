@@ -1193,6 +1193,9 @@ class RuntimeService:
             distributed_expiring_lease_count=None
             if distributed_health is None
             else len(distributed_health.expiring_leases),
+            distributed_recommendation_count=None
+            if distributed_health is None
+            else len(distributed_health.recommendations),
             distributed_invalid_session_work_item_count=None
             if distributed_snapshot is None
             else await self._distributed_invalid_session_work_item_count(

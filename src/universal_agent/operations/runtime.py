@@ -355,6 +355,7 @@ def build_doctor_report(
     distributed_health_check_count: int | None = None,
     distributed_capacity_gap_count: int | None = None,
     distributed_expiring_lease_count: int | None = None,
+    distributed_recommendation_count: int | None = None,
     distributed_invalid_session_work_item_count: int | None = None,
 ) -> DoctorReportView:
     metrics = build_runtime_metrics(sessions, events)
@@ -395,6 +396,7 @@ def build_doctor_report(
             check_count=distributed_health_check_count,
             capacity_gap_count=distributed_capacity_gap_count,
             expiring_lease_count=distributed_expiring_lease_count,
+            recommendation_count=distributed_recommendation_count,
         ),
         _distributed_work_queue_check(
             invalid_session_work_item_count=distributed_invalid_session_work_item_count,
@@ -1003,6 +1005,7 @@ def _distributed_runtime_check(
     check_count: int | None,
     capacity_gap_count: int | None,
     expiring_lease_count: int | None,
+    recommendation_count: int | None,
 ) -> DoctorCheckView:
     if status is None:
         return DoctorCheckView(
@@ -1022,7 +1025,8 @@ def _distributed_runtime_check(
         "status="
         f"{status} checks={check_count or 0} "
         f"capacity_gaps={capacity_gap_count or 0} "
-        f"expiring_leases={expiring_lease_count or 0}",
+        f"expiring_leases={expiring_lease_count or 0} "
+        f"recommendations={recommendation_count or 0}",
     )
 
 

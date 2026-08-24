@@ -870,6 +870,7 @@ async def test_runtime_service_doctor_includes_distributed_health() -> None:
     assert report.status == "error"
     assert distributed.status == "error"
     assert "capacity_gaps=1" in distributed.message
+    assert "recommendations=2" in distributed.message
 
 
 @pytest.mark.asyncio
