@@ -86,6 +86,7 @@ from universal_agent.runtime import (
     RuntimeSessionBatch,
     SessionSummaryView,
     SessionView,
+    event_view,
 )
 from universal_agent.state import StateNotFoundError
 from universal_agent.world import InMemoryWorldModel, WorldFact
@@ -1189,9 +1190,14 @@ class RuntimeService:
         self,
         *,
         confirmed: bool = False,
+        dry_run: bool = False,
     ) -> StateEventRepairReport:
-        if not confirmed:
-            raise ValueError("state/event consistency repair requires confirmed=true")
+        if confirmed and dry_run:
+            raise ValueError("state/event consistency repair cannot be confirmed and dry-run")
+        if not confirmed and not dry_run:
+            raise ValueError(
+                "state/event consistency repair requires confirmed=true or dry_run=true"
+            )
 
         sessions = await self.list_sessions()
         events = await self._list_all_events(sessions)
@@ -1202,6 +1208,19 @@ class RuntimeService:
         repair_events = _missing_terminal_state_events(sessions, events)
         if not repair_events:
             return StateEventRepairReport("clean", (), ())
+
+        if dry_run:
+            return StateEventRepairReport(
+                "planned",
+                tuple(
+                    StateEventRepairView(
+                        event_view(event),
+                        "would synthesize missing terminal event from authoritative session state",
+                    )
+                    for event in repair_events
+                ),
+                (),
+            )
 
         repaired = await self._runtime_api.record_repair_events(repair_events)
         return StateEventRepairReport(

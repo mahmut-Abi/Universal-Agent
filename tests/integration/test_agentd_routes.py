@@ -467,12 +467,21 @@ async def test_agentd_state_event_repair_route_requires_confirmation_and_reports
             immutable_json({"confirmed": False}),
         )
     )
+    dry_run = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/doctor/state-events/repair",
+            immutable_json({"dry_run": True}),
+        )
+    )
     wrong_method = await app.handle(HttpRequest("GET", "/v1/doctor/state-events/repair"))
 
     assert repaired.status_code == 200
     assert repaired.body["status"] == "clean"
     assert repaired.body["repaired_event_count"] == 0
     assert repaired.body["skipped_item_count"] == 0
+    assert dry_run.status_code == 200
+    assert dry_run.body["status"] == "clean"
     assert rejected.status_code == 400
     assert "confirmed=true" in json_string(json_object(rejected.body["error"])["message"])
     assert wrong_method.status_code == 405

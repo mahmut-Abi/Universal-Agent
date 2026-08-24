@@ -335,7 +335,8 @@ def build_parser() -> argparse.ArgumentParser:
     repair = commands.add_parser("repair")
     repair_commands = repair.add_subparsers(dest="repair_command", required=True)
     repair_state_events = repair_commands.add_parser("state-events")
-    repair_state_events.add_argument("--confirmed", choices=("true", "false"), required=True)
+    repair_state_events.add_argument("--confirmed", choices=("true", "false"), default="false")
+    repair_state_events.add_argument("--dry-run", action="store_true")
 
     distributed = commands.add_parser("distributed")
     distributed_commands = distributed.add_subparsers(
@@ -774,7 +775,10 @@ async def _dispatch(
             _write_json(
                 out,
                 state_event_repair_body(
-                    await service.repair_state_event_consistency(confirmed=confirmed)
+                    await service.repair_state_event_consistency(
+                        confirmed=confirmed,
+                        dry_run=cast(bool, args.dry_run),
+                    )
                 ),
             )
             return

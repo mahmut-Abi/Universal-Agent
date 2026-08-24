@@ -677,12 +677,16 @@ class AgentdApp:
         if path == "/v1/doctor/state-events/repair":
             if method != "POST":
                 return method_not_allowed(("POST",))
-            confirmed = request.body.get("confirmed")
+            confirmed = request.body.get("confirmed", False)
             if not isinstance(confirmed, bool):
                 return bad_request("state/event repair confirmed must be a boolean")
+            dry_run = request.body.get("dry_run", False)
+            if not isinstance(dry_run, bool):
+                return bad_request("state/event repair dry_run must be a boolean")
             try:
                 report = await self._service.repair_state_event_consistency(
                     confirmed=confirmed,
+                    dry_run=dry_run,
                 )
             except ValueError as exc:
                 return bad_request(str(exc))

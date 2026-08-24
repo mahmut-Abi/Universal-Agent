@@ -204,7 +204,7 @@ def test_agentd_http_server_serves_sse_event_stream_batches() -> None:
 
     assert status == 200
     assert headers["content-type"] == "text/event-stream"
-    assert "event: GoalCreated\n" in text
+    assert "event: DomainActivated\n" in text
     assert "data: " in text
     assert ": next_cursor=" in text
 

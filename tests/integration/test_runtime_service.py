@@ -877,11 +877,17 @@ async def test_runtime_service_repairs_missing_terminal_event_history() -> None:
     events.events = [event for event in events.events if event.type != "GoalCompleted"]
 
     before = await service.doctor()
+    planned = await service.repair_state_event_consistency(dry_run=True)
+    after_plan = await service.doctor()
     repair = await service.repair_state_event_consistency(confirmed=True)
     after = await service.doctor()
     repaired_event_types = [event.event.type for event in repair.repairs]
 
     assert before.status == "error"
+    assert planned.status == "planned"
+    assert planned.repaired_event_count == 1
+    assert planned.repairs[0].reason.startswith("would synthesize missing terminal event")
+    assert after_plan.status == "error"
     assert repair.status == "repaired"
     assert repair.repaired_event_count == 1
     assert repair.skipped_item_count == 0

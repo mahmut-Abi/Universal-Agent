@@ -1184,6 +1184,7 @@ async def test_cli_repair_state_events_requires_confirmation_and_reports_clean()
     service, _ = build_cli_service([])
     output = StringIO()
     rejected_error = StringIO()
+    dry_run_output = StringIO()
 
     status = await run_cli(
         ["repair", "state-events", "--confirmed", "true"],
@@ -1195,12 +1196,20 @@ async def test_cli_repair_state_events_requires_confirmation_and_reports_clean()
         service=service,
         stderr=rejected_error,
     )
+    dry_run = await run_cli(
+        ["repair", "state-events", "--dry-run"],
+        service=service,
+        stdout=dry_run_output,
+    )
     payload = read_json(output)
+    dry_run_payload = read_json(dry_run_output)
 
     assert status == 0
     assert payload["status"] == "clean"
     assert payload["repaired_event_count"] == 0
     assert payload["skipped_item_count"] == 0
+    assert dry_run == 0
+    assert dry_run_payload["status"] == "clean"
     assert rejected == 2
     assert "confirmed=true" in read_json(rejected_error)["error"]["message"]
 
