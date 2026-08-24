@@ -198,6 +198,8 @@ from universal_agent.multi_agent import (
     agent_result_merge_payload,
     agent_task_request_payload,
     agent_task_result_payload,
+    decode_agent_task_request,
+    decode_agent_task_result,
     multi_agent_evaluation_report_payload,
     rejected_agent_task_result,
 )
@@ -512,6 +514,8 @@ __all__ = [
     "build_runtime_console_snapshot",
     "build_tui_snapshot",
     "build_web_console_snapshot",
+    "decode_agent_task_request",
+    "decode_agent_task_result",
     "decode_domain_package_manifest",
     "decode_ecosystem_registry_manifest",
     "decode_evaluation_dataset_manifest",

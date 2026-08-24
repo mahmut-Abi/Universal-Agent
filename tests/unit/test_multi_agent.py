@@ -6,6 +6,7 @@ from typing import cast
 import pytest
 
 from universal_agent.core import DomainIdentity, ErrorCode, SessionId, immutable_json
+from universal_agent.evidence import EvidenceId
 from universal_agent.multi_agent import (
     AGENT_TASK_API_VERSION,
     AgentDelegationBatchStatus,
@@ -30,6 +31,8 @@ from universal_agent.multi_agent import (
     NoEligibleAgentError,
     agent_task_request_payload,
     agent_task_result_payload,
+    decode_agent_task_request,
+    decode_agent_task_result,
     rejected_agent_task_result,
 )
 
@@ -176,6 +179,13 @@ def test_agent_task_contract_is_structured_and_json_safe() -> None:
         "allowed_profiles": ["security-auditor"],
         "required_permissions": ["security_review"],
     }
+    decoded = decode_agent_task_request(payload)
+    assert decoded.goal == task.goal
+    assert decoded.task_id == task.task_id
+    assert decoded.constraints.read_only is True
+    assert decoded.constraints.max_depth == 2
+    assert decoded.constraints.allowed_profiles == ("security-auditor",)
+    assert decoded.expected_output.type == "security_report"
 
     with pytest.raises(TypeError):
         cast(dict[str, object], task.input)["resource"] = "deployment/other"
@@ -203,15 +213,45 @@ def test_agent_task_result_payload_preserves_evidence_contract() -> None:
     result = AgentTaskResult(
         task_id=AgentTaskId("agent-task-1"),
         status=AgentTaskResultStatus.REJECTED,
+        evidence_ids=(EvidenceId("evidence-denied"),),
         reason="policy denied",
         error_code=ErrorCode.POLICY_DENIED,
     )
 
     payload = agent_task_result_payload(result)
+    decoded = decode_agent_task_result(payload)
 
     assert payload["status"] == "rejected"
-    assert payload["evidence"] == []
+    assert payload["evidence"] == ["evidence-denied"]
     assert payload["error_code"] == "policy_denied"
+    assert decoded.task_id == result.task_id
+    assert decoded.status is AgentTaskResultStatus.REJECTED
+    assert decoded.evidence_ids == (EvidenceId("evidence-denied"),)
+    assert decoded.error_code is ErrorCode.POLICY_DENIED
+
+
+def test_agent_task_decoders_reject_invalid_payload_values() -> None:
+    with pytest.raises(ValueError, match="unsupported agent task result status"):
+        decode_agent_task_result(
+            immutable_json(
+                {
+                    "task_id": "agent-task-1",
+                    "status": "missing",
+                    "reason": "bad status",
+                }
+            )
+        )
+
+    with pytest.raises(ValueError, match=r"constraints.max_children must be an integer"):
+        decode_agent_task_request(
+            immutable_json(
+                {
+                    "goal": "Audit",
+                    "constraints": {"max_children": "many"},
+                    "expected_output": {"type": "security_report"},
+                }
+            )
+        )
 
 
 def test_agent_registry_distinguishes_profiles_from_instances() -> None:

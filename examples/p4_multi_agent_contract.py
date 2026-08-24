@@ -15,6 +15,10 @@ from universal_agent.multi_agent import (
     AgentTaskRequest,
     AgentTaskResult,
     AgentTaskResultStatus,
+    agent_task_request_payload,
+    agent_task_result_payload,
+    decode_agent_task_request,
+    decode_agent_task_result,
 )
 
 
@@ -47,7 +51,7 @@ async def main() -> None:
         registry,
         {AgentId("security-auditor-1"): ReadOnlySecurityExecutor()},
     )
-    result = await orchestrator.delegate(
+    request_payload = agent_task_request_payload(
         AgentTaskRequest(
             goal="Audit deployment security",
             input=immutable_json({"resource": "deployment/example"}),
@@ -59,7 +63,10 @@ async def main() -> None:
             expected_output=AgentExpectedOutput("security_report"),
         )
     )
-    print(f"{result.status.value}: {result.result['risk_level']}")
+    request = decode_agent_task_request(request_payload)
+    result = await orchestrator.delegate(request)
+    decoded_result = decode_agent_task_result(agent_task_result_payload(result))
+    print(f"{decoded_result.status.value}: {decoded_result.result['risk_level']}")
 
 
 if __name__ == "__main__":

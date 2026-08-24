@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
-from typing import NewType
+from typing import NewType, cast
 
 from universal_agent.core import (
     ErrorCode,
@@ -159,6 +160,59 @@ def agent_task_result_payload(result: AgentTaskResult) -> JsonMapping:
     )
 
 
+def decode_agent_task_request(payload: JsonMapping) -> AgentTaskRequest:
+    expected_output = _mapping(payload.get("expected_output"), "expected_output")
+    return AgentTaskRequest(
+        goal=_string(payload.get("goal"), "goal"),
+        input=_mapping(payload.get("input"), "input", default_empty=True),
+        constraints=_decode_constraints(
+            _mapping(payload.get("constraints"), "constraints", default_empty=True)
+        ),
+        expected_output=AgentExpectedOutput(
+            _string(expected_output.get("type"), "expected_output.type"),
+            _mapping(expected_output.get("schema"), "expected_output.schema", default_empty=True),
+        ),
+        api_version=_string(payload.get("api_version"), "api_version", AGENT_TASK_API_VERSION),
+        task_id=AgentTaskId(_string(payload.get("task_id"), "task_id", "")),
+        parent_task_id=_optional_agent_task_id(payload.get("parent_task_id"), "parent_task_id"),
+        parent_session_id=_optional_session_id(payload.get("parent_session_id")),
+        parent_goal_id=_optional_goal_id(payload.get("parent_goal_id")),
+        parent_kernel_task_id=_optional_task_id(payload.get("parent_kernel_task_id")),
+        delegation_depth=_int(payload.get("delegation_depth"), "delegation_depth", 0),
+    )
+
+
+def decode_agent_task_result(payload: JsonMapping) -> AgentTaskResult:
+    return AgentTaskResult(
+        task_id=AgentTaskId(_string(payload.get("task_id"), "task_id")),
+        status=_result_status(payload.get("status")),
+        result=_mapping(payload.get("result"), "result", default_empty=True),
+        evidence_ids=_evidence_ids(payload.get("evidence")),
+        reason=_string(payload.get("reason"), "reason", ""),
+        session_id=_optional_session_id(payload.get("session_id")),
+        error_code=_optional_error_code(payload.get("error_code")),
+        api_version=_string(payload.get("api_version"), "api_version", AGENT_TASK_API_VERSION),
+    )
+
+
+def _decode_constraints(payload: JsonMapping) -> AgentTaskConstraints:
+    return AgentTaskConstraints(
+        read_only=_bool(payload.get("read_only"), "constraints.read_only", False),
+        max_depth=_int(payload.get("max_depth"), "constraints.max_depth", 1),
+        max_children=_int(payload.get("max_children"), "constraints.max_children", 1),
+        max_duration_seconds=_optional_float(
+            payload.get("max_duration_seconds"), "constraints.max_duration_seconds"
+        ),
+        max_cost=_optional_float(payload.get("max_cost"), "constraints.max_cost"),
+        allowed_profiles=_string_tuple(
+            payload.get("allowed_profiles"), "constraints.allowed_profiles"
+        ),
+        required_permissions=_string_tuple(
+            payload.get("required_permissions"), "constraints.required_permissions"
+        ),
+    )
+
+
 def _agent_task_id(goal: str) -> str:
     normalized = "-".join(word for word in goal.lower().split() if word)
     suffix = utc_now().strftime("%Y%m%d%H%M%S%f")
@@ -169,6 +223,117 @@ def _optional_str(value: object | None) -> JsonValue:
     if value is None:
         return None
     return str(value)
+
+
+def _mapping(value: object, field_name: str, default_empty: bool = False) -> JsonMapping:
+    if value is None and default_empty:
+        return immutable_json()
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{field_name} must be an object")
+    if any(not isinstance(key, str) for key in value):
+        raise ValueError(f"{field_name} keys must be strings")
+    return immutable_json(cast(Mapping[str, JsonValue], value))
+
+
+def _string(value: object, field_name: str, default: str | None = None) -> str:
+    if value is None and default is not None:
+        return default
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    return value
+
+
+def _optional_string(value: object, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _string(value, field_name)
+
+
+def _bool(value: object, field_name: str, default: bool) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a boolean")
+    return value
+
+
+def _int(value: object, field_name: str, default: int) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field_name} must be an integer")
+    return value
+
+
+def _optional_float(value: object, field_name: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field_name} must be a number")
+    return float(value)
+
+
+def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list")
+    strings: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str):
+            raise ValueError(f"{field_name}[{index}] must be a string")
+        strings.append(item)
+    return tuple(strings)
+
+
+def _optional_agent_task_id(value: object, field_name: str) -> AgentTaskId | None:
+    raw = _optional_string(value, field_name)
+    if raw is None:
+        return None
+    return AgentTaskId(raw)
+
+
+def _optional_session_id(value: object) -> SessionId | None:
+    raw = _optional_string(value, "session_id")
+    if raw is None:
+        return None
+    return SessionId(raw)
+
+
+def _optional_goal_id(value: object) -> GoalId | None:
+    raw = _optional_string(value, "goal_id")
+    if raw is None:
+        return None
+    return GoalId(raw)
+
+
+def _optional_task_id(value: object) -> TaskId | None:
+    raw = _optional_string(value, "task_id")
+    if raw is None:
+        return None
+    return TaskId(raw)
+
+
+def _evidence_ids(value: object) -> tuple[EvidenceId, ...]:
+    return tuple(EvidenceId(item) for item in _string_tuple(value, "evidence"))
+
+
+def _result_status(value: object) -> AgentTaskResultStatus:
+    raw = _string(value, "status")
+    try:
+        return AgentTaskResultStatus(raw)
+    except ValueError as exc:
+        raise ValueError(f"unsupported agent task result status: {raw}") from exc
+
+
+def _optional_error_code(value: object) -> ErrorCode | None:
+    raw = _optional_string(value, "error_code")
+    if raw is None:
+        return None
+    try:
+        return ErrorCode(raw)
+    except ValueError as exc:
+        raise ValueError(f"unsupported agent task error_code: {raw}") from exc
 
 
 def _reject_empty_items(values: tuple[str, ...], field_name: str) -> None:

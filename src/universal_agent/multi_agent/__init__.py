@@ -15,6 +15,8 @@ from universal_agent.multi_agent.contracts import (
     AgentTaskResultStatus,
     agent_task_request_payload,
     agent_task_result_payload,
+    decode_agent_task_request,
+    decode_agent_task_result,
 )
 from universal_agent.multi_agent.evaluation import (
     MultiAgentEvaluationCheck,
@@ -100,6 +102,8 @@ __all__ = [
     "agent_result_merge_payload",
     "agent_task_request_payload",
     "agent_task_result_payload",
+    "decode_agent_task_request",
+    "decode_agent_task_result",
     "multi_agent_evaluation_report_payload",
     "rejected_agent_task_result",
 ]
