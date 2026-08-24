@@ -60,7 +60,7 @@ class LockedMutationTool:
 
     async def execute(self, arguments: JsonMapping) -> JsonMapping:
         self.calls += 1
-        return immutable_json({"changed": True})
+        return immutable_json({"changed": True, "resource_version": "rv-2"})
 
 
 class LockedMutationEvaluator:
@@ -204,6 +204,52 @@ async def test_mutation_conflict_prevents_tool_execution() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stale_resource_version_prevents_tool_execution() -> None:
+    runtime, _, events, components, tool = build_runtime(PolicyEffect.ALLOW)
+    components.resource_versions.set_current("setting/example", "rv-2")
+
+    result = await runtime.run(*goal_task())
+    event_types = [event.type for event in events.events]
+    version_checked = next(
+        event for event in events.events if event.type == "ResourceVersionChecked"
+    )
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error_code is ErrorCode.RESOURCE_CONFLICT
+    assert tool.calls == 0
+    assert components.resource_locks.active() == ()
+    assert "ResourceConflictDetected" in event_types
+    assert "ResourceLockAcquired" not in event_types
+    assert "ActionStarted" not in event_types
+    assert version_checked.data["resource_version"] == "rv-1"
+    assert version_checked.data["current_resource_version"] == "rv-2"
+    assert version_checked.data["matched"] is False
+
+
+@pytest.mark.asyncio
+async def test_matching_resource_version_allows_mutation_and_updates_current_version() -> None:
+    runtime, _, events, components, tool = build_runtime(PolicyEffect.ALLOW)
+    components.resource_versions.set_current("setting/example", "rv-1")
+
+    result = await runtime.run(*goal_task())
+    event_types = [event.type for event in events.events]
+    version_checked = next(
+        event for event in events.events if event.type == "ResourceVersionChecked"
+    )
+    version_updated = next(
+        event for event in events.events if event.type == "ResourceVersionUpdated"
+    )
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert tool.calls == 1
+    assert version_checked.data["matched"] is True
+    assert version_checked.data["current_resource_version"] == "rv-1"
+    assert version_updated.data["resource_version"] == "rv-2"
+    assert components.resource_versions.current("setting/example") == "rv-2"
+    assert "ActionStarted" in event_types
+
+
+@pytest.mark.asyncio
 async def test_confirmation_holds_resource_lock_until_rejection() -> None:
     runtime, store, events, components, tool = build_runtime(PolicyEffect.REQUIRE_CONFIRMATION)
 
@@ -243,3 +289,4 @@ async def test_confirmed_mutation_reuses_and_releases_resource_lock() -> None:
     assert event_types.count("ResourceLockReleased") == 1
     assert action_started.data["resource_key"] == "setting/example"
     assert action_started.data["resource_version"] == "rv-1"
+    assert components.resource_versions.current("setting/example") == "rv-2"

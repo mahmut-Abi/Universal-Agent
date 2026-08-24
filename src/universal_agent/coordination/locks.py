@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from universal_agent.core import ActionId, SessionId, TaskId
@@ -9,12 +10,38 @@ class ResourceConflictError(RuntimeError):
     pass
 
 
+class ResourceVersionConflictError(ResourceConflictError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class ResourceLock:
     resource_key: str
     action_id: ActionId
     session_id: SessionId
     task_id: TaskId
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceVersionCheck:
+    resource_key: str
+    expected_version: str | None
+    current_version: str | None
+    matched: bool
+
+    @property
+    def reason(self) -> str:
+        if self.matched:
+            if self.expected_version is None:
+                return "no expected resource version supplied"
+            if self.current_version is None:
+                return "current resource version is unknown"
+            return "resource version matched"
+        return (
+            "resource version conflict: "
+            f"{self.resource_key} expected {self.expected_version}, "
+            f"current {self.current_version}"
+        )
 
 
 class ResourceLockRegistry:
@@ -67,3 +94,45 @@ class ResourceLockRegistry:
 
     def active(self) -> tuple[ResourceLock, ...]:
         return tuple(self._locks[key] for key in sorted(self._locks))
+
+
+class ResourceVersionRegistry:
+    """Runtime-owned optimistic concurrency view for side-effecting resources.
+
+    The registry only blocks when both an expected version and a known current
+    version exist and they differ. Domains can populate it from observations or
+    backend adapters without putting version logic into the Kernel.
+    """
+
+    def __init__(self, versions: Mapping[str, str] | None = None) -> None:
+        self._versions: dict[str, str] = dict(versions or {})
+
+    def set_current(self, resource_key: str, version: str) -> None:
+        resource_key = resource_key.strip()
+        version = version.strip()
+        if not resource_key:
+            raise ValueError("resource_key must not be empty")
+        if not version:
+            raise ValueError("resource version must not be empty")
+        self._versions[resource_key] = version
+
+    def current(self, resource_key: str) -> str | None:
+        return self._versions.get(resource_key)
+
+    def forget(self, resource_key: str) -> None:
+        self._versions.pop(resource_key, None)
+
+    def verify(
+        self,
+        *,
+        resource_key: str,
+        expected_version: str | None,
+    ) -> ResourceVersionCheck:
+        if not resource_key.strip():
+            raise ValueError("resource_key must not be empty")
+        current = self.current(resource_key)
+        matched = expected_version is None or current is None or expected_version == current
+        check = ResourceVersionCheck(resource_key, expected_version, current, matched)
+        if not matched:
+            raise ResourceVersionConflictError(check.reason)
+        return check

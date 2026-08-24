@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from universal_agent.capability import CapabilityRegistry, CapabilityResolver
 from universal_agent.context import DomainContextProvider
-from universal_agent.coordination import ResourceLockRegistry
+from universal_agent.coordination import ResourceLockRegistry, ResourceVersionRegistry
 from universal_agent.core import DomainIdentity
 from universal_agent.domain.runtime import ActiveDomain, DomainComposition
 from universal_agent.evaluation import CriteriaEvaluator, EvaluatorRegistry
@@ -77,6 +77,7 @@ class RuntimeComponents:
     memory_retriever: StoreMemoryRetriever
     memory_filter: RelevanceFilter
     resource_locks: ResourceLockRegistry
+    resource_versions: ResourceVersionRegistry
 
     def evidence_extractors_for_domain(
         self,
@@ -128,12 +129,17 @@ class RuntimeBuilder:
         world_model_factory: Callable[[], WorldModel] = InMemoryWorldModel,
         memory_store_factory: Callable[[], MemoryStore] = InMemoryMemoryStore,
         resource_lock_factory: Callable[[], ResourceLockRegistry] = ResourceLockRegistry,
+        resource_version_factory: Callable[
+            [],
+            ResourceVersionRegistry,
+        ] = ResourceVersionRegistry,
         memory_filter: RelevanceFilter | None = None,
     ) -> None:
         self._evidence_store_factory = evidence_store_factory
         self._world_model_factory = world_model_factory
         self._memory_store_factory = memory_store_factory
         self._resource_lock_factory = resource_lock_factory
+        self._resource_version_factory = resource_version_factory
         self._memory_filter = memory_filter
 
     def build(self, domain: ActiveDomain | DomainComposition) -> RuntimeComponents:
@@ -185,4 +191,5 @@ class RuntimeBuilder:
             memory_retriever=StoreMemoryRetriever(memory_store),
             memory_filter=memory_filter,
             resource_locks=self._resource_lock_factory(),
+            resource_versions=self._resource_version_factory(),
         )

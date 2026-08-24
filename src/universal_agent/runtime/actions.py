@@ -9,7 +9,11 @@ from universal_agent.capability import (
     CapabilityUnavailableError,
     UnknownCapabilityError,
 )
-from universal_agent.coordination import ResourceConflictError, ResourceLock
+from universal_agent.coordination import (
+    ResourceConflictError,
+    ResourceLock,
+    ResourceVersionConflictError,
+)
 from universal_agent.core import (
     ActionId,
     Decision,
@@ -17,6 +21,7 @@ from universal_agent.core import (
     JsonMapping,
     JsonValue,
     Observation,
+    ObservationStatus,
     PendingAction,
     PolicyContext,
     PolicyEffect,
@@ -200,6 +205,9 @@ class ActionExecutor:
         )
         if policy_result.effect is PolicyEffect.DENY:
             return ActionRejected(ErrorCode.POLICY_DENIED, policy_result.reason)
+        version_check = await self._check_resource_version(pending, emit)
+        if isinstance(version_check, ActionRejected):
+            return version_check
         if policy_result.effect is PolicyEffect.REQUIRE_CONFIRMATION:
             lock = await self._acquire_resource_lock(session, pending, emit)
             if isinstance(lock, ActionRejected):
@@ -265,6 +273,8 @@ class ActionExecutor:
                 ),
             },
         )
+        if tool_result.status is ObservationStatus.SUCCEEDED:
+            await self._update_resource_version(pending, tool_result.output, emit)
         observation = self._observations.from_tool_result(
             task_id=state.current_task.id,
             call=call,
@@ -277,6 +287,76 @@ class ActionExecutor:
             {"observation_id": observation.id, "status": observation.status.value},
         )
         return ActionObserved(pending, observation)
+
+    async def _check_resource_version(
+        self,
+        pending: PendingAction,
+        emit: EmitFn,
+    ) -> ActionRejected | None:
+        if not pending.resource_key:
+            return None
+        current = self.components.resource_versions.current(pending.resource_key)
+        try:
+            check = self.components.resource_versions.verify(
+                resource_key=pending.resource_key,
+                expected_version=pending.resource_version,
+            )
+        except ResourceVersionConflictError as exc:
+            await emit(
+                "ResourceVersionChecked",
+                pending.action_id,
+                {
+                    "resource_key": pending.resource_key,
+                    "resource_version": pending.resource_version,
+                    "current_resource_version": current,
+                    "matched": False,
+                    "reason": str(exc),
+                },
+            )
+            await emit(
+                "ResourceConflictDetected",
+                pending.action_id,
+                {
+                    "resource_key": pending.resource_key,
+                    "resource_version": pending.resource_version,
+                    "current_resource_version": current,
+                    "reason": str(exc),
+                },
+            )
+            return ActionRejected(ErrorCode.RESOURCE_CONFLICT, str(exc))
+        await emit(
+            "ResourceVersionChecked",
+            pending.action_id,
+            {
+                "resource_key": check.resource_key,
+                "resource_version": check.expected_version,
+                "current_resource_version": check.current_version,
+                "matched": True,
+                "reason": check.reason,
+            },
+        )
+        return None
+
+    async def _update_resource_version(
+        self,
+        pending: PendingAction,
+        output: JsonMapping,
+        emit: EmitFn,
+    ) -> None:
+        if not pending.resource_key:
+            return
+        version = _resource_version(output)
+        if version is None:
+            return
+        self.components.resource_versions.set_current(pending.resource_key, version)
+        await emit(
+            "ResourceVersionUpdated",
+            pending.action_id,
+            {
+                "resource_key": pending.resource_key,
+                "resource_version": version,
+            },
+        )
 
     async def release_pending_resource(
         self,

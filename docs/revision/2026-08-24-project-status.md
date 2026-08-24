@@ -44,7 +44,7 @@ Goal → Task → Context → Decision → Capability Resolution → Policy
 - SessionSnapshot、Task Graph、Evidence replay、World replay；
 - bounded iteration、分类 Recovery、unknown execution；
 - action idempotency key、parameters hash、attempt；
-- side-effect resource lock、resource conflict 和 resource version metadata。
+- side-effect resource lock、resource conflict 和可验证 resource version 乐观并发检查。
 
 主要实现入口：
 
@@ -237,8 +237,7 @@ pytest-asyncio event loop 弃用警告；这些警告目前不影响测试结果
 ### P1：完善运行时一致性
 
 1. 设计 State/Event 原子提交或 outbox；
-2. 将 resource version 从 metadata 升级为可验证的 optimistic concurrency contract；
-3. 补充 pause/resume/cancel、unknown execution、重复提交和多 Worker 压力测试。
+2. 补充 pause/resume/cancel、unknown execution、重复提交和多 Worker 压力测试。
 
 ### P2：生产适配
 

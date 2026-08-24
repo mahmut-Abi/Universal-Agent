@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from universal_agent.coordination import ResourceConflictError, ResourceLockRegistry
+from universal_agent.coordination import (
+    ResourceConflictError,
+    ResourceLockRegistry,
+    ResourceVersionConflictError,
+    ResourceVersionRegistry,
+)
 from universal_agent.core import ActionId, SessionId, TaskId
 
 
@@ -74,4 +79,40 @@ def test_resource_lock_registry_rejects_empty_resource_key() -> None:
             action_id=ActionId("action-1"),
             session_id=SessionId("session-1"),
             task_id=TaskId("task-1"),
+        )
+
+
+def test_resource_version_registry_allows_unknown_current_version() -> None:
+    registry = ResourceVersionRegistry()
+
+    check = registry.verify(
+        resource_key="deployment/example",
+        expected_version="rv-1",
+    )
+
+    assert check.matched
+    assert check.current_version is None
+    assert check.reason == "current resource version is unknown"
+
+
+def test_resource_version_registry_detects_matching_current_version() -> None:
+    registry = ResourceVersionRegistry({"deployment/example": "rv-1"})
+
+    check = registry.verify(
+        resource_key="deployment/example",
+        expected_version="rv-1",
+    )
+
+    assert check.matched
+    assert check.current_version == "rv-1"
+    assert check.reason == "resource version matched"
+
+
+def test_resource_version_registry_rejects_stale_expected_version() -> None:
+    registry = ResourceVersionRegistry({"deployment/example": "rv-2"})
+
+    with pytest.raises(ResourceVersionConflictError, match="expected rv-1, current rv-2"):
+        registry.verify(
+            resource_key="deployment/example",
+            expected_version="rv-1",
         )

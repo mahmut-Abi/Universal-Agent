@@ -44,6 +44,7 @@ class FakeRemediationBackend:
                 "resource": "deployment/example",
                 "mutation_applied": True,
                 "capability": capability,
+                "resource_version": "rv-2",
             }
         )
 
@@ -82,6 +83,7 @@ async def main() -> None:
     components = RuntimeBuilder().build(
         DomainLoader().load(KubernetesRemediationDomain(backend, backend))
     )
+    components.resource_versions.set_current("deployment/example", "rv-1")
     events = InMemoryEventSink()
     runtime = AgentRuntime(
         model=ScriptedModelAdapter(
@@ -106,9 +108,16 @@ async def main() -> None:
         for event in events.events
         if event.type in {"ResourceLockAcquired", "ResourceLockReleased"}
     ]
+    version_events = [
+        event.type
+        for event in events.events
+        if event.type in {"ResourceVersionChecked", "ResourceVersionUpdated"}
+    ]
 
     print(f"status={result.status.value} error={result.error_code}")
     print("locks=" + " -> ".join(lock_events))
+    print("versions=" + " -> ".join(version_events))
+    print(f"current_version={components.resource_versions.current('deployment/example')}")
     print(f"active_locks={len(components.resource_locks.active())}")
 
 
