@@ -135,3 +135,139 @@ class FileEventStore:
             after_event_id=after_event_id,
             limit=limit,
         )
+
+
+class FileRuntimeStore(FileSessionStore, FileEventStore):
+    """File-backed Session/Event adapter with a local commit journal.
+
+    The file adapter cannot provide a database transaction across independent
+    JSON and JSONL files. It still exposes the same RuntimeStore seam as SQLite:
+    a write-ahead commit record is persisted before the snapshot and event are
+    applied, then replayed on later reads if the process stopped mid-commit.
+    """
+
+    def __init__(self, root: str | Path) -> None:
+        self._root = Path(root)
+        self._sessions = self._root / "sessions"
+        self._path = self._root / "events.jsonl"
+        self._commits = self._root / "commits"
+
+    async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
+        self._recover_commits()
+        return await super().list_sessions()
+
+    async def load_session(self, session_id: SessionId) -> SessionSnapshot:
+        self._recover_commits()
+        return await super().load_session(session_id)
+
+    async def save_session(self, snapshot: SessionSnapshot) -> None:
+        self._recover_commits()
+        await super().save_session(snapshot)
+
+    async def list_events(
+        self,
+        session_id: SessionId | None = None,
+        *,
+        after_event_id: EventId | None = None,
+        limit: int | None = None,
+    ) -> tuple[RuntimeEvent, ...]:
+        self._recover_commits()
+        return await super().list_events(
+            session_id=session_id,
+            after_event_id=after_event_id,
+            limit=limit,
+        )
+
+    async def commit_session_event(
+        self,
+        snapshot: SessionSnapshot,
+        event: RuntimeEvent,
+    ) -> None:
+        self._recover_commits()
+        path = self._session_path(snapshot.state.session_id)
+        if not path.exists():
+            raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
+        if self._event_exists(event.id):
+            raise ValueError(f"runtime event already exists: {event.id}")
+        with path.open("r", encoding="utf-8") as handle:
+            stored = decode_session_snapshot(json_mapping(json.load(handle)))
+        if snapshot.version != stored.version:
+            raise SessionVersionConflictError(
+                f"session version conflict: {snapshot.state.session_id} expected "
+                f"{stored.version}, got {snapshot.version}"
+            )
+        snapshot.version = stored.version + 1
+        commit_path = self._commit_path(event.id)
+        if commit_path.exists():
+            raise ValueError(f"runtime commit already exists: {event.id}")
+        self._write_commit(commit_path, snapshot, event)
+        self._write_snapshot(path, snapshot)
+        self._append_event_if_missing(event)
+        commit_path.unlink(missing_ok=True)
+
+    def _recover_commits(self) -> None:
+        if not self._commits.exists():
+            return
+        for path in sorted(self._commits.glob("*.json")):
+            with path.open("r", encoding="utf-8") as handle:
+                payload = json_mapping(json.load(handle))
+            snapshot_payload = payload.get("session")
+            event_payload = payload.get("event")
+            if not isinstance(snapshot_payload, dict) or not isinstance(event_payload, dict):
+                raise ValueError(f"invalid file runtime commit record: {path}")
+            snapshot = decode_session_snapshot(json_mapping(snapshot_payload))
+            event = decode_runtime_event(json_mapping(event_payload))
+            session_path = self._session_path(snapshot.state.session_id)
+            if session_path.exists():
+                with session_path.open("r", encoding="utf-8") as handle:
+                    stored = decode_session_snapshot(json_mapping(json.load(handle)))
+                if stored.version < snapshot.version:
+                    self._write_snapshot(session_path, snapshot)
+            else:
+                self._write_snapshot(session_path, snapshot)
+            self._append_event_if_missing(event)
+            path.unlink(missing_ok=True)
+
+    def _commit_path(self, event_id: EventId) -> Path:
+        return self._commits / f"{quote(str(event_id), safe='')}.json"
+
+    def _write_commit(
+        self,
+        path: Path,
+        snapshot: SessionSnapshot,
+        event: RuntimeEvent,
+    ) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(".json.tmp")
+        with tmp_path.open("w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "session": encode_session_snapshot(snapshot),
+                    "event": encode_runtime_event(event),
+                },
+                handle,
+                indent=2,
+                sort_keys=True,
+            )
+            handle.write("\n")
+        tmp_path.replace(path)
+
+    def _append_event_if_missing(self, event: RuntimeEvent) -> None:
+        if self._event_exists(event.id):
+            return
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with self._path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(encode_runtime_event(event), sort_keys=True))
+            handle.write("\n")
+
+    def _event_exists(self, event_id: EventId) -> bool:
+        if not self._path.exists():
+            return False
+        with self._path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                event = decode_runtime_event(json_mapping(json.loads(line)))
+                if event.id == event_id:
+                    return True
+        return False

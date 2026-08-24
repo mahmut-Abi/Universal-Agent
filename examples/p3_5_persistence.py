@@ -9,8 +9,7 @@ from universal_agent import (
     Decision,
     DecisionType,
     DomainLoader,
-    FileEventStore,
-    FileSessionStore,
+    FileRuntimeStore,
     Goal,
     RuntimeAPI,
     RuntimeBuilder,
@@ -93,18 +92,17 @@ def build_api(
     backend: FakePersistentBackend,
     decisions: list[Decision],
 ) -> RuntimeAPI:
-    store = FileSessionStore(root)
-    events = FileEventStore(root)
+    store = FileRuntimeStore(root)
     runtime = AgentRuntime(
         model=ScriptedModelAdapter(decisions),
         state_store=store,
         components=RuntimeBuilder().build(
             DomainLoader().load(KubernetesRemediationDomain(backend, backend))
         ),
-        event_sink=events,
+        event_sink=store,
         environment=immutable_json({"environment": "production"}),
     )
-    return RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
+    return RuntimeAPI(runtime=runtime, session_store=store, event_reader=store)
 
 
 async def main() -> None:

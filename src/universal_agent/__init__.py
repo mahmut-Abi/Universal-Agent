@@ -153,6 +153,7 @@ from universal_agent.host import (
 from universal_agent.model import ModelAdapter, ModelUsage, ModelUsageProvider, ScriptedModelAdapter
 from universal_agent.persistence import (
     FileEventStore,
+    FileRuntimeStore,
     FileSessionStore,
     SQLiteEventStore,
     SQLiteRuntimeStore,
@@ -296,6 +297,7 @@ __all__ = [
     "FileDistributedLockRegistry",
     "FileEcosystemRegistryStore",
     "FileEventStore",
+    "FileRuntimeStore",
     "FileSessionStore",
     "FileWorkQueue",
     "FileWorkerRegistry",

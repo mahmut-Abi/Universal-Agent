@@ -187,10 +187,12 @@ implementation, not a multi-Runtime router, and not a routing Agent.
 `FileSessionStore` / `FileEventStore` and `SQLiteSessionStore` / `SQLiteEventStore` are local
 persistence adapters for P3.5 recovery tests and embedded deployments. They persist and list
 `SessionSnapshot` documents and runtime events behind the same `SessionStore` and
-`EventSink/EventReader` seams used by in-memory stores. Session snapshots carry a store-managed
+`EventSink/EventReader` seams used by in-memory stores. `FileRuntimeStore` adds a local
+write-ahead commit journal for file-backed state/event commits, while `SQLiteRuntimeStore` commits
+the same state/event pair in one SQLite transaction. Session snapshots carry a store-managed
 version, and memory/file/SQLite session stores reject stale snapshot saves instead of allowing silent
-overwrites. The SQLite adapter is a local database backend for `RuntimeHost` configuration, not an
-event-sourcing model or production migration system.
+overwrites. These adapters are local persistence backends for `RuntimeHost` configuration, not
+event-sourcing models or production migration systems.
 
 ## Current scope
 

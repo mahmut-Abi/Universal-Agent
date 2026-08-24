@@ -13,8 +13,7 @@ from universal_agent import (
     RuntimeAPI,
     RuntimeBuilder,
     ScriptedModelAdapter,
-    SQLiteEventStore,
-    SQLiteSessionStore,
+    SQLiteRuntimeStore,
     SuccessCriterion,
     Task,
     immutable_json,
@@ -93,18 +92,17 @@ def build_api(
     backend: FakePersistentBackend,
     decisions: list[Decision],
 ) -> RuntimeAPI:
-    store = SQLiteSessionStore(path)
-    events = SQLiteEventStore(path)
+    store = SQLiteRuntimeStore(path)
     runtime = AgentRuntime(
         model=ScriptedModelAdapter(decisions),
         state_store=store,
         components=RuntimeBuilder().build(
             DomainLoader().load(KubernetesRemediationDomain(backend, backend))
         ),
-        event_sink=events,
+        event_sink=store,
         environment=immutable_json({"environment": "production"}),
     )
-    return RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
+    return RuntimeAPI(runtime=runtime, session_store=store, event_reader=store)
 
 
 async def main() -> None:

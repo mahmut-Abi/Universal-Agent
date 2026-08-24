@@ -4,7 +4,7 @@ from universal_agent.persistence.codec import (
     encode_runtime_event,
     encode_session_snapshot,
 )
-from universal_agent.persistence.file import FileEventStore, FileSessionStore
+from universal_agent.persistence.file import FileEventStore, FileRuntimeStore, FileSessionStore
 from universal_agent.persistence.sqlite import (
     SQLiteEventStore,
     SQLiteRuntimeStore,
@@ -13,6 +13,7 @@ from universal_agent.persistence.sqlite import (
 
 __all__ = [
     "FileEventStore",
+    "FileRuntimeStore",
     "FileSessionStore",
     "SQLiteEventStore",
     "SQLiteRuntimeStore",

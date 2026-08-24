@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -10,7 +11,7 @@ from universal_agent import (
     Decision,
     DecisionType,
     DomainLoader,
-    FileEventStore,
+    FileRuntimeStore,
     FileSessionStore,
     Goal,
     RuntimeAPI,
@@ -33,6 +34,7 @@ from universal_agent.core import (
     new_session_id,
 )
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.persistence import encode_runtime_event, encode_session_snapshot
 from universal_agent.state import SessionVersionConflictError, session_from_state
 
 
@@ -186,6 +188,91 @@ async def test_sqlite_runtime_store_commits_session_and_event_atomically(
     ]
 
 
+@pytest.mark.asyncio
+async def test_file_runtime_store_commits_session_and_event_through_journal(
+    tmp_path: Path,
+) -> None:
+    store = FileRuntimeStore(tmp_path)
+    goal = Goal("Journal state event", (SuccessCriterion("healthy", True),))
+    task = Task("Inspect", ("healthy",))
+    snapshot = session_from_state(goal_state(goal, task))
+    await store.create_session(snapshot)
+
+    first = await store.load_session(snapshot.state.session_id)
+    first.state.iteration = 1
+    event = RuntimeEvent(
+        "StateUpdated",
+        first.state.session_id,
+        first.state.goal.id,
+        first.state.current_task.id,
+        id=EventId("event-1"),
+    )
+
+    await store.commit_session_event(first, event)
+
+    latest = await store.load_session(snapshot.state.session_id)
+    events = await store.list_events(snapshot.state.session_id)
+    assert first.version == 1
+    assert latest.version == 1
+    assert latest.state.iteration == 1
+    assert [item.id for item in events] == [EventId("event-1")]
+    assert not list((tmp_path / "commits").glob("*.json"))
+
+    duplicate_event_snapshot = await store.load_session(snapshot.state.session_id)
+    duplicate_event_snapshot.state.iteration = 2
+    with pytest.raises(ValueError, match="runtime event already exists"):
+        await store.commit_session_event(duplicate_event_snapshot, event)
+
+    after_duplicate = await store.load_session(snapshot.state.session_id)
+    assert duplicate_event_snapshot.version == 1
+    assert after_duplicate.version == 1
+    assert after_duplicate.state.iteration == 1
+    assert [item.id for item in await store.list_events(snapshot.state.session_id)] == [
+        EventId("event-1")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_file_runtime_store_recovers_incomplete_journal_commit(
+    tmp_path: Path,
+) -> None:
+    store = FileRuntimeStore(tmp_path)
+    goal = Goal("Recover journal state event", (SuccessCriterion("healthy", True),))
+    task = Task("Inspect", ("healthy",))
+    snapshot = session_from_state(goal_state(goal, task))
+    await store.create_session(snapshot)
+
+    pending = await store.load_session(snapshot.state.session_id)
+    pending.state.iteration = 1
+    pending.version += 1
+    event = RuntimeEvent(
+        "StateUpdated",
+        pending.state.session_id,
+        pending.state.goal.id,
+        pending.state.current_task.id,
+        id=EventId("event-1"),
+    )
+    commit_path = tmp_path / "commits" / "event-1.json"
+    commit_path.parent.mkdir(parents=True)
+    with commit_path.open("w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "session": encode_session_snapshot(pending),
+                "event": encode_runtime_event(event),
+            },
+            handle,
+        )
+
+    recovered = FileRuntimeStore(tmp_path)
+    latest = await recovered.load_session(snapshot.state.session_id)
+    events = await recovered.list_events(snapshot.state.session_id)
+
+    assert latest.version == 1
+    assert latest.state.iteration == 1
+    assert [item.id for item in events] == [EventId("event-1")]
+    assert not list((tmp_path / "commits").glob("*.json"))
+
+
 def goal_state(goal: Goal, task: Task) -> AgentState:
     state = AgentState(session_id=new_session_id(), goal=goal, current_task=task)
     state.tasks.append(task)
@@ -227,21 +314,20 @@ def build_file_api(
     backend: PersistentRemediationBackend,
     decisions: list[Decision],
 ) -> RuntimeAPI:
-    session_store = FileSessionStore(root)
-    event_store = FileEventStore(root)
+    store = FileRuntimeStore(root)
     runtime = AgentRuntime(
         model=ScriptedModelAdapter(decisions),
-        state_store=session_store,
+        state_store=store,
         components=RuntimeBuilder().build(
             DomainLoader().load(KubernetesRemediationDomain(backend, backend))
         ),
-        event_sink=event_store,
+        event_sink=store,
         environment=immutable_json({"environment": "production"}),
     )
     return RuntimeAPI(
         runtime=runtime,
-        session_store=session_store,
-        event_reader=event_store,
+        session_store=store,
+        event_reader=store,
     )
 
 
