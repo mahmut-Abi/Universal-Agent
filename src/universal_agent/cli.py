@@ -11,6 +11,7 @@ from typing import TextIO, cast
 
 from universal_agent.agentd.app import (
     AgentdApp,
+    AgentdAuthPolicy,
     audit_records_body,
     capability_body,
     config_body,
@@ -456,6 +457,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve = commands.add_parser("serve")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument("--auth-token")
 
     run = commands.add_parser("run")
     run.add_argument("profile")
@@ -1682,8 +1684,9 @@ def _dispatch_serve(
 ) -> None:
     host = cast(str, args.host)
     port = cast(int, args.port)
+    auth_token = cast(str | None, args.auth_token)
     server = AgentdHttpServer(
-        AgentdApp(service),
+        AgentdApp(service, auth=AgentdAuthPolicy(auth_token)),
         AgentdServerConfig(host=host, port=port),
     )
     try:
@@ -1694,6 +1697,7 @@ def _dispatch_serve(
                 "base_url": server.base_url,
                 "host": host,
                 "port": server.server_address[1],
+                "auth_required": auth_token is not None,
             },
         )
         out.flush()

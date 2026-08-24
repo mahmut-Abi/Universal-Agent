@@ -30,7 +30,7 @@ from universal_agent import (
     WorkerId,
     immutable_json,
 )
-from universal_agent.agentd import AgentdApp, HttpRequest
+from universal_agent.agentd import AgentdApp, AgentdAuthPolicy, HttpRequest
 from universal_agent.core import DomainIdentity, ExecutionStatus, JsonMapping, JsonValue, SessionId
 from universal_agent.domain import (
     DomainPackage,
@@ -367,6 +367,39 @@ async def test_agentd_config_route_redacts_sensitive_environment_values() -> Non
         "password": "<redacted>",
         "nested": {"api_token": "<redacted>", "safe": "visible"},
     }
+
+
+@pytest.mark.asyncio
+async def test_agentd_auth_policy_protects_non_public_routes() -> None:
+    service, _ = build_service([])
+    app = AgentdApp(service, auth=AgentdAuthPolicy("local-token"))
+
+    health = await app.handle(HttpRequest("GET", "/health"))
+    missing = await app.handle(HttpRequest("GET", "/v1/config"))
+    invalid = await app.handle(
+        HttpRequest(
+            "GET",
+            "/v1/config",
+            headers={"authorization": "Bearer wrong-token"},
+        )
+    )
+    authorized = await app.handle(
+        HttpRequest(
+            "GET",
+            "/v1/config",
+            headers={"AUTHORIZATION": "Bearer local-token"},
+        )
+    )
+
+    assert health.status_code == 200
+    assert missing.status_code == 401
+    assert invalid.status_code == 401
+    assert missing.body["error"] == {
+        "code": "unauthorized",
+        "message": "authentication required",
+    }
+    assert missing.headers["www-authenticate"] == 'Bearer realm="agentd"'
+    assert authorized.status_code == 200
 
 
 @pytest.mark.asyncio

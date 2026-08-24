@@ -128,7 +128,8 @@ read-only HTML Web Console snapshot and `GET /console/sessions/{id}` returns a f
 Detail page; `GET /console/sessions/{id}/evidence` and `/world` return focused Evidence and World
 Model Explorer pages, `GET /console/domains/{name}/{version}` returns a read-only Domain
 Manager detail page, and `GET /console/settings` returns Runtime settings built from the same
-RuntimeService projections. `AgentdHttpServer`
+RuntimeService projections. `AgentdAuthPolicy` can optionally require `Authorization: Bearer ...`
+for all non-health routes while leaving `GET /health` and `GET /ready` public for local probes. `AgentdHttpServer`
 is the standard-library HTTP bridge for this adapter: it owns socket/body/header translation only and
 does not touch Runtime internals.
 
@@ -143,7 +144,8 @@ It also exposes operations commands for metrics, cost, logs, traces, doctor, aud
 `agent metrics --format prometheus` emits Prometheus text exposition, while
 `agent traces --format otlp` and `agent session traces <id> --format otlp` emit OTLP
 JSON-compatible trace payloads from the same event-derived span projection. `agent serve` starts the
-standard-library `AgentdHttpServer` around the same service; `agent eval run` executes the
+standard-library `AgentdHttpServer` around the same service and accepts `--auth-token` to enable
+the same optional bearer-token protection; `agent eval run` executes the
 local or file-backed evaluation suite through `EvaluationRunner`, and `agent eval compare` compares
 persisted golden reports for CLI/CI regression checks. `agent eval replay` records and checks
 deterministic golden replay recordings through the same suite selector. `agent eval list`,
@@ -372,6 +374,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_runtime_api.py
 .venv/bin/python examples/p3_5_runtime_service.py
 .venv/bin/python examples/p3_5_agentd_routes.py
+.venv/bin/python examples/p3_5_agentd_auth.py
 .venv/bin/python examples/p3_5_persistence.py
 .venv/bin/python examples/p3_5_sqlite_persistence.py
 .venv/bin/python examples/p3_5_runtime_config.py

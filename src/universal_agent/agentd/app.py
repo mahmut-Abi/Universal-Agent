@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -124,6 +125,22 @@ class GoalSubmission:
     profile_name: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class AgentdAuthPolicy:
+    bearer_token: str | None = None
+    public_paths: tuple[str, ...] = ("/health", "/ready")
+
+    def __post_init__(self) -> None:
+        if self.bearer_token is not None and not self.bearer_token.strip():
+            raise ValueError("agentd bearer token must not be empty")
+        if any(not path.startswith("/") or not path.strip() for path in self.public_paths):
+            raise ValueError("agentd public paths must be absolute non-empty paths")
+
+    @property
+    def enabled(self) -> bool:
+        return self.bearer_token is not None
+
+
 class AgentdApp:
     """Framework-free route adapter for the future agentd process.
 
@@ -132,12 +149,17 @@ class AgentdApp:
     without learning Kernel internals.
     """
 
-    def __init__(self, service: RuntimeService) -> None:
+    def __init__(self, service: RuntimeService, auth: AgentdAuthPolicy | None = None) -> None:
         self._service = service
+        self._auth = auth or AgentdAuthPolicy()
 
     async def handle(self, request: HttpRequest) -> HttpResponse:
         method = request.method.upper()
         path = _normalize_path(request.path)
+
+        auth_response = _authenticate(self._auth, request, path)
+        if auth_response is not None:
+            return auth_response
 
         if path == "/health":
             return self._get(method, health_body(self._service.health()))
@@ -892,6 +914,19 @@ def not_found(message: str) -> HttpResponse:
     return json_response(error_body("not_found", message), status_code=404)
 
 
+def unauthorized() -> HttpResponse:
+    return HttpResponse(
+        status_code=401,
+        body=error_body("unauthorized", "authentication required"),
+        headers=MappingProxyType(
+            {
+                "content-type": "application/json",
+                "www-authenticate": 'Bearer realm="agentd"',
+            }
+        ),
+    )
+
+
 def bad_request(message: str) -> HttpResponse:
     return json_response(error_body("bad_request", message), status_code=400)
 
@@ -916,6 +951,39 @@ def method_not_allowed(allowed: tuple[str, ...]) -> HttpResponse:
 
 def error_body(code: str, message: str) -> JsonMapping:
     return immutable_json({"error": {"code": code, "message": message}})
+
+
+def _authenticate(
+    policy: AgentdAuthPolicy,
+    request: HttpRequest,
+    path: str,
+) -> HttpResponse | None:
+    if not policy.enabled or path in policy.public_paths:
+        return None
+    expected = policy.bearer_token
+    if expected is None:
+        return None
+    token = _bearer_token(_header_value(request.headers, "authorization"))
+    if token is None or not hmac.compare_digest(token, expected):
+        return unauthorized()
+    return None
+
+
+def _header_value(headers: Mapping[str, str], name: str) -> str | None:
+    normalized = name.lower()
+    for key, value in headers.items():
+        if key.lower() == normalized:
+            return value
+    return None
+
+
+def _bearer_token(value: str | None) -> str | None:
+    if value is None:
+        return None
+    scheme, separator, token = value.strip().partition(" ")
+    if separator != " " or scheme.lower() != "bearer" or not token:
+        return None
+    return token
 
 
 def parse_goal_submission(body: JsonMapping) -> GoalSubmission:

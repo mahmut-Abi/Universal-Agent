@@ -22,7 +22,7 @@ from universal_agent import (
     ScriptedModelAdapter,
     immutable_json,
 )
-from universal_agent.agentd import AgentdApp, AgentdHttpServer, AgentdServerConfig
+from universal_agent.agentd import AgentdApp, AgentdAuthPolicy, AgentdHttpServer, AgentdServerConfig
 from universal_agent.core import JsonMapping, JsonValue
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 
@@ -66,7 +66,11 @@ def goal_submission_body() -> dict[str, JsonValue]:
     }
 
 
-def build_app(decisions: list[Decision]) -> tuple[AgentdApp, ServerBackend]:
+def build_app(
+    decisions: list[Decision],
+    *,
+    auth: AgentdAuthPolicy | None = None,
+) -> tuple[AgentdApp, ServerBackend]:
     backend = ServerBackend()
     store = InMemoryStateStore()
     events = InMemoryEventSink()
@@ -84,7 +88,7 @@ def build_app(decisions: list[Decision]) -> tuple[AgentdApp, ServerBackend]:
         runtime_api=RuntimeAPI(runtime=runtime, session_store=store, event_reader=events),
         components=components,
     )
-    return AgentdApp(service), backend
+    return AgentdApp(service, auth=auth), backend
 
 
 @contextmanager
@@ -108,6 +112,7 @@ def request(
     method: str,
     path: str,
     body: dict[str, JsonValue] | str | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> tuple[int, str, dict[str, str]]:
     data: bytes | None = None
     headers: dict[str, str] = {}
@@ -117,6 +122,8 @@ def request(
     elif isinstance(body, str):
         data = body.encode("utf-8")
         headers["content-type"] = "application/json"
+    if extra_headers is not None:
+        headers.update(extra_headers)
     request = Request(f"{base_url}{path}", data=data, headers=headers, method=method)
     try:
         with urlopen(request, timeout=5) as response:
@@ -130,11 +137,19 @@ def request_json(
     method: str,
     path: str,
     body: dict[str, JsonValue] | str | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> tuple[int, dict[str, JsonValue]]:
-    status, text, _ = request(base_url, method, path, body)
+    status, text, _ = request(base_url, method, path, body, extra_headers)
     payload = json.loads(text)
     assert isinstance(payload, dict)
     return status, payload
+
+
+def header_value(headers: dict[str, str], name: str) -> str:
+    for key, value in headers.items():
+        if key.lower() == name.lower():
+            return value
+    raise AssertionError(f"missing response header: {name}")
 
 
 def test_agentd_http_server_serves_health_goal_and_event_routes() -> None:
@@ -166,6 +181,37 @@ def test_agentd_http_server_serves_health_goal_and_event_routes() -> None:
     assert isinstance(last_event, dict)
     assert last_event["type"] == "GoalCompleted"
     assert backend.inspect_calls == 1
+
+
+def test_agentd_http_server_enforces_optional_bearer_auth() -> None:
+    app, _ = build_app([], auth=AgentdAuthPolicy("server-token"))
+
+    with running_server(app) as base_url:
+        health_status, health = request_json(base_url, "GET", "/health")
+        denied_status, denied, denied_headers = request(
+            base_url,
+            "GET",
+            "/v1/config",
+        )
+        allowed_status, allowed = request_json(
+            base_url,
+            "GET",
+            "/v1/config",
+            extra_headers={"Authorization": "Bearer server-token"},
+        )
+
+    denied_body = json.loads(denied)
+    assert isinstance(denied_body, dict)
+    assert health_status == 200
+    assert health["status"] == "ok"
+    assert denied_status == 401
+    assert denied_body["error"] == {
+        "code": "unauthorized",
+        "message": "authentication required",
+    }
+    assert header_value(denied_headers, "www-authenticate") == 'Bearer realm="agentd"'
+    assert allowed_status == 200
+    assert isinstance(allowed["domains"], list)
 
 
 def test_agentd_http_server_returns_json_errors_before_runtime_routing() -> None:
