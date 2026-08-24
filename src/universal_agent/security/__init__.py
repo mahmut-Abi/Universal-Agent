@@ -1,13 +1,27 @@
 from universal_agent.security.secrets import (
+    EnvSecretProvider,
     SecretFinding,
+    SecretProvider,
+    SecretReference,
+    SecretResolution,
+    SecretResolutionReport,
+    SecretResolutionStatus,
     SecretScanReport,
     is_sensitive_key,
+    resolve_secret_refs,
     scan_for_secrets,
 )
 
 __all__ = [
+    "EnvSecretProvider",
     "SecretFinding",
+    "SecretProvider",
+    "SecretReference",
+    "SecretResolution",
+    "SecretResolutionReport",
+    "SecretResolutionStatus",
     "SecretScanReport",
     "is_sensitive_key",
+    "resolve_secret_refs",
     "scan_for_secrets",
 ]

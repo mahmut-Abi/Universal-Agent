@@ -23,6 +23,11 @@ from universal_agent.operations import (
     build_runtime_trace_spans,
 )
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView
+from universal_agent.security import (
+    SecretResolution,
+    SecretResolutionReport,
+    SecretResolutionStatus,
+)
 
 
 def session(
@@ -567,6 +572,7 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
         "readiness",
         "catalog",
         "runtime_config",
+        "runtime_secrets",
         "secret_scanning",
         "session_store",
         "event_stream",
@@ -589,7 +595,38 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
     assert next(check for check in report.checks if check.name == "traces").status == "warn"
     assert next(check for check in report.checks if check.name == "resource_locks").status == "ok"
     assert next(check for check in report.checks if check.name == "runtime_config").status == "ok"
+    assert next(check for check in report.checks if check.name == "runtime_secrets").status == "ok"
     assert next(check for check in report.checks if check.name == "secret_scanning").status == "ok"
+
+
+def test_doctor_report_errors_on_missing_required_runtime_secrets() -> None:
+    report = build_doctor_report(
+        health_status="ok",
+        ready=False,
+        ready_reason="missing required secrets: openai_api_key",
+        domain_count=1,
+        capability_count=2,
+        tool_count=2,
+        sessions=(),
+        events=(),
+        secret_resolution=SecretResolutionReport(
+            (
+                SecretResolution(
+                    "openai_api_key",
+                    "env",
+                    "OPENAI_API_KEY",
+                    True,
+                    SecretResolutionStatus.MISSING_REQUIRED,
+                ),
+            )
+        ),
+    )
+
+    runtime_secrets = next(check for check in report.checks if check.name == "runtime_secrets")
+
+    assert report.status == "error"
+    assert runtime_secrets.status == "error"
+    assert "openai_api_key" in runtime_secrets.message
 
 
 def test_doctor_report_errors_on_unredacted_secret_payloads() -> None:

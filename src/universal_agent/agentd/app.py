@@ -75,6 +75,7 @@ from universal_agent.service import (
     RuntimeCostView,
     RuntimeLogRecordView,
     RuntimeMetricsView,
+    RuntimeSecretRefView,
     RuntimeService,
     RuntimeTraceSpanView,
     SessionExplorerView,
@@ -1235,17 +1236,23 @@ def config_body(view: RuntimeConfigView) -> JsonMapping:
                 "max_recovery_steps": view.max_recovery_steps,
             },
             "domains": [_runtime_config_domain_body(domain) for domain in view.domains],
-            "secrets": [
-                {
-                    "name": secret.name,
-                    "source": secret.source,
-                    "key": secret.key,
-                    "required": secret.required,
-                }
-                for secret in view.secrets
-            ],
+            "secrets": [_runtime_secret_ref_body(secret) for secret in view.secrets],
         }
     )
+
+
+def _runtime_secret_ref_body(view: RuntimeSecretRefView) -> dict[str, JsonValue]:
+    body: dict[str, JsonValue] = {
+        "name": view.name,
+        "source": view.source,
+        "key": view.key,
+        "required": view.required,
+    }
+    if view.available is not None:
+        body["available"] = view.available
+    if view.status is not None:
+        body["status"] = view.status
+    return body
 
 
 def _runtime_config_domain_body(view: RuntimeConfigDomainView) -> dict[str, JsonValue]:

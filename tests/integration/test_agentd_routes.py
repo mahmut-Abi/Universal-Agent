@@ -41,6 +41,7 @@ from universal_agent.domain import (
     DomainPackageRegistry,
 )
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.security import EnvSecretProvider, SecretResolutionReport, resolve_secret_refs
 
 
 class AgentdBackend:
@@ -202,6 +203,7 @@ def build_service(
     domain_packages: DomainPackageRegistry | None = None,
     environment: JsonMapping | None = None,
     secrets: tuple[SecretRef, ...] = (),
+    secret_resolution: SecretResolutionReport | None = None,
 ) -> tuple[RuntimeService, AgentdBackend]:
     backend = AgentdBackend()
     store = InMemoryStateStore()
@@ -231,6 +233,7 @@ def build_service(
         runtime_api=api,
         components=components,
         config=config,
+        secret_resolution=secret_resolution,
         distributed_coordinator=distributed_coordinator,
         domain_packages=domain_packages,
     ), backend
@@ -400,6 +403,35 @@ async def test_agentd_config_route_exposes_secret_references_without_values() ->
             "required": True,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_agentd_config_route_exposes_secret_status_without_values() -> None:
+    secrets = (SecretRef.env("openai_api_key", "OPENAI_API_KEY"),)
+    service, _ = build_service(
+        [],
+        secrets=secrets,
+        secret_resolution=resolve_secret_refs(
+            secrets,
+            provider=EnvSecretProvider({"OPENAI_API_KEY": "secret-value"}),
+        ),
+    )
+    app = AgentdApp(service)
+
+    config = await app.handle(HttpRequest("GET", "/v1/config"))
+
+    assert config.status_code == 200
+    assert config.body["secrets"] == [
+        {
+            "name": "openai_api_key",
+            "source": "env",
+            "key": "OPENAI_API_KEY",
+            "required": True,
+            "available": True,
+            "status": "available",
+        }
+    ]
+    assert "secret-value" not in str(config.body)
 
 
 @pytest.mark.asyncio

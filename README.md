@@ -101,9 +101,10 @@ P3.5 work built on this interface, not replacements for it.
 event reads to `RuntimeAPI`, and adds service-level health, readiness, Domain, Capability and Tool
 catalog views, plus a typed runtime configuration projection for HTTP and CLI adapters. It does not
 access Kernel internals directly. `RuntimeHost` is the typed application assembly boundary for Runtime
-Configuration: it validates the configured Domain identity, builds memory or file-backed stores,
-applies runtime limits/environment, optionally binds an application-level Agent Profile, and exposes
-both `RuntimeAPI` and `RuntimeService` without teaching applications Kernel internals. See
+Configuration: it validates the configured Domain identity, resolves environment-backed secret
+references into non-value availability reports, builds memory or file-backed stores, applies runtime
+limits/environment, optionally binds an application-level Agent Profile, and exposes both
+`RuntimeAPI` and `RuntimeService` without teaching applications Kernel internals. See
 `examples/p3_5_runtime_api.py`, `examples/p3_5_runtime_service.py`,
 `examples/p3_5_runtime_config.py`, `examples/p3_5_cli_config.py`, and
 `examples/p3_5_cli_event_stream.py` for minimal
@@ -233,7 +234,7 @@ event-sourcing models or production migration systems.
   capabilities, tools, delegated execution, runnable examples, an `AgentdApp` route adapter for
   HTTP-shaped goal submission, cursor session listing, JSON and SSE-formatted session/event reads,
   pause/resume/cancel routes, runtime configuration reads with redacted sensitive environment values
-  and secret-reference metadata that never includes secret values, Profile catalog reads, a
+  plus secret-reference availability metadata that never includes secret values, Profile catalog reads, a
   standard-library `AgentdHttpServer` bridge, file-backed session/event stores for local recovery,
   a local CLI adapter, and typed `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for
   environment, secret references, limits, memory/file/SQLite store backends,

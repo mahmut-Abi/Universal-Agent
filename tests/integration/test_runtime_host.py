@@ -14,6 +14,7 @@ from universal_agent import (
     RuntimeConfig,
     RuntimeHost,
     ScriptedModelAdapter,
+    SecretRef,
     StoreConfig,
     SuccessCriterion,
     Task,
@@ -27,6 +28,7 @@ from universal_agent.distributed import (
     WorkItemStatus,
 )
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.security import EnvSecretProvider
 
 
 class HostRemediationBackend:
@@ -178,6 +180,45 @@ def production_profile(path: Path) -> ProfileConfig:
             },
         }
     )
+
+
+def test_runtime_host_secret_resolution_drives_readiness_without_values() -> None:
+    backend = HostRemediationBackend()
+    config = RuntimeConfig(
+        environment=immutable_json({"environment": "production"}),
+        secrets=(
+            SecretRef.env("openai_api_key", "OPENAI_API_KEY"),
+            SecretRef.env("optional_token", "OPTIONAL_TOKEN", required=False),
+        ),
+        domain=DomainConfig("kubernetes", "0.2.0"),
+    )
+
+    missing = RuntimeHost.build(
+        config=config,
+        model=ScriptedModelAdapter([]),
+        domain=KubernetesRemediationDomain(backend, backend),
+        secret_provider=EnvSecretProvider({}),
+    )
+    available = RuntimeHost.build(
+        config=config,
+        model=ScriptedModelAdapter([]),
+        domain=KubernetesRemediationDomain(backend, backend),
+        secret_provider=EnvSecretProvider({"OPENAI_API_KEY": "secret-value"}),
+    )
+
+    missing_ready = missing.service.ready()
+    available_ready = available.service.ready()
+    projected = available.service.config()
+
+    assert missing_ready.ready is False
+    assert missing_ready.reason == "missing required secrets: openai_api_key"
+    assert available_ready.ready is True
+    assert available.secret_resolution.passed is True
+    assert projected.secrets[0].status == "available"
+    assert projected.secrets[0].available is True
+    assert projected.secrets[1].status == "missing_optional"
+    assert projected.secrets[1].available is False
+    assert "secret-value" not in str(projected)
 
 
 @pytest.mark.asyncio

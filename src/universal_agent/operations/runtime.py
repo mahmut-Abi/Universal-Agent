@@ -16,7 +16,7 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView
-from universal_agent.security import scan_for_secrets
+from universal_agent.security import SecretResolutionReport, scan_for_secrets
 
 _TERMINAL_EVENT_BY_GOAL_STATUS = {
     GoalStatus.COMPLETED: "GoalCompleted",
@@ -358,6 +358,7 @@ def build_doctor_report(
     distributed_expiring_lease_count: int | None = None,
     distributed_recommendation_count: int | None = None,
     distributed_invalid_session_work_item_count: int | None = None,
+    secret_resolution: SecretResolutionReport | None = None,
     secret_scan_payload: object | None = None,
 ) -> DoctorReportView:
     metrics = build_runtime_metrics(sessions, events)
@@ -384,6 +385,7 @@ def build_doctor_report(
             max_iterations=max_iterations,
             max_recovery_steps=max_recovery_steps,
         ),
+        _runtime_secrets_check(secret_resolution),
         _secret_scanning_check(secret_scan_payload),
         DoctorCheckView("session_store", "ok", f"sessions listed: {len(sessions)}"),
         _event_stream_check(sessions, events),
@@ -413,6 +415,24 @@ def build_doctor_report(
         ),
     )
     return DoctorReportView(_aggregate_status(checks), checks)
+
+
+def _runtime_secrets_check(report: SecretResolutionReport | None) -> DoctorCheckView:
+    if report is None:
+        return DoctorCheckView("runtime_secrets", "ok", "no secret resolution report provided")
+    if report.passed:
+        available_count = sum(1 for item in report.items if item.available)
+        return DoctorCheckView(
+            "runtime_secrets",
+            "ok",
+            f"secret_refs={len(report.items)} available={available_count}",
+        )
+    sample = ", ".join(report.missing_required_names[:5])
+    return DoctorCheckView(
+        "runtime_secrets",
+        "error",
+        f"missing required secret refs: count={len(report.blocking)} names={sample}",
+    )
 
 
 def _secret_scanning_check(payload: object | None) -> DoctorCheckView:

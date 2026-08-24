@@ -88,6 +88,7 @@ from universal_agent.runtime import (
     SessionView,
     event_view,
 )
+from universal_agent.security import SecretResolution, SecretResolutionReport
 from universal_agent.state import StateNotFoundError
 from universal_agent.world import (
     InMemoryWorldModel,
@@ -261,6 +262,8 @@ class RuntimeSecretRefView:
     source: str
     key: str
     required: bool
+    available: bool | None = None
+    status: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -402,6 +405,7 @@ class RuntimeService:
         components: RuntimeComponents,
         profiles: tuple[AgentProfile, ...] = (),
         config: RuntimeConfig | None = None,
+        secret_resolution: SecretResolutionReport | None = None,
         distributed_coordinator: DistributedRuntimeCoordinator | None = None,
         domain_packages: DomainPackageRegistry | None = None,
     ) -> None:
@@ -409,6 +413,7 @@ class RuntimeService:
         self._components = components
         self._profiles = ProfileRegistry(profiles)
         self._config = config
+        self._secret_resolution = secret_resolution
         self._distributed_coordinator = distributed_coordinator
         self._domain_packages = domain_packages or DomainPackageRegistry()
 
@@ -424,17 +429,19 @@ class RuntimeService:
             for capability in capabilities
             if not self._components.tools.registrations_for_capability(capability.name)
         )
-        ready = bool(domains) and bool(capabilities) and bool(tools) and not missing_tools
-        reason = (
-            "ready"
-            if ready
-            else _not_ready_reason(
+        catalog_ready = bool(domains) and bool(capabilities) and bool(tools) and not missing_tools
+        secret_failure = _secret_readiness_failure(self._secret_resolution)
+        ready = catalog_ready and secret_failure is None
+        reason = "ready"
+        if not catalog_ready:
+            reason = _not_ready_reason(
                 has_domains=bool(domains),
                 has_capabilities=bool(capabilities),
                 has_tools=bool(tools),
                 missing_tools=missing_tools,
             )
-        )
+        elif secret_failure is not None:
+            reason = secret_failure
         return ReadyView(
             ready=ready,
             reason=reason,
@@ -571,7 +578,10 @@ class RuntimeService:
             )
         return RuntimeConfigView(
             environment=redact_environment(self._config.environment),
-            secrets=runtime_secret_ref_views(self._config.secrets),
+            secrets=runtime_secret_ref_views(
+                self._config.secrets,
+                self._secret_resolution,
+            ),
             store_backend=self._config.store.backend.value,
             store_path=self._config.store.path,
             distributed_queue_backend=self._config.distributed_queue.backend.value,
@@ -1320,6 +1330,7 @@ class RuntimeService:
                 sessions,
                 distributed_snapshot,
             ),
+            secret_resolution=self._secret_resolution,
             secret_scan_payload=_secret_scan_payload(config, events),
         )
 
@@ -1682,16 +1693,41 @@ def runtime_config_domain_views(
     )
 
 
-def runtime_secret_ref_views(secrets: tuple[SecretRef, ...]) -> tuple[RuntimeSecretRefView, ...]:
-    return tuple(
-        RuntimeSecretRefView(
-            secret.name,
-            secret.source.value,
-            secret.key,
-            secret.required,
-        )
-        for secret in secrets
+def runtime_secret_ref_views(
+    secrets: tuple[SecretRef, ...],
+    resolution: SecretResolutionReport | None = None,
+) -> tuple[RuntimeSecretRefView, ...]:
+    return tuple(_runtime_secret_ref_view(secret, resolution) for secret in secrets)
+
+
+def _runtime_secret_ref_view(
+    secret: SecretRef,
+    resolution: SecretResolutionReport | None,
+) -> RuntimeSecretRefView:
+    resolved = _resolved_secret(resolution, secret.name)
+    return RuntimeSecretRefView(
+        secret.name,
+        secret.source.value,
+        secret.key,
+        secret.required,
+        available=None if resolved is None else resolved.available,
+        status=None if resolved is None else resolved.status.value,
     )
+
+
+def _secret_readiness_failure(report: SecretResolutionReport | None) -> str | None:
+    if report is None or report.passed:
+        return None
+    return "missing required secrets: " + ", ".join(report.missing_required_names)
+
+
+def _resolved_secret(
+    report: SecretResolutionReport | None,
+    name: str,
+) -> SecretResolution | None:
+    if report is None:
+        return None
+    return report.get(name)
 
 
 def world_fact_view(fact: WorldFact) -> WorldFactView:

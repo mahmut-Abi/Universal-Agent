@@ -35,6 +35,7 @@ from universal_agent.runtime import (
     InMemoryEventSink,
     RuntimeAPI,
 )
+from universal_agent.security import SecretProvider, SecretResolutionReport, resolve_secret_refs
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, SessionStore
 
@@ -60,6 +61,7 @@ class RuntimeHost:
     domain_identities: tuple[DomainIdentity, ...]
     domain_composition: DomainComposition
     distributed_coordinator: DistributedRuntimeCoordinator
+    secret_resolution: SecretResolutionReport
     profile: AgentProfile | None = None
 
     @classmethod
@@ -70,12 +72,14 @@ class RuntimeHost:
         model: ModelAdapter,
         domain: DomainRuntime,
         profile: AgentProfile | None = None,
+        secret_provider: SecretProvider | None = None,
     ) -> RuntimeHost:
         return cls.build_composed(
             config=config,
             model=model,
             domains=(domain,),
             profile=profile,
+            secret_provider=secret_provider,
         )
 
     @classmethod
@@ -86,6 +90,7 @@ class RuntimeHost:
         model: ModelAdapter,
         domains: tuple[DomainRuntime, ...],
         profile: AgentProfile | None = None,
+        secret_provider: SecretProvider | None = None,
     ) -> RuntimeHost:
         if not domains:
             raise ValueError("runtime host requires at least one domain")
@@ -96,6 +101,7 @@ class RuntimeHost:
         identity = composition.primary.identity
         _validate_domain_config(config, composition.identities)
         _validate_profile(profile, composition.identities)
+        secret_resolution = resolve_secret_refs(config.secrets, provider=secret_provider)
         components = RuntimeBuilder().build(composition)
         session_store, event_store = _build_stores(config)
         runtime = AgentRuntime(
@@ -125,6 +131,7 @@ class RuntimeHost:
                 components=components,
                 profiles=() if profile is None else (profile,),
                 config=config,
+                secret_resolution=secret_resolution,
                 distributed_coordinator=distributed_coordinator,
             ),
             components=components,
@@ -132,6 +139,7 @@ class RuntimeHost:
             domain_identities=composition.identities,
             domain_composition=composition,
             distributed_coordinator=distributed_coordinator,
+            secret_resolution=secret_resolution,
             profile=profile,
         )
 
@@ -142,12 +150,14 @@ class RuntimeHost:
         profile: AgentProfile,
         model: ModelAdapter,
         domain: DomainRuntime,
+        secret_provider: SecretProvider | None = None,
     ) -> RuntimeHost:
         return cls.build(
             config=profile.runtime,
             model=model,
             domain=domain,
             profile=profile,
+            secret_provider=secret_provider,
         )
 
     @classmethod
@@ -157,12 +167,14 @@ class RuntimeHost:
         profile: AgentProfile,
         model: ModelAdapter,
         domains: tuple[DomainRuntime, ...],
+        secret_provider: SecretProvider | None = None,
     ) -> RuntimeHost:
         return cls.build_composed(
             config=profile.runtime,
             model=model,
             domains=domains,
             profile=profile,
+            secret_provider=secret_provider,
         )
 
 

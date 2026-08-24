@@ -53,6 +53,7 @@ from universal_agent.domain import (
     RuntimeComponents,
 )
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.security import EnvSecretProvider, resolve_secret_refs
 
 
 class ServiceBackend:
@@ -208,6 +209,42 @@ def test_runtime_service_config_exposes_secret_references_without_values() -> No
     assert projected.secrets[0].source == "env"
     assert projected.secrets[0].key == "OPENAI_API_KEY"
     assert projected.secrets[0].required is True
+    assert projected.secrets[0].available is None
+    assert projected.secrets[0].status is None
+
+
+def test_runtime_service_config_exposes_secret_status_without_values() -> None:
+    backend = ServiceBackend()
+    active = DomainLoader().load(KubernetesRemediationDomain(backend, backend))
+    components = RuntimeBuilder().build(active)
+    secrets = (
+        SecretRef.env("openai_api_key", "OPENAI_API_KEY"),
+        SecretRef.env("optional_token", "OPTIONAL_TOKEN", required=False),
+    )
+    config = RuntimeConfig(
+        environment=immutable_json({"environment": "production"}),
+        secrets=secrets,
+        domain=DomainConfig("kubernetes", "0.2.0"),
+    )
+    service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+        config=config,
+        secret_resolution=resolve_secret_refs(
+            secrets,
+            provider=EnvSecretProvider({"OPENAI_API_KEY": "secret-value"}),
+        ),
+    )
+
+    projected = service.config()
+
+    assert projected.secrets[0].name == "openai_api_key"
+    assert projected.secrets[0].available is True
+    assert projected.secrets[0].status == "available"
+    assert projected.secrets[1].name == "optional_token"
+    assert projected.secrets[1].available is False
+    assert projected.secrets[1].status == "missing_optional"
+    assert "secret-value" not in str(projected)
 
 
 def test_runtime_service_config_exposes_domain_backend_settings() -> None:

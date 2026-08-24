@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from universal_agent import (
     Decision,
     DecisionType,
+    EnvSecretProvider,
     ProfileConfig,
     RuntimeHost,
     ScriptedModelAdapter,
@@ -105,6 +106,7 @@ def build_host(
         profile=profile.to_profile(),
         model=ScriptedModelAdapter(decisions),
         domain=KubernetesRemediationDomain(backend, backend),
+        secret_provider=EnvSecretProvider({"OPENAI_API_KEY": "example-secret"}),
     )
 
 
@@ -185,10 +187,14 @@ async def main() -> None:
         events = await second.service.list_events(SessionId(session_id))
         profile_items = profiles.body["profiles"]
         assert isinstance(profile_items, list)
+        secret_statuses = ",".join(
+            f"{secret.name}:{secret.status}" for secret in first.service.config().secrets
+        )
 
         print(f"profile={profile_path}")
         print(f"store_backend={profile.runtime.store.backend.value}")
         print(f"secret_ref_count={len(first.service.config().secrets)}")
+        print(f"secret_statuses={secret_statuses}")
         print(f"domain={second.domain_identity.name}@{second.domain_identity.version}")
         print(f"profile_count={len(profile_items)}")
         print(f"ready={ready.body['ready']}")
