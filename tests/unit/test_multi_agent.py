@@ -94,6 +94,28 @@ class SlowExecutor:
         )
 
 
+class LifecycleRecordingExecutor:
+    def __init__(
+        self,
+        registry: AgentRegistry,
+        agent_id: AgentId,
+        statuses: list[AgentInstanceStatus],
+    ) -> None:
+        self.registry = registry
+        self.agent_id = agent_id
+        self.statuses = statuses
+
+    async def execute_agent_task(self, request: AgentTaskRequest) -> AgentTaskResult:
+        self.statuses.append(self.registry.instance(self.agent_id).status)
+        await asyncio.sleep(0)
+        return AgentTaskResult(
+            task_id=request.task_id,
+            status=AgentTaskResultStatus.COMPLETED,
+            result=immutable_json({"observed_status": self.statuses[-1].value}),
+            reason="lifecycle observed",
+        )
+
+
 def output() -> AgentExpectedOutput:
     return AgentExpectedOutput("security_report")
 
@@ -246,6 +268,16 @@ def test_agent_registry_filters_eligible_instances_by_constraints() -> None:
     assert [item.agent_id for item in eligible] == [AgentId("agent-1")]
 
 
+def test_agent_registry_updates_instance_status() -> None:
+    registry = AgentRegistry((profile(),), (instance(),))
+
+    updated = registry.update_instance_status(AgentId("agent-1"), AgentInstanceStatus.DRAINING)
+
+    assert updated.status is AgentInstanceStatus.DRAINING
+    assert registry.instance(AgentId("agent-1")).status is AgentInstanceStatus.DRAINING
+    assert registry.eligible_instances(request()) == ()
+
+
 @pytest.mark.asyncio
 async def test_agent_orchestrator_delegates_to_eligible_executor() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
@@ -257,6 +289,23 @@ async def test_agent_orchestrator_delegates_to_eligible_executor() -> None:
     assert result.status is AgentTaskResultStatus.COMPLETED
     assert result.result["risk_level"] == "medium"
     assert executor.requests[0].goal == "Audit deployment security"
+    assert registry.instance(AgentId("agent-1")).status is AgentInstanceStatus.READY
+
+
+@pytest.mark.asyncio
+async def test_agent_orchestrator_marks_instance_busy_during_execution() -> None:
+    registry = AgentRegistry((profile(),), (instance(),))
+    statuses: list[AgentInstanceStatus] = []
+    orchestrator = AgentOrchestrator(
+        registry,
+        {AgentId("agent-1"): LifecycleRecordingExecutor(registry, AgentId("agent-1"), statuses)},
+    )
+
+    result = await orchestrator.delegate(request())
+
+    assert result.status is AgentTaskResultStatus.COMPLETED
+    assert statuses == [AgentInstanceStatus.BUSY]
+    assert registry.instance(AgentId("agent-1")).status is AgentInstanceStatus.READY
 
 
 @pytest.mark.asyncio
@@ -335,6 +384,18 @@ async def test_agent_orchestrator_enforces_duration_limit() -> None:
     assert result.status is AgentTaskResultStatus.FAILED
     assert result.error_code is ErrorCode.TIMEOUT
     assert result.reason == "agent task exceeded max_duration_seconds=0.001"
+    assert registry.instance(AgentId("agent-1")).status is AgentInstanceStatus.READY
+
+
+@pytest.mark.asyncio
+async def test_agent_orchestrator_restores_instance_after_executor_failure() -> None:
+    registry = AgentRegistry((profile(),), (instance(),))
+    orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): RaisingExecutor()})
+
+    with pytest.raises(RuntimeError, match="executor unavailable"):
+        await orchestrator.delegate(request())
+
+    assert registry.instance(AgentId("agent-1")).status is AgentInstanceStatus.READY
 
 
 def test_rejected_agent_task_result_uses_policy_denied_by_default() -> None:
@@ -386,6 +447,37 @@ async def test_agent_orchestrator_delegates_many_ready_tasks_in_parallel() -> No
         AgentTaskId("agent-task-b"),
     ]
     assert events.index("start:b") < events.index("finish:a")
+
+
+@pytest.mark.asyncio
+async def test_agent_orchestrator_delegates_many_rejects_busy_instance_reuse() -> None:
+    events: list[str] = []
+    registry = AgentRegistry((profile(),), (instance(),))
+    orchestrator = AgentOrchestrator(
+        registry,
+        {
+            AgentId("agent-1"): StatusExecutor(
+                AgentTaskResultStatus.COMPLETED,
+                events,
+                "shared",
+            )
+        },
+    )
+
+    result = await orchestrator.delegate_many(
+        (
+            AgentDelegationSpec(batch_request("agent-task-a"), agent_id=AgentId("agent-1")),
+            AgentDelegationSpec(batch_request("agent-task-b"), agent_id=AgentId("agent-1")),
+        )
+    )
+
+    assert result.status is AgentDelegationBatchStatus.PARTIAL
+    assert result.results[0].status is AgentTaskResultStatus.COMPLETED
+    assert result.results[1].status is AgentTaskResultStatus.REJECTED
+    assert result.results[1].error_code is ErrorCode.INVALID_STATE
+    assert result.results[1].reason == "agent instance is not ready: agent-1"
+    assert registry.instance(AgentId("agent-1")).status is AgentInstanceStatus.READY
+    assert events == ["start:shared", "finish:shared"]
 
 
 @pytest.mark.asyncio

@@ -334,10 +334,11 @@ event-sourcing models or production migration systems.
   Agent-to-Agent contract with explicit constraints, expected output, Evidence IDs and result status;
   `AgentRegistry` distinguishes Profile templates from running Agent instances and filters eligible
   instances by read-only, allowed-profile and permission constraints; `AgentOrchestrator` delegates
-  only through registered executors and enforces parent child-count and duration limits. It can also
-  execute a dependency-aware batch, running ready child tasks concurrently while rejecting downstream
-  tasks whose dependencies fail. `RuntimeAgentExecutor` adapts a target `RuntimeAPI` without creating
-  a second Agent loop or bypassing the target Runtime's policy/evaluation path.
+  only through registered executors, marks instances busy while they run, and enforces parent
+  child-count and duration limits. It can also execute a dependency-aware batch, running ready child
+  tasks concurrently while rejecting downstream tasks whose dependencies fail. `RuntimeAgentExecutor`
+  adapts a target `RuntimeAPI` without creating a second Agent loop or bypassing the target Runtime's
+  policy/evaluation path.
   `AgentConflictResolver` resolves structured action proposals by policy, read-only constraints,
   side effect, risk and explicit priority, and requires review for equal-rank conflicts instead of
   using last-result-wins. `AgentResultMerger` then combines child
@@ -377,8 +378,8 @@ The design roadmap now separates semantic runtime maturity from productization:
 - P3.6-P3.7: Operations and Evaluation — OpenTelemetry, metrics, audit, cost tracking, runtime
   doctor, evaluation suites, quality gates, replay, and deterministic test mode.
 - P4: Multi-Agent foundation — structured Agent Task / Result contracts, Agent Profile vs Instance
-  registry, delegation limits, dependency-aware batch delegation, conflict resolution,
-  result/evidence merge, merge evaluation, and a RuntimeAPI executor adapter.
+  registry, lifecycle status transitions, delegation limits, dependency-aware batch delegation,
+  conflict resolution, result/evidence merge, merge evaluation, and a RuntimeAPI executor adapter.
 - P5: Read-only TUI/Web application views for runtime, session, evidence, world, domain and settings inspection.
 - P6: Distributed Runtime foundations — typed local Scheduler, Work Queue, Worker Registry, Worker Lease, capability-aware Worker handler
   execution, scheduled Goal execution, current Task resume, leased lock, Runtime Snapshot, Health Report, Coordinator, Heartbeat, retry, cancellation and lease expiry primitives.
@@ -435,6 +436,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p4_multi_agent_contract.py
 .venv/bin/python examples/p4_multi_agent_batch_delegation.py
 .venv/bin/python examples/p4_multi_agent_timeout.py
+.venv/bin/python examples/p4_multi_agent_lifecycle.py
 .venv/bin/python examples/p4_multi_agent_conflict_resolution.py
 .venv/bin/python examples/p4_multi_agent_result_merge.py
 .venv/bin/python examples/p4_multi_agent_evaluation.py

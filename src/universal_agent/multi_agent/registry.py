@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import NewType
 
@@ -129,6 +129,16 @@ class AgentRegistry:
             raise AgentInstanceNotRegisteredError(
                 f"agent instance not registered: {agent_id}"
             ) from exc
+
+    def update_instance_status(
+        self,
+        agent_id: AgentId,
+        status: AgentInstanceStatus,
+    ) -> AgentInstanceRecord:
+        instance = self.instance(agent_id)
+        updated = replace(instance, status=status)
+        self._instances[agent_id] = updated
+        return updated
 
     def all_profiles(self) -> tuple[AgentProfileRecord, ...]:
         return tuple(sorted(self._profiles.values(), key=lambda item: item.identity))

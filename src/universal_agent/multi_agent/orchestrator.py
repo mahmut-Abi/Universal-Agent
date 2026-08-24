@@ -106,7 +106,7 @@ class AgentOrchestrator:
                 f"agent executor not registered: {instance.agent_id}"
             )
         self._reserve_child_slot(request)
-        return await _execute_agent_task(executor, request)
+        return await self._execute_on_instance(instance, executor, request)
 
     async def delegate_many(
         self,
@@ -174,6 +174,18 @@ class AgentOrchestrator:
                 reason=f"agent executor failed: {type(exc).__name__}: {exc}",
                 error_code=ErrorCode.UNKNOWN_EXECUTION,
             )
+
+    async def _execute_on_instance(
+        self,
+        instance: AgentInstanceRecord,
+        executor: AgentExecutor,
+        request: AgentTaskRequest,
+    ) -> AgentTaskResult:
+        self._registry.update_instance_status(instance.agent_id, AgentInstanceStatus.BUSY)
+        try:
+            return await _execute_agent_task(executor, request)
+        finally:
+            self._registry.update_instance_status(instance.agent_id, AgentInstanceStatus.READY)
 
     def _select_instance(
         self,
