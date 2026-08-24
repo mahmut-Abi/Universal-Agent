@@ -1193,6 +1193,11 @@ async def test_cli_session_diagnostics_renders_evidence_and_world_facts() -> Non
     assert world["session_id"] == session_id
     assert evidence["evidence"] == diagnostics["evidence"]
     assert world["world_facts"] == diagnostics["world_facts"]
+    history_items = world["world_fact_histories"]
+    healthy_history = next(item for item in history_items if item["claim"] == "healthy")
+    assert healthy_history["conflicting"] is False
+    assert healthy_history["current"]["value"] is True
+    assert len(healthy_history["candidates"]) == 1
     assert world["world_entities"] == diagnostics["world_entities"]
     assert world["world_relations"] == diagnostics["world_relations"]
     assert evidence_claims["healthy"]["value"] is True

@@ -1209,6 +1209,10 @@ async def test_runtime_service_builds_session_explorer_projection() -> None:
         relation="owns",
     )
     assert world.session_id == run.result.session_id
+    histories = {item.claim: item for item in world.world_fact_histories}
+    assert histories["healthy"].conflicting is False
+    assert histories["healthy"].current.value is True
+    assert len(histories["healthy"].candidates) == 1
     assert world.neighborhood is not None
     assert world.neighborhood.root is not None
     assert world.neighborhood.root.entity_id == "deployment/example"

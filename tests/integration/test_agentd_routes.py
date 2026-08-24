@@ -790,6 +790,18 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
     assert world_claims["healthy"]["value"] is True
     assert evidence.body["evidence"] == evidence_items
     assert world.body["world_facts"] == world_items
+    history_items = world.body["world_fact_histories"]
+    assert isinstance(history_items, list)
+    healthy_history = next(
+        item for item in history_items if isinstance(item, dict) and item.get("claim") == "healthy"
+    )
+    assert healthy_history["conflicting"] is False
+    current_history = healthy_history["current"]
+    candidates = healthy_history["candidates"]
+    assert isinstance(current_history, dict)
+    assert isinstance(candidates, list)
+    assert current_history["value"] is True
+    assert len(candidates) == 1
     assert world.body["world_entities"] == diagnostics.body["world_entities"]
     assert world.body["world_relations"] == diagnostics.body["world_relations"]
     world_entities = diagnostics.body["world_entities"]

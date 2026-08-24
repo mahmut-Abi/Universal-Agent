@@ -93,6 +93,8 @@ from universal_agent.world import (
     InMemoryWorldModel,
     WorldEntity,
     WorldFact,
+    WorldFactEvidence,
+    WorldFactHistory,
     WorldNeighborhood,
     WorldRelation,
     WorldSnapshot,
@@ -308,6 +310,24 @@ class WorldFactView:
 
 
 @dataclass(frozen=True, slots=True)
+class WorldFactEvidenceView:
+    evidence_id: str
+    value: JsonValue
+    confidence: float
+    observed_at: datetime
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
+class WorldFactHistoryView:
+    subject: str
+    claim: str
+    current: WorldFactView
+    candidates: tuple[WorldFactEvidenceView, ...]
+    conflicting: bool
+
+
+@dataclass(frozen=True, slots=True)
 class WorldEntityView:
     entity_id: str
     kind: str
@@ -336,6 +356,7 @@ class WorldNeighborhoodView:
 class SessionWorldView:
     session_id: SessionId
     world_facts: tuple[WorldFactView, ...]
+    world_fact_histories: tuple[WorldFactHistoryView, ...]
     world_entities: tuple[WorldEntityView, ...]
     world_relations: tuple[WorldRelationView, ...]
     neighborhood: WorldNeighborhoodView | None = None
@@ -355,6 +376,7 @@ class SessionExplorerView:
     world_facts: tuple[WorldFactView, ...]
     world_entities: tuple[WorldEntityView, ...] = ()
     world_relations: tuple[WorldRelationView, ...] = ()
+    world_fact_histories: tuple[WorldFactHistoryView, ...] = ()
 
 
 class RuntimeService:
@@ -1132,9 +1154,13 @@ class RuntimeService:
 
     async def session_explorer(self, session_id: SessionId) -> SessionExplorerView:
         diagnostics = await self._runtime_api.get_session_diagnostics(session_id)
-        world_facts, world_entities, world_relations = self._world_projection_views(
-            session_id,
-            diagnostics.evidence,
+        (
+            world_facts,
+            world_fact_histories,
+            world_entities,
+            world_relations,
+        ) = _world_projection_views_from_snapshot(
+            self._world_snapshot(session_id, diagnostics.evidence)
         )
         return SessionExplorerView(
             diagnostics.session,
@@ -1142,6 +1168,7 @@ class RuntimeService:
             world_facts,
             world_entities,
             world_relations,
+            world_fact_histories,
         )
 
     async def session_world(
@@ -1155,9 +1182,12 @@ class RuntimeService:
             raise ValueError("world relation filter requires entity_id")
         diagnostics = await self._runtime_api.get_session_diagnostics(session_id)
         snapshot = self._world_snapshot(session_id, diagnostics.evidence)
-        world_facts, world_entities, world_relations = _world_projection_views_from_snapshot(
-            snapshot
-        )
+        (
+            world_facts,
+            world_fact_histories,
+            world_entities,
+            world_relations,
+        ) = _world_projection_views_from_snapshot(snapshot)
         neighborhood = (
             None
             if entity_id is None
@@ -1166,6 +1196,7 @@ class RuntimeService:
         return SessionWorldView(
             diagnostics.session.session_id,
             world_facts,
+            world_fact_histories,
             world_entities,
             world_relations,
             neighborhood,
@@ -1416,7 +1447,10 @@ class RuntimeService:
     ) -> tuple[
         tuple[WorldFactView, ...], tuple[WorldEntityView, ...], tuple[WorldRelationView, ...]
     ]:
-        return _world_projection_views_from_snapshot(self._world_snapshot(session_id, evidence))
+        world_facts, _, world_entities, world_relations = _world_projection_views_from_snapshot(
+            self._world_snapshot(session_id, evidence)
+        )
+        return world_facts, world_entities, world_relations
 
     def _world_snapshot(
         self,
@@ -1618,6 +1652,26 @@ def world_fact_view(fact: WorldFact) -> WorldFactView:
     )
 
 
+def world_fact_evidence_view(evidence: WorldFactEvidence) -> WorldFactEvidenceView:
+    return WorldFactEvidenceView(
+        str(evidence.evidence_id),
+        _copy_json_value(evidence.value),
+        evidence.confidence,
+        evidence.observed_at,
+        evidence.source,
+    )
+
+
+def world_fact_history_view(history: WorldFactHistory) -> WorldFactHistoryView:
+    return WorldFactHistoryView(
+        history.subject,
+        history.claim,
+        world_fact_view(history.current),
+        tuple(world_fact_evidence_view(item) for item in history.candidates),
+        history.conflicting,
+    )
+
+
 def world_entity_view(entity: WorldEntity) -> WorldEntityView:
     return WorldEntityView(
         str(entity.id),
@@ -1648,9 +1702,15 @@ def world_neighborhood_view(neighborhood: WorldNeighborhood) -> WorldNeighborhoo
 
 def _world_projection_views_from_snapshot(
     snapshot: WorldSnapshot,
-) -> tuple[tuple[WorldFactView, ...], tuple[WorldEntityView, ...], tuple[WorldRelationView, ...]]:
+) -> tuple[
+    tuple[WorldFactView, ...],
+    tuple[WorldFactHistoryView, ...],
+    tuple[WorldEntityView, ...],
+    tuple[WorldRelationView, ...],
+]:
     return (
         tuple(world_fact_view(item) for item in snapshot.facts),
+        tuple(world_fact_history_view(item) for item in snapshot.fact_histories),
         tuple(world_entity_view(item) for item in snapshot.entities),
         tuple(world_relation_view(item) for item in snapshot.relations),
     )

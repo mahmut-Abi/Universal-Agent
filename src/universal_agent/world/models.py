@@ -22,6 +22,24 @@ class WorldFact:
 
 
 @dataclass(frozen=True, slots=True)
+class WorldFactEvidence:
+    evidence_id: EvidenceId
+    value: JsonValue
+    confidence: float
+    observed_at: datetime
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
+class WorldFactHistory:
+    subject: str
+    claim: str
+    current: WorldFact
+    candidates: tuple[WorldFactEvidence, ...]
+    conflicting: bool
+
+
+@dataclass(frozen=True, slots=True)
 class WorldEntity:
     id: EntityId
     kind: str
@@ -50,6 +68,7 @@ class WorldNeighborhood:
 class WorldSnapshot:
     session_id: SessionId
     facts: tuple[WorldFact, ...] = ()
+    fact_histories: tuple[WorldFactHistory, ...] = ()
     entities: tuple[WorldEntity, ...] = ()
     relations: tuple[WorldRelation, ...] = ()
     captured_at: datetime = field(default_factory=utc_now)
@@ -78,6 +97,26 @@ class WorldSnapshot:
             fact
             for fact in self.facts
             if fact.subject == normalized and (not claims or fact.claim in claims)
+        )
+
+    def fact_history_for(self, subject: str, claim: str) -> WorldFactHistory | None:
+        for history in self.fact_histories:
+            if history.subject == subject and history.claim == claim:
+                return history
+        return None
+
+    def conflicting_facts(
+        self,
+        *,
+        subject: str | None = None,
+        claim: str | None = None,
+    ) -> tuple[WorldFactHistory, ...]:
+        return tuple(
+            history
+            for history in self.fact_histories
+            if history.conflicting
+            and (subject is None or history.subject == subject)
+            and (claim is None or history.claim == claim)
         )
 
     def relations_for(

@@ -82,6 +82,8 @@ from universal_agent.service import (
     StateEventRepairReport,
     ToolView,
     WorldEntityView,
+    WorldFactEvidenceView,
+    WorldFactHistoryView,
     WorldFactView,
     WorldNeighborhoodView,
     WorldRelationView,
@@ -1824,6 +1826,9 @@ def session_explorer_body(view: SessionExplorerView) -> JsonMapping:
             "session": dict(session_body(view.session)),
             "evidence": [evidence_body(item) for item in view.evidence],
             "world_facts": [world_fact_body(item) for item in view.world_facts],
+            "world_fact_histories": [
+                world_fact_history_body(item) for item in view.world_fact_histories
+            ],
             "world_entities": [world_entity_body(item) for item in view.world_entities],
             "world_relations": [world_relation_body(item) for item in view.world_relations],
         }
@@ -1844,6 +1849,9 @@ def session_world_body(view: SessionWorldView) -> JsonMapping:
         {
             "session_id": str(view.session_id),
             "world_facts": [world_fact_body(item) for item in view.world_facts],
+            "world_fact_histories": [
+                world_fact_history_body(item) for item in view.world_fact_histories
+            ],
             "world_entities": [world_entity_body(item) for item in view.world_entities],
             "world_relations": [world_relation_body(item) for item in view.world_relations],
             "neighborhood": (
@@ -1877,6 +1885,26 @@ def world_fact_body(view: WorldFactView) -> dict[str, JsonValue]:
         "confidence": view.confidence,
         "observed_at": view.observed_at.isoformat(),
         "evidence_ids": list(view.evidence_ids),
+    }
+
+
+def world_fact_evidence_body(view: WorldFactEvidenceView) -> dict[str, JsonValue]:
+    return {
+        "evidence_id": view.evidence_id,
+        "value": _json_value(view.value),
+        "confidence": view.confidence,
+        "observed_at": view.observed_at.isoformat(),
+        "source": view.source,
+    }
+
+
+def world_fact_history_body(view: WorldFactHistoryView) -> dict[str, JsonValue]:
+    return {
+        "subject": view.subject,
+        "claim": view.claim,
+        "current": world_fact_body(view.current),
+        "candidates": [world_fact_evidence_body(item) for item in view.candidates],
+        "conflicting": view.conflicting,
     }
 
 

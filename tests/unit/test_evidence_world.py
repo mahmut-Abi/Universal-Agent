@@ -72,6 +72,16 @@ def test_world_model_preserves_conflicting_provenance() -> None:
         older_high_confidence.id,
         newer_low_confidence.id,
     )
+    history = snapshot.fact_history_for("deployment/example", "healthy")
+    assert history is not None
+    assert history.conflicting is True
+    assert history.current.value is False
+    assert [item.value for item in history.candidates] == [False, True]
+    assert [item.evidence_id for item in history.candidates] == [
+        older_high_confidence.id,
+        newer_low_confidence.id,
+    ]
+    assert snapshot.conflicting_facts() == (history,)
 
 
 def test_fact_world_updater_projects_entities_from_kind_evidence() -> None:

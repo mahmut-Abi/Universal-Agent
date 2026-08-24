@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+import json
+from collections.abc import Iterable, Mapping
 
 from universal_agent.core import JsonMapping, JsonValue, SessionId, immutable_json
 from universal_agent.evidence import Evidence, EvidenceId
@@ -8,6 +9,8 @@ from universal_agent.world.models import (
     EntityId,
     WorldEntity,
     WorldFact,
+    WorldFactEvidence,
+    WorldFactHistory,
     WorldModel,
     WorldRelation,
     WorldSnapshot,
@@ -120,6 +123,7 @@ class InMemoryWorldModel:
         claims: tuple[str, ...] = (),
     ) -> WorldSnapshot:
         facts: list[WorldFact] = []
+        histories: list[WorldFactHistory] = []
         for (stored_session, subject, claim), evidence in self._facts.items():
             if stored_session != session_id:
                 continue
@@ -127,28 +131,45 @@ class InMemoryWorldModel:
                 continue
             if claims and claim not in claims:
                 continue
-            current = max(
-                evidence,
-                key=lambda item: (item.confidence, item.observed_at, str(item.id)),
-            )
-            provenance = tuple(
-                item.id
-                for item in sorted(
+            ordered_evidence = tuple(
+                sorted(
                     evidence,
                     key=lambda item: (item.observed_at, str(item.id)),
                 )
             )
-            facts.append(
-                WorldFact(
+            current = max(
+                evidence,
+                key=lambda item: (item.confidence, item.observed_at, str(item.id)),
+            )
+            fact = WorldFact(
+                subject,
+                claim,
+                current.value,
+                current.confidence,
+                current.observed_at,
+                tuple(item.id for item in ordered_evidence),
+            )
+            facts.append(fact)
+            histories.append(
+                WorldFactHistory(
                     subject,
                     claim,
-                    current.value,
-                    current.confidence,
-                    current.observed_at,
-                    provenance,
+                    fact,
+                    tuple(
+                        WorldFactEvidence(
+                            item.id,
+                            item.value,
+                            item.confidence,
+                            item.observed_at,
+                            item.source,
+                        )
+                        for item in ordered_evidence
+                    ),
+                    _has_conflicting_values(ordered_evidence),
                 )
             )
         facts.sort(key=lambda item: (item.subject, item.claim))
+        histories.sort(key=lambda item: (item.subject, item.claim))
         entities = tuple(
             sorted(
                 (
@@ -170,7 +191,13 @@ class InMemoryWorldModel:
                 key=lambda item: (str(item.source), item.relation, str(item.target)),
             )
         )
-        return WorldSnapshot(session_id, tuple(facts), entities, relations)
+        return WorldSnapshot(
+            session_id,
+            facts=tuple(facts),
+            fact_histories=tuple(histories),
+            entities=entities,
+            relations=relations,
+        )
 
     def _refresh_entity_attributes(self, session_id: SessionId, entity_id: EntityId) -> None:
         key = (session_id, entity_id)
@@ -266,3 +293,19 @@ def _merge_json_mappings(*items: JsonMapping) -> JsonMapping:
 
 def _dedupe_evidence_ids(*items: EvidenceId) -> tuple[EvidenceId, ...]:
     return tuple(dict.fromkeys(items))
+
+
+def _has_conflicting_values(evidence: tuple[Evidence, ...]) -> bool:
+    return len({_value_key(item.value) for item in evidence}) > 1
+
+
+def _value_key(value: JsonValue) -> str:
+    return json.dumps(_plain_json_value(value), sort_keys=True, separators=(",", ":"))
+
+
+def _plain_json_value(value: JsonValue) -> JsonValue:
+    if isinstance(value, Mapping):
+        return {key: _plain_json_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_plain_json_value(item) for item in value]
+    return value
