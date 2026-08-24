@@ -202,8 +202,9 @@ event-sourcing models or production migration systems.
 - P0: typed state, model/tool boundaries, observations, events, and the asynchronous loop.
 - P1: Domain Manifest/Runtime, capability-first resolution, policy allow/confirm/deny, evaluator
   boundaries, context compilation, and a read-only Kubernetes Domain skeleton.
-- P2: session-local World Model, Evidence provenance, deterministic dynamic Task expansion, relevant
-  World/Evidence context, and bounded Recovery.
+- P2: session-local World Model, Evidence provenance, Fact/Entity/Relation projection from
+  Evidence, deterministic dynamic Task expansion, relevant World/Evidence context, and bounded
+  Recovery.
 - P2.1: a rebuildable session aggregate — `SessionSnapshot`, a serializable task graph, Evidence
   export/replace, World replay, non-recursive Recovery, and a Runtime split into action, transition,
   session, and processing collaborators.
@@ -377,6 +378,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p0_agent_loop.py
 .venv/bin/python examples/p1_kubernetes_domain.py
 .venv/bin/python examples/p2_evidence_recovery.py
+.venv/bin/python examples/p2_world_entities_relations.py
 .venv/bin/python examples/p3_memory.py
 .venv/bin/python examples/p3_multi_domain_evaluator_routing.py
 .venv/bin/python examples/p3_2_kubernetes_remediation.py

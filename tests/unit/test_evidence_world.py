@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 from universal_agent.core import (
+    JsonValue,
     Observation,
     ObservationStatus,
     SessionId,
@@ -10,10 +11,17 @@ from universal_agent.core import (
     new_observation_id,
 )
 from universal_agent.evidence import Evidence, EvidenceQuery, InMemoryEvidenceStore
-from universal_agent.world import InMemoryWorldModel
+from universal_agent.world import EntityId, FactWorldUpdater, InMemoryWorldModel
 
 
-def make_evidence(*, value: bool, confidence: float, seconds: int) -> Evidence:
+def make_evidence(
+    *,
+    value: JsonValue,
+    confidence: float,
+    seconds: int,
+    claim: str = "healthy",
+    subject: str = "deployment/example",
+) -> Evidence:
     task = Task("Inspect", ("healthy",))
     action_id = new_action_id()
     observation = Observation(
@@ -22,7 +30,7 @@ def make_evidence(*, value: bool, confidence: float, seconds: int) -> Evidence:
         task.id,
         "test",
         ObservationStatus.SUCCEEDED,
-        immutable_json({"healthy": value}),
+        immutable_json({claim: value}),
         datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=seconds),
     )
     return Evidence(
@@ -30,8 +38,8 @@ def make_evidence(*, value: bool, confidence: float, seconds: int) -> Evidence:
         task.id,
         action_id,
         observation.id,
-        "deployment/example",
-        "healthy",
+        subject,
+        claim,
         value,
         observation.source,
         confidence,
@@ -64,3 +72,67 @@ def test_world_model_preserves_conflicting_provenance() -> None:
         older_high_confidence.id,
         newer_low_confidence.id,
     )
+
+
+def test_fact_world_updater_projects_entities_from_kind_evidence() -> None:
+    model = InMemoryWorldModel()
+    updater = FactWorldUpdater()
+    healthy = make_evidence(value=True, confidence=0.9, seconds=1)
+    kind = make_evidence(value="Deployment", confidence=0.9, seconds=2, claim="kind")
+
+    assert updater.apply(model, healthy)
+    assert updater.apply(model, kind)
+    snapshot = model.snapshot(SessionId("session-test"))
+
+    entity = snapshot.entity_for(EntityId("deployment/example"))
+    assert entity is not None
+    assert entity.kind == "Deployment"
+    assert entity.attributes["healthy"] is True
+    assert entity.evidence_ids == (kind.id,)
+
+
+def test_entity_kind_uses_current_fact_when_kind_evidence_conflicts() -> None:
+    model = InMemoryWorldModel()
+    updater = FactWorldUpdater()
+    low_confidence_kind = make_evidence(
+        value="ReplicaSet",
+        confidence=0.4,
+        seconds=1,
+        claim="kind",
+    )
+    high_confidence_kind = make_evidence(
+        value="Deployment",
+        confidence=0.9,
+        seconds=2,
+        claim="kind",
+    )
+
+    assert updater.apply(model, high_confidence_kind)
+    assert updater.apply(model, low_confidence_kind)
+    snapshot = model.snapshot(SessionId("session-test"))
+
+    entity = snapshot.entity_for("deployment/example")
+    assert entity is not None
+    assert entity.kind == "Deployment"
+    assert entity.evidence_ids == (high_confidence_kind.id, low_confidence_kind.id)
+
+
+def test_fact_world_updater_projects_relations_from_relation_evidence() -> None:
+    model = InMemoryWorldModel()
+    updater = FactWorldUpdater()
+    relation = make_evidence(
+        value=["pod/example-1", "pod/example-2"],
+        confidence=0.9,
+        seconds=1,
+        claim="relation:owns",
+    )
+
+    assert updater.apply(model, relation)
+    assert not updater.apply(model, relation)
+    snapshot = model.snapshot(SessionId("session-test"))
+
+    assert [item.target for item in snapshot.relations_for(source="deployment/example")] == [
+        EntityId("pod/example-1"),
+        EntityId("pod/example-2"),
+    ]
+    assert snapshot.relations_for(relation="owns")[0].evidence_ids == (relation.id,)

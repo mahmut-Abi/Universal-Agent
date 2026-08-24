@@ -26,6 +26,7 @@ class WorldEntity:
     id: EntityId
     kind: str
     attributes: JsonMapping = field(default_factory=immutable_json)
+    evidence_ids: tuple[EvidenceId, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +51,30 @@ class WorldSnapshot:
                 return fact.value
         return None
 
+    def entity_for(self, entity_id: EntityId | str) -> WorldEntity | None:
+        normalized = EntityId(str(entity_id))
+        for entity in self.entities:
+            if entity.id == normalized:
+                return entity
+        return None
+
+    def relations_for(
+        self,
+        *,
+        source: EntityId | str | None = None,
+        relation: str | None = None,
+        target: EntityId | str | None = None,
+    ) -> tuple[WorldRelation, ...]:
+        normalized_source = None if source is None else EntityId(str(source))
+        normalized_target = None if target is None else EntityId(str(target))
+        return tuple(
+            item
+            for item in self.relations
+            if (normalized_source is None or item.source == normalized_source)
+            and (relation is None or item.relation == relation)
+            and (normalized_target is None or item.target == normalized_target)
+        )
+
 
 class WorldUpdater(Protocol):
     @property
@@ -60,6 +85,10 @@ class WorldUpdater(Protocol):
 
 class WorldModel(Protocol):
     def apply_fact(self, evidence: Evidence) -> bool: ...
+
+    def apply_entity(self, session_id: SessionId, entity: WorldEntity) -> bool: ...
+
+    def apply_relation(self, session_id: SessionId, relation: WorldRelation) -> bool: ...
 
     def forget(self, session_id: SessionId) -> None: ...
 
