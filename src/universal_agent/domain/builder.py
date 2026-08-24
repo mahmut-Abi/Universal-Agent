@@ -7,7 +7,11 @@ from universal_agent.capability import CapabilityRegistry, CapabilityResolver
 from universal_agent.context import DomainContextProvider
 from universal_agent.coordination import ResourceLockRegistry, ResourceVersionRegistry
 from universal_agent.core import DomainIdentity
-from universal_agent.domain.runtime import ActiveDomain, DomainComposition
+from universal_agent.domain.runtime import (
+    ActionArgumentProvider,
+    ActiveDomain,
+    DomainComposition,
+)
 from universal_agent.evaluation import CriteriaEvaluator, EvaluatorRegistry
 from universal_agent.evidence import (
     Evidence,
@@ -71,6 +75,7 @@ class RuntimeComponents:
     context_providers: tuple[DomainContextProvider, ...]
     evidence_extractors: tuple[EvidenceExtractor, ...]
     task_expanders: tuple[TaskExpander, ...]
+    action_argument_providers: tuple[ActionArgumentProvider, ...]
     evaluator_names: tuple[str, ...]
     memory_scope: str | None
     memory_store: MemoryStore
@@ -111,6 +116,14 @@ class RuntimeComponents:
         if identity is None:
             return self.task_expanders
         return self.domain_composition.task_expanders_for(identity)
+
+    def action_argument_providers_for_domain(
+        self,
+        identity: DomainIdentity | None,
+    ) -> tuple[ActionArgumentProvider, ...]:
+        if identity is None:
+            return self.action_argument_providers
+        return self.domain_composition.action_argument_providers_for(identity)
 
 
 class RuntimeBuilder:
@@ -185,6 +198,7 @@ class RuntimeBuilder:
             context_providers=composition.context_providers(),
             evidence_extractors=composition.evidence_extractors(),
             task_expanders=composition.task_expanders(),
+            action_argument_providers=composition.action_argument_providers(),
             evaluator_names=composition.evaluator_names(),
             memory_scope=composition.scope,
             memory_store=memory_store,

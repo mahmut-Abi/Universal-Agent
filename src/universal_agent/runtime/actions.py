@@ -16,7 +16,9 @@ from universal_agent.coordination import (
 )
 from universal_agent.core import (
     ActionId,
+    CapabilityDefinition,
     Decision,
+    DomainIdentity,
     ErrorCode,
     JsonMapping,
     JsonValue,
@@ -27,9 +29,11 @@ from universal_agent.core import (
     PolicyEffect,
     SideEffect,
     ToolCall,
+    ToolDefinition,
+    immutable_json,
     new_action_id,
 )
-from universal_agent.domain import RuntimeComponents
+from universal_agent.domain import ActionArgumentContext, RuntimeComponents
 from universal_agent.observation import ObservationFactory
 from universal_agent.runtime.session import SessionRuntimeState
 from universal_agent.tools import ToolRuntime
@@ -96,6 +100,13 @@ class ActionExecutor:
         domain_version = (
             resolution.capability_domain.version if resolution.capability_domain else ""
         )
+        decision, enriched_argument_names = self._enrich_decision_arguments(
+            session,
+            decision,
+            capability,
+            tool.definition,
+            resolution.capability_domain,
+        )
         parameters_hash = _action_parameters_hash(decision)
         resource_key, resource_version = _resource_metadata(
             side_effect=tool.definition.side_effect,
@@ -126,6 +137,16 @@ class ActionExecutor:
             resource_key=resource_key,
             resource_version=resource_version,
         )
+        if enriched_argument_names:
+            await emit(
+                "ActionArgumentsEnriched",
+                pending.action_id,
+                {
+                    "capability": capability.name,
+                    "tool_name": tool.definition.name,
+                    "argument_names": enriched_argument_names,
+                },
+            )
         await emit(
             "CapabilityResolved",
             pending.action_id,
@@ -142,6 +163,43 @@ class ActionExecutor:
             },
         )
         return await self.execute(session, pending, emit, confirmed=False)
+
+    def _enrich_decision_arguments(
+        self,
+        session: SessionRuntimeState,
+        decision: Decision,
+        capability: CapabilityDefinition,
+        tool: ToolDefinition,
+        domain_identity: DomainIdentity | None,
+    ) -> tuple[Decision, tuple[str, ...]]:
+        providers = self.components.action_argument_providers_for_domain(domain_identity)
+        if not providers:
+            return decision, ()
+        arguments = dict(decision.arguments)
+        added: list[str] = []
+        for provider in providers:
+            if provider.capability_names and decision.capability not in provider.capability_names:
+                continue
+            contextual_decision = replace(decision, arguments=immutable_json(arguments))
+            provided = provider.provide(
+                ActionArgumentContext(
+                    session.state.session_id,
+                    session.state.goal,
+                    session.state.current_task,
+                    contextual_decision,
+                    capability,
+                    tool,
+                    session.world(),
+                )
+            )
+            for key, value in provided.items():
+                if key in arguments:
+                    continue
+                arguments[key] = value
+                added.append(key)
+        if not added:
+            return decision, ()
+        return replace(decision, arguments=immutable_json(arguments)), tuple(dict.fromkeys(added))
 
     async def execute(
         self,

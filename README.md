@@ -215,8 +215,9 @@ event-sourcing models or production migration systems.
 - P3.2: Kubernetes remediation — policy-gated `scale_workload`, deterministic confirmation,
   capability-scoped timeout recovery, dynamic remediation tasks, fresh health verification, and an
   optional `KubectlBackend` adapter for real `kubectl` inspection/mutation behind the existing
-  injected backend protocols plus explicit Profile/CLI opt-in. Mutation receipts never substitute
-  for verification evidence.
+  injected backend protocols plus explicit Profile/CLI opt-in. A Domain-owned action argument
+  provider can enrich scale mutations with observed `current_replicas` and `resource_version`
+  guards before policy/tool execution. Mutation receipts never substitute for verification evidence.
 - P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
   projections, lightweight cursor-aware `SessionSummaryView` listing, cursor-aware `EventReader`,
   `RuntimeSessionBatch` / `RuntimeEventBatch`, action idempotency metadata (`idempotency_key`,

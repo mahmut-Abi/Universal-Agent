@@ -36,6 +36,7 @@ class RemediationBackend:
         self.initial_inspection_timeout = initial_inspection_timeout
         self.inspect_calls: list[str] = []
         self.mutation_calls = 0
+        self.mutation_arguments: list[JsonMapping] = []
         self._scaled = False
         self._initial_timeout_used = False
 
@@ -56,6 +57,7 @@ class RemediationBackend:
                         "healthy": False,
                         "desired_replicas": 3,
                         "ready_replicas": 1,
+                        "resource_version": "rv-before",
                     }
                 )
             return immutable_json(
@@ -86,6 +88,7 @@ class RemediationBackend:
     async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         assert capability == "scale_workload"
         self.mutation_calls += 1
+        self.mutation_arguments.append(immutable_json(arguments))
         if self.mutation_timeout:
             raise TimeoutError("scale mutation timed out")
         if self.mutation_uncertain:
@@ -174,12 +177,16 @@ async def test_remediation_completes_only_after_fresh_verification() -> None:
     assert result.status is ExecutionStatus.COMPLETED
     assert backend.inspect_calls == ["inspect_workload", "inspect_pod", "inspect_workload"]
     assert backend.mutation_calls == 1
+    assert backend.mutation_arguments[0]["current_replicas"] == 3
+    assert backend.mutation_arguments[0]["resource_version"] == "rv-before"
     assert [node.key for node in snapshot.task_graph.nodes] == [
         "root",
         "diagnose-unhealthy-workload",
         "remediate-unhealthy-workload",
         "verify-remediation",
     ]
+    enriched = next(event for event in events.events if event.type == "ActionArgumentsEnriched")
+    assert enriched.data["argument_names"] == ("current_replicas", "resource_version")
     assert event_types[-1] == "GoalCompleted"
     assert "PolicyChecked" in event_types
 

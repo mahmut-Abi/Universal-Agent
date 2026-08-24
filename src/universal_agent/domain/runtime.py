@@ -10,10 +10,16 @@ from universal_agent.core import (
     AgentState,
     CapabilityDefinition,
     ContextFragment,
+    Decision,
     DomainIdentity,
     DomainManifest,
     DomainMetadata,
+    Goal,
+    JsonMapping,
     JsonValue,
+    SessionId,
+    Task,
+    ToolDefinition,
 )
 from universal_agent.evaluation import Evaluator
 from universal_agent.evidence import EvidenceExtractor
@@ -22,7 +28,28 @@ from universal_agent.policy import Policy
 from universal_agent.recovery import RecoveryRule, RecoveryStrategy
 from universal_agent.tasks import TaskExpander
 from universal_agent.tools import Tool
-from universal_agent.world import WorldUpdater
+from universal_agent.world import WorldSnapshot, WorldUpdater
+
+
+@dataclass(frozen=True, slots=True)
+class ActionArgumentContext:
+    session_id: SessionId
+    goal: Goal
+    task: Task
+    decision: Decision
+    capability: CapabilityDefinition
+    tool: ToolDefinition
+    world: WorldSnapshot
+
+
+class ActionArgumentProvider(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def capability_names(self) -> tuple[str, ...]: ...
+
+    def provide(self, context: ActionArgumentContext) -> JsonMapping: ...
 
 
 class DomainRuntime(Protocol):
@@ -62,6 +89,7 @@ class ActiveDomain:
     world_updaters: tuple[WorldUpdater, ...]
     task_expanders: tuple[TaskExpander, ...]
     recovery_rules: tuple[RecoveryRule, ...]
+    action_argument_providers: tuple[ActionArgumentProvider, ...]
     memories: tuple[MemoryRecord, ...]
 
     @property
@@ -144,6 +172,16 @@ class DomainComposition:
     def task_expanders_for(self, identity: DomainIdentity) -> tuple[TaskExpander, ...]:
         domain = self.domain_for(identity)
         return () if domain is None else domain.task_expanders
+
+    def action_argument_providers(self) -> tuple[ActionArgumentProvider, ...]:
+        return tuple(item for domain in self.domains for item in domain.action_argument_providers)
+
+    def action_argument_providers_for(
+        self,
+        identity: DomainIdentity,
+    ) -> tuple[ActionArgumentProvider, ...]:
+        domain = self.domain_for(identity)
+        return () if domain is None else domain.action_argument_providers
 
     def recovery_rules(self) -> tuple[RecoveryRule, ...]:
         return tuple(item for domain in self.domains for item in domain.recovery_rules)
@@ -248,6 +286,7 @@ class DomainLoader:
         updaters = domain.world_updaters()
         expanders = domain.task_expanders()
         recovery_rules = domain.recovery_rules()
+        action_argument_providers = _action_argument_providers(domain)
         memories = domain.memories()
         self._validate(
             manifest,
@@ -256,6 +295,7 @@ class DomainLoader:
             evaluators,
             expanders,
             recovery_rules,
+            action_argument_providers,
             memories,
         )
         return ActiveDomain(
@@ -269,6 +309,7 @@ class DomainLoader:
             updaters,
             expanders,
             recovery_rules,
+            action_argument_providers,
             memories,
         )
 
@@ -280,6 +321,7 @@ class DomainLoader:
         evaluators: tuple[Evaluator, ...],
         expanders: tuple[TaskExpander, ...],
         recovery_rules: tuple[RecoveryRule, ...],
+        action_argument_providers: tuple[ActionArgumentProvider, ...],
         memories: tuple[MemoryRecord, ...],
     ) -> None:
         if manifest.api_version != "agent.nantian.dev/v1alpha1" or manifest.kind != "Domain":
@@ -311,6 +353,14 @@ class DomainLoader:
                 names = ", ".join(sorted(unknown))
                 raise DomainValidationError(
                     f"task expander {expander.name} references unknown capabilities: {names}"
+                )
+        for provider in action_argument_providers:
+            unknown = set(provider.capability_names) - capability_names
+            if unknown:
+                names = ", ".join(sorted(unknown))
+                raise DomainValidationError(
+                    f"action argument provider {provider.name} references unknown "
+                    f"capabilities: {names}"
                 )
         for rule in recovery_rules:
             if (
@@ -349,3 +399,12 @@ class DomainLoader:
             )
         except (KeyError, TypeError) as exc:
             raise DomainValidationError("invalid domain manifest JSON") from exc
+
+
+def _action_argument_providers(domain: DomainRuntime) -> tuple[ActionArgumentProvider, ...]:
+    method = getattr(domain, "action_argument_providers", None)
+    if method is None:
+        return ()
+    if not callable(method):
+        raise DomainValidationError("domain action_argument_providers must be callable")
+    return tuple(cast(tuple[ActionArgumentProvider, ...], method()))

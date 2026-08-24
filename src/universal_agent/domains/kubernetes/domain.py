@@ -6,18 +6,21 @@ from universal_agent.core import (
     CapabilityCategory,
     CapabilityDefinition,
     ContextFragment,
+    Decision,
     DomainManifest,
     DomainMetadata,
     EvaluationContext,
     EvaluationResult,
     EvaluationStatus,
     JsonMapping,
+    JsonValue,
     ObservationStatus,
     PolicyEffect,
     RiskLevel,
     ToolDefinition,
     immutable_json,
 )
+from universal_agent.domain import ActionArgumentContext, ActionArgumentProvider
 from universal_agent.domains.kubernetes.backend import KubernetesBackend, KubernetesMutationBackend
 from universal_agent.domains.kubernetes.policy import KubernetesScalePolicy
 from universal_agent.domains.kubernetes.tools import KubernetesScaleTool
@@ -260,6 +263,28 @@ class KubernetesRemediationContextProvider:
         )
 
 
+class KubernetesScaleGuardArgumentProvider:
+    name = "kubernetes-scale-guard-arguments"
+    capability_names = ("scale_workload",)
+
+    def provide(self, context: ActionArgumentContext) -> JsonMapping:
+        subject = _decision_workload_subject(context.decision)
+        if subject is None:
+            return immutable_json()
+        additions: dict[str, JsonValue] = {}
+        if "current_replicas" not in context.decision.arguments:
+            desired = context.world.value_for("desired_replicas", subject=subject)
+            if isinstance(desired, int) and not isinstance(desired, bool) and desired >= 0:
+                additions["current_replicas"] = desired
+        if "resource_version" not in context.decision.arguments:
+            version = context.world.value_for("resource_version", subject=subject)
+            if isinstance(version, str) and version.strip():
+                additions["resource_version"] = version
+            elif isinstance(version, int) and not isinstance(version, bool):
+                additions["resource_version"] = version
+        return immutable_json(additions)
+
+
 class KubernetesRemediationDomain(KubernetesDomain):
     _capability_names = (*KubernetesDomain._inspection_capability_names, "scale_workload")
 
@@ -308,3 +333,18 @@ class KubernetesRemediationDomain(KubernetesDomain):
 
     def task_expanders(self) -> tuple[TaskExpander, ...]:
         return (KubernetesRemediationExpander(),)
+
+    def action_argument_providers(self) -> tuple[ActionArgumentProvider, ...]:
+        return (KubernetesScaleGuardArgumentProvider(),)
+
+
+def _decision_workload_subject(decision: Decision) -> str | None:
+    if isinstance(decision.target, str) and decision.target.strip():
+        return decision.target.strip()
+    name = decision.arguments.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return None
+    normalized = name.strip()
+    if "/" in normalized:
+        return normalized
+    return f"deployment/{normalized}"

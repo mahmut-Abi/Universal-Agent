@@ -27,6 +27,8 @@ from universal_agent.domain.package import (
     verify_domain_package_registry,
 )
 from universal_agent.domain.runtime import (
+    ActionArgumentContext,
+    ActionArgumentProvider,
     ActiveDomain,
     DomainComposition,
     DomainLoader,
@@ -35,6 +37,8 @@ from universal_agent.domain.runtime import (
 )
 
 __all__ = [
+    "ActionArgumentContext",
+    "ActionArgumentProvider",
     "ActiveDomain",
     "AmbiguousDomainError",
     "AmbiguousDomainPackageError",

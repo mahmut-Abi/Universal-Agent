@@ -25,6 +25,7 @@ class FakeRemediationBackend:
         self.scaled = False
         self.inspect_calls: list[str] = []
         self.mutation_calls = 0
+        self.mutation_arguments: list[JsonMapping] = []
 
     async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.inspect_calls.append(capability)
@@ -36,6 +37,7 @@ class FakeRemediationBackend:
                         "healthy": False,
                         "desired_replicas": 3,
                         "ready_replicas": 1,
+                        "resource_version": "rv-before",
                     }
                 )
             return immutable_json(
@@ -59,6 +61,7 @@ class FakeRemediationBackend:
     async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         assert capability == "scale_workload"
         self.mutation_calls += 1
+        self.mutation_arguments.append(immutable_json(arguments))
         self.scaled = True
         return immutable_json(
             {
@@ -113,6 +116,11 @@ async def main() -> None:
     world = components.world_model.snapshot(result.session_id)
     print(f"status={result.status.value} iterations={result.iterations}")
     print(f"healthy={world.value_for('healthy')} mutation_calls={backend.mutation_calls}")
+    print(
+        "scale_guard="
+        f"current_replicas={backend.mutation_arguments[0]['current_replicas']} "
+        f"resource_version={backend.mutation_arguments[0]['resource_version']}"
+    )
     print("inspections=" + ",".join(backend.inspect_calls))
     print("events=" + " -> ".join(event.type for event in events.events))
 
