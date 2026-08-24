@@ -79,7 +79,8 @@ Evidence 会记录产生它的 Domain owner；Session hydrate / replay 会使用
 - CLI、pause/resume/cancel、cursor event reads、有限批次 SSE 输出；
 - memory/file/SQLite Session/Event Store；
 - metrics、Prometheus、cost、logs、traces、OTLP-shaped export、audit、doctor；
-- doctor 的 State/Event consistency 检查，可发现 orphan event 和终态 Session 缺失终态 Event；
+- doctor 的 State/Event consistency 检查，可发现 orphan event 和终态 Session 缺失终态
+  Event，并可为 completed / failed / cancelled 终态 Session 补回缺失终态 Event；
 - Evaluation Harness、suite config、quality gate、report persistence、execution replay；
 - deterministic runtime mode、golden replay、TUI、Web Console、Session Explorer。
 
@@ -231,7 +232,7 @@ pytest-asyncio event loop 弃用警告；这些警告目前不影响测试结果
 
 1. 修复上述 3 个 Ruff format 文件；
 2. 为 File/SQLite queue、lock、worker registry 增加跨进程竞争与崩溃恢复测试；
-3. 为 State/Event consistency 增加故障注入和自动恢复验证；
+3. 为 State/Event consistency 增加跨 Store 崩溃注入、outbox 和自动恢复验证；
 4. 对 `EcosystemRegistry` 增加路径逃逸、manifest tampering、checksum/signature policy 测试。
 
 ### P1：完善运行时一致性

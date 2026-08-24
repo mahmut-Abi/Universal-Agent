@@ -897,6 +897,45 @@ async def test_runtime_service_repairs_missing_terminal_event_history() -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_service_repairs_missing_failed_terminal_event_history() -> None:
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    api, _, events = build_api_with_stores(components, [finish()])
+    service = RuntimeService(runtime_api=api, components=components)
+
+    await service.run_goal(*goal_task())
+    events.events = [event for event in events.events if event.type != "GoalFailed"]
+
+    repair = await service.repair_state_event_consistency(confirmed=True)
+    after = await service.doctor()
+
+    assert repair.status == "repaired"
+    assert [item.event.type for item in repair.repairs] == ["GoalFailed"]
+    assert repair.repairs[0].event.data["error_code"] == "invalid_state"
+    assert after.status == "ok"
+
+
+@pytest.mark.asyncio
+async def test_runtime_service_repairs_missing_cancelled_terminal_event_history() -> None:
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    api, _, events = build_api_with_stores(components, [wait()])
+    service = RuntimeService(runtime_api=api, components=components)
+
+    waiting = await service.run_goal(*goal_task())
+    await service.cancel_session(waiting.result.session_id, reason="fault injection cancel")
+    events.events = [event for event in events.events if event.type != "GoalCancelled"]
+
+    repair = await service.repair_state_event_consistency(confirmed=True)
+    after = await service.doctor()
+
+    assert repair.status == "repaired"
+    assert [item.event.type for item in repair.repairs] == ["GoalCancelled"]
+    assert repair.repairs[0].event.data["termination_reason"] == "fault injection cancel"
+    assert after.status == "ok"
+
+
+@pytest.mark.asyncio
 async def test_runtime_service_blocks_state_event_repair_when_orphan_events_exist() -> None:
     active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
     components = RuntimeBuilder().build(active)
