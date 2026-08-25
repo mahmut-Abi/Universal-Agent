@@ -18,6 +18,8 @@ from universal_agent.service import (
     PolicyView,
     ProfileView,
     ReadyView,
+    RuntimeConfigDomainView,
+    RuntimeSecretRefView,
     RuntimeService,
     SessionExplorerView,
     ToolView,
@@ -87,6 +89,10 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
     lines.extend(_distributed_runtime_lines(snapshot))
     lines.extend(("", "Multi-Agent", _rule()))
     lines.extend(_multi_agent_lines(snapshot.multi_agent))
+    lines.extend(("", "Configured Domains", _rule()))
+    lines.extend(_configured_domain_lines(snapshot.config.domains))
+    lines.extend(("", "Runtime Secrets", _rule()))
+    lines.extend(_runtime_secret_lines(snapshot.config.secrets))
     lines.extend(("", "Active Domains", _rule()))
     lines.extend(_domain_lines(snapshot.domains))
     lines.extend(("", "Domain Packages", _rule()))
@@ -250,6 +256,42 @@ def _state_event_commit_text(snapshot: TuiSnapshot) -> str:
         return "unknown"
     status = "enabled" if supported and shared_store else "split"
     return f"{status}/{strategy}"
+
+
+def _configured_domain_lines(domains: tuple[RuntimeConfigDomainView, ...]) -> list[str]:
+    if not domains:
+        return ["- none"]
+    return [
+        (
+            f"- {'*' if domain.primary else ' '} {domain.name}@{domain.version}"
+            f" backend={domain.backend or 'default'}"
+            f" settings={_value_text(domain.settings) if domain.settings else 'none'}"
+        )
+        for domain in domains
+    ]
+
+
+def _runtime_secret_lines(secrets: tuple[RuntimeSecretRefView, ...]) -> list[str]:
+    if not secrets:
+        return ["- none"]
+    return [
+        (
+            f"- {secret.name}"
+            f" source={secret.source}"
+            f" key={secret.key}"
+            f" required={'yes' if secret.required else 'no'}"
+            f" status={_secret_status_text(secret.available, secret.status)}"
+        )
+        for secret in secrets
+    ]
+
+
+def _secret_status_text(available: bool | None, status: str | None) -> str:
+    if status is not None:
+        return status
+    if available is None:
+        return "unknown"
+    return "available" if available else "missing"
 
 
 def _domain_lines(domains: tuple[DomainView, ...]) -> list[str]:

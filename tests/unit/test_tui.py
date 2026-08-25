@@ -46,6 +46,7 @@ from universal_agent.service import (
     ReadyView,
     RuntimeConfigDomainView,
     RuntimeConfigView,
+    RuntimeSecretRefView,
     SessionExplorerView,
     ToolView,
     WorldEntityView,
@@ -93,7 +94,31 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
             distributed_workers_path=None,
             max_iterations=20,
             max_recovery_steps=8,
-            domains=(RuntimeConfigDomainView("kubernetes", "0.2.0", True),),
+            domains=(
+                RuntimeConfigDomainView(
+                    "kubernetes",
+                    "0.2.0",
+                    True,
+                    "kubernetes_api",
+                    MappingProxyType(
+                        {
+                            "api_server": "https://cluster.example.test",
+                            "default_namespace": "prod",
+                            "bearer_token_secret": "<redacted>",
+                        }
+                    ),
+                ),
+            ),
+            secrets=(
+                RuntimeSecretRefView(
+                    "kubernetes_api_token",
+                    "env",
+                    "KUBERNETES_API_TOKEN",
+                    True,
+                    True,
+                    "available",
+                ),
+            ),
         ),
         domains=(
             DomainView(
@@ -342,6 +367,13 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
     assert "Distributed Runtime" in rendered
     assert "- not configured" in rendered
     assert "Multi-Agent" in rendered
+    assert "Configured Domains" in rendered
+    assert "backend=kubernetes_api" in rendered
+    assert '"api_server": "https://cluster.example.test"' in rendered
+    assert '"bearer_token_secret": "<redacted>"' in rendered
+    assert "Runtime Secrets" in rendered
+    assert "kubernetes_api_token source=env key=KUBERNETES_API_TOKEN" in rendered
+    assert "status=available" in rendered
     assert "kubernetes@0.2.0" in rendered
     assert "Domain Packages" in rendered
     assert "kubernetes@0.2.0 capabilities=inspect_workload" in rendered

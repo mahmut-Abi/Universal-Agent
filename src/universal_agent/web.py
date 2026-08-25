@@ -531,6 +531,7 @@ def render_web_settings(snapshot: WebConsoleSnapshot) -> str:
             _operational_diagnostics(snapshot),
             _runtime_settings(snapshot),
             _configured_domains(snapshot),
+            _runtime_secrets(snapshot),
             _environment(snapshot),
             "</main>",
             "</body>",
@@ -1419,16 +1420,41 @@ def _configured_domains(snapshot: WebConsoleSnapshot) -> str:
                 f"<td>{_html(domain.name)}</td>",
                 f"<td>{_html(domain.version)}</td>",
                 f"<td>{'yes' if domain.primary else 'no'}</td>",
+                f"<td>{_html(domain.backend or 'default')}</td>",
+                f"<td>{_html(_value_text(domain.settings) if domain.settings else 'none')}</td>",
                 "</tr>",
             )
         )
         for domain in snapshot.config.domains
     ]
     if not rows:
-        rows.append('<tr><td colspan="3">No configured domains</td></tr>')
+        rows.append('<tr><td colspan="5">No configured domains</td></tr>')
     return _section(
         "Configured Domains",
-        _table(("Domain", "Version", "Primary"), tuple(rows)),
+        _table(("Domain", "Version", "Primary", "Backend", "Settings"), tuple(rows)),
+    )
+
+
+def _runtime_secrets(snapshot: WebConsoleSnapshot) -> str:
+    rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(secret.name)}</td>",
+                f"<td>{_html(secret.source)}</td>",
+                f"<td>{_html(secret.key)}</td>",
+                f"<td>{'yes' if secret.required else 'no'}</td>",
+                f"<td>{_html(_secret_status_text(secret.available, secret.status))}</td>",
+                "</tr>",
+            )
+        )
+        for secret in snapshot.config.secrets
+    ]
+    if not rows:
+        rows.append('<tr><td colspan="5">No runtime secrets</td></tr>')
+    return _section(
+        "Runtime Secrets",
+        _table(("Name", "Source", "Key", "Required", "Status"), tuple(rows)),
     )
 
 
@@ -2414,6 +2440,14 @@ def _value_text(value: object) -> str:
     if isinstance(value, list):
         return json.dumps(value, sort_keys=True)
     return str(value)
+
+
+def _secret_status_text(available: bool | None, status: str | None) -> str:
+    if status is not None:
+        return status
+    if available is None:
+        return "unknown"
+    return "available" if available else "missing"
 
 
 def _html(value: object) -> str:

@@ -51,6 +51,7 @@ from universal_agent.service import (
     ReadyView,
     RuntimeConfigDomainView,
     RuntimeConfigView,
+    RuntimeSecretRefView,
     SessionExplorerView,
     ToolView,
     WorldEntityView,
@@ -115,7 +116,31 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
             distributed_workers_path=None,
             max_iterations=20,
             max_recovery_steps=8,
-            domains=(RuntimeConfigDomainView("kubernetes", "0.2.0", True),),
+            domains=(
+                RuntimeConfigDomainView(
+                    "kubernetes",
+                    "0.2.0",
+                    True,
+                    "kubernetes_api",
+                    MappingProxyType(
+                        {
+                            "api_server": "https://cluster.example.test",
+                            "default_namespace": "prod",
+                            "bearer_token_secret": "<redacted>",
+                        }
+                    ),
+                ),
+            ),
+            secrets=(
+                RuntimeSecretRefView(
+                    "kubernetes_api_token",
+                    "env",
+                    "KUBERNETES_API_TOKEN",
+                    True,
+                    True,
+                    "available",
+                ),
+            ),
         ),
         domains=(
             DomainView(
@@ -626,6 +651,13 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "Configured Domains" in settings
     assert "kubernetes" in settings
     assert "0.2.0" in settings
+    assert "kubernetes_api" in settings
+    assert "https://cluster.example.test" in settings
+    assert "&lt;redacted&gt;" in settings
+    assert "Runtime Secrets" in settings
+    assert "kubernetes_api_token" in settings
+    assert "KUBERNETES_API_TOKEN" in settings
+    assert "available" in settings
     assert "No environment settings" in settings
 
     degraded = replace(
