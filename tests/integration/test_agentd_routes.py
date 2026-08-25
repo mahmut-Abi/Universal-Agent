@@ -961,6 +961,7 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     console = await app.handle(
         HttpRequest("GET", f"/console?session_id={session_id}&event_limit=20")
     )
+    sessions_page = await app.handle(HttpRequest("GET", "/console/sessions?event_limit=20"))
     detail = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}?event_limit=20"))
     evidence_page = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/evidence"))
     world_page = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/world"))
@@ -1003,6 +1004,11 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert "kubernetes_inspect_workload" in console.text_body
     assert "ActionStarted" in console.text_body
     assert "capability=inspect_workload" in console.text_body
+    assert sessions_page.status_code == 200
+    assert sessions_page.text_body is not None
+    assert "Universal Agent Runtime Sessions" in sessions_page.text_body
+    assert "Verify workload health" in sessions_page.text_body
+    assert "Selected Session" in sessions_page.text_body
     assert detail.status_code == 200
     assert detail.headers["content-type"] == "text/html; charset=utf-8"
     assert detail.text_body is not None

@@ -106,6 +106,7 @@ from universal_agent.web import (
     render_web_evidence_explorer,
     render_web_profile_catalog,
     render_web_session_detail,
+    render_web_sessions,
     render_web_settings,
     render_web_world_model_explorer,
 )
@@ -282,6 +283,21 @@ class AgentdApp:
                     domain_name=domain.name,
                     domain_version=domain.version,
                 ),
+                content_type="text/html; charset=utf-8",
+            )
+        if path == "/console/sessions":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                snapshot = await build_web_console_snapshot(
+                    self._service,
+                    session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
+                    event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
+                )
+            except ValueError as exc:
+                return bad_request(str(exc))
+            return text_response(
+                render_web_sessions(snapshot),
                 content_type="text/html; charset=utf-8",
             )
         console_session_id, console_session_suffix = _console_session_route(path)

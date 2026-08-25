@@ -53,6 +53,7 @@ from universal_agent.web import (
     render_web_evidence_explorer,
     render_web_profile_catalog,
     render_web_session_detail,
+    render_web_sessions,
     render_web_settings,
     render_web_world_model_explorer,
 )
@@ -323,6 +324,16 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "ActionStarted" in rendered
     assert "capability=inspect_workload" in rendered
     assert "allow:allow-read" in rendered
+
+    sessions_page = render_web_sessions(snapshot)
+
+    assert "Universal Agent Runtime Sessions" in sessions_page
+    assert "Sessions" in sessions_page
+    assert "sessions=1 active=0 waiting=0" in sessions_page
+    assert "Verify &lt;script&gt;alert(1)&lt;/script&gt;" in sessions_page
+    assert "Selected Session" in sessions_page
+    assert "Recent Events" in sessions_page
+    assert "Audit" in sessions_page
 
     session_detail = render_web_session_detail(snapshot)
 

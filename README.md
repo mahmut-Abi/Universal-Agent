@@ -127,8 +127,9 @@ session/evidence/world fact inspection, dedicated `GET /v1/sessions/{id}/evidenc
 `GET /v1/sessions/{id}/world` explorer routes, and cursor session/event reads with `after` / `limit`
 query parameters. `GET /v1/sessions/{id}/events/stream`
 returns the same cursor batch as `text/event-stream` frames for SSE clients. `GET /console` returns a
-read-only HTML Web Console snapshot and `GET /console/sessions/{id}` returns a focused Session
-Detail page; `GET /console/sessions/{id}/evidence` and `/world` return focused Evidence and World
+read-only HTML Web Console snapshot, `GET /console/sessions` returns a focused Sessions list,
+and `GET /console/sessions/{id}` returns a focused Session Detail page;
+`GET /console/sessions/{id}/evidence` and `/world` return focused Evidence and World
 Model Explorer pages, `GET /console/domains/{name}/{version}` returns a read-only Domain
 Manager detail page, `GET /console/domains`, `/capabilities`, `/tools`, `/policies`,
 `/evaluators` and `/memory` return focused Runtime catalog pages, `GET /console/profiles`
@@ -284,7 +285,8 @@ event-sourcing models or production migration systems.
   produces a deterministic text view for CLI/operator use, including Profile/Capability/Tool/Policy/Evaluator/Memory
   catalogs plus selected-session Evidence and World Facts without touching Kernel internals.
 - Web Console foundation: `build_web_console_snapshot` consumes the shared console snapshot builder
-  and `render_web_console` / `render_web_session_detail` / `render_web_evidence_explorer` /
+  and `render_web_console` / `render_web_sessions` / `render_web_session_detail` /
+  `render_web_evidence_explorer` /
   `render_web_world_model_explorer` / `render_web_domain_detail` /
   `render_web_catalog` / `render_web_profile_catalog` / `render_web_settings` produce
   deterministic read-only HTML for `AgentdApp`, including

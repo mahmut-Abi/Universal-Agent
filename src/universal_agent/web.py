@@ -135,6 +135,40 @@ def render_web_session_detail(snapshot: WebConsoleSnapshot) -> str:
     )
 
 
+def render_web_sessions(snapshot: WebConsoleSnapshot) -> str:
+    title = "Universal Agent Runtime Sessions"
+    return "\n".join(
+        (
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f"<title>{_html(title)}</title>",
+            f"<style>{_stylesheet()}</style>",
+            "</head>",
+            "<body>",
+            '<main class="shell">',
+            _sessions_hero(snapshot),
+            '<section class="grid cards" aria-label="Session summary">',
+            _metric_card("Sessions", snapshot.metrics.session_count),
+            _metric_card("Active", snapshot.metrics.active_session_count),
+            _metric_card("Waiting", snapshot.metrics.waiting_session_count),
+            _metric_card("Completed", snapshot.metrics.completed_goal_count),
+            _metric_card("Failed", snapshot.metrics.failed_goal_count),
+            _metric_card("Cancelled", snapshot.metrics.cancelled_goal_count),
+            "</section>",
+            _sessions(snapshot.sessions),
+            _selected_session(snapshot.selected_session),
+            _events(snapshot.events),
+            _audit(snapshot.audit_records),
+            "</main>",
+            "</body>",
+            "</html>",
+        )
+    )
+
+
 def render_web_evidence_explorer(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Evidence Explorer"
     return "\n".join(
@@ -364,6 +398,7 @@ def _hero(snapshot: WebConsoleSnapshot) -> str:
             ),
             "</div>",
             '<div class="status">',
+            '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
@@ -395,6 +430,7 @@ def _settings_hero(snapshot: WebConsoleSnapshot) -> str:
             "</div>",
             '<div class="status">',
             '<a class="pill link" href="/console">Console</a>',
+            '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
@@ -420,6 +456,7 @@ def _domain_hero(snapshot: WebConsoleSnapshot, domain: DomainView | None) -> str
             "</div>",
             '<div class="status">',
             '<a class="pill link" href="/console">Console</a>',
+            '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
@@ -448,6 +485,7 @@ def _profile_hero(snapshot: WebConsoleSnapshot) -> str:
             "</div>",
             '<div class="status">',
             '<a class="pill link" href="/console">Console</a>',
+            '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
@@ -476,6 +514,7 @@ def _catalog_hero(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> str:
             "</div>",
             '<div class="status">',
             '<a class="pill link" href="/console">Console</a>',
+            '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
@@ -575,6 +614,35 @@ def _catalog_sections(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> 
     return (_memory(snapshot.memories), _domains(snapshot), _profiles(snapshot.profiles))
 
 
+def _sessions_hero(snapshot: WebConsoleSnapshot) -> str:
+    ready_class = "ok" if snapshot.ready.ready else "warn"
+    return "\n".join(
+        (
+            '<section class="hero">',
+            "<div>",
+            "<p>Universal Agent Runtime</p>",
+            "<h1>Sessions</h1>",
+            (
+                "<span>"
+                f"sessions={snapshot.metrics.session_count} "
+                f"active={snapshot.metrics.active_session_count} "
+                f"waiting={snapshot.metrics.waiting_session_count}"
+                "</span>"
+            ),
+            "</div>",
+            '<div class="status">',
+            '<a class="pill link" href="/console">Console</a>',
+            '<a class="pill link" href="/console/profiles">Profiles</a>',
+            '<a class="pill link" href="/console/evaluations">Evaluations</a>',
+            '<a class="pill link" href="/console/settings">Settings</a>',
+            f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
+            f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
+            "</div>",
+            "</section>",
+        )
+    )
+
+
 def _session_scoped_hero(snapshot: WebConsoleSnapshot, title: str) -> str:
     ready_class = "ok" if snapshot.ready.ready else "warn"
     selected = snapshot.selected_session
@@ -602,7 +670,10 @@ def _session_scoped_hero(snapshot: WebConsoleSnapshot, title: str) -> str:
 
 
 def _session_nav(session: SessionView | None) -> str:
-    links = ['<a class="pill link" href="/console">Console</a>']
+    links = [
+        '<a class="pill link" href="/console">Console</a>',
+        '<a class="pill link" href="/console/sessions">Sessions</a>',
+    ]
     if session is not None:
         session_id = _attr(session.session_id)
         links.extend(
@@ -1575,6 +1646,7 @@ __all__ = [
     "render_web_evidence_explorer",
     "render_web_profile_catalog",
     "render_web_session_detail",
+    "render_web_sessions",
     "render_web_settings",
     "render_web_world_model_explorer",
 ]
