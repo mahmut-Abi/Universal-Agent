@@ -153,6 +153,8 @@ from universal_agent.evaluation.dataset import (
 )
 from universal_agent.host import (
     DomainConfig,
+    ModelConfig,
+    ModelProvider,
     RuntimeConfig,
     RuntimeHost,
     RuntimeLimitsConfig,
@@ -160,6 +162,7 @@ from universal_agent.host import (
     SecretSource,
     StoreBackend,
     StoreConfig,
+    build_configured_model_adapter,
 )
 from universal_agent.model import (
     JsonHttpModelAdapter,
@@ -470,6 +473,8 @@ __all__ = [
     "LeaseId",
     "LeaseLostError",
     "ModelAdapter",
+    "ModelConfig",
+    "ModelProvider",
     "ModelUsage",
     "ModelUsageProvider",
     "MultiAgentEvaluationCheck",
@@ -572,6 +577,7 @@ __all__ = [
     "agent_result_merge_payload",
     "agent_task_request_payload",
     "agent_task_result_payload",
+    "build_configured_model_adapter",
     "build_distributed_health_report",
     "build_distributed_runtime_snapshot",
     "build_domain_package_manifest",

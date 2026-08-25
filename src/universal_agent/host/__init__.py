@@ -1,5 +1,7 @@
 from universal_agent.host.config import (
     DomainConfig,
+    ModelConfig,
+    ModelProvider,
     RuntimeConfig,
     RuntimeLimitsConfig,
     SecretRef,
@@ -7,10 +9,12 @@ from universal_agent.host.config import (
     StoreBackend,
     StoreConfig,
 )
-from universal_agent.host.runtime import RuntimeHost
+from universal_agent.host.runtime import RuntimeHost, build_configured_model_adapter
 
 __all__ = [
     "DomainConfig",
+    "ModelConfig",
+    "ModelProvider",
     "RuntimeConfig",
     "RuntimeHost",
     "RuntimeLimitsConfig",
@@ -18,4 +22,5 @@ __all__ = [
     "SecretSource",
     "StoreBackend",
     "StoreConfig",
+    "build_configured_model_adapter",
 ]

@@ -114,7 +114,7 @@ from universal_agent.world import (
 )
 
 if TYPE_CHECKING:
-    from universal_agent.host.config import DomainConfig, RuntimeConfig, SecretRef
+    from universal_agent.host.config import DomainConfig, ModelConfig, RuntimeConfig, SecretRef
 
 
 _DISTRIBUTED_SESSION_LOCK_TTL_SECONDS = 300.0
@@ -333,6 +333,16 @@ class RuntimeSecretRefView:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeModelConfigView:
+    provider: str = "scripted"
+    name: str = "scripted"
+    endpoint: str | None = None
+    api_key_secret: str | None = None
+    timeout_seconds: float = 30.0
+    headers: JsonMapping = field(default_factory=immutable_json)
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeConfigView:
     environment: JsonMapping
     store_backend: str
@@ -346,6 +356,7 @@ class RuntimeConfigView:
     max_iterations: int
     max_recovery_steps: int
     domains: tuple[RuntimeConfigDomainView, ...]
+    model: RuntimeModelConfigView = field(default_factory=RuntimeModelConfigView)
     secrets: tuple[RuntimeSecretRefView, ...] = ()
     distributed_terminal_retention_seconds: float | None = None
     state_event_commit_supported: bool | None = None
@@ -679,6 +690,7 @@ class RuntimeService:
             )
         return RuntimeConfigView(
             environment=redact_environment(self._config.environment),
+            model=runtime_model_config_view(self._config.model),
             secrets=runtime_secret_ref_views(
                 self._config.secrets,
                 self._secret_resolution,
@@ -1844,6 +1856,17 @@ def runtime_config_domain_views(
             ),
         )
         for index, identity in enumerate(identities)
+    )
+
+
+def runtime_model_config_view(model: ModelConfig) -> RuntimeModelConfigView:
+    return RuntimeModelConfigView(
+        model.provider.value,
+        model.name,
+        model.endpoint,
+        model.api_key_secret,
+        model.timeout_seconds,
+        redact_environment(model.headers),
     )
 
 

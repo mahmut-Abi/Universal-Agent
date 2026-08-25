@@ -10,6 +10,7 @@ from universal_agent import (
     DecisionType,
     DomainConfig,
     Goal,
+    ModelConfig,
     ProfileConfig,
     RuntimeConfig,
     RuntimeHost,
@@ -18,9 +19,21 @@ from universal_agent import (
     StoreConfig,
     SuccessCriterion,
     Task,
+    build_configured_model_adapter,
     immutable_json,
 )
-from universal_agent.core import ExecutionStatus, GoalStatus, JsonMapping, SessionId
+from universal_agent.core import (
+    CapabilityCategory,
+    CapabilitySummary,
+    DecisionContext,
+    ExecutionStatus,
+    GoalId,
+    GoalStatus,
+    JsonMapping,
+    RiskLevel,
+    SessionId,
+    TaskId,
+)
 from universal_agent.distributed import (
     DistributedLockOwnerId,
     WorkerId,
@@ -29,6 +42,50 @@ from universal_agent.distributed import (
 )
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.security import EnvSecretProvider
+
+
+class HostModelTransport:
+    def __init__(self) -> None:
+        self.headers: dict[str, str] = {}
+        self.payloads: list[JsonMapping] = []
+
+    async def post_json(
+        self,
+        url: str,
+        *,
+        headers: JsonMapping,
+        payload: JsonMapping,
+        timeout_seconds: float,
+    ) -> JsonMapping:
+        self.headers = {key: str(value) for key, value in headers.items()}
+        self.payloads.append(payload)
+        return immutable_json(
+            {
+                "decision": {"type": "finish", "reason": "host model completed"},
+                "usage": {"input_tokens": 5, "output_tokens": 2},
+            }
+        )
+
+
+def model_context() -> DecisionContext:
+    return DecisionContext(
+        session_id=SessionId("session-model"),
+        goal_id=GoalId("goal-model"),
+        goal_description="Verify model config",
+        task_id=TaskId("task-model"),
+        task_description="Ask configured model",
+        iteration=1,
+        satisfied_criteria=immutable_json(),
+        latest_observation=None,
+        capabilities=(
+            CapabilitySummary(
+                "inspect_workload",
+                "Inspect workload",
+                CapabilityCategory.OBSERVATION,
+                RiskLevel.LOW,
+            ),
+        ),
+    )
 
 
 class HostRemediationBackend:
@@ -115,6 +172,43 @@ def remediation_goal_task() -> tuple[Goal, Task]:
         ),
         Task("Inspect workload", ()),
     )
+
+
+@pytest.mark.asyncio
+async def test_runtime_host_builds_json_http_model_from_config_secret_ref() -> None:
+    transport = HostModelTransport()
+    config = RuntimeConfig(
+        secrets=(SecretRef.env("openai_api_key", "OPENAI_API_KEY"),),
+        model=ModelConfig.json_http(
+            name="runtime-decider",
+            endpoint="https://models.example.test/decide",
+            api_key_secret="openai_api_key",
+            timeout_seconds=4.5,
+            headers={"X-Agent-Runtime": "host-test"},
+        ),
+    )
+    adapter = build_configured_model_adapter(
+        config,
+        secret_provider=EnvSecretProvider({"OPENAI_API_KEY": "secret-value"}),
+        json_http_transport=transport,
+    )
+
+    decision = await adapter.decide(model_context())
+
+    assert decision.reason == "host model completed"
+    assert transport.headers["Authorization"] == "Bearer secret-value"
+    assert transport.headers["X-Agent-Runtime"] == "host-test"
+    assert transport.payloads[0]["model"] == "runtime-decider"
+    assert "secret-value" not in str(config)
+
+
+def test_runtime_host_builds_scripted_model_from_default_config() -> None:
+    adapter = build_configured_model_adapter(
+        RuntimeConfig(),
+        scripted_decisions=[Decision(DecisionType.FINISH, "scripted done")],
+    )
+
+    assert adapter is not None
 
 
 def configured_host(

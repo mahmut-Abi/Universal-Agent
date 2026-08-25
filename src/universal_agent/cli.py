@@ -167,7 +167,12 @@ from universal_agent.evaluation.scenario_config import (
     EvaluationSuiteConfig,
     load_evaluation_suite_config,
 )
-from universal_agent.host import DomainConfig, RuntimeConfig, RuntimeHost
+from universal_agent.host import (
+    DomainConfig,
+    RuntimeConfig,
+    RuntimeHost,
+    build_configured_model_adapter,
+)
 from universal_agent.model import ScriptedModelAdapter
 from universal_agent.profile import (
     AgentProfile,
@@ -281,13 +286,19 @@ def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
     backend = _configured_kubernetes_backend(
         profile.runtime.configured_domains() or (profile.domain,)
     )
+    secret_provider = EnvSecretProvider()
     host = RuntimeHost.from_profile(
         profile=profile,
-        model=ScriptedModelAdapter(_default_decisions()),
+        model=build_configured_model_adapter(
+            profile.runtime,
+            scripted_decisions=_default_decisions(),
+            secret_provider=secret_provider,
+        ),
         domain=KubernetesRemediationDomain(
             cast(KubernetesBackend, backend),
             cast(KubernetesMutationBackend, backend),
         ),
+        secret_provider=secret_provider,
     )
     return host.service
 

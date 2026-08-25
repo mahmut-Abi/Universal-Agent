@@ -6,6 +6,8 @@ import pytest
 
 from universal_agent import (
     DomainConfig,
+    ModelConfig,
+    ModelProvider,
     RuntimeConfig,
     RuntimeLimitsConfig,
     SecretRef,
@@ -96,6 +98,66 @@ def test_runtime_config_rejects_invalid_secret_refs() -> None:
                 SecretRef.env("api_key", "API_KEY_2"),
             )
         ).validate()
+
+
+def test_runtime_config_from_mapping_parses_json_http_model_config() -> None:
+    config = RuntimeConfig.from_mapping(
+        {
+            "secrets": {
+                "openai_api_key": {
+                    "source": "env",
+                    "key": "OPENAI_API_KEY",
+                    "required": True,
+                }
+            },
+            "model": {
+                "provider": "json_http",
+                "name": "runtime-decider",
+                "endpoint": "https://models.example.test/decide",
+                "api_key_secret": "openai_api_key",
+                "timeout_seconds": 4.5,
+                "headers": {"X-Agent-Runtime": "test"},
+            },
+        }
+    )
+
+    assert config.model == ModelConfig.json_http(
+        name="runtime-decider",
+        endpoint="https://models.example.test/decide",
+        api_key_secret="openai_api_key",
+        timeout_seconds=4.5,
+        headers={"X-Agent-Runtime": "test"},
+    )
+    assert config.model.provider is ModelProvider.JSON_HTTP
+
+
+def test_runtime_config_rejects_invalid_model_config() -> None:
+    with pytest.raises(ValueError, match="json_http model requires endpoint"):
+        RuntimeConfig.from_mapping({"model": {"provider": "json_http", "name": "runtime"}})
+
+    with pytest.raises(ValueError, match="model api_key_secret is not declared"):
+        RuntimeConfig.from_mapping(
+            {
+                "model": {
+                    "provider": "json_http",
+                    "name": "runtime",
+                    "endpoint": "https://models.example.test/decide",
+                    "api_key_secret": "missing",
+                }
+            }
+        )
+
+    with pytest.raises(ValueError, match=r"headers\.X-Test must be a string"):
+        RuntimeConfig.from_mapping(
+            {
+                "model": {
+                    "provider": "json_http",
+                    "name": "runtime",
+                    "endpoint": "https://models.example.test/decide",
+                    "headers": {"X-Test": 123},
+                }
+            }
+        )
 
 
 def test_runtime_config_from_mapping_parses_multi_domain_values() -> None:

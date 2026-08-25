@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Protocol
 
-from universal_agent.core import DomainIdentity
+from universal_agent.core import Decision, DomainIdentity
 from universal_agent.distributed import (
     DistributedRuntimeCoordinator,
     FileDistributedLockRegistry,
@@ -24,8 +25,14 @@ from universal_agent.domain import (
     RuntimeBuilder,
     RuntimeComponents,
 )
-from universal_agent.host.config import RuntimeConfig, StoreBackend
-from universal_agent.model import ModelAdapter
+from universal_agent.host.config import ModelProvider, RuntimeConfig, StoreBackend
+from universal_agent.model import (
+    JsonHttpModelAdapter,
+    JsonHttpModelTransport,
+    ModelAdapter,
+    ModelUsage,
+    ScriptedModelAdapter,
+)
 from universal_agent.persistence import FileRuntimeStore, SQLiteRuntimeStore
 from universal_agent.profile import AgentProfile
 from universal_agent.runtime import (
@@ -35,13 +42,68 @@ from universal_agent.runtime import (
     InMemoryEventSink,
     RuntimeAPI,
 )
-from universal_agent.security import SecretProvider, SecretResolutionReport, resolve_secret_refs
+from universal_agent.security import (
+    EnvSecretProvider,
+    SecretProvider,
+    SecretResolutionReport,
+    resolve_secret_refs,
+)
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, SessionStore
 
 
 class _EventStore(EventSink, EventReader, Protocol):
     pass
+
+
+def build_configured_model_adapter(
+    config: RuntimeConfig,
+    *,
+    scripted_decisions: Iterable[Decision] = (),
+    scripted_usage: Iterable[ModelUsage] = (),
+    secret_provider: SecretProvider | None = None,
+    json_http_transport: JsonHttpModelTransport | None = None,
+) -> ModelAdapter:
+    """Build a ModelAdapter from RuntimeConfig without exposing secret values.
+
+    RuntimeConfig stores only model metadata and optional secret reference names.
+    The actual secret value is resolved at the host boundary and passed directly
+    to the adapter; it is never written into config projections.
+    """
+
+    config.validate()
+    if config.model.provider is ModelProvider.SCRIPTED:
+        return ScriptedModelAdapter(scripted_decisions, usage=scripted_usage)
+    if config.model.provider is ModelProvider.JSON_HTTP:
+        assert config.model.endpoint is not None
+        return JsonHttpModelAdapter(
+            config.model.endpoint,
+            config.model.name,
+            provider=config.model.provider.value,
+            api_key=_configured_model_api_key(config, secret_provider),
+            extra_headers=_configured_model_headers(config),
+            timeout_seconds=config.model.timeout_seconds,
+            transport=json_http_transport,
+        )
+    raise ValueError(f"unsupported model provider: {config.model.provider}")
+
+
+def _configured_model_api_key(
+    config: RuntimeConfig,
+    provider: SecretProvider | None,
+) -> str | None:
+    secret_name = config.model.api_key_secret
+    if secret_name is None:
+        return None
+    active_provider = provider or EnvSecretProvider()
+    for secret in config.secrets:
+        if secret.name == secret_name:
+            return active_provider.get_secret(secret.key)
+    return None
+
+
+def _configured_model_headers(config: RuntimeConfig) -> dict[str, str]:
+    return {key: str(value) for key, value in config.model.headers.items()}
 
 
 @dataclass(frozen=True, slots=True)

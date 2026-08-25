@@ -19,6 +19,11 @@ class SecretSource(StrEnum):
     ENV = "env"
 
 
+class ModelProvider(StrEnum):
+    SCRIPTED = "scripted"
+    JSON_HTTP = "json_http"
+
+
 @dataclass(frozen=True, slots=True)
 class SecretRef:
     name: str
@@ -136,9 +141,78 @@ class DomainConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class ModelConfig:
+    provider: ModelProvider = ModelProvider.SCRIPTED
+    name: str = "scripted"
+    endpoint: str | None = None
+    api_key_secret: str | None = None
+    timeout_seconds: float = 30.0
+    headers: JsonMapping = field(default_factory=immutable_json)
+
+    @classmethod
+    def scripted(cls, name: str = "scripted") -> ModelConfig:
+        return cls(ModelProvider.SCRIPTED, name)
+
+    @classmethod
+    def json_http(
+        cls,
+        *,
+        name: str,
+        endpoint: str,
+        api_key_secret: str | None = None,
+        timeout_seconds: float = 30.0,
+        headers: Mapping[str, str] | None = None,
+    ) -> ModelConfig:
+        return cls(
+            ModelProvider.JSON_HTTP,
+            name,
+            endpoint,
+            api_key_secret,
+            timeout_seconds,
+            immutable_json(dict(headers or {})),
+        )
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, JsonValue]) -> ModelConfig:
+        config = cls(
+            provider=ModelProvider(
+                _string(values.get("provider", ModelProvider.SCRIPTED.value), "provider")
+            ),
+            name=_string(values.get("name", "scripted"), "name"),
+            endpoint=_optional_string(values.get("endpoint"), "endpoint"),
+            api_key_secret=_optional_string(values.get("api_key_secret"), "api_key_secret"),
+            timeout_seconds=_float(values.get("timeout_seconds", 30.0), "timeout_seconds"),
+            headers=immutable_json(_string_mapping(values.get("headers", {}), "headers")),
+        )
+        config.validate()
+        return config
+
+    def validate(self) -> None:
+        if not self.name.strip():
+            raise ValueError("model name must not be empty")
+        if self.timeout_seconds <= 0:
+            raise ValueError("model timeout_seconds must be positive")
+        _string_mapping(self.headers, "model headers")
+        if self.provider is ModelProvider.SCRIPTED:
+            if self.endpoint is not None:
+                raise ValueError("scripted model does not accept endpoint")
+            if self.api_key_secret is not None:
+                raise ValueError("scripted model does not accept api_key_secret")
+            return
+        if self.provider is ModelProvider.JSON_HTTP:
+            if self.endpoint is None or not self.endpoint.strip():
+                raise ValueError("json_http model requires endpoint")
+            if self.api_key_secret is not None and not self.api_key_secret.strip():
+                raise ValueError("model api_key_secret must not be empty")
+            return
+        raise ValueError(f"unsupported model provider: {self.provider}")
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeConfig:
     environment: JsonMapping = field(default_factory=immutable_json)
     secrets: tuple[SecretRef, ...] = ()
+    model: ModelConfig = field(default_factory=ModelConfig.scripted)
     store: StoreConfig = field(default_factory=StoreConfig.memory)
     distributed_queue: StoreConfig = field(default_factory=StoreConfig.memory)
     distributed_locks: StoreConfig = field(default_factory=StoreConfig.memory)
@@ -166,6 +240,7 @@ class RuntimeConfig:
         config = cls(
             environment=immutable_json(_object(values.get("environment", {}), "environment")),
             secrets=_secret_refs(values.get("secrets")),
+            model=ModelConfig.from_mapping(_object(values.get("model", {}), "model")),
             store=StoreConfig.from_mapping(_object(values.get("store", {}), "store")),
             distributed_queue=StoreConfig.from_mapping(
                 _object(values.get("distributed_queue", {}), "distributed_queue")
@@ -193,6 +268,11 @@ class RuntimeConfig:
         duplicate_secrets = _duplicates(tuple(secret.name for secret in self.secrets))
         if duplicate_secrets:
             raise ValueError("duplicate runtime secrets: " + ", ".join(duplicate_secrets))
+        self.model.validate()
+        if self.model.api_key_secret is not None and self.model.api_key_secret not in {
+            secret.name for secret in self.secrets
+        }:
+            raise ValueError(f"model api_key_secret is not declared: {self.model.api_key_secret}")
         self.store.validate()
         self.distributed_queue.validate()
         self.distributed_locks.validate()
@@ -296,6 +376,10 @@ def _int(value: JsonValue, field: str) -> int:
 def _optional_float(value: JsonValue, field: str) -> float | None:
     if value is None:
         return None
+    return _float(value, field)
+
+
+def _float(value: JsonValue, field: str) -> float:
     if isinstance(value, int | float) and not isinstance(value, bool):
         return float(value)
     raise ValueError(f"{field} must be a number")
@@ -311,3 +395,16 @@ def _list(value: JsonValue, field: str) -> list[JsonValue]:
     if isinstance(value, list):
         return value
     raise ValueError(f"{field} must be a list")
+
+
+def _string_mapping(
+    value: JsonValue | Mapping[str, JsonValue],
+    field: str,
+) -> Mapping[str, str]:
+    values = value if isinstance(value, Mapping) else _object(value, field)
+    result: dict[str, str] = {}
+    for key, item in values.items():
+        if not isinstance(item, str):
+            raise ValueError(f"{field}.{key} must be a string")
+        result[key] = item
+    return result

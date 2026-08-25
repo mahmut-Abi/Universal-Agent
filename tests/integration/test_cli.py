@@ -2367,6 +2367,7 @@ async def test_cli_config_show_exposes_runtime_configuration() -> None:
     assert status == 0
     assert payload == {
         "environment": {"environment": "staging"},
+        "model": {"provider": "scripted", "name": "scripted", "timeout_seconds": 30.0},
         "secrets": [],
         "store": {"backend": "memory", "path": None},
         "state_event_commit": {

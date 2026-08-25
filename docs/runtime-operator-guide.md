@@ -71,6 +71,31 @@ Kernel internals.
 Use `RuntimeService` when building new local adapters. Use `RuntimeAPI` when the
 caller needs in-process execution and session/event read models.
 
+
+## Runtime Configuration
+
+Profile runtime config can declare a model provider without storing credentials.
+The current built-in providers are `scripted` for deterministic local runs and
+`json_http` for dependency-free HTTP model bridges. JSON HTTP model config stores
+only endpoint/model metadata plus an optional `api_key_secret` reference; the
+secret value is resolved by `RuntimeHost` from the declared `secrets` block and
+is never returned by `config show` or `/v1/config`.
+
+```json
+{
+  "secrets": {
+    "openai_api_key": {"source": "env", "key": "OPENAI_API_KEY", "required": true}
+  },
+  "model": {
+    "provider": "json_http",
+    "name": "runtime-decider",
+    "endpoint": "https://model-bridge.example/decide",
+    "api_key_secret": "openai_api_key",
+    "timeout_seconds": 30
+  }
+}
+```
+
 ## Read-Only UI Surfaces
 
 - `agent tui` renders a deterministic text snapshot.

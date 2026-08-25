@@ -26,6 +26,7 @@ from universal_agent import (
     Goal,
     InMemoryEventSink,
     InMemoryStateStore,
+    ModelConfig,
     ModelUsage,
     ProfileConfig,
     RuntimeAPI,
@@ -267,6 +268,7 @@ def build_service(
     environment: JsonMapping | None = None,
     secrets: tuple[SecretRef, ...] = (),
     secret_resolution: SecretResolutionReport | None = None,
+    model_config: ModelConfig | None = None,
 ) -> tuple[RuntimeService, AgentdBackend]:
     backend = AgentdBackend()
     store = InMemoryStateStore()
@@ -288,6 +290,7 @@ def build_service(
     config = RuntimeConfig(
         environment=environment,
         secrets=secrets,
+        model=model_config or ModelConfig.scripted(),
         store=StoreConfig.memory(),
         limits=RuntimeLimitsConfig(max_iterations=12, max_recovery_steps=4),
         domain=DomainConfig("kubernetes", "0.2.0"),
@@ -501,6 +504,39 @@ async def test_agentd_config_route_exposes_secret_status_without_values() -> Non
 
 
 @pytest.mark.asyncio
+async def test_agentd_config_route_exposes_model_config_without_secret_values() -> None:
+    service, _ = build_service(
+        [],
+        secrets=(SecretRef.env("openai_api_key", "OPENAI_API_KEY"),),
+        secret_resolution=resolve_secret_refs(
+            (SecretRef.env("openai_api_key", "OPENAI_API_KEY"),),
+            provider=EnvSecretProvider({"OPENAI_API_KEY": "secret-value"}),
+        ),
+        model_config=ModelConfig.json_http(
+            name="runtime-decider",
+            endpoint="https://models.example.test/decide",
+            api_key_secret="openai_api_key",
+            timeout_seconds=4.5,
+            headers={"X-Agent-Runtime": "agentd-test"},
+        ),
+    )
+    app = AgentdApp(service)
+
+    config = await app.handle(HttpRequest("GET", "/v1/config"))
+
+    assert config.status_code == 200
+    assert config.body["model"] == {
+        "provider": "json_http",
+        "name": "runtime-decider",
+        "endpoint": "https://models.example.test/decide",
+        "api_key_secret": "openai_api_key",
+        "timeout_seconds": 4.5,
+        "headers": {"X-Agent-Runtime": "agentd-test"},
+    }
+    assert "secret-value" not in str(config.body)
+
+
+@pytest.mark.asyncio
 async def test_agentd_auth_policy_protects_non_public_routes() -> None:
     service, _ = build_service([])
     app = AgentdApp(
@@ -645,6 +681,7 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     assert config.status_code == 200
     assert config.body == {
         "environment": {"environment": "staging"},
+        "model": {"provider": "scripted", "name": "scripted", "timeout_seconds": 30.0},
         "secrets": [],
         "store": {"backend": "memory", "path": None},
         "state_event_commit": {

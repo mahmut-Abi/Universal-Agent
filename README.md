@@ -109,7 +109,8 @@ catalog views, plus a typed runtime configuration projection for HTTP and CLI ad
 access Kernel internals directly. `RuntimeHost` is the typed application assembly boundary for Runtime
 Configuration: it validates the configured Domain identity, resolves environment-backed secret
 references into non-value availability reports, builds memory or file-backed stores, applies runtime
-limits/environment, optionally binds an application-level Agent Profile, and exposes both
+limits/environment, optionally builds a configured model adapter from non-secret model metadata
+and secret-reference names, optionally binds an application-level Agent Profile, and exposes both
 `RuntimeAPI` and `RuntimeService` without teaching applications Kernel internals. See
 `examples/p3_5_runtime_api.py`, `examples/p3_5_runtime_service.py`,
 `examples/p3_5_runtime_config.py`, `examples/p3_5_cli_config.py`, and

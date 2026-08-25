@@ -11,7 +11,7 @@ from universal_agent import (
     EnvSecretProvider,
     ProfileConfig,
     RuntimeHost,
-    ScriptedModelAdapter,
+    build_configured_model_adapter,
     immutable_json,
 )
 from universal_agent.agentd import AgentdApp, HttpRequest
@@ -102,11 +102,17 @@ def build_host(
     backend: FakeConfiguredBackend,
     decisions: list[Decision],
 ) -> RuntimeHost:
+    secret_provider = EnvSecretProvider({"OPENAI_API_KEY": "example-secret"})
+    runtime_profile = profile.to_profile()
     return RuntimeHost.from_profile(
-        profile=profile.to_profile(),
-        model=ScriptedModelAdapter(decisions),
+        profile=runtime_profile,
+        model=build_configured_model_adapter(
+            runtime_profile.runtime,
+            scripted_decisions=decisions,
+            secret_provider=secret_provider,
+        ),
         domain=KubernetesRemediationDomain(backend, backend),
-        secret_provider=EnvSecretProvider({"OPENAI_API_KEY": "example-secret"}),
+        secret_provider=secret_provider,
     )
 
 

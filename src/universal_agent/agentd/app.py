@@ -84,6 +84,7 @@ from universal_agent.service import (
     RuntimeCostView,
     RuntimeLogRecordView,
     RuntimeMetricsView,
+    RuntimeModelConfigView,
     RuntimeSecretRefView,
     RuntimeService,
     RuntimeTraceSpanView,
@@ -1464,6 +1465,7 @@ def config_body(view: RuntimeConfigView) -> JsonMapping:
     return immutable_json(
         {
             "environment": _json_value(view.environment),
+            "model": _runtime_model_config_body(view.model),
             "store": {
                 "backend": view.store_backend,
                 "path": view.store_path,
@@ -1507,6 +1509,21 @@ def _runtime_secret_ref_body(view: RuntimeSecretRefView) -> dict[str, JsonValue]
         body["available"] = view.available
     if view.status is not None:
         body["status"] = view.status
+    return body
+
+
+def _runtime_model_config_body(view: RuntimeModelConfigView) -> dict[str, JsonValue]:
+    body: dict[str, JsonValue] = {
+        "provider": view.provider,
+        "name": view.name,
+        "timeout_seconds": view.timeout_seconds,
+    }
+    if view.endpoint is not None:
+        body["endpoint"] = view.endpoint
+    if view.api_key_secret is not None:
+        body["api_key_secret"] = view.api_key_secret
+    if view.headers:
+        body["headers"] = _json_value(view.headers)
     return body
 
 
