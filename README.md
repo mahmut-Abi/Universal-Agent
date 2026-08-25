@@ -93,6 +93,9 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
 - `list_events(session_id)` returns immutable event projections filtered to one session.
 - `stream_events(session_id, after_event_id=..., limit=...)` returns a cursor batch for CLI/Web/SSE
   consumers.
+- `state_event_commit()` reports whether the configured runtime path can commit session state and
+  runtime events through one store seam, including `file_journal` and `sqlite_transaction`
+  strategies.
 
 This remains usable in-process, while the standard-library HTTP bridge now wraps the same
 `AgentdApp` route adapter for local `agentd` hosting. SSE-formatted event batches now share the same
@@ -214,8 +217,10 @@ persistence adapters for P3.5 recovery tests and embedded deployments. They pers
 write-ahead commit journal for file-backed state/event commits, while `SQLiteRuntimeStore` commits
 the same state/event pair in one SQLite transaction. Session snapshots carry a store-managed
 version, and memory/file/SQLite session stores reject stale snapshot saves instead of allowing silent
-overwrites. These adapters are local persistence backends for `RuntimeHost` configuration, not
-event-sourcing models or production migration systems.
+overwrites. `RuntimeAPI.state_event_commit`, `RuntimeService.config`, CLI/agentd config output,
+TUI/Web settings and Doctor checks expose the active commit strategy so persistent deployments can
+detect accidental split state/event wiring. These adapters are local persistence backends for
+`RuntimeHost` configuration, not event-sourcing models or production migration systems.
 
 ## Current scope
 
@@ -461,6 +466,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_cli_event_stream.py
 .venv/bin/python examples/p3_5_cli_run.py
 .venv/bin/python examples/p3_6_cost_tracking.py
+.venv/bin/python examples/p3_6_state_event_commit.py
 .venv/bin/python examples/p3_6_secret_redaction.py
 .venv/bin/python examples/p3_6_structured_logs.py
 .venv/bin/python examples/p3_6_traces.py

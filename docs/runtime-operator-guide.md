@@ -95,6 +95,7 @@ Runtime operations are event-derived:
 - trace spans and OTLP-shaped export
 - audit records
 - doctor checks
+- state/event commit strategy checks for persistent store wiring
 - state/event consistency repair for terminal sessions missing terminal events
 
 Run:
@@ -102,9 +103,15 @@ Run:
 ```bash
 .venv/bin/python -m universal_agent.cli metrics
 .venv/bin/python -m universal_agent.cli metrics --format prometheus
+.venv/bin/python -m universal_agent.cli config show
 .venv/bin/python -m universal_agent.cli doctor
 .venv/bin/python -m universal_agent.cli repair state-events --dry-run
 ```
+
+`config show`, TUI/Web settings and `/v1/config` include `state_event_commit`
+metadata. For file and SQLite runtime stores, Doctor reports an error if the
+session store is not also the event reader/sink used for committed state/event
+writes.
 
 When local distributed coordination is configured, `doctor` also reports queue
 health, invalid session work references and terminal work backlog that should be

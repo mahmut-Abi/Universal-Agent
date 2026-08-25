@@ -62,6 +62,7 @@ Examples are organized by roadmap slice. Useful entry points:
 .venv/bin/python examples/p3_5_runtime_service.py
 .venv/bin/python examples/p3_5_agentd_routes.py
 .venv/bin/python examples/p3_5_cli_event_stream.py
+.venv/bin/python examples/p3_6_state_event_commit.py
 .venv/bin/python examples/p3_6_secret_redaction.py
 .venv/bin/python examples/p3_7_evaluation_runner.py
 .venv/bin/python examples/p4_multi_agent_contract.py
