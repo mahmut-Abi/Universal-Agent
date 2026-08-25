@@ -193,6 +193,7 @@ def package_registry() -> DomainPackageRegistry:
             knowledge=("kubernetes readiness",),
             evaluators=("workload-health",),
             context_providers=("kubernetes_context",),
+            resources=("resources/runbook.md",),
             dependencies=(DomainIdentity("observability", "1.0.0"),),
             required_tools=("kubernetes_api",),
             compatibility=DomainPackageCompatibility(
@@ -1544,6 +1545,7 @@ async def test_cli_exposes_domain_package_catalog_commands() -> None:
     assert package["version"] == "0.2.0"
     assert package["capability_names"] == ["inspect_workload", "scale_workload"]
     assert package["required_tools"] == ["kubernetes_api"]
+    assert package["resource_names"] == ["resources/runbook.md"]
     assert package["security"] == {"side_effects": "reversible"}
     assert filtered == listed
     assert shown == package
@@ -1556,10 +1558,11 @@ async def test_cli_exposes_domain_package_catalog_commands() -> None:
         for check in local_path_verification["checks"]
         if isinstance(check, dict) and check["passed"] is False
     }
-    assert local_path_verification["failed_check_count"] == 4
+    assert local_path_verification["failed_check_count"] == 5
     assert "package_root_exists:kubernetes@0.2.0" in local_path_failed
     assert "package_manifest_exists:kubernetes@0.2.0" in local_path_failed
     assert "package_manifest_matches_identity:kubernetes@0.2.0" in local_path_failed
+    assert "package_resources_exist:kubernetes@0.2.0" in local_path_failed
 
 
 @pytest.mark.asyncio
