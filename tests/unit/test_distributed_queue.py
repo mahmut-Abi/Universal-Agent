@@ -733,6 +733,42 @@ async def test_work_queue_worker_rejects_completion_after_lease_expiry() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("queue_kind", ("memory", "file", "sqlite"))
+async def test_work_queue_worker_reports_lease_lost_when_work_is_cancelled_in_flight(
+    tmp_path: Path,
+    queue_kind: str,
+) -> None:
+    queue = _queue_for_kind(queue_kind, tmp_path)
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    queued = queue.enqueue(kind="agent_session", available_at=now)
+
+    async def handler(item: WorkItem) -> WorkHandlerResult:
+        queue.cancel(
+            item.work_item_id,
+            reason="operator cancelled while handler was running",
+            now=now + timedelta(seconds=1),
+        )
+        await asyncio.sleep(0)
+        return WorkHandlerResult.completed("late success")
+
+    worker = WorkQueueWorker(
+        queue=queue,
+        worker_id=WorkerId("worker-a"),
+        handlers={"agent_session": handler},
+    )
+
+    result = await worker.run_once()
+    persisted = queue.get(queued.work_item_id)
+
+    assert result.status is WorkerRunStatus.LEASE_LOST
+    assert result.work_item is not None
+    assert result.work_item.status is WorkItemStatus.CANCELLED
+    assert persisted.status is WorkItemStatus.CANCELLED
+    assert persisted.last_error == "operator cancelled while handler was running"
+    assert result.reason.startswith("lease not found: lease-work-1-")
+
+
+@pytest.mark.asyncio
 async def test_work_queue_worker_retries_handler_failures_until_terminal() -> None:
     queue = InMemoryWorkQueue()
     queue.enqueue(kind="agent_session", max_attempts=2)
@@ -790,6 +826,16 @@ async def test_work_queue_worker_can_cancel_work() -> None:
     assert result.work_item is not None
     assert result.work_item.status is WorkItemStatus.CANCELLED
     assert result.reason == "session cancelled"
+
+
+def _queue_for_kind(queue_kind: str, tmp_path: Path) -> InMemoryWorkQueue:
+    if queue_kind == "memory":
+        return InMemoryWorkQueue()
+    if queue_kind == "file":
+        return FileWorkQueue(tmp_path / "work-queue.json")
+    if queue_kind == "sqlite":
+        return SQLiteWorkQueue(tmp_path / "work-queue.sqlite3")
+    raise AssertionError(f"unsupported queue kind: {queue_kind}")
 
 
 @pytest.mark.asyncio
