@@ -1951,14 +1951,9 @@ Example:
 ```python
 runtime = AgentRuntime(config)
 
-session = await runtime.create_session(
-    profile="production-ai-operator"
-)
+session = await runtime.create_session(profile="production-ai-operator")
 
-result = await runtime.submit_goal(
-    session.id,
-    goal
-)
+result = await runtime.submit_goal(session.id, goal)
 ```
 
 Public SDK types must be separated from internal implementation objects.
@@ -1973,26 +1968,19 @@ Conceptual interface:
 
 ```python
 class Domain:
-    def manifest(self):
-        ...
+    def manifest(self): ...
 
-    def ontology(self):
-        ...
+    def ontology(self): ...
 
-    def capabilities(self):
-        ...
+    def capabilities(self): ...
 
-    def tools(self):
-        ...
+    def tools(self): ...
 
-    def policies(self):
-        ...
+    def policies(self): ...
 
-    def evaluators(self):
-        ...
+    def evaluators(self): ...
 
-    def context_providers(self):
-        ...
+    def context_providers(self): ...
 ```
 
 The exact language-level API may evolve, but the semantic contract must remain stable.

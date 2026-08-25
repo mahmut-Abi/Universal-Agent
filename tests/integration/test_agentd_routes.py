@@ -802,9 +802,7 @@ async def test_agentd_multi_agent_route_exposes_optional_registry_projection() -
     delegation_tasks = json_array(response.body["delegation_tasks"])
     assert json_object(profiles[0])["permissions"] == ["read_only", "security_review"]
     assert json_object(instances[0])["agent_id"] == "agent-1"
-    assert delegation_tasks == [
-        {"task_id": "parent-task", "child_count": 1, "delegation_depth": 0}
-    ]
+    assert delegation_tasks == [{"task_id": "parent-task", "child_count": 1, "delegation_depth": 0}]
 
 
 @pytest.mark.asyncio

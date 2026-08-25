@@ -2115,9 +2115,7 @@ def multi_agent_body(view: MultiAgentView) -> JsonMapping:
                     "profile_name": instance.profile_name,
                     "profile_version": instance.profile_version,
                     "status": instance.status.value,
-                    "session_id": None
-                    if instance.session_id is None
-                    else str(instance.session_id),
+                    "session_id": None if instance.session_id is None else str(instance.session_id),
                     "endpoint": instance.endpoint,
                 }
                 for instance in view.instances
