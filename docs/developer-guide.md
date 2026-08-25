@@ -65,6 +65,7 @@ Examples are organized by roadmap slice. Useful entry points:
 .venv/bin/python examples/p3_6_secret_redaction.py
 .venv/bin/python examples/p3_7_evaluation_runner.py
 .venv/bin/python examples/p4_multi_agent_contract.py
+.venv/bin/python examples/p5_evaluation_console.py
 .venv/bin/python examples/p5_tui.py
 .venv/bin/python examples/p5_web_console.py
 .venv/bin/python examples/p6_distributed_worker.py

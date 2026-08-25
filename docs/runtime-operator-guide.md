@@ -78,6 +78,10 @@ caller needs in-process execution and session/event read models.
 - Focused Web pages exist for sessions, session detail, evidence, world model,
   domains, catalogs, profiles, runtime doctor checks, local distributed runtime
   coordination, evaluation reports and settings.
+- `agent eval console --report-dir <dir>` renders persisted evaluation reports
+  as deterministic HTML.
+- `agent eval console --report-dir <dir> --format text` renders the same
+  report projection for terminal and CI logs.
 
 These UI surfaces are inspection views. They do not mutate runtime state.
 

@@ -2934,6 +2934,7 @@ async def test_cli_eval_reports_lists_persisted_reports(tmp_path: Path) -> None:
     run_output = StringIO()
     reports_output = StringIO()
     console_output = StringIO()
+    text_console_output = StringIO()
 
     run_status = await run_cli(
         [
@@ -2960,8 +2961,14 @@ async def test_cli_eval_reports_lists_persisted_reports(tmp_path: Path) -> None:
         service=service,
         stdout=console_output,
     )
+    text_console_status = await run_cli(
+        ["eval", "console", "--report-dir", str(report_dir), "--format", "text"],
+        service=service,
+        stdout=text_console_output,
+    )
     payload = read_json(reports_output)
     console = console_output.getvalue()
+    text_console = text_console_output.getvalue()
     reports = payload["reports"]
     assert isinstance(reports, list)
     report = reports[0]
@@ -2970,6 +2977,7 @@ async def test_cli_eval_reports_lists_persisted_reports(tmp_path: Path) -> None:
     assert run_status == 0
     assert reports_status == 0
     assert console_status == 0
+    assert text_console_status == 0
     assert payload["report_dir"] == str(report_dir)
     assert payload["report_count"] == 1
     assert report["suite_name"] == "daily regression suite"
@@ -2984,6 +2992,11 @@ async def test_cli_eval_reports_lists_persisted_reports(tmp_path: Path) -> None:
     assert "daily regression suite" in console
     assert "healthy workload" in console
     assert "Quality Gate Checks" in console
+    assert "Universal Agent Evaluation Console" in text_console
+    expected_summary = "Summary: suites=1 scenarios=1 passed=1 failed=0 gate_failures=0 tokens=0"
+    assert expected_summary in text_console
+    assert "- daily regression suite status=pass scenarios=1 passed=1 failed=0" in text_console
+    assert "daily regression suite/healthy workload kind=regression" in text_console
     assert backend.inspect_calls == 1
 
 

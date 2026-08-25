@@ -31,9 +31,17 @@ async def main() -> None:
             stdout=output,
         )
         html = output.getvalue()
+        text_output = StringIO()
+        text_status = await run_cli(
+            ["eval", "console", "--report-dir", str(report_dir), "--format", "text"],
+            stdout=text_output,
+        )
+        text = text_output.getvalue()
 
     print(f"status={status}")
     print("\n".join(html.splitlines()[:20]))
+    print(f"text_status={text_status}")
+    print("\n".join(text.splitlines()[:12]))
 
 
 if __name__ == "__main__":

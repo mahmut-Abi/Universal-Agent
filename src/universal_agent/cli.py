@@ -116,6 +116,7 @@ from universal_agent.ecosystem import (
 from universal_agent.evaluation.console import (
     build_evaluation_console_snapshot,
     render_evaluation_console,
+    render_evaluation_console_text,
 )
 from universal_agent.evaluation.dataset import (
     EvaluationDataset,
@@ -613,6 +614,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     eval_console = eval_commands.add_parser("console")
     eval_console.add_argument("--report-dir", required=True)
+    eval_console.add_argument("--format", choices=("html", "text"), default="html")
 
     eval_datasets = eval_commands.add_parser("datasets")
     eval_datasets.add_argument("--dataset-dir", required=True)
@@ -1275,10 +1277,11 @@ async def _dispatch_eval(
         return
     if command == "console":
         report_dir = cast(str, args.report_dir)
-        _write_text(
-            out,
-            render_evaluation_console(build_evaluation_console_snapshot(report_dir)),
-        )
+        snapshot = build_evaluation_console_snapshot(report_dir)
+        if cast(str, args.format) == "text":
+            _write_text(out, render_evaluation_console_text(snapshot))
+            return
+        _write_text(out, render_evaluation_console(snapshot))
         return
     if command == "datasets":
         registry = _evaluation_dataset_registry(args)

@@ -172,7 +172,8 @@ deterministic golden replay recordings through the same suite selector. `agent e
 `agent eval run` and `agent eval replay` support `--suite-file` plus kind/tag subset filters, and
 all eval gate commands support `--fail-on-fail` to preserve JSON output while returning a non-zero
 process status. `agent eval console` renders a deterministic read-only HTML Evaluation Console from
-persisted reports. `agent tui` renders a read-only RuntimeService snapshot covering health,
+persisted reports, and `agent eval console --format text` renders the same persisted report
+projection for terminal/CI logs. `agent tui` renders a read-only RuntimeService snapshot covering health,
 readiness, metrics, catalogs, sessions, selected session details, recent events and audit
 records. The CLI does not access Kernel internals directly.
 
@@ -292,9 +293,9 @@ event-sourcing models or production migration systems.
   Replay recordings can be encoded as versioned JSON and saved through `FileReplayRecordingStore`
   for golden regression fixtures.
 - Evaluation Console foundation: `build_evaluation_console_snapshot` loads persisted evaluation
-  reports and `render_evaluation_console` produces deterministic read-only HTML for CLI/CI review
-  and the read-only agentd `/console/evaluations` route without coupling report visualization to
-  Kernel or RuntimeService internals.
+  reports, `render_evaluation_console` produces deterministic read-only HTML, and
+  `render_evaluation_console_text` produces a terminal-friendly report projection for CLI/CI logs
+  without coupling report visualization to Kernel or RuntimeService internals.
 - Session Explorer foundation: `RuntimeService.session_explorer` rebuilds read-only world facts from
   persisted Evidence through Domain world updaters and exposes combined diagnostics plus dedicated
   Evidence and World Model Explorer routes through agentd/CLI.
@@ -551,6 +552,7 @@ Python 3.12 or newer is required.
 .venv/bin/python -m universal_agent.cli eval list local-kubernetes --kind policy --tag kubernetes
 .venv/bin/python -m universal_agent.cli eval run local-kubernetes --kind regression --tag smoke --report-dir .tmp/eval-reports --fail-on-fail
 .venv/bin/python -m universal_agent.cli eval reports --report-dir .tmp/eval-reports
+.venv/bin/python -m universal_agent.cli eval console --report-dir .tmp/eval-reports --format text
 .venv/bin/python -m universal_agent.cli serve --port 8765 --evaluation-report-dir .tmp/eval-reports
 .venv/bin/python -m universal_agent.cli eval replay local-kubernetes --recording-dir .tmp/replay-recordings --kind regression --update
 .venv/bin/python -m universal_agent.cli eval recordings --recording-dir .tmp/replay-recordings

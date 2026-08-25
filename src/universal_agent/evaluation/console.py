@@ -61,6 +61,86 @@ def render_evaluation_console(snapshot: EvaluationConsoleSnapshot) -> str:
     )
 
 
+def render_evaluation_console_text(snapshot: EvaluationConsoleSnapshot) -> str:
+    """Render persisted evaluation reports as deterministic terminal text."""
+
+    lines = [
+        "Universal Agent Evaluation Console",
+        _rule(),
+        f"Report Dir: {snapshot.report_dir}",
+        (
+            "Summary: "
+            f"suites={len(snapshot.reports)} "
+            f"scenarios={_scenario_count(snapshot.reports)} "
+            f"passed={_passed_count(snapshot.reports)} "
+            f"failed={_failed_count(snapshot.reports)} "
+            f"gate_failures={_gate_failure_count(snapshot.reports)} "
+            f"tokens={_token_count(snapshot.reports)}"
+        ),
+        "",
+        "Evaluation Reports",
+        _rule(),
+    ]
+    lines.extend(_report_text_lines(snapshot.reports))
+    lines.extend(("", "Scenario Results", _rule()))
+    lines.extend(_scenario_text_lines(snapshot.reports))
+    lines.extend(("", "Quality Gate Checks", _rule()))
+    lines.extend(_gate_check_text_lines(snapshot.reports))
+    return "\n".join(lines) + "\n"
+
+
+def _report_text_lines(reports: tuple[EvaluationReportRecording, ...]) -> list[str]:
+    if not reports:
+        return ["- none"]
+    return [
+        (
+            f"- {report.suite_name}"
+            f" status={_pass_text(report.passed)}"
+            f" scenarios={report.summary.scenario_count}"
+            f" passed={report.summary.passed_count}"
+            f" failed={report.summary.failed_count}"
+            f" gate={_gate_text(report.gate)}"
+            f" failed_scenarios={_failed_scenario_text(report)}"
+            f" duration_ms={report.summary.execution_duration_ms}"
+            f" tokens={report.summary.model_total_token_count}"
+            f" cost_micros={report.summary.model_estimated_cost_micros}"
+        )
+        for report in reports
+    ]
+
+
+def _scenario_text_lines(reports: tuple[EvaluationReportRecording, ...]) -> list[str]:
+    rows = [
+        (
+            f"- {report.suite_name}/{scenario.scenario_name}"
+            f" kind={scenario.kind.value}"
+            f" tags={_tuple_text(scenario.tags)}"
+            f" status={_pass_text(scenario.passed)}"
+            f" result={_result_text(scenario)}"
+            f" checks={_checks_text(scenario.checks)}"
+            f" capabilities={_tuple_text(scenario.action_capabilities)}"
+            f" evidence={_tuple_text(scenario.evidence_claims)}"
+        )
+        for report in reports
+        for scenario in report.scenarios
+    ]
+    return rows or ["- none"]
+
+
+def _gate_check_text_lines(reports: tuple[EvaluationReportRecording, ...]) -> list[str]:
+    rows = [
+        (
+            f"- {report.suite_name}/{check.name}"
+            f" status={_pass_text(check.passed)}"
+            f" message={check.message}"
+        )
+        for report in reports
+        if report.gate is not None
+        for check in report.gate.checks
+    ]
+    return rows or ["- none"]
+
+
 def _hero(snapshot: EvaluationConsoleSnapshot) -> str:
     return "\n".join(
         (
@@ -282,6 +362,10 @@ def _pass_text(passed: bool) -> str:
     return "pass" if passed else "fail"
 
 
+def _rule() -> str:
+    return "-" * 72
+
+
 def _status_class(passed: bool) -> str:
     return "ok" if passed else "warn"
 
@@ -442,4 +526,5 @@ __all__ = [
     "EvaluationConsoleSnapshot",
     "build_evaluation_console_snapshot",
     "render_evaluation_console",
+    "render_evaluation_console_text",
 ]

@@ -7,6 +7,7 @@ from universal_agent.evaluation.console import (
     EvaluationConsoleSnapshot,
     build_evaluation_console_snapshot,
     render_evaluation_console,
+    render_evaluation_console_text,
 )
 from universal_agent.evaluation.harness import EvaluationScenarioKind
 from universal_agent.evaluation.recording import (
@@ -37,15 +38,41 @@ def test_evaluation_console_renders_and_escapes_report_snapshot() -> None:
     assert "Gate Failures" in rendered
 
 
+def test_evaluation_console_renders_terminal_text_snapshot() -> None:
+    report = evaluation_report("daily regression suite")
+    snapshot = EvaluationConsoleSnapshot("/tmp/reports", (report,))
+
+    rendered = render_evaluation_console_text(snapshot)
+
+    assert "Universal Agent Evaluation Console" in rendered
+    assert "Report Dir: /tmp/reports" in rendered
+    assert "Summary: suites=1 scenarios=1 passed=0 failed=1 gate_failures=1 tokens=123" in rendered
+    assert "Evaluation Reports" in rendered
+    assert "- daily regression suite status=fail scenarios=1 passed=0 failed=1" in rendered
+    assert "Scenario Results" in rendered
+    assert (
+        "- daily regression suite/healthy <workload> kind=regression tags=smoke, kubernetes"
+        in rendered
+    )
+    assert "checks=failed: evidence" in rendered
+    assert "capabilities=inspect_workload evidence=healthy" in rendered
+    assert "Quality Gate Checks" in rendered
+    assert "- daily regression suite/min_pass_rate status=fail" in rendered
+
+
 def test_evaluation_console_handles_empty_report_directory(tmp_path: Path) -> None:
     snapshot = build_evaluation_console_snapshot(tmp_path / "missing")
 
     rendered = render_evaluation_console(snapshot)
+    text_rendered = render_evaluation_console_text(snapshot)
 
     assert snapshot.reports == ()
     assert "No evaluation reports" in rendered
     assert "No scenarios" in rendered
     assert "No gate checks" in rendered
+    expected_summary = "Summary: suites=0 scenarios=0 passed=0 failed=0 gate_failures=0 tokens=0"
+    assert expected_summary in text_rendered
+    assert text_rendered.count("- none") == 3
 
 
 def test_evaluation_console_snapshot_loads_file_report_store(tmp_path: Path) -> None:
