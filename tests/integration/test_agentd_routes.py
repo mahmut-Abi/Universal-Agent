@@ -310,6 +310,7 @@ def package_registry() -> DomainPackageRegistry:
             knowledge=("kubernetes readiness",),
             evaluators=("workload-health",),
             context_providers=("kubernetes_context",),
+            resources=("resources/runbook.md", "schemas/workload.json"),
             dependencies=(DomainIdentity("observability", "1.0.0"),),
             required_tools=("kubernetes_api",),
             compatibility=DomainPackageCompatibility(
@@ -669,6 +670,7 @@ async def test_agentd_domain_package_routes_expose_read_only_catalog() -> None:
     assert package["entrypoint"] == "universal_agent.domains.kubernetes:KubernetesRemediationDomain"
     assert package["capability_names"] == ["inspect_workload", "scale_workload"]
     assert package["dependencies"] == [{"name": "observability", "version": "1.0.0"}]
+    assert package["resource_names"] == ["resources/runbook.md", "schemas/workload.json"]
     assert package["compatibility"] == {
         "runtime_api": ">=0.1,<1",
         "domain_api": "agent.nantian.dev/v1alpha1",

@@ -1937,6 +1937,7 @@ def domain_package_body(view: DomainPackageView) -> dict[str, JsonValue]:
         "evaluator_names": list(view.evaluator_names),
         "context_provider_names": list(view.context_provider_names),
         "prompt_names": list(view.prompt_names),
+        "resource_names": list(view.resource_names),
         "dependencies": [
             {"name": dependency.name, "version": dependency.version}
             for dependency in view.dependencies

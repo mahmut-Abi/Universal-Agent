@@ -650,6 +650,7 @@ def _catalog_metrics(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> t
             _metric_card("Packages", len(snapshot.domain_packages)),
             _metric_card("Dependencies", _domain_package_dependency_count(snapshot)),
             _metric_card("Required Tools", _domain_package_required_tool_count(snapshot)),
+            _metric_card("Resources", _domain_package_resource_count(snapshot)),
             _metric_card("Profiles", len(snapshot.profiles)),
             _metric_card("Active Domains", len(snapshot.domains)),
             _metric_card("Ready", _ready_text(snapshot)),
@@ -1272,6 +1273,7 @@ def _domain_packages(packages: tuple[DomainPackageView, ...]) -> str:
                 f"<td>{_html(', '.join(package.capability_names) or 'none')}</td>",
                 f"<td>{_html(_domain_package_dependencies(package))}</td>",
                 f"<td>{_html(', '.join(package.required_tools) or 'none')}</td>",
+                f"<td>{_html(', '.join(package.resource_names) or 'none')}</td>",
                 f"<td>{_html(_value_text(package.security))}</td>",
                 f"<td>{_html(package.manifest_path)}</td>",
                 "</tr>",
@@ -1280,7 +1282,7 @@ def _domain_packages(packages: tuple[DomainPackageView, ...]) -> str:
         for package in packages
     ]
     if not rows:
-        rows.append('<tr><td colspan="7">No domain packages</td></tr>')
+        rows.append('<tr><td colspan="8">No domain packages</td></tr>')
     return _section(
         "Domain Package Catalog",
         _table(
@@ -1290,6 +1292,7 @@ def _domain_packages(packages: tuple[DomainPackageView, ...]) -> str:
                 "Capabilities",
                 "Dependencies",
                 "Required Tools",
+                "Resources",
                 "Security",
                 "Manifest",
             ),
@@ -1996,6 +1999,13 @@ def _domain_package_required_tool_count(snapshot: WebConsoleSnapshot) -> int:
         tool_name for package in snapshot.domain_packages for tool_name in package.required_tools
     }
     return len(required_tools)
+
+
+def _domain_package_resource_count(snapshot: WebConsoleSnapshot) -> int:
+    resources = {
+        resource for package in snapshot.domain_packages for resource in package.resource_names
+    }
+    return len(resources)
 
 
 def _enum_tuple_text(values: tuple[Any, ...]) -> str:

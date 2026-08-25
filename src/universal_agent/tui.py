@@ -239,6 +239,7 @@ def _domain_package_lines(packages: tuple[DomainPackageView, ...]) -> list[str]:
             f" capabilities={_tuple_text(package.capability_names)}"
             f" tools={_tuple_text(package.tool_names)}"
             f" dependencies={_identity_tuple_text(package.dependencies)}"
+            f" resources={_tuple_text(package.resource_names)}"
             f" entrypoint={package.entrypoint or 'none'}"
             f" :: {package.description}"
         )

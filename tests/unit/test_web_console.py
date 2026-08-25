@@ -150,6 +150,7 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
                 MappingProxyType({"side_effects": "reversible"}),
                 "/domains/kubernetes",
                 "/domains/kubernetes/manifest.json",
+                resource_names=("resources/runbook.md", "schemas/workload.json"),
             ),
         ),
         profiles=(
@@ -347,6 +348,8 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "kubernetes@0.2.0" in rendered
     assert "Domain Package Catalog" in rendered
     assert "kubernetes.domain:build_domain" in rendered
+    assert "resources/runbook.md" in rendered
+    assert "schemas/workload.json" in rendered
     assert "observability@1.0.0" in rendered
     assert "Verify &lt;script&gt;alert(1)&lt;/script&gt;" in rendered
     assert "<script>alert(1)</script>" not in rendered
@@ -559,6 +562,7 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
             "Domain Package Catalog",
             "kubernetes.domain:build_domain",
             "observability@1.0.0",
+            "Resources",
         ),
         WebCatalogPage.CAPABILITIES: ("Capability Catalog", "inspect_workload", "High Risk"),
         WebCatalogPage.TOOLS: ("Tool Catalog", "kubernetes_inspect_workload", "No Side Effect"),

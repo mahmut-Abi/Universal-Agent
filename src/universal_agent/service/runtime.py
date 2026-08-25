@@ -168,6 +168,7 @@ class DomainPackageView:
     security: JsonMapping
     root_path: str
     manifest_path: str
+    resource_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1578,6 +1579,7 @@ def domain_package_view(package: DomainPackage) -> DomainPackageView:
         security=manifest.security,
         root_path=str(package.root_path),
         manifest_path=str(package.manifest_path),
+        resource_names=manifest.resources,
     )
 
 

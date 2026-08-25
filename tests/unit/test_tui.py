@@ -130,6 +130,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
                 MappingProxyType({"side_effects": "reversible"}),
                 "/domains/kubernetes",
                 "/domains/kubernetes/manifest.json",
+                resource_names=("resources/runbook.md",),
             ),
         ),
         profiles=(
@@ -343,6 +344,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
     assert "Domain Packages" in rendered
     assert "kubernetes@0.2.0 capabilities=inspect_workload" in rendered
     assert "dependencies=observability@1.0.0" in rendered
+    assert "resources=resources/runbook.md" in rendered
     assert "Agent Profiles" in rendered
     assert "production-operator@1.0.0" in rendered
     assert "Capabilities" in rendered

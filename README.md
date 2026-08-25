@@ -306,7 +306,7 @@ detect accidental split state/event wiring. These adapters are local persistence
   Evidence and World Model Explorer routes through agentd/CLI.
 - TUI foundation: `build_tui_snapshot` consumes RuntimeService projections and `render_tui_snapshot`
   produces a deterministic text view for CLI/operator use, including Domain Package/Profile/Capability/Tool/Policy/Evaluator/Memory
-  catalogs plus selected-session Evidence and World Facts without touching Kernel internals.
+  catalogs, including Domain Package resource metadata, plus selected-session Evidence and World Facts without touching Kernel internals.
 - Web Console foundation: `build_web_console_snapshot` consumes the shared console snapshot builder
   and `render_web_console` / `render_web_sessions` / `render_web_session_detail` /
   `render_web_evidence_explorer` /
@@ -314,7 +314,7 @@ detect accidental split state/event wiring. These adapters are local persistence
   `render_web_catalog` / `render_web_profile_catalog` / `render_web_doctor` /
   `render_web_distributed` / `render_web_settings` produce
   deterministic read-only HTML for `AgentdApp`, including
-  Domain Package/Profile/Domain/Capability/Tool/Policy/Evaluator/Memory catalogs plus focused Session Detail,
+  Domain Package/Profile/Domain/Capability/Tool/Policy/Evaluator/Memory catalogs, including Domain Package resource metadata, plus focused Session Detail,
   Evidence, World Model, Domain Manager, Profile Catalog, Runtime Doctor,
   Distributed Runtime, Evaluation Console and Settings views
   without a web framework dependency or Kernel access.

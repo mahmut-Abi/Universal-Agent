@@ -314,6 +314,7 @@ def package_registry() -> DomainPackageRegistry:
             knowledge=("kubernetes readiness",),
             evaluators=("workload-health",),
             context_providers=("kubernetes_context",),
+            resources=("resources/runbook.md", "schemas/workload.json"),
             dependencies=(DomainIdentity("observability", "1.0.0"),),
             required_tools=("kubernetes_api",),
             compatibility=DomainPackageCompatibility(
@@ -1336,6 +1337,7 @@ def test_runtime_service_exposes_domain_package_catalog_without_activation() -> 
     assert package.policy_names == ("kubernetes-scale-safety",)
     assert package.dependencies == (DomainIdentity("observability", "1.0.0"),)
     assert package.required_tools == ("kubernetes_api",)
+    assert package.resource_names == ("resources/runbook.md", "schemas/workload.json")
     assert package.runtime_api_compatibility == ">=0.1,<1"
     assert package.domain_api_compatibility == "agent.nantian.dev/v1alpha1"
     assert package.security["side_effects"] == "reversible"
