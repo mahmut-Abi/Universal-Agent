@@ -331,6 +331,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
 
     assert "Universal Agent Runtime TUI" in rendered
     assert "Health: ok | Ready: yes" in rendered
+    assert "model=scripted/scripted" in rendered
     assert "state_event_commit=unknown" in rendered
     assert "retention=disabled" in rendered
     assert "Operational Diagnostics" in rendered

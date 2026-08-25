@@ -50,6 +50,7 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
         f"Health: {snapshot.health.status} | Ready: {_ready_text(snapshot.ready)}",
         (
             f"Runtime: store={snapshot.config.store_backend}"
+            f" model={snapshot.config.model.provider}/{snapshot.config.model.name}"
             f" queue={snapshot.config.distributed_queue_backend}"
             f" locks={snapshot.config.distributed_locks_backend}"
             f" workers={snapshot.config.distributed_workers_backend}"

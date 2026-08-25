@@ -616,6 +616,9 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "No active operational issues" in settings
     assert "Store Backend" in settings
     assert "State/Event Commit" in settings
+    assert "Model Provider" in settings
+    assert "Model Name" in settings
+    assert "scripted" in settings
     assert "memory" in settings
     assert "Max Iterations" in settings
     assert "20" in settings
