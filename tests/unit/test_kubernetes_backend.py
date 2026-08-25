@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 
 import pytest
 
@@ -12,7 +13,14 @@ from universal_agent.core import (
     immutable_json,
     new_action_id,
 )
-from universal_agent.domains.kubernetes import KubectlBackend, KubectlCommandError, KubectlResult
+from universal_agent.domains.kubernetes import (
+    KubectlBackend,
+    KubectlCommandError,
+    KubectlResult,
+    KubernetesApiBackend,
+    KubernetesApiConflictError,
+    KubernetesApiResponse,
+)
 from universal_agent.domains.kubernetes.tools import KubernetesScaleTool
 from universal_agent.tools import ToolRegistry, ToolRuntime
 
@@ -45,6 +53,47 @@ class RecordingKubectlRunner:
             stderr="",
             returncode=0,
         )
+
+
+KubernetesApiFixtureResponse = JsonValue | KubernetesApiResponse
+
+
+class RecordingKubernetesApiTransport:
+    def __init__(
+        self,
+        responses: dict[tuple[str, str, tuple[tuple[str, str], ...]], KubernetesApiFixtureResponse],
+    ) -> None:
+        self._responses = responses
+        self.requests: list[
+            tuple[
+                str,
+                str,
+                tuple[tuple[str, str], ...],
+                JsonMapping | None,
+                dict[str, str],
+                float | None,
+            ]
+        ] = []
+
+    async def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: Mapping[str, str] | None = None,
+        body: JsonMapping | None = None,
+        headers: Mapping[str, str] | None = None,
+        timeout_seconds: float | None = None,
+    ) -> KubernetesApiResponse:
+        key = (method, path, tuple(sorted((query or {}).items())))
+        self.requests.append((method, path, key[2], body, dict(headers or {}), timeout_seconds))
+        try:
+            response = self._responses[key]
+        except KeyError as exc:
+            raise AssertionError(f"unexpected Kubernetes API request: {key}") from exc
+        if isinstance(response, KubernetesApiResponse):
+            return response
+        return KubernetesApiResponse(200, response)
 
 
 class RecordingScaleBackend:
@@ -329,6 +378,200 @@ async def test_kubectl_backend_inspects_cluster_summary() -> None:
         "namespace_count": 3,
         "healthy": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_api_backend_inspects_workload_health() -> None:
+    transport = RecordingKubernetesApiTransport(
+        {
+            (
+                "GET",
+                "/apis/apps/v1/namespaces/prod/deployments/api",
+                (),
+            ): {
+                "metadata": {"name": "api", "resourceVersion": "rv-1", "generation": 4},
+                "spec": {"replicas": 3},
+                "status": {
+                    "readyReplicas": 1,
+                    "availableReplicas": 1,
+                    "updatedReplicas": 2,
+                    "observedGeneration": 3,
+                    "conditions": [
+                        {
+                            "type": "Available",
+                            "status": "False",
+                            "reason": "MinimumReplicasUnavailable",
+                            "message": "Deployment does not have minimum availability.",
+                        }
+                    ],
+                },
+            }
+        }
+    )
+    backend = KubernetesApiBackend(
+        api_server="https://cluster.example.test",
+        transport=transport,
+        default_namespace="prod",
+        timeout_seconds=4.5,
+    )
+
+    result = await backend.inspect("inspect_workload", immutable_json({"name": "deployment/api"}))
+
+    assert result["resource"] == "deployment/api"
+    assert result["namespace"] == "prod"
+    assert result["healthy"] is False
+    assert result["desired_replicas"] == 3
+    assert result["ready_replicas"] == 1
+    assert result["resource_version"] == "rv-1"
+    assert result["root_cause"] == "minimum_replicas_unavailable"
+    assert transport.requests[0] == (
+        "GET",
+        "/apis/apps/v1/namespaces/prod/deployments/api",
+        (),
+        None,
+        {},
+        4.5,
+    )
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_api_backend_reads_logs_and_events() -> None:
+    logs = "first line\nsecond line\n"
+    transport = RecordingKubernetesApiTransport(
+        {
+            (
+                "GET",
+                "/api/v1/namespaces/prod/pods/api-123/log",
+                (("container", "api"), ("tailLines", "2")),
+            ): KubernetesApiResponse(200, text=logs),
+            (
+                "GET",
+                "/api/v1/namespaces/prod/events",
+                (("fieldSelector", "involvedObject.name=api"),),
+            ): {
+                "items": [
+                    _event("Pulled", "Normal"),
+                    _event("Unhealthy", "Warning"),
+                    _event("BackOff", "Warning"),
+                ]
+            },
+        }
+    )
+    backend = KubernetesApiBackend(
+        api_server="https://cluster.example.test",
+        transport=transport,
+    )
+
+    log_result = await backend.inspect(
+        "inspect_logs",
+        immutable_json(
+            {"name": "pod/api-123", "namespace": "prod", "tail_lines": 2, "container": "api"}
+        ),
+    )
+    event_result = await backend.inspect(
+        "inspect_events",
+        immutable_json({"name": "deployment/api", "namespace": "prod", "limit": 2}),
+    )
+
+    assert log_result["resource"] == "pod/api-123"
+    assert log_result["line_count"] == 2
+    assert log_result["recent_logs"] == logs
+    assert event_result["event_count"] == 3
+    recent_events = event_result["recent_events"]
+    assert isinstance(recent_events, list)
+    assert [item["reason"] for item in recent_events if isinstance(item, dict)] == [
+        "Unhealthy",
+        "BackOff",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_api_backend_scales_workload_with_concurrency_guards() -> None:
+    transport = RecordingKubernetesApiTransport(
+        {
+            (
+                "GET",
+                "/apis/apps/v1/namespaces/prod/deployments/api",
+                (),
+            ): {
+                "metadata": {"name": "api", "resourceVersion": "rv-before"},
+                "spec": {"replicas": 3},
+            },
+            (
+                "PATCH",
+                "/apis/apps/v1/namespaces/prod/deployments/api/scale",
+                (),
+            ): {"metadata": {"resourceVersion": "rv-after"}},
+        }
+    )
+    backend = KubernetesApiBackend(
+        api_server="https://cluster.example.test",
+        transport=transport,
+    )
+
+    result = await backend.mutate(
+        "scale_workload",
+        immutable_json(
+            {
+                "name": "api",
+                "namespace": "prod",
+                "replicas": 5,
+                "current_replicas": 3,
+                "resource_version": "rv-before",
+            }
+        ),
+    )
+    patch = transport.requests[1]
+
+    assert result["resource"] == "deployment/api"
+    assert result["mutation_applied"] is True
+    assert result["previous_replicas"] == 3
+    assert result["replicas"] == 5
+    assert result["resource_version"] == "rv-before"
+    assert result["mutation_id"] == "kubectl-scale:rv-after"
+    assert patch[0:3] == (
+        "PATCH",
+        "/apis/apps/v1/namespaces/prod/deployments/api/scale",
+        (),
+    )
+    assert patch[3] == {"metadata": {"resourceVersion": "rv-before"}, "spec": {"replicas": 5}}
+    assert patch[4] == {"content-type": "application/merge-patch+json"}
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_api_backend_rejects_stale_scale_guard() -> None:
+    transport = RecordingKubernetesApiTransport(
+        {
+            (
+                "GET",
+                "/apis/apps/v1/namespaces/prod/deployments/api",
+                (),
+            ): {
+                "metadata": {"name": "api", "resourceVersion": "rv-new"},
+                "spec": {"replicas": 4},
+            }
+        }
+    )
+    backend = KubernetesApiBackend(
+        api_server="https://cluster.example.test",
+        transport=transport,
+    )
+
+    with pytest.raises(KubernetesApiConflictError, match="current replicas mismatch"):
+        await backend.mutate(
+            "scale_workload",
+            immutable_json(
+                {
+                    "name": "api",
+                    "namespace": "prod",
+                    "replicas": 5,
+                    "current_replicas": 3,
+                    "resource_version": "rv-before",
+                }
+            ),
+        )
+
+    assert [request[0] for request in transport.requests] == ["GET"]
 
 
 def _event(reason: str, event_type: str) -> dict[str, JsonValue]:

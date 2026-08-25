@@ -1,3 +1,11 @@
+from universal_agent.domains.kubernetes.api import (
+    KubernetesApiBackend,
+    KubernetesApiConflictError,
+    KubernetesApiError,
+    KubernetesApiResponse,
+    KubernetesApiTransport,
+    UrllibKubernetesApiTransport,
+)
 from universal_agent.domains.kubernetes.backend import (
     KubernetesBackend,
     KubernetesMutationBackend,
@@ -20,10 +28,16 @@ __all__ = [
     "KubectlCommandError",
     "KubectlCommandRunner",
     "KubectlResult",
+    "KubernetesApiBackend",
+    "KubernetesApiConflictError",
+    "KubernetesApiError",
+    "KubernetesApiResponse",
+    "KubernetesApiTransport",
     "KubernetesBackend",
     "KubernetesDomain",
     "KubernetesMutationBackend",
     "KubernetesRemediationDomain",
     "SubprocessKubectlRunner",
+    "UrllibKubernetesApiTransport",
     "WorkloadHealthEvaluator",
 ]
