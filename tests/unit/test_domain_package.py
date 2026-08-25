@@ -215,6 +215,25 @@ def test_domain_package_registry_verification_reports_dependency_cycles(
     assert "beta@1.0.0" in failed["package_dependencies_acyclic"]
 
 
+def test_domain_package_registry_can_verify_local_package_path_integrity(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "kubernetes-domain"
+    write_manifest(root, package_payload())
+    registry = DomainPackageRegistry()
+    registry.install(root)
+
+    metadata_only = registry.verify()
+    write_manifest(root, package_payload("database"))
+    local_paths = registry.verify(verify_paths=True)
+    failed = {check.name: check.message for check in local_paths.failed_checks}
+
+    assert metadata_only.passed is False
+    assert metadata_only.failed_checks[0].name == "package_dependencies_registered"
+    assert "package_manifest_matches_identity:kubernetes@1.0.0" in failed
+    assert "identity mismatch" in failed["package_manifest_matches_identity:kubernetes@1.0.0"]
+
+
 def test_build_domain_package_manifest_encodes_sdk_spec_with_default_entrypoint() -> None:
     manifest = build_domain_package_manifest(
         DomainPackageScaffoldSpec(

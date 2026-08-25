@@ -245,8 +245,8 @@ class DomainPackageRegistry:
             )
         return matches[0]
 
-    def verify(self) -> DomainPackageVerificationReport:
-        return verify_domain_package_registry(self)
+    def verify(self, *, verify_paths: bool = False) -> DomainPackageVerificationReport:
+        return verify_domain_package_registry(self, verify_paths=verify_paths)
 
 
 def load_domain_package(path: Path) -> DomainPackage:
@@ -399,15 +399,18 @@ def verify_domain_package(package: DomainPackage) -> DomainPackageVerificationRe
 
 def verify_domain_package_registry(
     registry: DomainPackageRegistry,
+    *,
+    verify_paths: bool = False,
 ) -> DomainPackageVerificationReport:
     packages = registry.list()
     registered_domains = frozenset(package.identity for package in packages)
-    return DomainPackageVerificationReport(
-        (
-            _package_dependencies_registered(packages, registered_domains),
-            _package_dependencies_acyclic(packages),
-        )
-    )
+    checks = [
+        _package_dependencies_registered(packages, registered_domains),
+        _package_dependencies_acyclic(packages),
+    ]
+    if verify_paths:
+        checks.extend(_package_registry_local_checks(packages))
+    return DomainPackageVerificationReport(tuple(checks))
 
 
 def decode_domain_package_manifest(payload: JsonMapping) -> DomainPackageManifest:
@@ -569,6 +572,23 @@ def _package_dependencies_acyclic(packages: tuple[DomainPackage, ...]) -> Domain
         False,
         "Domain package dependencies contain cycles: " + ", ".join(cycles),
     )
+
+
+def _package_registry_local_checks(
+    packages: tuple[DomainPackage, ...],
+) -> tuple[DomainPackageCheck, ...]:
+    checks: list[DomainPackageCheck] = []
+    for package in packages:
+        identity = _format_identity(package.identity)
+        for check in verify_domain_package(package).checks:
+            checks.append(
+                DomainPackageCheck(
+                    f"{check.name}:{identity}",
+                    check.passed,
+                    f"{identity}: {check.message}",
+                )
+            )
+    return tuple(checks)
 
 
 def _dependency_cycles(

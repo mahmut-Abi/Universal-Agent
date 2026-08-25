@@ -648,7 +648,8 @@ def build_parser() -> argparse.ArgumentParser:
     domain_package_show = domain_package_commands.add_parser("show")
     domain_package_show.add_argument("name")
     domain_package_show.add_argument("version", nargs="?")
-    domain_package_commands.add_parser("verify")
+    domain_package_verify = domain_package_commands.add_parser("verify")
+    domain_package_verify.add_argument("--local-paths", action="store_true")
     domain_package_scaffold = domain_package_commands.add_parser("scaffold")
     domain_package_scaffold.add_argument("name")
     domain_package_scaffold.add_argument("--description", required=True)
@@ -1598,7 +1599,14 @@ def _dispatch_domain_packages(
         )
         return
     if command == "verify":
-        _write_json(out, domain_package_verification_body(service.domain_package_verification()))
+        _write_json(
+            out,
+            domain_package_verification_body(
+                service.domain_package_verification(
+                    verify_paths=cast(bool, args.local_paths),
+                )
+            ),
+        )
         return
     if command == "scaffold":
         result = scaffold_domain_package(

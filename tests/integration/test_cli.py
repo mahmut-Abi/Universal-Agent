@@ -1462,6 +1462,7 @@ async def test_cli_exposes_domain_package_catalog_commands() -> None:
     filtered_output = StringIO()
     show_output = StringIO()
     verify_output = StringIO()
+    local_path_verify_output = StringIO()
     missing_output = StringIO()
     missing_error = StringIO()
 
@@ -1485,6 +1486,11 @@ async def test_cli_exposes_domain_package_catalog_commands() -> None:
         service=service,
         stdout=verify_output,
     )
+    local_path_verify_status = await run_cli(
+        ["domain-packages", "verify", "--local-paths"],
+        service=service,
+        stdout=local_path_verify_output,
+    )
     missing_status = await run_cli(
         ["domain-packages", "show", "database"],
         service=service,
@@ -1496,11 +1502,13 @@ async def test_cli_exposes_domain_package_catalog_commands() -> None:
     filtered = read_json(filtered_output)
     shown = read_json(show_output)
     verification = read_json(verify_output)
+    local_path_verification = read_json(local_path_verify_output)
     packages = listed["domain_packages"]
     assert list_status == 0
     assert filtered_status == 0
     assert show_status == 0
     assert verify_status == 0
+    assert local_path_verify_status == 0
     assert missing_status == 1
     assert missing_output.getvalue() == ""
     assert "domain package not registered: database" in missing_error.getvalue()
@@ -1519,6 +1527,15 @@ async def test_cli_exposes_domain_package_catalog_commands() -> None:
     assert verification["failed_check_count"] == 1
     assert verification["checks"][0]["name"] == "package_dependencies_registered"
     assert "observability@1.0.0" in verification["checks"][0]["message"]
+    local_path_failed = {
+        check["name"]: check["message"]
+        for check in local_path_verification["checks"]
+        if isinstance(check, dict) and check["passed"] is False
+    }
+    assert local_path_verification["failed_check_count"] == 4
+    assert "package_root_exists:kubernetes@0.2.0" in local_path_failed
+    assert "package_manifest_exists:kubernetes@0.2.0" in local_path_failed
+    assert "package_manifest_matches_identity:kubernetes@0.2.0" in local_path_failed
 
 
 @pytest.mark.asyncio

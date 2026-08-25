@@ -341,7 +341,8 @@ detect accidental split state/event wiring. These adapters are local persistence
   package manifests without importing Domain code or mutating Kernel runtime state.
   `DomainPackageRegistry.verify()` and `agent domain-packages verify` expose dependency-closure
   checks for local package metadata so CLI/CI can catch missing package dependencies before
-  activation.
+  activation; `agent domain-packages verify --local-paths` additionally re-checks local package
+  root and manifest integrity when callers need to detect path drift.
   `DomainPackageScaffoldSpec` and `scaffold_domain_package` provide the first Domain SDK surface for
   generating a standard package layout and validated manifest from typed metadata.
 - P7 Evaluation Dataset foundation: `EvaluationDatasetManifest` groups reusable evaluation suite

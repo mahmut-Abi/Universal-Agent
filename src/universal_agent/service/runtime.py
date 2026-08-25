@@ -469,8 +469,12 @@ class RuntimeService:
         )
         return domain_package_view(package)
 
-    def domain_package_verification(self) -> DomainPackageVerificationReport:
-        return self._domain_packages.verify()
+    def domain_package_verification(
+        self,
+        *,
+        verify_paths: bool = False,
+    ) -> DomainPackageVerificationReport:
+        return self._domain_packages.verify(verify_paths=verify_paths)
 
     def capabilities(self) -> tuple[CapabilityView, ...]:
         views: list[CapabilityView] = []
