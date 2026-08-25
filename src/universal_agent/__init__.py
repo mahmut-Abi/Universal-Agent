@@ -161,7 +161,16 @@ from universal_agent.host import (
     StoreBackend,
     StoreConfig,
 )
-from universal_agent.model import ModelAdapter, ModelUsage, ModelUsageProvider, ScriptedModelAdapter
+from universal_agent.model import (
+    JsonHttpModelAdapter,
+    JsonHttpModelError,
+    JsonHttpModelTransport,
+    ModelAdapter,
+    ModelUsage,
+    ModelUsageProvider,
+    ScriptedModelAdapter,
+    StdlibJsonHttpTransport,
+)
 from universal_agent.multi_agent import (
     AGENT_TASK_API_VERSION,
     AgentActionProposal,
@@ -455,6 +464,9 @@ __all__ = [
     "InMemoryStateStore",
     "InMemoryWorkQueue",
     "InMemoryWorkerRegistry",
+    "JsonHttpModelAdapter",
+    "JsonHttpModelError",
+    "JsonHttpModelTransport",
     "LeaseId",
     "LeaseLostError",
     "ModelAdapter",
@@ -514,6 +526,7 @@ __all__ = [
     "StateEventRepairSkipView",
     "StateEventRepairView",
     "StateStore",
+    "StdlibJsonHttpTransport",
     "StoreBackend",
     "StoreConfig",
     "SuccessCriterion",

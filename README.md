@@ -249,7 +249,8 @@ detect accidental split state/event wiring. These adapters are local persistence
   projections, lightweight cursor-aware `SessionSummaryView` listing, cursor-aware `EventReader`,
   `RuntimeSessionBatch` / `RuntimeEventBatch`, action idempotency metadata (`idempotency_key`,
   `parameters_hash`, `attempt`) carried through pending-action views, events and persistence,
-  explicit `UNKNOWN_EXECUTION` observations for uncertain tool outcomes, deterministic Tool argument schema validation,
+  explicit `UNKNOWN_EXECUTION` observations for uncertain tool outcomes, deterministic Tool argument
+  schema validation for scalar and nested object/array arguments,
   runtime-owned resource locking and optimistic resource version checks for side-effecting actions
   (`resource_key`, optional `resource_version`, conflict detection, version check/update events
   and lock lifecycle events), and
@@ -264,7 +265,9 @@ detect accidental split state/event wiring. These adapters are local persistence
   a local CLI adapter, and typed `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for
   environment, secret references, limits, memory/file/SQLite store backends,
   Domain identity validation, multi-Domain composition activation, and CLI loading of generated
-  Profile config files through `RuntimeHost`.
+  Profile config files through `RuntimeHost`. `JsonHttpModelAdapter` adds a dependency-free
+  provider bridge for HTTP endpoints that accept compiled runtime context JSON and return structured
+  `Decision` JSON plus optional token/cost usage.
 - P3.6/P3.7 foundation: event-derived `metrics`, Prometheus metrics text export, `cost`, `logs`,
   `traces`, OTLP trace export, `doctor` and `audit` projections exposed through RuntimeService,
   agentd-shaped routes and CLI commands, plus optional

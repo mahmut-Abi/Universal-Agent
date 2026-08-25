@@ -5,11 +5,21 @@ from universal_agent.model.adapter import (
     ScriptedModelAdapter,
     model_usage,
 )
+from universal_agent.model.http import (
+    JsonHttpModelAdapter,
+    JsonHttpModelError,
+    JsonHttpModelTransport,
+    StdlibJsonHttpTransport,
+)
 
 __all__ = [
+    "JsonHttpModelAdapter",
+    "JsonHttpModelError",
+    "JsonHttpModelTransport",
     "ModelAdapter",
     "ModelUsage",
     "ModelUsageProvider",
     "ScriptedModelAdapter",
+    "StdlibJsonHttpTransport",
     "model_usage",
 ]
