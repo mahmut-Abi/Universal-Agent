@@ -228,6 +228,9 @@ def render_web_distributed(
             _metric_card("Work Items", _distributed_work_item_count(distributed)),
             _metric_card("Queued", _distributed_queued_count(distributed)),
             _metric_card("Leased", _distributed_leased_count(distributed)),
+            _metric_card("Completed", _distributed_completed_count(distributed)),
+            _metric_card("Failed", _distributed_failed_count(distributed)),
+            _metric_card("Cancelled", _distributed_cancelled_count(distributed)),
             _metric_card("Workers", _distributed_worker_count(distributed)),
             _metric_card("Locks", _distributed_lock_count(distributed)),
             "</section>",
@@ -1724,6 +1727,24 @@ def _distributed_leased_count(distributed: DistributedRuntimeSnapshot | None) ->
     if distributed is None:
         return 0
     return distributed.work_queue.leased_count
+
+
+def _distributed_completed_count(distributed: DistributedRuntimeSnapshot | None) -> int:
+    if distributed is None:
+        return 0
+    return distributed.work_queue.completed_count
+
+
+def _distributed_failed_count(distributed: DistributedRuntimeSnapshot | None) -> int:
+    if distributed is None:
+        return 0
+    return distributed.work_queue.failed_count
+
+
+def _distributed_cancelled_count(distributed: DistributedRuntimeSnapshot | None) -> int:
+    if distributed is None:
+        return 0
+    return distributed.work_queue.cancelled_count
 
 
 def _distributed_worker_count(distributed: DistributedRuntimeSnapshot | None) -> int:

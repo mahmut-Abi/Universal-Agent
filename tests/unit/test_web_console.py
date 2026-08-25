@@ -393,6 +393,27 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     coordinator = DistributedRuntimeCoordinator()
     coordinator.schedule_session(SessionId("queued-session"))
     coordinator.register_worker(WorkerId("worker-a"), capabilities=("agent_session",))
+    coordinator.queue.enqueue(kind="completed-session", priority=10)
+    coordinator.queue.enqueue(kind="failed-session", priority=9, max_attempts=1)
+    cancelled = coordinator.schedule_session(SessionId("cancelled-session"))
+    completed_lease = coordinator.queue.lease(worker_id=WorkerId("worker-a"))
+    failed_lease = coordinator.queue.lease(worker_id=WorkerId("worker-a"))
+    assert completed_lease.lease is not None
+    assert failed_lease.lease is not None
+    coordinator.queue.complete(
+        completed_lease.lease.lease_id,
+        worker_id=WorkerId("worker-a"),
+    )
+    coordinator.queue.fail(
+        failed_lease.lease.lease_id,
+        worker_id=WorkerId("worker-a"),
+        reason="terminal failure",
+        retry=False,
+    )
+    coordinator.cancel_work_item(
+        cancelled.scheduled_work_item.work_item_id,
+        reason="operator cancelled",
+    )
     coordinator.acquire_lock(
         lock_key="session/session-1",
         owner_id=DistributedLockOwnerId("worker-a"),
@@ -410,6 +431,12 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "Distributed Work Queue" in distributed_page
     assert "queued-session" in distributed_page
     assert "agent_session" in distributed_page
+    assert "<span>Completed</span>\n<strong>1</strong>" in distributed_page
+    assert "<span>Failed</span>\n<strong>1</strong>" in distributed_page
+    assert "<span>Cancelled</span>\n<strong>1</strong>" in distributed_page
+    assert "completed-session" in distributed_page
+    assert "failed-session" in distributed_page
+    assert "cancelled-session" in distributed_page
     assert "Distributed Workers" in distributed_page
     assert "worker-a" in distributed_page
     assert "Distributed Locks" in distributed_page
