@@ -565,7 +565,6 @@ def _hero(snapshot: WebConsoleSnapshot) -> str:
             '<a class="pill link" href="/console/multi-agent">Multi-Agent</a>',
             '<a class="pill link" href="/console/doctor">Doctor</a>',
             '<a class="pill link" href="/console/distributed">Distributed</a>',
-            '<a class="pill link" href="/console/multi-agent">Multi-Agent</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',

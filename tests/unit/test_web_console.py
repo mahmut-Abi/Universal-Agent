@@ -380,6 +380,7 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "allow:allow-read" in rendered
     assert 'href="/console/doctor"' in rendered
     assert 'href="/console/multi-agent"' in rendered
+    assert rendered.count('href="/console/multi-agent"') == 1
     assert "Multi-Agent registry is not configured" in rendered
 
     sessions_page = render_web_sessions(snapshot)
