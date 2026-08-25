@@ -344,7 +344,8 @@ detect accidental split state/event wiring. These adapters are local persistence
   activation; `agent domain-packages verify --local-paths` additionally re-checks local package
   root and manifest integrity when callers need to detect path drift.
   `DomainPackageScaffoldSpec` and `scaffold_domain_package` provide the first Domain SDK surface for
-  generating a standard package layout and validated manifest from typed metadata.
+  generating a standard package layout and validated manifest from typed metadata, including
+  package-local resource parents for runbooks, schemas, templates and other declarative assets.
 - P7 Evaluation Dataset foundation: `EvaluationDatasetManifest` groups reusable evaluation suite
   files into discoverable datasets with Domain, tag, suite and author metadata. `EvaluationDatasetRegistry`
   validates referenced suite configs and lists or retrieves datasets without executing scenarios or

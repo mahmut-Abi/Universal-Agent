@@ -19,6 +19,7 @@ DOMAIN_PACKAGE_DIRECTORIES = (
     "evaluators",
     "context_providers",
     "prompts",
+    "resources",
 )
 
 
@@ -64,6 +65,7 @@ class DomainPackageManifest:
     evaluators: tuple[str, ...] = ()
     context_providers: tuple[str, ...] = ()
     prompts: tuple[str, ...] = ()
+    resources: tuple[str, ...] = ()
     dependencies: tuple[DomainIdentity, ...] = ()
     required_tools: tuple[str, ...] = ()
     compatibility: DomainPackageCompatibility = field(default_factory=DomainPackageCompatibility)
@@ -83,6 +85,7 @@ class DomainPackageManifest:
             _require_non_empty(self.author, "metadata.author")
         if self.entrypoint is not None:
             _require_non_empty(self.entrypoint, "entrypoint")
+        _validate_strings("resources", self.resources)
         for index, dependency in enumerate(self.dependencies):
             _require_non_empty(dependency.name, f"dependencies[{index}].name")
             _require_non_empty(dependency.version, f"dependencies[{index}].version")
@@ -142,6 +145,7 @@ class DomainPackageScaffoldSpec:
     evaluators: tuple[str, ...] = ()
     context_providers: tuple[str, ...] = ()
     prompts: tuple[str, ...] = ()
+    resources: tuple[str, ...] = ()
     dependencies: tuple[DomainIdentity, ...] = ()
     required_tools: tuple[str, ...] = ()
     compatibility: DomainPackageCompatibility = field(default_factory=DomainPackageCompatibility)
@@ -167,6 +171,7 @@ class DomainPackageScaffoldSpec:
         _validate_strings("evaluators", self.evaluators)
         _validate_strings("context_providers", self.context_providers)
         _validate_strings("prompts", self.prompts)
+        _validate_strings("resources", self.resources)
         _validate_strings("required_tools", self.required_tools)
         _validate_strings("tags", self.tags)
         for index, dependency in enumerate(self.dependencies):
@@ -290,6 +295,7 @@ def build_domain_package_manifest(spec: DomainPackageScaffoldSpec) -> DomainPack
         evaluators=spec.evaluators,
         context_providers=spec.context_providers,
         prompts=spec.prompts,
+        resources=spec.resources,
         dependencies=spec.dependencies,
         required_tools=spec.required_tools,
         compatibility=spec.compatibility,
@@ -326,6 +332,7 @@ def encode_domain_package_manifest(manifest: DomainPackageManifest) -> dict[str,
         "evaluators": list(manifest.evaluators),
         "context_providers": list(manifest.context_providers),
         "prompts": list(manifest.prompts),
+        "resources": list(manifest.resources),
         "dependencies": [
             {"name": dependency.name, "version": dependency.version}
             for dependency in manifest.dependencies
@@ -374,6 +381,21 @@ def scaffold_domain_package(
         elif not directory.is_dir():
             raise DomainPackageValidationError(
                 f"domain package scaffold path must be a directory: {directory}"
+            )
+
+    for resource in spec.resources:
+        _validate_scaffold_resource(resource)
+        resource_path = root / resource
+        if resource_path.suffix:
+            directory = resource_path.parent
+        else:
+            directory = resource_path
+        if not directory.exists():
+            directory.mkdir(parents=True)
+            created_paths.append(directory)
+        elif not directory.is_dir():
+            raise DomainPackageValidationError(
+                f"domain package scaffold resource parent must be a directory: {directory}"
             )
 
     overwritten = manifest_path.exists()
@@ -433,6 +455,7 @@ def decode_domain_package_manifest(payload: JsonMapping) -> DomainPackageManifes
         evaluators=_string_tuple(payload, "evaluators"),
         context_providers=_string_tuple(payload, "context_providers"),
         prompts=_string_tuple(payload, "prompts"),
+        resources=_string_tuple(payload, "resources"),
         dependencies=_identity_tuple(payload, "dependencies"),
         required_tools=_string_tuple(payload, "required_tools"),
         compatibility=DomainPackageCompatibility(
@@ -713,6 +736,14 @@ def _validate_strings(field_name: str, values: Sequence[str]) -> None:
     for index, value in enumerate(values):
         if not isinstance(value, str) or not value.strip():
             raise DomainPackageValidationError(f"{field_name}[{index}] must be a non-empty string")
+
+
+def _validate_scaffold_resource(resource: str) -> None:
+    resource_path = Path(resource)
+    if resource_path.is_absolute() or any(part == ".." for part in resource_path.parts):
+        raise DomainPackageValidationError(
+            f"domain package resource path must stay inside package root: {resource}"
+        )
 
 
 def _default_entrypoint(name: str) -> str:

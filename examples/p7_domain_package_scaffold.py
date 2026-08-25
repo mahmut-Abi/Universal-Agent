@@ -30,6 +30,7 @@ def main() -> None:
                 knowledge=("incident lifecycle",),
                 evaluators=("incident_status",),
                 context_providers=("incident_context",),
+                resources=("resources/runbook.md", "schemas/incident.json"),
                 dependencies=(DomainIdentity("observability", "1.0.0"),),
                 required_tools=("incident_api",),
                 compatibility=DomainPackageCompatibility(
@@ -46,6 +47,7 @@ def main() -> None:
         print(f"manifest={result.package.manifest_path}")
         print(f"registered={package.identity.name}@{package.identity.version}")
         print(f"directories={len(result.created_paths) - 1}")
+        print(f"resources={','.join(package.manifest.resources)}")
 
 
 if __name__ == "__main__":

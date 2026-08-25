@@ -2013,7 +2013,9 @@ kubernetes-domain/
 ├── procedures/
 ├── knowledge/
 ├── evaluators/
+├── context_providers/
 ├── prompts/
+├── resources/
 └── tests/
 ```
 

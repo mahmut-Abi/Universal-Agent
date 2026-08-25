@@ -84,6 +84,9 @@ Examples are organized by roadmap slice. Useful entry points:
 - Read-only TUI: `src/universal_agent/tui.py`.
 - Domain metadata/package behavior: `src/universal_agent/domain/` or
   `src/universal_agent/ecosystem/`.
+- Domain package resources should stay package-local; scaffold custom resource
+  parents through `DomainPackageScaffoldSpec.resources` rather than writing
+  paths outside the package root.
 - Kubernetes-specific behavior: `src/universal_agent/domains/kubernetes/`.
 
 Avoid broad refactors across these areas unless the feature requires a real

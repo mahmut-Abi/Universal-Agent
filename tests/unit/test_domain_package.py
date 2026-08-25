@@ -47,6 +47,7 @@ def package_payload(
         "evaluators": ["workload_health"],
         "context_providers": ["cluster_context"],
         "prompts": ["diagnostic_notes"],
+        "resources": ["resources/runbook.md"],
         "dependencies": [{"name": "observability", "version": "2.0.0"}],
         "required_tools": ["kubernetes_api"],
         "compatibility": {
@@ -81,6 +82,7 @@ def test_decode_domain_package_manifest_accepts_structured_ecosystem_metadata() 
     assert manifest.required_tools == ("kubernetes_api",)
     assert manifest.compatibility.runtime_api == ">=0.1,<1"
     assert manifest.compatibility.domain_api == "agent.nantian.dev/v1alpha1"
+    assert manifest.resources == ("resources/runbook.md",)
     assert manifest.security["side_effects"] == "none"
     assert manifest.tags == ("ops",)
 
@@ -246,6 +248,7 @@ def test_build_domain_package_manifest_encodes_sdk_spec_with_default_entrypoint(
             policies=("read_only",),
             evaluators=("incident_status",),
             context_providers=("incident_context",),
+            resources=("resources/runbook.md", "assets/schema.json"),
             dependencies=(DomainIdentity("observability", "1.0.0"),),
             required_tools=("incident_api",),
             compatibility=DomainPackageCompatibility(
@@ -262,6 +265,7 @@ def test_build_domain_package_manifest_encodes_sdk_spec_with_default_entrypoint(
     assert manifest.entrypoint == "ai_ops.domain:build_domain"
     assert decoded.identity == DomainIdentity("ai-ops", "0.1.0")
     assert decoded.capabilities == ("inspect_incident",)
+    assert decoded.resources == ("resources/runbook.md", "assets/schema.json")
     assert decoded.dependencies == (DomainIdentity("observability", "1.0.0"),)
     assert decoded.tags == ("ops", "ai")
 
@@ -278,6 +282,7 @@ def test_scaffold_domain_package_creates_registry_loadable_package(tmp_path: Pat
             capabilities=("inspect_incident", "resolve_incident"),
             tools=("incident_api_get", "incident_api_resolve"),
             policies=("incident_safety",),
+            resources=("resources/runbook.md", "templates/remediation/"),
             required_tools=("incident_api",),
             security={"side_effects": "reversible"},
             tags=("ops",),
@@ -290,9 +295,38 @@ def test_scaffold_domain_package_creates_registry_loadable_package(tmp_path: Pat
     assert installed.manifest.capabilities == ("inspect_incident", "resolve_incident")
     assert installed.manifest.security["side_effects"] == "reversible"
     assert payload["entrypoint"] == "ai_ops.domain:build_domain"
+    assert payload["resources"] == ["resources/runbook.md", "templates/remediation/"]
     assert (package_root / "ontology").is_dir()
     assert (package_root / "context_providers").is_dir()
+    assert (package_root / "resources").is_dir()
+    assert (package_root / "templates" / "remediation").is_dir()
     assert result.written_paths == (package_root / "manifest.json",)
+
+
+def test_scaffold_domain_package_rejects_resources_outside_package_root(
+    tmp_path: Path,
+) -> None:
+    package_root = tmp_path / "unsafe-domain"
+
+    with pytest.raises(DomainPackageValidationError, match="must stay inside package root"):
+        scaffold_domain_package(
+            package_root,
+            DomainPackageScaffoldSpec(
+                name="unsafe",
+                description="Unsafe domain package",
+                resources=("../outside.md",),
+            ),
+        )
+
+    with pytest.raises(DomainPackageValidationError, match="must stay inside package root"):
+        scaffold_domain_package(
+            package_root,
+            DomainPackageScaffoldSpec(
+                name="unsafe",
+                description="Unsafe domain package",
+                resources=("/tmp/outside.md",),
+            ),
+        )
 
 
 def test_scaffold_domain_package_requires_force_to_overwrite_manifest(tmp_path: Path) -> None:
