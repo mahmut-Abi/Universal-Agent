@@ -86,6 +86,7 @@ class DomainPackageManifest:
         if self.entrypoint is not None:
             _require_non_empty(self.entrypoint, "entrypoint")
         _validate_strings("resources", self.resources)
+        _validate_package_resources(self.resources)
         for index, dependency in enumerate(self.dependencies):
             _require_non_empty(dependency.name, f"dependencies[{index}].name")
             _require_non_empty(dependency.version, f"dependencies[{index}].version")
@@ -172,6 +173,7 @@ class DomainPackageScaffoldSpec:
         _validate_strings("context_providers", self.context_providers)
         _validate_strings("prompts", self.prompts)
         _validate_strings("resources", self.resources)
+        _validate_package_resources(self.resources)
         _validate_strings("required_tools", self.required_tools)
         _validate_strings("tags", self.tags)
         for index, dependency in enumerate(self.dependencies):
@@ -384,7 +386,7 @@ def scaffold_domain_package(
             )
 
     for resource in spec.resources:
-        _validate_scaffold_resource(resource)
+        _validate_package_resource(resource)
         resource_path = root / resource
         if resource_path.suffix:
             directory = resource_path.parent
@@ -397,6 +399,9 @@ def scaffold_domain_package(
             raise DomainPackageValidationError(
                 f"domain package scaffold resource parent must be a directory: {directory}"
             )
+        if resource_path.suffix and not resource_path.exists():
+            resource_path.touch()
+            created_paths.append(resource_path)
 
     overwritten = manifest_path.exists()
     _write_json_manifest(manifest_path, encode_domain_package_manifest(manifest))
@@ -415,6 +420,7 @@ def verify_domain_package(package: DomainPackage) -> DomainPackageVerificationRe
             _package_root_exists(package),
             _package_manifest_exists(package),
             _package_manifest_matches_identity(package),
+            _package_resources_exist(package),
         )
     )
 
@@ -555,6 +561,37 @@ def _package_manifest_matches_identity(package: DomainPackage) -> DomainPackageC
         "domain package identity mismatch: "
         f"expected {_format_identity(package.identity)}, "
         f"loaded {_format_identity(loaded.identity)}",
+    )
+
+
+def _package_resources_exist(package: DomainPackage) -> DomainPackageCheck:
+    invalid: list[str] = []
+    missing: list[str] = []
+    for resource in package.manifest.resources:
+        try:
+            resource_path = _package_resource_path(package.root_path, resource)
+        except DomainPackageValidationError:
+            invalid.append(resource)
+            continue
+        if not resource_path.exists():
+            missing.append(resource)
+
+    if invalid:
+        return DomainPackageCheck(
+            "package_resources_exist",
+            False,
+            "domain package resources must stay inside package root: " + ", ".join(invalid),
+        )
+    if missing:
+        return DomainPackageCheck(
+            "package_resources_exist",
+            False,
+            "domain package declares missing resources: " + ", ".join(missing),
+        )
+    return DomainPackageCheck(
+        "package_resources_exist",
+        True,
+        "domain package declared resources exist",
     )
 
 
@@ -738,12 +775,30 @@ def _validate_strings(field_name: str, values: Sequence[str]) -> None:
             raise DomainPackageValidationError(f"{field_name}[{index}] must be a non-empty string")
 
 
-def _validate_scaffold_resource(resource: str) -> None:
+def _validate_package_resources(resources: Sequence[str]) -> None:
+    for resource in resources:
+        _validate_package_resource(resource)
+
+
+def _validate_package_resource(resource: str) -> None:
     resource_path = Path(resource)
     if resource_path.is_absolute() or any(part == ".." for part in resource_path.parts):
         raise DomainPackageValidationError(
             f"domain package resource path must stay inside package root: {resource}"
         )
+
+
+def _package_resource_path(root: Path, resource: str) -> Path:
+    _validate_package_resource(resource)
+    resolved_root = root.resolve()
+    resolved_resource = (resolved_root / resource).resolve()
+    try:
+        resolved_resource.relative_to(resolved_root)
+    except ValueError as exc:
+        raise DomainPackageValidationError(
+            f"domain package resource path must stay inside package root: {resource}"
+        ) from exc
+    return resolved_resource
 
 
 def _default_entrypoint(name: str) -> str:

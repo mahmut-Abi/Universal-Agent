@@ -63,6 +63,17 @@ def package_payload(
 
 def write_manifest(root: Path, payload: JsonMapping) -> Path:
     root.mkdir(parents=True, exist_ok=True)
+    resources = payload.get("resources", ())
+    if isinstance(resources, list | tuple):
+        for resource in resources:
+            if not isinstance(resource, str):
+                continue
+            resource_path = root / resource
+            if resource_path.suffix:
+                resource_path.parent.mkdir(parents=True, exist_ok=True)
+                resource_path.touch()
+            else:
+                resource_path.mkdir(parents=True, exist_ok=True)
     manifest_path = root / "manifest.json"
     manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return manifest_path
@@ -101,6 +112,14 @@ def test_decode_domain_package_manifest_rejects_conflicting_api_version_keys() -
     payload["api_version"] = "agent.nantian.dev/v2"
 
     with pytest.raises(DomainPackageValidationError, match="apiVersion and api_version"):
+        decode_domain_package_manifest(payload)
+
+
+def test_decode_domain_package_manifest_rejects_resources_outside_package_root() -> None:
+    payload = package_payload()
+    payload["resources"] = ["../outside.md"]
+
+    with pytest.raises(DomainPackageValidationError, match="must stay inside package root"):
         decode_domain_package_manifest(payload)
 
 
@@ -173,6 +192,7 @@ def test_domain_package_verification_checks_local_package_paths_and_manifest_ide
         "package_root_exists",
         "package_manifest_exists",
         "package_manifest_matches_identity",
+        "package_resources_exist",
     }
     assert failing.passed is False
     assert "package_manifest_matches_identity" in failed_checks
@@ -299,8 +319,23 @@ def test_scaffold_domain_package_creates_registry_loadable_package(tmp_path: Pat
     assert (package_root / "ontology").is_dir()
     assert (package_root / "context_providers").is_dir()
     assert (package_root / "resources").is_dir()
+    assert (package_root / "resources" / "runbook.md").is_file()
     assert (package_root / "templates" / "remediation").is_dir()
     assert result.written_paths == (package_root / "manifest.json",)
+
+
+def test_domain_package_verification_reports_missing_resources(tmp_path: Path) -> None:
+    root = tmp_path / "kubernetes-domain"
+    write_manifest(root, package_payload())
+    (root / "resources" / "runbook.md").unlink()
+    package = DomainPackageRegistry().install(root)
+
+    report = verify_domain_package(package)
+    failed = {check.name: check.message for check in report.failed_checks}
+
+    assert report.passed is False
+    assert "package_resources_exist" in failed
+    assert "resources/runbook.md" in failed["package_resources_exist"]
 
 
 def test_scaffold_domain_package_rejects_resources_outside_package_root(
