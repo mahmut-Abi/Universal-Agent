@@ -3,7 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from universal_agent.core import SessionId
-from universal_agent.operations import AuditRecordView, RuntimeCostView, RuntimeMetricsView
+from universal_agent.distributed import DistributedHealthReport, DistributedRuntimeSnapshot
+from universal_agent.operations import (
+    AuditRecordView,
+    DoctorReportView,
+    RuntimeCostView,
+    RuntimeMetricsView,
+)
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
 from universal_agent.service import (
     CapabilityView,
@@ -35,6 +41,9 @@ class RuntimeConsoleSnapshot:
     memories: tuple[MemoryView, ...]
     metrics: RuntimeMetricsView
     cost: RuntimeCostView
+    doctor: DoctorReportView
+    distributed_snapshot: DistributedRuntimeSnapshot | None
+    distributed_health: DistributedHealthReport | None
     sessions: tuple[SessionSummaryView, ...]
     selected_session: SessionView | None
     session_explorer: SessionExplorerView | None
@@ -84,6 +93,9 @@ async def build_runtime_console_snapshot(
         memories=service.memories(),
         metrics=await service.metrics(),
         cost=await service.cost(),
+        doctor=await service.doctor(),
+        distributed_snapshot=service.distributed_snapshot(),
+        distributed_health=service.distributed_health(),
         sessions=session_batch.sessions,
         selected_session=selected_session,
         session_explorer=session_explorer,

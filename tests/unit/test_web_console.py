@@ -211,6 +211,9 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
             active_resource_lock_count=0,
         ),
         cost=RuntimeCostView(0, 0, 0, 0, 0, "USD", ()),
+        doctor=DoctorReportView("ok", ()),
+        distributed_snapshot=None,
+        distributed_health=None,
         sessions=(
             SessionSummaryView(
                 session_id,

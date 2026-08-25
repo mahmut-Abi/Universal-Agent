@@ -76,13 +76,11 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
         _rule(),
     ]
     lines.extend(_operational_diagnostic_lines(snapshot))
-    lines.extend(
-        (
-            "",
-            "Active Domains",
-            _rule(),
-        )
-    )
+    lines.extend(("", "Runtime Doctor", _rule()))
+    lines.extend(_doctor_lines(snapshot))
+    lines.extend(("", "Distributed Runtime", _rule()))
+    lines.extend(_distributed_runtime_lines(snapshot))
+    lines.extend(("", "Active Domains", _rule()))
     lines.extend(_domain_lines(snapshot.domains))
     lines.extend(("", "Agent Profiles", _rule()))
     lines.extend(_profile_lines(snapshot.profiles))
@@ -142,6 +140,55 @@ def _operational_diagnostic_lines(snapshot: TuiSnapshot) -> list[str]:
         lines.append(f"- info recoveries_planned={metrics.recovery_planned_count}")
     if not lines:
         return ["- ok no active operational issues"]
+    return lines
+
+
+def _doctor_lines(snapshot: TuiSnapshot) -> list[str]:
+    doctor = snapshot.doctor
+    lines = [f"- status={doctor.status} checks={len(doctor.checks)}"]
+    lines.extend(
+        f"- {check.status} {check.name}: {check.message}"
+        for check in doctor.checks
+    )
+    return lines
+
+
+def _distributed_runtime_lines(snapshot: TuiSnapshot) -> list[str]:
+    distributed = snapshot.distributed_snapshot
+    health = snapshot.distributed_health
+    if distributed is None or health is None:
+        return ["- not configured"]
+    lines = [
+        (
+            f"- status={health.status.value}"
+            f" checks={len(health.checks)}"
+            f" recommendations={len(health.recommendations)}"
+        ),
+        (
+            f"- queue total={distributed.work_queue.total_count}"
+            f" queued={distributed.work_queue.queued_count}"
+            f" leased={distributed.work_queue.leased_count}"
+            f" completed={distributed.work_queue.completed_count}"
+            f" failed={distributed.work_queue.failed_count}"
+            f" cancelled={distributed.work_queue.cancelled_count}"
+        ),
+        (
+            f"- workers total={distributed.workers.total_count}"
+            f" online={distributed.workers.online_count}"
+            f" draining={distributed.workers.draining_count}"
+            f" offline={distributed.workers.offline_count}"
+            f" lost={distributed.workers.lost_count}"
+        ),
+        f"- locks active={len(distributed.locks)}",
+    ]
+    lines.extend(
+        f"- check {check.name}={check.status.value}: {check.message}"
+        for check in health.checks
+    )
+    lines.extend(
+        f"- recommendation {item.code}={item.severity.value}: {item.message}"
+        for item in health.recommendations
+    )
     return lines
 
 

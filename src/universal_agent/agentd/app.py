@@ -259,7 +259,7 @@ class AgentdApp:
             except ValueError as exc:
                 return bad_request(str(exc))
             return text_response(
-                render_web_doctor(snapshot, await self._service.doctor()),
+                render_web_doctor(snapshot, snapshot.doctor),
                 content_type="text/html; charset=utf-8",
             )
         if path == "/console/distributed":
@@ -276,8 +276,8 @@ class AgentdApp:
             return text_response(
                 render_web_distributed(
                     snapshot,
-                    self._service.distributed_snapshot(),
-                    self._service.distributed_health(),
+                    snapshot.distributed_snapshot,
+                    snapshot.distributed_health,
                 ),
                 content_type="text/html; charset=utf-8",
             )

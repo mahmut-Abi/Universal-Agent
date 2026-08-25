@@ -20,7 +20,13 @@ from universal_agent.core import (
 )
 from universal_agent.evidence import EvidenceId
 from universal_agent.memory import MemoryKind
-from universal_agent.operations import AuditRecordView, RuntimeCostView, RuntimeMetricsView
+from universal_agent.operations import (
+    AuditRecordView,
+    DoctorCheckView,
+    DoctorReportView,
+    RuntimeCostView,
+    RuntimeMetricsView,
+)
 from universal_agent.runtime import (
     EvidenceView,
     RuntimeEventView,
@@ -185,6 +191,19 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
             active_resource_lock_count=0,
         ),
         cost=RuntimeCostView(0, 0, 0, 0, 0, "USD", ()),
+        doctor=DoctorReportView(
+            "ok",
+            (
+                DoctorCheckView("runtime_health", "ok", "health status is ok"),
+                DoctorCheckView(
+                    "state_event_consistency",
+                    "ok",
+                    "sessions=1 events=3 terminal_events_verified",
+                ),
+            ),
+        ),
+        distributed_snapshot=None,
+        distributed_health=None,
         sessions=(
             SessionSummaryView(
                 session_id,
@@ -286,6 +305,11 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
     assert "Health: ok | Ready: yes" in rendered
     assert "Operational Diagnostics" in rendered
     assert "- ok no active operational issues" in rendered
+    assert "Runtime Doctor" in rendered
+    assert "- status=ok checks=2" in rendered
+    assert "- ok runtime_health: health status is ok" in rendered
+    assert "Distributed Runtime" in rendered
+    assert "- not configured" in rendered
     assert "kubernetes@0.2.0" in rendered
     assert "Agent Profiles" in rendered
     assert "production-operator@1.0.0" in rendered
