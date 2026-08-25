@@ -71,6 +71,7 @@ Examples are organized by roadmap slice. Useful entry points:
 .venv/bin/python examples/p5_web_console.py
 .venv/bin/python examples/p6_distributed_worker.py
 .venv/bin/python examples/p6_distributed_prune.py
+.venv/bin/python examples/p7_domain_package_runtime_loader.py
 .venv/bin/python examples/p7_ecosystem_catalog.py
 ```
 
@@ -86,6 +87,10 @@ Examples are organized by roadmap slice. Useful entry points:
   `src/universal_agent/ecosystem/`.
 - New Domain implementations can subclass `BaseDomainRuntime` to inherit empty
   optional hooks while explicitly implementing manifest, capabilities, tools and evaluators.
+- Domain package runtime activation should go through `load_domain_package_runtime`.
+  That seam imports the declared entrypoint only when explicitly called, validates
+  the result through `DomainLoader`, and rejects package metadata drift. Registry
+  install/discovery must remain metadata-only.
 - Domain package resources should stay package-local; scaffold custom resource
   parents through `DomainPackageScaffoldSpec.resources` rather than writing
   paths outside the package root.

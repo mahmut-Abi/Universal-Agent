@@ -180,7 +180,10 @@ schemas, templates and other non-code assets:
 ```
 
 They do not import Domain entrypoints, install external dependencies or activate
-runtimes by themselves. CLI install refuses signature metadata by default unless
-the operator explicitly allows unverified local signatures; programmatic callers
-can instead pass an `EcosystemRegistrySignatureVerifier` before planning or
-installing signed registry metadata.
+runtimes by themselves. Programmatic SDK callers that are ready to execute local
+Domain code should use `load_domain_package_runtime`, which imports only the
+declared entrypoint and validates it against the package metadata before
+returning an activated Domain. CLI install refuses signature metadata by default
+unless the operator explicitly allows unverified local signatures; programmatic
+callers can instead pass an `EcosystemRegistrySignatureVerifier` before planning
+or installing signed registry metadata.

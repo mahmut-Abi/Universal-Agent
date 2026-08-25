@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -11,11 +12,13 @@ from universal_agent.domain import (
     DomainPackageCompatibility,
     DomainPackageNotFoundError,
     DomainPackageRegistry,
+    DomainPackageRuntimeLoadError,
     DomainPackageScaffoldSpec,
     DomainPackageValidationError,
     build_domain_package_manifest,
     decode_domain_package_manifest,
     encode_domain_package_manifest,
+    load_domain_package_runtime,
     scaffold_domain_package,
     verify_domain_package,
 )
@@ -77,6 +80,93 @@ def write_manifest(root: Path, payload: JsonMapping) -> Path:
     manifest_path = root / "manifest.json"
     manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return manifest_path
+
+
+def runtime_package_payload(
+    *,
+    name: str = "widget",
+    version: str = "1.0.0",
+    module_name: str = "widget_domain",
+) -> dict[str, JsonValue]:
+    payload = package_payload(name, version, tags=("sdk",))
+    payload["entrypoint"] = f"{module_name}:build_domain"
+    payload["ontology"] = ["Widget"]
+    payload["capabilities"] = ["inspect_widget"]
+    payload["tools"] = ["inspect_widget"]
+    payload["policies"] = []
+    payload["procedures"] = []
+    payload["knowledge"] = []
+    payload["evaluators"] = ["criteria"]
+    payload["context_providers"] = []
+    payload["prompts"] = []
+    payload["dependencies"] = []
+    payload["required_tools"] = []
+    return payload
+
+
+def write_runtime_module(
+    root: Path,
+    *,
+    module_name: str = "widget_domain",
+    domain_name: str = "widget",
+    version: str = "1.0.0",
+    capability_name: str = "inspect_widget",
+) -> None:
+    (root / f"{module_name}.py").write_text(
+        f"""
+from __future__ import annotations
+
+from universal_agent import BaseDomainRuntime, immutable_json
+from universal_agent.core import (
+    CapabilityCategory,
+    CapabilityDefinition,
+    DomainManifest,
+    DomainMetadata,
+    JsonMapping,
+    ToolDefinition,
+)
+from universal_agent.evaluation import CriteriaEvaluator, Evaluator
+from universal_agent.tools import Tool
+
+
+class InspectWidgetTool:
+    definition = ToolDefinition("inspect_widget", "Inspect widget state", ("{capability_name}",))
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        return immutable_json({{"healthy": True}})
+
+
+class WidgetDomain(BaseDomainRuntime):
+    manifest = DomainManifest(
+        "agent.nantian.dev/v1alpha1",
+        "Domain",
+        DomainMetadata("{domain_name}", "{version}", "Widget domain"),
+        ("Widget",),
+        ("{capability_name}",),
+        ("criteria",),
+    )
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        return (
+            CapabilityDefinition(
+                "{capability_name}",
+                "Inspect widget health",
+                CapabilityCategory.OBSERVATION,
+            ),
+        )
+
+    def tools(self) -> tuple[Tool, ...]:
+        return (InspectWidgetTool(),)
+
+    def evaluators(self) -> tuple[Evaluator, ...]:
+        return (CriteriaEvaluator(),)
+
+
+def build_domain() -> WidgetDomain:
+    return WidgetDomain()
+""".lstrip(),
+        encoding="utf-8",
+    )
 
 
 def test_decode_domain_package_manifest_accepts_structured_ecosystem_metadata() -> None:
@@ -393,3 +483,56 @@ def test_scaffold_domain_package_requires_force_to_overwrite_manifest(tmp_path: 
 
     assert result.overwritten is True
     assert result.package.identity == DomainIdentity("database", "2.0.0")
+
+
+def test_domain_package_runtime_loader_imports_explicit_entrypoint(tmp_path: Path) -> None:
+    root = tmp_path / "widget-domain"
+    module_name = "widget_domain_runtime_loader"
+    write_manifest(root, runtime_package_payload(module_name=module_name))
+    write_runtime_module(root, module_name=module_name)
+    package = DomainPackageRegistry().install(root)
+    sys_path_before = tuple(sys.path)
+
+    activation = load_domain_package_runtime(package)
+
+    assert activation.package is package
+    assert activation.active_domain.identity == DomainIdentity("widget", "1.0.0")
+    assert activation.active_domain.manifest.capability_names == ("inspect_widget",)
+    assert activation.active_domain.tools[0].definition.name == "inspect_widget"
+    assert module_name in sys.modules
+    assert tuple(sys.path) == sys_path_before
+
+
+def test_domain_package_runtime_loader_requires_explicit_entrypoint(tmp_path: Path) -> None:
+    root = tmp_path / "metadata-only-domain"
+    payload = runtime_package_payload()
+    payload["entrypoint"] = None
+    write_manifest(root, payload)
+    package = DomainPackageRegistry().install(root)
+
+    with pytest.raises(DomainPackageRuntimeLoadError, match="has no entrypoint"):
+        load_domain_package_runtime(package)
+
+
+def test_domain_package_runtime_loader_rejects_identity_mismatch(tmp_path: Path) -> None:
+    root = tmp_path / "widget-domain"
+    module_name = "widget_domain_identity_mismatch"
+    write_manifest(root, runtime_package_payload(module_name=module_name))
+    write_runtime_module(root, module_name=module_name, domain_name="other-widget")
+    package = DomainPackageRegistry().install(root)
+
+    with pytest.raises(DomainPackageRuntimeLoadError, match="identity mismatch"):
+        load_domain_package_runtime(package)
+
+
+def test_domain_package_runtime_loader_rejects_declared_metadata_mismatch(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "widget-domain"
+    module_name = "widget_domain_metadata_mismatch"
+    write_manifest(root, runtime_package_payload(module_name=module_name))
+    write_runtime_module(root, module_name=module_name, capability_name="observe_widget")
+    package = DomainPackageRegistry().install(root)
+
+    with pytest.raises(DomainPackageRuntimeLoadError, match="capabilities mismatch"):
+        load_domain_package_runtime(package)
