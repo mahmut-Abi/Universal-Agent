@@ -71,6 +71,10 @@ def write_domain_package(
     name: str = "kubernetes",
     dependencies: tuple[DomainIdentity, ...] = (),
 ) -> None:
+    (root / "resources").mkdir(parents=True, exist_ok=True)
+    (root / "resources" / "runbook.md").touch()
+    (root / "schemas").mkdir(parents=True, exist_ok=True)
+    (root / "schemas" / "workload.json").touch()
     write_json(
         root / "manifest.json",
         {
@@ -734,6 +738,19 @@ def test_ecosystem_registry_install_refuses_paths_outside_registry_base(
 
     with pytest.raises(EcosystemRegistryInstallError, match="escapes registry base path"):
         install_ecosystem_domain_packages(manifest, base_path=base_root)
+
+
+def test_ecosystem_registry_install_refuses_missing_domain_package_resources(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    write_domain_package(domain_root / "kubernetes")
+    catalog = load_ecosystem_catalog(domain_package_root=domain_root)
+    manifest = catalog.registry_manifest()
+    (domain_root / "kubernetes" / "resources" / "runbook.md").unlink()
+
+    with pytest.raises(EcosystemRegistryInstallError, match="local verification failed"):
+        install_ecosystem_domain_packages(manifest)
 
 
 def test_ecosystem_registry_install_refuses_tampered_domain_manifest(

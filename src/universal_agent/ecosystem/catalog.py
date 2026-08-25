@@ -14,6 +14,7 @@ from universal_agent.domain import (
     DomainPackageCompatibility,
     DomainPackageRegistry,
     load_domain_package,
+    verify_domain_package,
 )
 from universal_agent.evaluation.dataset import (
     EvaluationDataset,
@@ -1111,7 +1112,16 @@ def _domain_package_install_candidate(
             f"manifest loaded {_format_domain_identity(package.identity)}"
         )
     _verify_domain_package_ref_metadata(reference, package)
+    _verify_domain_package_local_integrity(package)
     return EcosystemDomainPackageInstallCandidate(reference, package)
+
+
+def _verify_domain_package_local_integrity(package: DomainPackage) -> None:
+    report = verify_domain_package(package)
+    if report.passed:
+        return
+    failed = "; ".join(f"{check.name}: {check.message}" for check in report.failed_checks)
+    raise EcosystemRegistryInstallError("domain package local verification failed: " + failed)
 
 
 def _domain_package_ref_path(
