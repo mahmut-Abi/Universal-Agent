@@ -90,7 +90,9 @@ Examples are organized by roadmap slice. Useful entry points:
 - Domain package runtime activation should go through `load_domain_package_runtime`.
   That seam imports the declared entrypoint only when explicitly called, validates
   the result through `DomainLoader`, and rejects package metadata drift. Registry
-  install/discovery must remain metadata-only.
+  install/discovery must remain metadata-only. Use
+  `agent domain-packages load-runtime <path>` when the same check is needed from
+  CLI/CI.
 - Domain package resources should stay package-local; scaffold custom resource
   parents through `DomainPackageScaffoldSpec.resources` rather than writing
   paths outside the package root.

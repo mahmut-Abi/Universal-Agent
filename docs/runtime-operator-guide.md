@@ -183,7 +183,14 @@ They do not import Domain entrypoints, install external dependencies or activate
 runtimes by themselves. Programmatic SDK callers that are ready to execute local
 Domain code should use `load_domain_package_runtime`, which imports only the
 declared entrypoint and validates it against the package metadata before
-returning an activated Domain. CLI install refuses signature metadata by default
-unless the operator explicitly allows unverified local signatures; programmatic
-callers can instead pass an `EcosystemRegistrySignatureVerifier` before planning
-or installing signed registry metadata.
+returning an activated Domain. CLI/CI callers can run the same explicit check
+without changing install semantics:
+
+```bash
+.venv/bin/python -m universal_agent.cli domain-packages load-runtime .tmp/ai-ops-domain
+```
+
+CLI install refuses signature metadata by default unless the operator explicitly
+allows unverified local signatures; programmatic callers can instead pass an
+`EcosystemRegistrySignatureVerifier` before planning or installing signed
+registry metadata.

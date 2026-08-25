@@ -350,7 +350,8 @@ detect accidental split state/event wiring. These adapters are local persistence
   `load_domain_package_runtime` is the explicit SDK activation seam for importing a package
   entrypoint, validating it through `DomainLoader`, and rejecting identity/capability/tool/evaluator
   drift between package metadata and runtime code; registry install/discovery still never imports
-  Domain code.
+  Domain code. `agent domain-packages load-runtime <path>` exposes the same explicit runtime
+  activation check for CLI/CI without changing metadata-only install semantics.
   `DomainPackageScaffoldSpec` and `scaffold_domain_package` provide the first Domain SDK surface for
   generating a standard package layout and validated manifest from typed metadata, including
   package-local resource parents for runbooks, schemas, templates and other declarative assets.

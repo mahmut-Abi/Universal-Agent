@@ -322,6 +322,94 @@ def write_domain_package_file(root: Path) -> None:
     )
 
 
+def write_runtime_domain_package_file(
+    root: Path,
+    *,
+    module_name: str,
+    capability_name: str = "inspect_widget",
+) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "resources").mkdir(parents=True, exist_ok=True)
+    (root / "resources" / "runbook.md").write_text("Inspect the widget first.\n")
+    (root / f"{module_name}.py").write_text(
+        f"""
+from __future__ import annotations
+
+from universal_agent import BaseDomainRuntime, immutable_json
+from universal_agent.core import (
+    CapabilityCategory,
+    CapabilityDefinition,
+    DomainManifest,
+    DomainMetadata,
+    JsonMapping,
+    ToolDefinition,
+)
+from universal_agent.evaluation import CriteriaEvaluator, Evaluator
+from universal_agent.tools import Tool
+
+
+class InspectWidgetTool:
+    definition = ToolDefinition("inspect_widget", "Inspect widget state", ("{capability_name}",))
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        return immutable_json({{"healthy": True}})
+
+
+class WidgetDomain(BaseDomainRuntime):
+    manifest = DomainManifest(
+        "agent.nantian.dev/v1alpha1",
+        "Domain",
+        DomainMetadata("widget", "1.0.0", "Widget domain"),
+        ("Widget",),
+        ("{capability_name}",),
+        ("criteria",),
+    )
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        return (
+            CapabilityDefinition(
+                "{capability_name}",
+                "Inspect widget health",
+                CapabilityCategory.OBSERVATION,
+            ),
+        )
+
+    def tools(self) -> tuple[Tool, ...]:
+        return (InspectWidgetTool(),)
+
+    def evaluators(self) -> tuple[Evaluator, ...]:
+        return (CriteriaEvaluator(),)
+
+
+def build_domain() -> WidgetDomain:
+    return WidgetDomain()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "apiVersion": "agent.nantian.dev/v1alpha1",
+                "kind": "DomainPackage",
+                "metadata": {
+                    "name": "widget",
+                    "version": "1.0.0",
+                    "description": "Widget domain package",
+                    "tags": ["sdk"],
+                },
+                "entrypoint": f"{module_name}:build_domain",
+                "ontology": ["Widget"],
+                "capabilities": ["inspect_widget"],
+                "tools": ["inspect_widget"],
+                "evaluators": ["criteria"],
+                "resources": ["resources/runbook.md"],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
 def write_profile_config_file(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -1563,6 +1651,59 @@ async def test_cli_exposes_domain_package_catalog_commands() -> None:
     assert "package_manifest_exists:kubernetes@0.2.0" in local_path_failed
     assert "package_manifest_matches_identity:kubernetes@0.2.0" in local_path_failed
     assert "package_resources_exist:kubernetes@0.2.0" in local_path_failed
+
+
+@pytest.mark.asyncio
+async def test_cli_loads_domain_package_runtime_entrypoint(tmp_path: Path) -> None:
+    service, _ = build_cli_service([])
+    package_root = tmp_path / "widget-domain"
+    mismatch_root = tmp_path / "mismatch-domain"
+    write_runtime_domain_package_file(
+        package_root,
+        module_name="widget_domain_cli_runtime",
+    )
+    write_runtime_domain_package_file(
+        mismatch_root,
+        module_name="widget_domain_cli_mismatch",
+        capability_name="observe_widget",
+    )
+    output = StringIO()
+    mismatch_output = StringIO()
+    mismatch_error = StringIO()
+
+    status = await run_cli(
+        ["domain-packages", "load-runtime", str(package_root)],
+        service=service,
+        stdout=output,
+    )
+    mismatch_status = await run_cli(
+        ["domain-packages", "load-runtime", str(mismatch_root)],
+        service=service,
+        stdout=mismatch_output,
+        stderr=mismatch_error,
+    )
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["status"] == "loaded"
+    assert payload["metadata_verified"] is True
+    assert payload["package"] == {
+        "name": "widget",
+        "version": "1.0.0",
+        "entrypoint": "widget_domain_cli_runtime:build_domain",
+        "root_path": str(package_root),
+        "manifest_path": str(package_root / "manifest.json"),
+    }
+    active_domain = payload["active_domain"]
+    assert isinstance(active_domain, dict)
+    assert active_domain["name"] == "widget"
+    assert active_domain["version"] == "1.0.0"
+    assert active_domain["capability_names"] == ["inspect_widget"]
+    assert active_domain["tool_names"] == ["inspect_widget"]
+    assert active_domain["evaluator_names"] == ["criteria"]
+    assert mismatch_status == 2
+    assert mismatch_output.getvalue() == ""
+    assert "capabilities mismatch" in read_json(mismatch_error)["error"]["message"]
 
 
 @pytest.mark.asyncio

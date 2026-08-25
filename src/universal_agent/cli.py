@@ -85,10 +85,12 @@ from universal_agent.domain import (
     DomainPackage,
     DomainPackageCompatibility,
     DomainPackageNotFoundError,
+    DomainPackageRuntimeActivation,
     DomainPackageScaffoldResult,
     DomainPackageScaffoldSpec,
     DomainPackageVerificationReport,
     RuntimeBuilder,
+    load_domain_package_runtime,
     scaffold_domain_package,
 )
 from universal_agent.domains.kubernetes import (
@@ -650,6 +652,9 @@ def build_parser() -> argparse.ArgumentParser:
     domain_package_show.add_argument("version", nargs="?")
     domain_package_verify = domain_package_commands.add_parser("verify")
     domain_package_verify.add_argument("--local-paths", action="store_true")
+    domain_package_load_runtime = domain_package_commands.add_parser("load-runtime")
+    domain_package_load_runtime.add_argument("path")
+    domain_package_load_runtime.add_argument("--skip-local-paths", action="store_true")
     domain_package_scaffold = domain_package_commands.add_parser("scaffold")
     domain_package_scaffold.add_argument("name")
     domain_package_scaffold.add_argument("--description", required=True)
@@ -1609,6 +1614,13 @@ def _dispatch_domain_packages(
             ),
         )
         return
+    if command == "load-runtime":
+        activation = load_domain_package_runtime(
+            Path(cast(str, args.path)),
+            verify_paths=not cast(bool, args.skip_local_paths),
+        )
+        _write_json(out, domain_package_runtime_activation_body(activation))
+        return
     if command == "scaffold":
         result = scaffold_domain_package(
             Path(cast(str, args.output)),
@@ -1675,6 +1687,39 @@ def domain_package_scaffold_body(result: DomainPackageScaffoldResult) -> dict[st
         "manifest_path": str(package.manifest_path),
         "created_paths": [str(path) for path in result.created_paths],
         "written_paths": [str(path) for path in result.written_paths],
+    }
+
+
+def domain_package_runtime_activation_body(
+    activation: DomainPackageRuntimeActivation,
+) -> dict[str, object]:
+    package = activation.package
+    active = activation.active_domain
+    return {
+        "status": "loaded",
+        "metadata_verified": True,
+        "package": {
+            "name": package.identity.name,
+            "version": package.identity.version,
+            "entrypoint": package.manifest.entrypoint,
+            "root_path": str(package.root_path),
+            "manifest_path": str(package.manifest_path),
+        },
+        "active_domain": {
+            "name": active.identity.name,
+            "version": active.identity.version,
+            "description": active.manifest.metadata.description,
+            "capability_names": [capability.name for capability in active.capabilities],
+            "tool_names": [tool.definition.name for tool in active.tools],
+            "policy_names": [policy.name for policy in active.policies],
+            "evaluator_names": [evaluator.name for evaluator in active.evaluators],
+            "context_provider_names": [provider.name for provider in active.context_providers],
+            "evidence_extractor_count": len(active.evidence_extractors),
+            "world_updater_count": len(active.world_updaters),
+            "task_expander_count": len(active.task_expanders),
+            "recovery_rule_count": len(active.recovery_rules),
+            "memory_count": len(active.memories),
+        },
     }
 
 
