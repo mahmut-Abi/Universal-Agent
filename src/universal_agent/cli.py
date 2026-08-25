@@ -2200,8 +2200,22 @@ def _ecosystem_domain_package_body(package: DomainPackage) -> dict[str, object]:
         "version": package.identity.version,
         "description": manifest.description,
         "author": manifest.author,
+        "entrypoint": manifest.entrypoint,
         "tags": list(manifest.tags),
+        "ontology": list(manifest.ontology),
         "capability_names": list(manifest.capabilities),
+        "tool_names": list(manifest.tools),
+        "policy_names": list(manifest.policies),
+        "procedure_names": list(manifest.procedures),
+        "knowledge_names": list(manifest.knowledge),
+        "evaluator_names": list(manifest.evaluators),
+        "context_provider_names": list(manifest.context_providers),
+        "prompt_names": list(manifest.prompts),
+        "resource_names": list(manifest.resources),
+        "dependencies": [
+            {"name": dependency.name, "version": dependency.version}
+            for dependency in manifest.dependencies
+        ],
         "required_tools": list(manifest.required_tools),
         "compatibility": {
             "runtime_api": manifest.compatibility.runtime_api,

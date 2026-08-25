@@ -285,6 +285,8 @@ def write_evaluation_dataset_file(root: Path) -> None:
 
 def write_domain_package_file(root: Path) -> None:
     root.mkdir(parents=True, exist_ok=True)
+    (root / "resources").mkdir(parents=True, exist_ok=True)
+    (root / "resources" / "runbook.md").touch()
     (root / "manifest.json").write_text(
         json.dumps(
             {
@@ -296,7 +298,17 @@ def write_domain_package_file(root: Path) -> None:
                     "description": "Kubernetes domain package",
                     "tags": ["kubernetes", "ops"],
                 },
+                "entrypoint": "kubernetes.domain:build_domain",
+                "ontology": ["Deployment"],
                 "capabilities": ["inspect_workload", "scale_workload"],
+                "tools": ["kubernetes_inspect_workload"],
+                "policies": ["kubernetes-scale-safety"],
+                "procedures": ["diagnose_unhealthy_workload"],
+                "knowledge": ["kubernetes readiness"],
+                "evaluators": ["workload-health"],
+                "context_providers": ["kubernetes_context"],
+                "prompts": ["diagnostic_prompt"],
+                "resources": ["resources/runbook.md"],
                 "required_tools": ["kubernetes_api"],
                 "compatibility": {
                     "runtime_api": ">=0.1,<1",
@@ -800,10 +812,20 @@ async def test_cli_ecosystem_catalog_indexes_local_artifacts(tmp_path: Path) -> 
         "total_items": 3,
     }
     assert payload["domain_packages"][0]["name"] == "kubernetes"
+    assert payload["domain_packages"][0]["entrypoint"] == "kubernetes.domain:build_domain"
+    assert payload["domain_packages"][0]["ontology"] == ["Deployment"]
     assert payload["domain_packages"][0]["capability_names"] == [
         "inspect_workload",
         "scale_workload",
     ]
+    assert payload["domain_packages"][0]["tool_names"] == ["kubernetes_inspect_workload"]
+    assert payload["domain_packages"][0]["policy_names"] == ["kubernetes-scale-safety"]
+    assert payload["domain_packages"][0]["procedure_names"] == ["diagnose_unhealthy_workload"]
+    assert payload["domain_packages"][0]["knowledge_names"] == ["kubernetes readiness"]
+    assert payload["domain_packages"][0]["evaluator_names"] == ["workload-health"]
+    assert payload["domain_packages"][0]["context_provider_names"] == ["kubernetes_context"]
+    assert payload["domain_packages"][0]["prompt_names"] == ["diagnostic_prompt"]
+    assert payload["domain_packages"][0]["resource_names"] == ["resources/runbook.md"]
     assert payload["domain_packages"][0]["compatibility"] == {
         "runtime_api": ">=0.1,<1",
         "domain_api": "agent.nantian.dev/v1alpha1",
@@ -1004,6 +1026,7 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
     assert install["evaluation_dataset_registry_count"] == 1
     assert install["profile_registry_count"] == 1
     assert install["domain_packages"][0]["name"] == "kubernetes"
+    assert install["domain_packages"][0]["resource_names"] == ["resources/runbook.md"]
     assert install["evaluation_datasets"][0]["name"] == "kubernetes-remediation"
     assert install["profiles"][0]["name"] == "kubernetes-operator"
     assert install_plan["status"] == "planned"
@@ -1011,6 +1034,7 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
     assert install_plan["evaluation_dataset_count"] == 1
     assert install_plan["profile_count"] == 1
     assert install_plan["domain_packages"][0]["name"] == "kubernetes"
+    assert install_plan["domain_packages"][0]["entrypoint"] == "kubernetes.domain:build_domain"
     assert install_plan["evaluation_datasets"][0]["name"] == "kubernetes-remediation"
     assert install_plan["profiles"][0]["name"] == "kubernetes-operator"
     assert duplicate_output.getvalue() == ""
