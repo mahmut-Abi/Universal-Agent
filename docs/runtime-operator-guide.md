@@ -96,6 +96,33 @@ is never returned by `config show` or `/v1/config`.
 }
 ```
 
+Kubernetes HTTP API profiles follow the same rule. The Domain settings store the
+API server and a secret reference name, while the bearer token is resolved from
+the declared runtime secret only at the CLI/host boundary.
+
+```json
+{
+  "secrets": {
+    "kubernetes_api_token": {
+      "source": "env",
+      "key": "KUBERNETES_API_TOKEN",
+      "required": true
+    }
+  },
+  "domain": {
+    "name": "kubernetes",
+    "version": "0.2.0",
+    "backend": "kubernetes_api",
+    "settings": {
+      "api_server": "https://cluster.example.test",
+      "default_namespace": "prod",
+      "bearer_token_secret": "kubernetes_api_token",
+      "timeout_seconds": 10
+    }
+  }
+}
+```
+
 ## Read-Only UI Surfaces
 
 - `agent tui` renders a deterministic text snapshot.

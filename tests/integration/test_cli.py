@@ -660,6 +660,73 @@ async def test_cli_init_can_write_kubectl_domain_backend_config(tmp_path: Path) 
 
 
 @pytest.mark.asyncio
+async def test_cli_init_can_write_kubernetes_api_domain_backend_config(tmp_path: Path) -> None:
+    output = StringIO()
+    profile_path = tmp_path / "kubernetes-api-profile.json"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--domain-backend",
+            "kubernetes_api",
+            "--kubernetes-api-server",
+            "https://cluster.example.test",
+            "--kubernetes-api-namespace",
+            "prod",
+            "--kubernetes-api-token-env",
+            "KUBERNETES_API_TOKEN",
+            "--kubernetes-api-token-secret",
+            "prod_kubernetes_api_token",
+            "--kubernetes-api-timeout-seconds",
+            "4.5",
+        ],
+        stdout=output,
+    )
+    profile = ProfileConfig.from_json_file(profile_path).to_profile()
+
+    assert status == 0
+    assert profile.domain.backend == "kubernetes_api"
+    assert profile.runtime.domain.backend == "kubernetes_api"
+    assert profile.runtime.domain.settings == {
+        "api_server": "https://cluster.example.test",
+        "default_namespace": "prod",
+        "bearer_token_secret": "prod_kubernetes_api_token",
+        "timeout_seconds": 4.5,
+    }
+    assert profile.runtime.secrets == (
+        SecretRef.env("prod_kubernetes_api_token", "KUBERNETES_API_TOKEN"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_cli_init_rejects_kubernetes_api_backend_without_server(
+    tmp_path: Path,
+) -> None:
+    output = StringIO()
+    error = StringIO()
+    profile_path = tmp_path / "kubernetes-api-profile.json"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--domain-backend",
+            "kubernetes_api",
+        ],
+        stdout=output,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert output.getvalue() == ""
+    assert "kubernetes_api backend requires --kubernetes-api-server" in error.getvalue()
+    assert not profile_path.exists()
+
+
+@pytest.mark.asyncio
 async def test_cli_init_can_write_json_http_model_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "json-http-profile.json"
@@ -884,6 +951,66 @@ async def test_cli_config_show_exposes_kubectl_domain_backend_config(tmp_path: P
             },
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_cli_config_show_exposes_kubernetes_api_backend_without_secret_values(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("KUBERNETES_API_TOKEN", "secret-token")
+    profile_path = tmp_path / "kubernetes-api-profile.json"
+    init_output = StringIO()
+    config_output = StringIO()
+
+    await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--domain-backend",
+            "kubernetes_api",
+            "--kubernetes-api-server",
+            "https://cluster.example.test",
+            "--kubernetes-api-namespace",
+            "prod",
+            "--kubernetes-api-token-env",
+            "KUBERNETES_API_TOKEN",
+        ],
+        stdout=init_output,
+    )
+    status = await run_cli(
+        ["--profile-config", str(profile_path), "config", "show"],
+        stdout=config_output,
+    )
+    config_payload = read_json(config_output)
+
+    assert status == 0
+    assert config_payload["domains"] == [
+        {
+            "name": "kubernetes",
+            "version": "0.2.0",
+            "primary": True,
+            "backend": "kubernetes_api",
+            "settings": {
+                "api_server": "https://cluster.example.test",
+                "default_namespace": "prod",
+                "bearer_token_secret": "<redacted>",
+                "timeout_seconds": 10.0,
+            },
+        }
+    ]
+    assert config_payload["secrets"] == [
+        {
+            "name": "kubernetes_api_token",
+            "source": "env",
+            "key": "KUBERNETES_API_TOKEN",
+            "required": True,
+            "available": True,
+            "status": "available",
+        }
+    ]
+    assert "secret-token" not in config_output.getvalue()
 
 
 @pytest.mark.asyncio

@@ -96,6 +96,7 @@ from universal_agent.domain import (
 )
 from universal_agent.domains.kubernetes import (
     KubectlBackend,
+    KubernetesApiBackend,
     KubernetesBackend,
     KubernetesMutationBackend,
     KubernetesRemediationDomain,
@@ -183,7 +184,7 @@ from universal_agent.profile import (
     load_profile_catalog,
 )
 from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI, RuntimeEventBatch
-from universal_agent.security import EnvSecretProvider
+from universal_agent.security import EnvSecretProvider, SecretProvider
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
 from universal_agent.tui import build_tui_snapshot, render_tui_snapshot
@@ -283,10 +284,12 @@ def build_default_service() -> RuntimeService:
 
 def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
     profile = ProfileConfig.from_json_file(profile_config_path).to_profile()
-    backend = _configured_kubernetes_backend(
-        profile.runtime.configured_domains() or (profile.domain,)
-    )
     secret_provider = EnvSecretProvider()
+    backend = _configured_kubernetes_backend(
+        profile.runtime.configured_domains() or (profile.domain,),
+        config=profile.runtime,
+        secret_provider=secret_provider,
+    )
     host = RuntimeHost.from_profile(
         profile=profile,
         model=build_configured_model_adapter(
@@ -303,7 +306,12 @@ def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
     return host.service
 
 
-def _configured_kubernetes_backend(domains: tuple[DomainConfig, ...]) -> object:
+def _configured_kubernetes_backend(
+    domains: tuple[DomainConfig, ...],
+    *,
+    config: RuntimeConfig | None = None,
+    secret_provider: SecretProvider | None = None,
+) -> object:
     if not domains:
         return _DefaultCliBackend()
     primary = domains[0]
@@ -319,6 +327,21 @@ def _configured_kubernetes_backend(domains: tuple[DomainConfig, ...]) -> object:
             ),
             context=_optional_setting_string(primary.settings, "context"),
             kubeconfig=_optional_setting_string(primary.settings, "kubeconfig"),
+            timeout_seconds=_setting_float(primary.settings, "timeout_seconds", default=10.0),
+        )
+    if backend == "kubernetes_api":
+        return KubernetesApiBackend(
+            api_server=_setting_string(primary.settings, "api_server", default=""),
+            bearer_token=_configured_kubernetes_api_token(
+                primary.settings,
+                config=config,
+                secret_provider=secret_provider,
+            ),
+            default_namespace=_setting_string(
+                primary.settings,
+                "default_namespace",
+                default="default",
+            ),
             timeout_seconds=_setting_float(primary.settings, "timeout_seconds", default=10.0),
         )
     raise ValueError(f"unsupported Kubernetes domain backend: {backend}")
@@ -503,11 +526,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init.add_argument("--distributed-workers-path", default=".universal-agent/workers.json")
     init.add_argument("--distributed-terminal-retention-seconds", type=float)
-    init.add_argument("--domain-backend", choices=("fake", "kubectl"), default="fake")
+    init.add_argument(
+        "--domain-backend",
+        choices=("fake", "kubectl", "kubernetes_api"),
+        default="fake",
+    )
     init.add_argument("--kubectl-namespace", default="default")
     init.add_argument("--kubectl-context")
     init.add_argument("--kubectl-kubeconfig")
     init.add_argument("--kubectl-timeout-seconds", type=float, default=10.0)
+    init.add_argument("--kubernetes-api-server")
+    init.add_argument("--kubernetes-api-namespace", default="default")
+    init.add_argument("--kubernetes-api-token-env")
+    init.add_argument("--kubernetes-api-token-secret", default="kubernetes_api_token")
+    init.add_argument("--kubernetes-api-timeout-seconds", type=float, default=10.0)
     init.add_argument("--model-provider", choices=("scripted", "json_http"), default="scripted")
     init.add_argument("--model-name", default="scripted")
     init.add_argument("--model-endpoint")
@@ -1783,6 +1815,11 @@ def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
         kubectl_context=cast(str | None, args.kubectl_context),
         kubectl_kubeconfig=cast(str | None, args.kubectl_kubeconfig),
         kubectl_timeout_seconds=cast(float, args.kubectl_timeout_seconds),
+        kubernetes_api_server=cast(str | None, args.kubernetes_api_server),
+        kubernetes_api_namespace=cast(str, args.kubernetes_api_namespace),
+        kubernetes_api_token_env=cast(str | None, args.kubernetes_api_token_env),
+        kubernetes_api_token_secret=cast(str, args.kubernetes_api_token_secret),
+        kubernetes_api_timeout_seconds=cast(float, args.kubernetes_api_timeout_seconds),
         model_provider=cast(str, args.model_provider),
         model_name=cast(str, args.model_name),
         model_endpoint=cast(str | None, args.model_endpoint),
@@ -1817,6 +1854,11 @@ def _profile_config_payload(
     kubectl_context: str | None,
     kubectl_kubeconfig: str | None,
     kubectl_timeout_seconds: float,
+    kubernetes_api_server: str | None,
+    kubernetes_api_namespace: str,
+    kubernetes_api_token_env: str | None,
+    kubernetes_api_token_secret: str,
+    kubernetes_api_timeout_seconds: float,
     model_provider: str,
     model_name: str,
     model_endpoint: str | None,
@@ -1831,6 +1873,12 @@ def _profile_config_payload(
         kubectl_context=kubectl_context,
         kubectl_kubeconfig=kubectl_kubeconfig,
         kubectl_timeout_seconds=kubectl_timeout_seconds,
+        kubernetes_api_server=kubernetes_api_server,
+        kubernetes_api_namespace=kubernetes_api_namespace,
+        kubernetes_api_token_secret=(
+            kubernetes_api_token_secret if kubernetes_api_token_env is not None else None
+        ),
+        kubernetes_api_timeout_seconds=kubernetes_api_timeout_seconds,
     )
     store: dict[str, str] = {"backend": store_backend}
     if store_backend != "memory":
@@ -1862,20 +1910,19 @@ def _profile_config_payload(
         "limits": {"max_iterations": 20, "max_recovery_steps": 8},
         "domain": domain,
     }
+    secrets: dict[str, dict[str, object]] = {}
     if model_api_key_env is not None:
-        runtime["secrets"] = {
-            model_api_key_secret: {
-                "source": "env",
-                "key": model_api_key_env,
-                "required": True,
-            }
-        }
+        _add_env_secret(secrets, model_api_key_secret, model_api_key_env)
+    if kubernetes_api_token_env is not None:
+        _add_env_secret(secrets, kubernetes_api_token_secret, kubernetes_api_token_env)
+    if secrets:
+        runtime["secrets"] = secrets
     if distributed_terminal_retention_seconds is not None:
         runtime["distributed_terminal_retention_seconds"] = distributed_terminal_retention_seconds
     return {
         "name": profile_name,
         "version": "0.1.0",
-        "description": "Local fake-backed Kubernetes profile",
+        "description": "Local Kubernetes profile",
         "domain": domain,
         "runtime": runtime,
     }
@@ -1888,23 +1935,50 @@ def _profile_domain_config(
     kubectl_context: str | None,
     kubectl_kubeconfig: str | None,
     kubectl_timeout_seconds: float,
+    kubernetes_api_server: str | None,
+    kubernetes_api_namespace: str,
+    kubernetes_api_token_secret: str | None,
+    kubernetes_api_timeout_seconds: float,
 ) -> dict[str, object]:
     domain: dict[str, object] = {"name": "kubernetes", "version": "0.2.0"}
     if domain_backend == "fake":
         return domain
-    if domain_backend != "kubectl":
-        raise ValueError(f"unsupported domain backend: {domain_backend}")
-    settings: dict[str, object] = {
-        "default_namespace": kubectl_namespace,
-        "timeout_seconds": kubectl_timeout_seconds,
-    }
-    if kubectl_context:
-        settings["context"] = kubectl_context
-    if kubectl_kubeconfig:
-        settings["kubeconfig"] = kubectl_kubeconfig
-    domain["backend"] = "kubectl"
-    domain["settings"] = settings
-    return domain
+    if domain_backend == "kubectl":
+        settings: dict[str, object] = {
+            "default_namespace": kubectl_namespace,
+            "timeout_seconds": kubectl_timeout_seconds,
+        }
+        if kubectl_context:
+            settings["context"] = kubectl_context
+        if kubectl_kubeconfig:
+            settings["kubeconfig"] = kubectl_kubeconfig
+        domain["backend"] = "kubectl"
+        domain["settings"] = settings
+        return domain
+    if domain_backend == "kubernetes_api":
+        if kubernetes_api_server is None or not kubernetes_api_server.strip():
+            raise ValueError("kubernetes_api backend requires --kubernetes-api-server")
+        settings = {
+            "api_server": kubernetes_api_server,
+            "default_namespace": kubernetes_api_namespace,
+            "timeout_seconds": kubernetes_api_timeout_seconds,
+        }
+        if kubernetes_api_token_secret is not None:
+            settings["bearer_token_secret"] = kubernetes_api_token_secret
+        domain["backend"] = "kubernetes_api"
+        domain["settings"] = settings
+        return domain
+    raise ValueError(f"unsupported domain backend: {domain_backend}")
+
+
+def _add_env_secret(secrets: dict[str, dict[str, object]], name: str, env_key: str) -> None:
+    if not name.strip():
+        raise ValueError("secret name must not be empty")
+    if not env_key.strip():
+        raise ValueError(f"secret {name} env key must not be empty")
+    if name in secrets:
+        raise ValueError(f"duplicate runtime secret: {name}")
+    secrets[name] = {"source": "env", "key": env_key, "required": True}
 
 
 def _profile_model_config(
@@ -1968,6 +2042,24 @@ def _optional_setting_string(settings: JsonMapping, key: str) -> str | None:
     if isinstance(value, str) and value.strip():
         return value
     raise ValueError(f"domain setting {key} must be a non-empty string")
+
+
+def _configured_kubernetes_api_token(
+    settings: JsonMapping,
+    *,
+    config: RuntimeConfig | None,
+    secret_provider: SecretProvider | None,
+) -> str | None:
+    secret_name = _optional_setting_string(settings, "bearer_token_secret")
+    if secret_name is None:
+        return None
+    if config is None:
+        raise ValueError("kubernetes_api bearer_token_secret requires runtime config")
+    provider = secret_provider or EnvSecretProvider()
+    for secret in config.secrets:
+        if secret.name == secret_name:
+            return provider.get_secret(secret.key)
+    raise ValueError(f"domain setting bearer_token_secret is not declared: {secret_name}")
 
 
 def _setting_float(settings: JsonMapping, key: str, *, default: float) -> float:

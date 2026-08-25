@@ -242,11 +242,12 @@ detect accidental split state/event wiring. These adapters are local persistence
   never updates the World Model, never enters the evaluator, and never alone completes a Task or
   Goal. It is excluded from `SessionSnapshot` so the World stays replayable from Evidence alone.
 - P3.2: Kubernetes remediation — policy-gated `scale_workload`, deterministic confirmation,
-  capability-scoped timeout recovery, dynamic remediation tasks, fresh health verification, and an
-  optional `KubectlBackend` adapter for real `kubectl` inspection/mutation behind the existing
-  injected backend protocols plus explicit Profile/CLI opt-in. A Domain-owned action argument
-  provider can enrich scale mutations with observed `current_replicas` and `resource_version`
-  guards before policy/tool execution. Mutation receipts never substitute for verification evidence.
+  capability-scoped timeout recovery, dynamic remediation tasks, fresh health verification, and
+  optional `KubectlBackend` / `KubernetesApiBackend` adapters for real `kubectl` or Kubernetes HTTP
+  API inspection/mutation behind the existing injected backend protocols plus explicit Profile/CLI
+  opt-in. A Domain-owned action argument provider can enrich scale mutations with observed
+  `current_replicas` and `resource_version` guards before policy/tool execution. Mutation receipts
+  never substitute for verification evidence.
 - P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
   projections, lightweight cursor-aware `SessionSummaryView` listing, cursor-aware `EventReader`,
   `RuntimeSessionBatch` / `RuntimeEventBatch`, action idempotency metadata (`idempotency_key`,
@@ -415,22 +416,25 @@ detect accidental split state/event wiring. These adapters are local persistence
   application projection. This is a foundation for optional Multi-Agent execution, not a replacement
   for Domain Composition.
 
-The Kubernetes Domain uses injected backends. Most tests and examples use fake backends; no real
-cluster is accessed unless a caller explicitly wires `KubectlBackend`. `KubectlBackend` implements
-the same `KubernetesBackend` / `KubernetesMutationBackend` protocols with subprocess-backed
-`kubectl` calls and can be tested through an injected command runner. See
-`examples/p3_2_kubectl_backend.py` for the adapter shape. Profile configs can now opt in with
-`domain.backend = "kubectl"` and domain settings for namespace, context, kubeconfig and timeout;
-the local CLI writes that form with `agent init --domain-backend kubectl` and still defaults to the
-fake backend. The read-only `KubernetesDomain` remains available, while `KubernetesRemediationDomain` adds the policy-gated mutation path. Multi-domain operation now
+The Kubernetes Domain uses injected backends. Most tests and examples use fake or fixture-backed
+backends; no real cluster is accessed unless a caller explicitly wires `KubectlBackend` or
+`KubernetesApiBackend`. `KubectlBackend` implements the same `KubernetesBackend` /
+`KubernetesMutationBackend` protocols with subprocess-backed `kubectl` calls. `KubernetesApiBackend`
+implements those protocols through Kubernetes HTTP API requests with an injectable transport and
+optional bearer-token secret resolution at the CLI/host boundary. See
+`examples/p3_2_kubectl_backend.py` and `examples/p3_2_kubernetes_api_backend.py` for the adapter
+shapes. Profile configs can now opt in with `domain.backend = "kubectl"` or
+`domain.backend = "kubernetes_api"` and backend-specific settings; the local CLI writes those forms
+with `agent init --domain-backend kubectl` or `agent init --domain-backend kubernetes_api` and still
+defaults to the fake backend. The read-only `KubernetesDomain` remains available, while `KubernetesRemediationDomain` adds the policy-gated mutation path. Multi-domain operation now
 has a conservative `DomainManager` / `DomainComposition` foundation: Domain identities,
 capabilities and tools are validated before activation, Domain Loader rejects empty evaluator sets,
 Observation processing routes Evidence extraction, World updating, Task expansion and evaluation
 by the executed action's Domain, Profiles may declare ordered Domain sets, and snapshots persist
 the activated composition for safe resume.
 Cross-domain World Model reasoning,
-production database migration systems, packaging, marketplace behavior, optional Multi-Agent Runtime, and real
-Kubernetes API remediation remain outside P3.2. Persistence includes in-memory stores plus local file-backed and SQLite-backed session/event adapters with
+production database migration systems, packaging, marketplace behavior, optional Multi-Agent Runtime, and
+production-grade Kubernetes remediation defaults remain outside P3.2. Persistence includes in-memory stores plus local file-backed and SQLite-backed session/event adapters with
 snapshot isolation; event sourcing and schema migration are not included.
 
 ## Roadmap alignment
@@ -476,6 +480,8 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_memory.py
 .venv/bin/python examples/p3_multi_domain_evaluator_routing.py
 .venv/bin/python examples/p3_2_kubernetes_remediation.py
+.venv/bin/python examples/p3_2_kubectl_backend.py
+.venv/bin/python examples/p3_2_kubernetes_api_backend.py
 .venv/bin/python examples/p3_5_runtime_api.py
 .venv/bin/python examples/p3_5_runtime_service.py
 .venv/bin/python examples/p3_5_agentd_routes.py
@@ -578,6 +584,8 @@ Python 3.12 or newer is required.
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-profile.json config show
 .venv/bin/python -m universal_agent.cli init --output .tmp/kubectl-profile.json --domain-backend kubectl --kubectl-namespace prod --kubectl-context prod-cluster --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/kubectl-profile.json config show
+.venv/bin/python -m universal_agent.cli init --output .tmp/kubernetes-api-profile.json --domain-backend kubernetes_api --kubernetes-api-server https://cluster.example.test --kubernetes-api-token-env KUBERNETES_API_TOKEN --force
+.venv/bin/python -m universal_agent.cli --profile-config .tmp/kubernetes-api-profile.json config show
 .venv/bin/python -m universal_agent.cli init --output .tmp/file-queue-profile.json --distributed-queue-backend file --distributed-queue-path .tmp/work-queue.json --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/file-queue-profile.json config show
 .venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-locks-profile.json --distributed-locks-backend sqlite --distributed-locks-path .tmp/distributed-locks.sqlite3 --force
