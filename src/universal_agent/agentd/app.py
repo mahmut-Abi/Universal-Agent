@@ -103,6 +103,7 @@ from universal_agent.web import (
     build_web_console_snapshot,
     render_web_catalog,
     render_web_console,
+    render_web_distributed,
     render_web_doctor,
     render_web_domain_detail,
     render_web_evidence_explorer,
@@ -259,6 +260,25 @@ class AgentdApp:
                 return bad_request(str(exc))
             return text_response(
                 render_web_doctor(snapshot, await self._service.doctor()),
+                content_type="text/html; charset=utf-8",
+            )
+        if path == "/console/distributed":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                snapshot = await build_web_console_snapshot(
+                    self._service,
+                    session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
+                    event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
+                )
+            except ValueError as exc:
+                return bad_request(str(exc))
+            return text_response(
+                render_web_distributed(
+                    snapshot,
+                    self._service.distributed_snapshot(),
+                    self._service.distributed_health(),
+                ),
                 content_type="text/html; charset=utf-8",
             )
         console_explorer = _console_explorer_renderer(path)

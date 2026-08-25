@@ -76,8 +76,8 @@ caller needs in-process execution and session/event read models.
 - `agent tui` renders a deterministic text snapshot.
 - `/console` renders a read-only Web Console snapshot.
 - Focused Web pages exist for sessions, session detail, evidence, world model,
-  domains, catalogs, profiles, runtime doctor checks, evaluation reports and
-  settings.
+  domains, catalogs, profiles, runtime doctor checks, local distributed runtime
+  coordination, evaluation reports and settings.
 
 These UI surfaces are inspection views. They do not mutate runtime state.
 

@@ -18,6 +18,11 @@ from universal_agent.core import (
     TaskId,
     TaskStatus,
 )
+from universal_agent.distributed import (
+    DistributedLockOwnerId,
+    DistributedRuntimeCoordinator,
+    WorkerId,
+)
 from universal_agent.evidence import EvidenceId
 from universal_agent.memory import MemoryKind
 from universal_agent.operations import (
@@ -56,6 +61,7 @@ from universal_agent.web import (
     WebConsoleSnapshot,
     render_web_catalog,
     render_web_console,
+    render_web_distributed,
     render_web_doctor,
     render_web_domain_detail,
     render_web_evidence_explorer,
@@ -372,6 +378,39 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "expected 1 audit records, projected 0" in doctor_page
     assert "Operational Diagnostics" in doctor_page
     assert "Runtime Configuration" in doctor_page
+
+    distributed_missing = render_web_distributed(snapshot, None, None)
+
+    assert "Universal Agent Runtime Distributed" in distributed_missing
+    assert "Distributed Runtime" in distributed_missing
+    assert "not configured" in distributed_missing
+    assert "Distributed Health Checks" in distributed_missing
+    assert "No distributed work items" in distributed_missing
+
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.schedule_session(SessionId("queued-session"))
+    coordinator.register_worker(WorkerId("worker-a"), capabilities=("agent_session",))
+    coordinator.acquire_lock(
+        lock_key="session/session-1",
+        owner_id=DistributedLockOwnerId("worker-a"),
+    )
+    distributed_page = render_web_distributed(
+        snapshot,
+        coordinator.snapshot(),
+        coordinator.health(),
+    )
+
+    assert "Universal Agent Runtime Distributed" in distributed_page
+    assert "Distributed: ok" in distributed_page
+    assert "Distributed Health Checks" in distributed_page
+    assert "worker_pool" in distributed_page
+    assert "Distributed Work Queue" in distributed_page
+    assert "queued-session" in distributed_page
+    assert "agent_session" in distributed_page
+    assert "Distributed Workers" in distributed_page
+    assert "worker-a" in distributed_page
+    assert "Distributed Locks" in distributed_page
+    assert "session/session-1" in distributed_page
 
     session_detail = render_web_session_detail(snapshot)
 

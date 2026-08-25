@@ -8,6 +8,7 @@ from typing import Any
 
 from universal_agent.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
 from universal_agent.core import SessionId
+from universal_agent.distributed import DistributedHealthReport, DistributedRuntimeSnapshot
 from universal_agent.operations import AuditRecordView, DoctorReportView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
 from universal_agent.service import (
@@ -196,6 +197,46 @@ def render_web_doctor(snapshot: WebConsoleSnapshot, doctor: DoctorReportView) ->
             _doctor_checks(doctor),
             _operational_diagnostics(snapshot),
             _runtime_settings(snapshot),
+            "</main>",
+            "</body>",
+            "</html>",
+        )
+    )
+
+
+def render_web_distributed(
+    snapshot: WebConsoleSnapshot,
+    distributed: DistributedRuntimeSnapshot | None,
+    health: DistributedHealthReport | None,
+) -> str:
+    title = "Universal Agent Runtime Distributed"
+    return "\n".join(
+        (
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f"<title>{_html(title)}</title>",
+            f"<style>{_stylesheet()}</style>",
+            "</head>",
+            "<body>",
+            '<main class="shell">',
+            _distributed_hero(snapshot, health),
+            '<section class="grid cards" aria-label="Distributed summary">',
+            _metric_card("Status", _distributed_status(health)),
+            _metric_card("Work Items", _distributed_work_item_count(distributed)),
+            _metric_card("Queued", _distributed_queued_count(distributed)),
+            _metric_card("Leased", _distributed_leased_count(distributed)),
+            _metric_card("Workers", _distributed_worker_count(distributed)),
+            _metric_card("Locks", _distributed_lock_count(distributed)),
+            "</section>",
+            _distributed_not_configured(distributed),
+            _distributed_health_checks(health),
+            _distributed_recommendations(health),
+            _distributed_work_queue(distributed),
+            _distributed_workers(distributed),
+            _distributed_locks(distributed),
             "</main>",
             "</body>",
             "</html>",
@@ -436,6 +477,7 @@ def _hero(snapshot: WebConsoleSnapshot) -> str:
             '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
             '<a class="pill link" href="/console/doctor">Doctor</a>',
+            '<a class="pill link" href="/console/distributed">Distributed</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
@@ -469,6 +511,7 @@ def _settings_hero(snapshot: WebConsoleSnapshot) -> str:
             '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
             '<a class="pill link" href="/console/doctor">Doctor</a>',
+            '<a class="pill link" href="/console/distributed">Distributed</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
@@ -496,6 +539,7 @@ def _domain_hero(snapshot: WebConsoleSnapshot, domain: DomainView | None) -> str
             '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
             '<a class="pill link" href="/console/doctor">Doctor</a>',
+            '<a class="pill link" href="/console/distributed">Distributed</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
@@ -525,6 +569,7 @@ def _profile_hero(snapshot: WebConsoleSnapshot) -> str:
             '<a class="pill link" href="/console">Console</a>',
             '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/doctor">Doctor</a>',
+            '<a class="pill link" href="/console/distributed">Distributed</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
@@ -556,6 +601,7 @@ def _catalog_hero(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> str:
             '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
             '<a class="pill link" href="/console/doctor">Doctor</a>',
+            '<a class="pill link" href="/console/distributed">Distributed</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
@@ -674,6 +720,7 @@ def _sessions_hero(snapshot: WebConsoleSnapshot) -> str:
             '<a class="pill link" href="/console">Console</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
             '<a class="pill link" href="/console/doctor">Doctor</a>',
+            '<a class="pill link" href="/console/distributed">Distributed</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
@@ -698,9 +745,39 @@ def _doctor_hero(snapshot: WebConsoleSnapshot, doctor: DoctorReportView) -> str:
             '<div class="status">',
             '<a class="pill link" href="/console">Console</a>',
             '<a class="pill link" href="/console/sessions">Sessions</a>',
+            '<a class="pill link" href="/console/distributed">Distributed</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             f'<span class="pill {doctor_class}">Doctor: {_html(doctor.status)}</span>',
+            f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
+            f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
+            "</div>",
+            "</section>",
+        )
+    )
+
+
+def _distributed_hero(
+    snapshot: WebConsoleSnapshot,
+    health: DistributedHealthReport | None,
+) -> str:
+    ready_class = "ok" if snapshot.ready.ready else "warn"
+    distributed_status = _distributed_status(health)
+    return "\n".join(
+        (
+            '<section class="hero">',
+            "<div>",
+            "<p>Universal Agent Runtime</p>",
+            "<h1>Distributed Runtime</h1>",
+            f"<span>status={_html(distributed_status)}</span>",
+            "</div>",
+            '<div class="status">',
+            '<a class="pill link" href="/console">Console</a>',
+            '<a class="pill link" href="/console/sessions">Sessions</a>',
+            '<a class="pill link" href="/console/doctor">Doctor</a>',
+            '<a class="pill link" href="/console/settings">Settings</a>',
+            f'<span class="pill {_status_class(distributed_status)}">'
+            f"Distributed: {_html(distributed_status)}</span>",
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
             "</div>",
@@ -740,6 +817,7 @@ def _session_nav(session: SessionView | None) -> str:
         '<a class="pill link" href="/console">Console</a>',
         '<a class="pill link" href="/console/sessions">Sessions</a>',
         '<a class="pill link" href="/console/doctor">Doctor</a>',
+        '<a class="pill link" href="/console/distributed">Distributed</a>',
     ]
     if session is not None:
         session_id = _attr(session.session_id)
@@ -845,6 +923,169 @@ def _doctor_checks(doctor: DoctorReportView) -> str:
     return _section(
         "Doctor Checks",
         _table(("Check", "Status", "Message"), tuple(rows)),
+    )
+
+
+def _distributed_not_configured(distributed: DistributedRuntimeSnapshot | None) -> str:
+    if distributed is not None:
+        return ""
+    return _section(
+        "Distributed Runtime",
+        '<p class="empty">Distributed runtime coordinator is not configured</p>',
+    )
+
+
+def _distributed_health_checks(health: DistributedHealthReport | None) -> str:
+    rows = []
+    if health is not None:
+        rows = [
+            "\n".join(
+                (
+                    "<tr>",
+                    f"<td>{_html(check.name)}</td>",
+                    (
+                        '<td><span class="severity '
+                        f'{_status_class(check.status.value)}">'
+                        f"{_html(check.status.value)}</span></td>"
+                    ),
+                    f"<td>{_html(check.message)}</td>",
+                    "</tr>",
+                )
+            )
+            for check in health.checks
+        ]
+    if not rows:
+        rows.append('<tr><td colspan="3">No distributed health checks</td></tr>')
+    return _section(
+        "Distributed Health Checks",
+        _table(("Check", "Status", "Message"), tuple(rows)),
+    )
+
+
+def _distributed_recommendations(health: DistributedHealthReport | None) -> str:
+    rows = []
+    if health is not None:
+        rows = [
+            "\n".join(
+                (
+                    "<tr>",
+                    f"<td>{_html(recommendation.code)}</td>",
+                    (
+                        '<td><span class="severity '
+                        f'{_status_class(recommendation.severity.value)}">'
+                        f"{_html(recommendation.severity.value)}</span></td>"
+                    ),
+                    f"<td>{_html(recommendation.target or 'runtime')}</td>",
+                    f"<td>{_html(recommendation.message)}</td>",
+                    "</tr>",
+                )
+            )
+            for recommendation in health.recommendations
+        ]
+    if not rows:
+        rows.append('<tr><td colspan="4">No distributed recommendations</td></tr>')
+    return _section(
+        "Distributed Recommendations",
+        _table(("Code", "Severity", "Target", "Message"), tuple(rows)),
+    )
+
+
+def _distributed_work_queue(distributed: DistributedRuntimeSnapshot | None) -> str:
+    rows = []
+    if distributed is not None:
+        rows = [
+            "\n".join(
+                (
+                    "<tr>",
+                    f"<td>{_html(item.work_item_id)}</td>",
+                    f"<td>{_html(item.kind)}</td>",
+                    f"<td>{_html(item.status.value)}</td>",
+                    f"<td>{_html(item.session_id or '-')}</td>",
+                    f"<td>{_html(item.task_id or '-')}</td>",
+                    f"<td>{_html(item.action_id or '-')}</td>",
+                    f"<td>{item.priority}</td>",
+                    f"<td>{item.attempts}/{item.max_attempts}</td>",
+                    f"<td>{_html(item.worker_id or '-')}</td>",
+                    f"<td>{_html(item.last_error or '-')}</td>",
+                    "</tr>",
+                )
+            )
+            for item in distributed.work_queue.items
+        ]
+    if not rows:
+        rows.append('<tr><td colspan="10">No distributed work items</td></tr>')
+    return _section(
+        "Distributed Work Queue",
+        _table(
+            (
+                "Work Item",
+                "Kind",
+                "Status",
+                "Session",
+                "Task",
+                "Action",
+                "Priority",
+                "Attempts",
+                "Worker",
+                "Last Error",
+            ),
+            tuple(rows),
+        ),
+    )
+
+
+def _distributed_workers(distributed: DistributedRuntimeSnapshot | None) -> str:
+    rows = []
+    if distributed is not None:
+        rows = [
+            "\n".join(
+                (
+                    "<tr>",
+                    f"<td>{_html(worker.worker_id)}</td>",
+                    f"<td>{_html(worker.status.value)}</td>",
+                    f"<td>{_html(', '.join(worker.capabilities) or 'none')}</td>",
+                    f"<td>{_html(worker.heartbeat_at.isoformat())}</td>",
+                    f"<td>{_html(worker.lease_expires_at.isoformat())}</td>",
+                    f"<td>{_html(worker.last_error or '-')}</td>",
+                    "</tr>",
+                )
+            )
+            for worker in distributed.workers.workers
+        ]
+    if not rows:
+        rows.append('<tr><td colspan="6">No distributed workers</td></tr>')
+    return _section(
+        "Distributed Workers",
+        _table(
+            ("Worker", "Status", "Capabilities", "Heartbeat", "Lease Expires", "Last Error"),
+            tuple(rows),
+        ),
+    )
+
+
+def _distributed_locks(distributed: DistributedRuntimeSnapshot | None) -> str:
+    rows = []
+    if distributed is not None:
+        rows = [
+            "\n".join(
+                (
+                    "<tr>",
+                    f"<td>{_html(lock.lock_key)}</td>",
+                    f"<td>{_html(lock.owner_id)}</td>",
+                    f"<td>{_html(lock.lease_id)}</td>",
+                    f"<td>{_html(lock.heartbeat_at.isoformat())}</td>",
+                    f"<td>{_html(lock.lease_expires_at.isoformat())}</td>",
+                    f"<td>{_html(_value_text(lock.metadata))}</td>",
+                    "</tr>",
+                )
+            )
+            for lock in distributed.locks
+        ]
+    if not rows:
+        rows.append('<tr><td colspan="6">No distributed locks</td></tr>')
+    return _section(
+        "Distributed Locks",
+        _table(("Lock", "Owner", "Lease", "Heartbeat", "Lease Expires", "Metadata"), tuple(rows)),
     )
 
 
@@ -1461,6 +1702,42 @@ def _doctor_check_count(doctor: DoctorReportView, status: str) -> int:
     return sum(1 for check in doctor.checks if check.status == status)
 
 
+def _distributed_status(health: DistributedHealthReport | None) -> str:
+    if health is None:
+        return "not configured"
+    return health.status.value
+
+
+def _distributed_work_item_count(distributed: DistributedRuntimeSnapshot | None) -> int:
+    if distributed is None:
+        return 0
+    return distributed.work_queue.total_count
+
+
+def _distributed_queued_count(distributed: DistributedRuntimeSnapshot | None) -> int:
+    if distributed is None:
+        return 0
+    return distributed.work_queue.queued_count
+
+
+def _distributed_leased_count(distributed: DistributedRuntimeSnapshot | None) -> int:
+    if distributed is None:
+        return 0
+    return distributed.work_queue.leased_count
+
+
+def _distributed_worker_count(distributed: DistributedRuntimeSnapshot | None) -> int:
+    if distributed is None:
+        return 0
+    return distributed.workers.total_count
+
+
+def _distributed_lock_count(distributed: DistributedRuntimeSnapshot | None) -> int:
+    if distributed is None:
+        return 0
+    return len(distributed.locks)
+
+
 def _risk_count(items: tuple[CapabilityView, ...] | tuple[ToolView, ...], risk: str) -> int:
     return sum(1 for item in items if item.risk.value == risk)
 
@@ -1829,6 +2106,7 @@ __all__ = [
     "build_web_console_snapshot",
     "render_web_catalog",
     "render_web_console",
+    "render_web_distributed",
     "render_web_doctor",
     "render_web_domain_detail",
     "render_web_evidence_explorer",

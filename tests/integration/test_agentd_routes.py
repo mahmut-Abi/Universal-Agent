@@ -973,6 +973,7 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     domain_page = await app.handle(HttpRequest("GET", "/console/domains/kubernetes/0.2.0"))
     profile_page = await app.handle(HttpRequest("GET", "/console/profiles"))
     doctor_page = await app.handle(HttpRequest("GET", "/console/doctor"))
+    distributed_page = await app.handle(HttpRequest("GET", "/console/distributed"))
     settings_page = await app.handle(HttpRequest("GET", "/console/settings"))
     catalog_pages = {
         "domains": "Domain Catalog",
@@ -1065,6 +1066,13 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert "state_event_consistency" in doctor_page.text_body
     assert "Operational Diagnostics" in doctor_page.text_body
     assert "Runtime Configuration" in doctor_page.text_body
+    assert distributed_page.status_code == 200
+    assert distributed_page.headers["content-type"] == "text/html; charset=utf-8"
+    assert distributed_page.text_body is not None
+    assert "Universal Agent Runtime Distributed" in distributed_page.text_body
+    assert "Distributed Runtime" in distributed_page.text_body
+    assert "not configured" in distributed_page.text_body
+    assert "Distributed Health Checks" in distributed_page.text_body
     for name, title in catalog_pages.items():
         response = catalog_responses[name]
         assert response.status_code == 200
@@ -1183,6 +1191,7 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
 
     snapshot = await app.handle(HttpRequest("GET", "/v1/distributed/snapshot"))
     health = await app.handle(HttpRequest("GET", "/v1/distributed/health"))
+    distributed_page = await app.handle(HttpRequest("GET", "/console/distributed"))
     expired_work = coordinator.queue.lease(
         worker_id=WorkerId("worker-a"),
         ttl_seconds=1,
@@ -1213,6 +1222,14 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
     assert workers["online_count"] == 1
     assert first_lock["lock_key"] == "session/session-1"
     assert health.status_code == 200
+    assert distributed_page.status_code == 200
+    assert distributed_page.text_body is not None
+    assert "Universal Agent Runtime Distributed" in distributed_page.text_body
+    assert "Distributed: ok" in distributed_page.text_body
+    assert "session-1" in distributed_page.text_body
+    assert "worker-a" in distributed_page.text_body
+    assert "session/session-1" in distributed_page.text_body
+    assert "Distributed Work Queue" in distributed_page.text_body
     assert expired.status_code == 200
     expired_items = expired.body["expired_work_items"]
     assert isinstance(expired_items, list)
