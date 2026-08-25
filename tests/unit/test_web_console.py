@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import MappingProxyType
 
@@ -298,6 +299,8 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "Runtime Console" in rendered
     assert "Health: ok" in rendered
     assert "Ready: yes" in rendered
+    assert "Operational Diagnostics" in rendered
+    assert "No active operational issues" in rendered
     assert "kubernetes@0.2.0" in rendered
     assert "Verify &lt;script&gt;alert(1)&lt;/script&gt;" in rendered
     assert "<script>alert(1)</script>" not in rendered
@@ -435,6 +438,8 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "Universal Agent Runtime Settings" in settings
     assert "Settings" in settings
     assert "Runtime Configuration" in settings
+    assert "Operational Diagnostics" in settings
+    assert "No active operational issues" in settings
     assert "Store Backend" in settings
     assert "memory" in settings
     assert "Max Iterations" in settings
@@ -443,3 +448,46 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "kubernetes" in settings
     assert "0.2.0" in settings
     assert "No environment settings" in settings
+
+    degraded = replace(
+        snapshot,
+        ready=ReadyView(False, "store unavailable", 0, 1, 1),
+        metrics=RuntimeMetricsView(
+            session_count=1,
+            active_session_count=0,
+            waiting_session_count=1,
+            completed_goal_count=0,
+            failed_goal_count=1,
+            cancelled_goal_count=0,
+            event_count=8,
+            action_started_count=2,
+            action_completed_count=2,
+            tool_failure_count=1,
+            policy_denial_count=1,
+            confirmation_required_count=1,
+            recovery_planned_count=1,
+            recovery_exhausted_count=1,
+            human_intervention_count=1,
+            resource_lock_acquired_count=1,
+            resource_lock_released_count=0,
+            resource_conflict_count=1,
+            active_resource_lock_count=1,
+        ),
+    )
+
+    degraded_console = render_web_console(degraded)
+    degraded_settings = render_web_settings(degraded)
+
+    for degraded_rendered in (degraded_console, degraded_settings):
+        assert "Operational Diagnostics" in degraded_rendered
+        assert "store unavailable" in degraded_rendered
+        assert "failed_goals" in degraded_rendered
+        assert "tool_failures" in degraded_rendered
+        assert "recovery_exhausted" in degraded_rendered
+        assert "policy_denials" in degraded_rendered
+        assert "confirmations_required" in degraded_rendered
+        assert "human_interventions" in degraded_rendered
+        assert "resource_conflicts" in degraded_rendered
+        assert "active_resource_locks" in degraded_rendered
+        assert "waiting_sessions" in degraded_rendered
+        assert "recoveries_planned" in degraded_rendered

@@ -74,6 +74,7 @@ def render_web_console(snapshot: WebConsoleSnapshot) -> str:
             _metric_card("Tokens", snapshot.cost.total_tokens),
             _metric_card("Cost micros", snapshot.cost.estimated_cost_micros),
             "</section>",
+            _operational_diagnostics(snapshot),
             _domains(snapshot),
             _profiles(snapshot.profiles),
             _capabilities(snapshot.capabilities),
@@ -368,6 +369,7 @@ def render_web_settings(snapshot: WebConsoleSnapshot) -> str:
             _metric_card("Max Iterations", snapshot.config.max_iterations),
             _metric_card("Recovery Steps", snapshot.config.max_recovery_steps),
             "</section>",
+            _operational_diagnostics(snapshot),
             _runtime_settings(snapshot),
             _configured_domains(snapshot),
             _environment(snapshot),
@@ -754,6 +756,77 @@ def _runtime_settings(snapshot: WebConsoleSnapshot) -> str:
         '<dl class="details">'
         + "".join(f"<dt>{_html(label)}</dt><dd>{_html(value)}</dd>" for label, value in items)
         + "</dl>",
+    )
+
+
+def _operational_diagnostics(snapshot: WebConsoleSnapshot) -> str:
+    rows = tuple(_operational_diagnostic_rows(snapshot))
+    if not rows:
+        rows = (
+            _diagnostic_row(
+                "ok",
+                "runtime",
+                "operational",
+                "No active operational issues",
+            ),
+        )
+    return _section(
+        "Operational Diagnostics",
+        _table(("Severity", "Signal", "Value", "Reason"), rows),
+    )
+
+
+def _operational_diagnostic_rows(snapshot: WebConsoleSnapshot) -> list[str]:
+    metrics = snapshot.metrics
+    rows: list[str] = []
+    if not snapshot.ready.ready:
+        rows.append(_diagnostic_row("error", "ready", "no", snapshot.ready.reason))
+    if metrics.failed_goal_count:
+        rows.append(_diagnostic_row("error", "failed_goals", metrics.failed_goal_count))
+    if metrics.tool_failure_count:
+        rows.append(_diagnostic_row("error", "tool_failures", metrics.tool_failure_count))
+    if metrics.recovery_exhausted_count:
+        rows.append(
+            _diagnostic_row("error", "recovery_exhausted", metrics.recovery_exhausted_count)
+        )
+    if metrics.policy_denial_count:
+        rows.append(_diagnostic_row("warn", "policy_denials", metrics.policy_denial_count))
+    if metrics.confirmation_required_count:
+        rows.append(
+            _diagnostic_row("warn", "confirmations_required", metrics.confirmation_required_count)
+        )
+    if metrics.human_intervention_count:
+        rows.append(
+            _diagnostic_row("warn", "human_interventions", metrics.human_intervention_count)
+        )
+    if metrics.resource_conflict_count:
+        rows.append(_diagnostic_row("warn", "resource_conflicts", metrics.resource_conflict_count))
+    if metrics.active_resource_lock_count:
+        rows.append(
+            _diagnostic_row("warn", "active_resource_locks", metrics.active_resource_lock_count)
+        )
+    if metrics.waiting_session_count:
+        rows.append(_diagnostic_row("info", "waiting_sessions", metrics.waiting_session_count))
+    if metrics.recovery_planned_count:
+        rows.append(_diagnostic_row("info", "recoveries_planned", metrics.recovery_planned_count))
+    return rows
+
+
+def _diagnostic_row(
+    severity: str,
+    signal: str,
+    value: object,
+    reason: str = "",
+) -> str:
+    return "\n".join(
+        (
+            "<tr>",
+            f'<td><span class="severity {severity}">{_html(severity)}</span></td>',
+            f"<td>{_html(signal)}</td>",
+            f"<td>{_html(value)}</td>",
+            f"<td>{_html(reason)}</td>",
+            "</tr>",
+        )
     )
 
 
@@ -1531,6 +1604,15 @@ body {
   font-size: 13px;
   font-weight: 700;
 }
+.severity {
+  display: inline-block;
+  min-width: 56px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
 .ok {
   background: #dcfce7;
   color: #166534;
@@ -1538,6 +1620,10 @@ body {
 .warn {
   background: #fff7ed;
   color: #9a3412;
+}
+.error {
+  background: #fee2e2;
+  color: #991b1b;
 }
 .grid {
   display: grid;
