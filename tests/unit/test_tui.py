@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import MappingProxyType
 
@@ -283,6 +284,8 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
 
     assert "Universal Agent Runtime TUI" in rendered
     assert "Health: ok | Ready: yes" in rendered
+    assert "Operational Diagnostics" in rendered
+    assert "- ok no active operational issues" in rendered
     assert "kubernetes@0.2.0" in rendered
     assert "Agent Profiles" in rendered
     assert "production-operator@1.0.0" in rendered
@@ -309,3 +312,43 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
     assert "ActionStarted" in rendered
     assert "capability=inspect_workload" in rendered
     assert "policy=allow:allow-read" in rendered
+
+    degraded = replace(
+        snapshot,
+        ready=ReadyView(False, "store unavailable", 0, 1, 1),
+        metrics=RuntimeMetricsView(
+            session_count=1,
+            active_session_count=0,
+            waiting_session_count=1,
+            completed_goal_count=0,
+            failed_goal_count=1,
+            cancelled_goal_count=0,
+            event_count=8,
+            action_started_count=2,
+            action_completed_count=2,
+            tool_failure_count=1,
+            policy_denial_count=1,
+            confirmation_required_count=1,
+            recovery_planned_count=1,
+            recovery_exhausted_count=1,
+            human_intervention_count=1,
+            resource_lock_acquired_count=1,
+            resource_lock_released_count=0,
+            resource_conflict_count=1,
+            active_resource_lock_count=1,
+        ),
+    )
+
+    degraded_rendered = render_tui_snapshot(degraded)
+
+    assert "- error ready=no reason=store unavailable" in degraded_rendered
+    assert "- error failed_goals=1" in degraded_rendered
+    assert "- error tool_failures=1" in degraded_rendered
+    assert "- error recovery_exhausted=1" in degraded_rendered
+    assert "- warn policy_denials=1" in degraded_rendered
+    assert "- warn confirmations_required=1" in degraded_rendered
+    assert "- warn human_interventions=1" in degraded_rendered
+    assert "- warn resource_conflicts=1" in degraded_rendered
+    assert "- warn active_resource_locks=1" in degraded_rendered
+    assert "- info waiting_sessions=1" in degraded_rendered
+    assert "- info recoveries_planned=1" in degraded_rendered

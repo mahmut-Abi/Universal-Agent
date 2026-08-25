@@ -72,9 +72,17 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
             f" currency={snapshot.cost.currency}"
         ),
         "",
-        "Active Domains",
+        "Operational Diagnostics",
         _rule(),
     ]
+    lines.extend(_operational_diagnostic_lines(snapshot))
+    lines.extend(
+        (
+            "",
+            "Active Domains",
+            _rule(),
+        )
+    )
     lines.extend(_domain_lines(snapshot.domains))
     lines.extend(("", "Agent Profiles", _rule()))
     lines.extend(_profile_lines(snapshot.profiles))
@@ -105,6 +113,36 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
     lines.extend(("", "Audit", _rule()))
     lines.extend(_audit_lines(snapshot.audit_records))
     return "\n".join(lines) + "\n"
+
+
+def _operational_diagnostic_lines(snapshot: TuiSnapshot) -> list[str]:
+    metrics = snapshot.metrics
+    lines: list[str] = []
+    if not snapshot.ready.ready:
+        lines.append(f"- error ready=no reason={snapshot.ready.reason}")
+    if metrics.failed_goal_count:
+        lines.append(f"- error failed_goals={metrics.failed_goal_count}")
+    if metrics.tool_failure_count:
+        lines.append(f"- error tool_failures={metrics.tool_failure_count}")
+    if metrics.recovery_exhausted_count:
+        lines.append(f"- error recovery_exhausted={metrics.recovery_exhausted_count}")
+    if metrics.policy_denial_count:
+        lines.append(f"- warn policy_denials={metrics.policy_denial_count}")
+    if metrics.confirmation_required_count:
+        lines.append(f"- warn confirmations_required={metrics.confirmation_required_count}")
+    if metrics.human_intervention_count:
+        lines.append(f"- warn human_interventions={metrics.human_intervention_count}")
+    if metrics.resource_conflict_count:
+        lines.append(f"- warn resource_conflicts={metrics.resource_conflict_count}")
+    if metrics.active_resource_lock_count:
+        lines.append(f"- warn active_resource_locks={metrics.active_resource_lock_count}")
+    if metrics.waiting_session_count:
+        lines.append(f"- info waiting_sessions={metrics.waiting_session_count}")
+    if metrics.recovery_planned_count:
+        lines.append(f"- info recoveries_planned={metrics.recovery_planned_count}")
+    if not lines:
+        return ["- ok no active operational issues"]
+    return lines
 
 
 def _domain_lines(domains: tuple[DomainView, ...]) -> list[str]:
