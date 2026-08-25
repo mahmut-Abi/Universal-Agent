@@ -20,7 +20,7 @@ from universal_agent import (
     immutable_json,
 )
 from universal_agent.cli import run_cli
-from universal_agent.core import JsonMapping
+from universal_agent.core import JsonMapping, SessionId
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 
 
@@ -119,9 +119,31 @@ async def main() -> None:
         service,
     )
     assert "event: GoalCreated\n" in sse_output.getvalue()
+    existing_events = await service.stream_events(SessionId(session_id))
+    last_cursor = existing_events.events[-1].event_id
+    wait_task = asyncio.create_task(
+        run_agent_command(
+            [
+                "session",
+                "events",
+                session_id,
+                "--after",
+                last_cursor,
+                "--wait",
+                "--timeout-seconds",
+                "1",
+                "--poll-interval-seconds",
+                "0.001",
+            ],
+            service,
+        )
+    )
+    await asyncio.sleep(0.01)
     await run_agent_command(["session", "resume", session_id], service)
+    wait_output = await wait_task
+    assert '"events": []' not in wait_output.getvalue()
     print(f"inspections={backend.inspect_calls}")
-    print("sse_stream=ok")
+    print("event_stream=ok")
 
 
 if __name__ == "__main__":

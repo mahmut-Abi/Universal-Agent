@@ -170,7 +170,7 @@ from universal_agent.profile import (
     ProfileConfigNotFoundError,
     load_profile_catalog,
 )
-from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI
+from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI, RuntimeEventBatch
 from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
@@ -727,6 +727,9 @@ def build_parser() -> argparse.ArgumentParser:
     events.add_argument("--after")
     events.add_argument("--limit", type=int)
     events.add_argument("--format", choices=("json", "sse"), default="json")
+    events.add_argument("--wait", action="store_true")
+    events.add_argument("--timeout-seconds", type=float, default=10.0)
+    events.add_argument("--poll-interval-seconds", type=float, default=0.25)
 
     audit = session_commands.add_parser("audit")
     audit.add_argument("session_id")
@@ -1903,10 +1906,14 @@ async def _dispatch_session(
         session_id = SessionId(cast(str, args.session_id))
         after = cast(str | None, args.after)
         limit = cast(int | None, args.limit)
-        batch = await service.stream_events(
+        batch = await _stream_events_for_cli(
+            service,
             session_id,
             after_event_id=None if after is None else EventId(after),
             limit=limit,
+            wait=cast(bool, args.wait),
+            timeout_seconds=cast(float, args.timeout_seconds),
+            poll_interval_seconds=cast(float, args.poll_interval_seconds),
         )
         if cast(str, args.format) == "sse":
             _write_text(out, sse_event_batch_text(batch))
@@ -1951,6 +1958,44 @@ async def _dispatch_session(
         _write_json(out, runtime_run_body(run))
         return
     raise ValueError(f"unknown session command: {command}")
+
+
+async def _stream_events_for_cli(
+    service: RuntimeService,
+    session_id: SessionId,
+    *,
+    after_event_id: EventId | None,
+    limit: int | None,
+    wait: bool,
+    timeout_seconds: float,
+    poll_interval_seconds: float,
+) -> RuntimeEventBatch:
+    if not wait:
+        return await service.stream_events(
+            session_id,
+            after_event_id=after_event_id,
+            limit=limit,
+        )
+    if timeout_seconds < 0.0 or timeout_seconds > 30.0:
+        raise ValueError("timeout_seconds must be between 0 and 30")
+    if poll_interval_seconds < 0.001 or poll_interval_seconds > 5.0:
+        raise ValueError("poll_interval_seconds must be between 0.001 and 5")
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_seconds
+    batch = await service.stream_events(
+        session_id,
+        after_event_id=after_event_id,
+        limit=limit,
+    )
+    while not batch.events and loop.time() < deadline:
+        await asyncio.sleep(min(poll_interval_seconds, max(0.0, deadline - loop.time())))
+        batch = await service.stream_events(
+            session_id,
+            after_event_id=after_event_id,
+            limit=limit,
+        )
+    return batch
 
 
 def _load_evaluation_report(path: Path) -> EvaluationReportRecording:

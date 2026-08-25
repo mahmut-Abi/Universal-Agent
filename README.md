@@ -96,7 +96,8 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
 
 This remains usable in-process, while the standard-library HTTP bridge now wraps the same
 `AgentdApp` route adapter for local `agentd` hosting. SSE-formatted event batches now share the same
-cursor semantics as JSON event reads; production database persistence and long-lived push delivery are later
+cursor semantics as JSON event reads, and agentd/CLI consumers can request bounded wait polling
+for newly appended events; production database persistence and long-lived push delivery are later
 P3.5 work built on this interface, not replacements for it.
 
 `RuntimeService` is the first framework-free `agentd` foundation. It delegates execution, session and
@@ -147,7 +148,7 @@ does not touch Runtime internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
 Capability/Tool/Policy/Evaluator/Memory catalogs, `config show`, and session
-list/show/diagnostics/evidence/world/events/pause/resume/cancel commands through `RuntimeService`, with cursor flags and optional SSE text output for session event reads. It
+list/show/diagnostics/evidence/world/events/pause/resume/cancel commands through `RuntimeService`, with cursor flags, bounded `--wait` polling and optional SSE text output for session event reads. It
 can also load an
 `agent init` Profile JSON through `--profile-config` and assemble the service through
 `RuntimeHost`, so generated memory/file/SQLite store settings are used by subsequent CLI commands.

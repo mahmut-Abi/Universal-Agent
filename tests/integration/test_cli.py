@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -2161,6 +2162,84 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
     assert ": next_cursor=" in sse_events
     assert resume_payload["result"]["status"] == "completed"
     assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cli_session_events_can_wait_for_new_events() -> None:
+    service, _ = build_cli_service([wait(), inspect_workload(), finish()])
+    waiting = await service.run_goal(*goal_task())
+    session_id = str(waiting.result.session_id)
+    existing = await service.stream_events(SessionId(session_id))
+    last_cursor = existing.events[-1].event_id
+    wait_output = StringIO()
+    resume_output = StringIO()
+
+    wait_task = asyncio.create_task(
+        run_cli(
+            [
+                "session",
+                "events",
+                session_id,
+                "--after",
+                last_cursor,
+                "--wait",
+                "--timeout-seconds",
+                "1",
+                "--poll-interval-seconds",
+                "0.001",
+            ],
+            service=service,
+            stdout=wait_output,
+        )
+    )
+    await asyncio.sleep(0.01)
+    resume_status = await run_cli(
+        ["session", "resume", session_id],
+        service=service,
+        stdout=resume_output,
+    )
+    wait_status = await wait_task
+    wait_payload = read_json(wait_output)
+
+    assert resume_status == 0
+    assert wait_status == 0
+    events = wait_payload["events"]
+    assert isinstance(events, list)
+    assert events
+    assert wait_payload["next_cursor"] == events[-1]["event_id"]
+    assert any(item["type"] in {"StateUpdated", "GoalCompleted"} for item in events)
+
+
+@pytest.mark.asyncio
+async def test_cli_session_events_rejects_invalid_wait_timeout() -> None:
+    service, _ = build_cli_service([wait()])
+    waiting = await service.run_goal(*goal_task())
+    output = StringIO()
+    error = StringIO()
+
+    status = await run_cli(
+        [
+            "session",
+            "events",
+            str(waiting.result.session_id),
+            "--wait",
+            "--timeout-seconds",
+            "31",
+        ],
+        service=service,
+        stdout=output,
+        stderr=error,
+    )
+    payload = read_json(error)
+
+    assert status == 2
+    assert payload == {
+        "error": {
+            "code": "bad_request",
+            "message": "timeout_seconds must be between 0 and 30",
+        }
+    }
+    assert output.getvalue() == ""
 
 
 @pytest.mark.asyncio
