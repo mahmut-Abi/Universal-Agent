@@ -1338,6 +1338,9 @@ class RuntimeService:
                 sessions,
                 distributed_snapshot,
             ),
+            distributed_terminal_work_item_count=None
+            if distributed_snapshot is None
+            else self._distributed_terminal_work_item_count(distributed_snapshot),
             secret_resolution=self._secret_resolution,
             secret_scan_payload=_secret_scan_payload(config, events),
         )
@@ -1470,6 +1473,14 @@ class RuntimeService:
                 if pending is None or pending.action_id != item.action_id:
                     invalid_count += 1
         return invalid_count
+
+
+    def _distributed_terminal_work_item_count(
+        self,
+        snapshot: DistributedRuntimeSnapshot,
+    ) -> int:
+        queue = snapshot.work_queue
+        return queue.completed_count + queue.failed_count + queue.cancelled_count
 
     def _world_projection_views(
         self,

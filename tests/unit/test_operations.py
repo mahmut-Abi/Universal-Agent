@@ -862,6 +862,29 @@ def test_doctor_report_errors_on_invalid_distributed_session_work_items() -> Non
     assert distributed_queue.message == "invalid_session_work_items=2"
 
 
+def test_doctor_report_warns_on_terminal_distributed_work_items() -> None:
+    report = build_doctor_report(
+        health_status="ok",
+        ready=True,
+        ready_reason="ready",
+        domain_count=1,
+        capability_count=1,
+        tool_count=1,
+        sessions=(),
+        events=(),
+        distributed_invalid_session_work_item_count=0,
+        distributed_terminal_work_item_count=3,
+    )
+
+    distributed_queue = next(
+        check for check in report.checks if check.name == "distributed_work_queue"
+    )
+
+    assert report.status == "warn"
+    assert distributed_queue.status == "warn"
+    assert distributed_queue.message == "terminal_work_items=3 prune recommended"
+
+
 def test_doctor_report_allows_missing_distributed_runtime() -> None:
     report = build_doctor_report(
         health_status="ok",

@@ -363,6 +363,7 @@ def build_doctor_report(
     distributed_expiring_lease_count: int | None = None,
     distributed_recommendation_count: int | None = None,
     distributed_invalid_session_work_item_count: int | None = None,
+    distributed_terminal_work_item_count: int | None = None,
     secret_resolution: SecretResolutionReport | None = None,
     secret_scan_payload: object | None = None,
 ) -> DoctorReportView:
@@ -410,6 +411,7 @@ def build_doctor_report(
         ),
         _distributed_work_queue_check(
             invalid_session_work_item_count=distributed_invalid_session_work_item_count,
+            terminal_work_item_count=distributed_terminal_work_item_count,
         ),
         DoctorCheckView(
             "cost_tracking",
@@ -1075,6 +1077,7 @@ def _distributed_runtime_check(
 def _distributed_work_queue_check(
     *,
     invalid_session_work_item_count: int | None,
+    terminal_work_item_count: int | None,
 ) -> DoctorCheckView:
     if invalid_session_work_item_count is None:
         return DoctorCheckView(
@@ -1088,10 +1091,16 @@ def _distributed_work_queue_check(
             "error",
             f"invalid_session_work_items={invalid_session_work_item_count}",
         )
+    if terminal_work_item_count:
+        return DoctorCheckView(
+            "distributed_work_queue",
+            "warn",
+            f"terminal_work_items={terminal_work_item_count} prune recommended",
+        )
     return DoctorCheckView(
         "distributed_work_queue",
         "ok",
-        "session work items reference known sessions",
+        "session work items reference known sessions; terminal_work_items=0",
     )
 
 

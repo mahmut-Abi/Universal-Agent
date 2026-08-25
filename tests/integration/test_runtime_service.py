@@ -1157,6 +1157,44 @@ async def test_runtime_service_doctor_detects_distributed_session_work_without_s
     assert distributed_queue.message == "invalid_session_work_items=3"
 
 
+@pytest.mark.asyncio
+async def test_runtime_service_doctor_recommends_distributed_terminal_pruning() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=999_999_999,
+        now=now,
+    )
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+        distributed_coordinator=coordinator,
+    )
+    result = await service.run_goal(*goal_task())
+    scheduled = service.distributed_schedule_session(result.result.session_id, now=now)
+    assert scheduled is not None
+    leased = coordinator.queue.lease(worker_id=WorkerId("worker-a"), now=now)
+    assert leased.lease is not None
+    coordinator.queue.complete(
+        leased.lease.lease_id,
+        worker_id=WorkerId("worker-a"),
+        now=now,
+    )
+
+    report = await service.doctor()
+    distributed_queue = next(
+        check for check in report.checks if check.name == "distributed_work_queue"
+    )
+
+    assert report.status == "warn"
+    assert distributed_queue.status == "warn"
+    assert distributed_queue.message == "terminal_work_items=1 prune recommended"
+
+
 def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     service, _ = build_service([])
 
