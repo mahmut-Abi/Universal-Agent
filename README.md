@@ -4,8 +4,8 @@ A typed Universal Agent Kernel and Runtime with pluggable Domain Runtimes.
 
 The long-term architecture is defined in
 `universal-agent-runtime-domain-runtime-design.md`. The current implementation is a typed runtime
-with fake-backed Kubernetes remediation, a P3 Multi-Domain composition foundation,
-and the first P3.5 productization foundation: a stable
+with fixture-backed Kubernetes remediation plus opt-in `kubectl` and Kubernetes HTTP API backends,
+a P3 Multi-Domain composition foundation, and the first P3.5 productization foundation: a stable
 in-process Runtime API, immutable Session read models, cursor-readable Events, explicit
 pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter, a standard-library
 HTTP bridge, a local CLI adapter, local file-backed session/event persistence, the first P3.6
