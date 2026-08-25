@@ -393,6 +393,10 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
     assert "memory-1 kind=semantic subject=kubernetes readiness" in rendered
     assert "Verify workload health" in rendered
     assert "Satisfied Criteria: healthy=True" in rendered
+    assert "Task Timeline" in rendered
+    assert (
+        "task-1 status=completed required=healthy depends_on=none :: Inspect workload" in rendered
+    )
     assert "World Facts" in rendered
     assert "deployment/example healthy=True confidence=0.99 evidence=evidence-1" in rendered
     assert "World Entities" in rendered

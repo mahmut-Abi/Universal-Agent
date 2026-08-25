@@ -113,6 +113,8 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
     lines.extend(_session_lines(snapshot.sessions))
     lines.extend(("", "Selected Session", _rule()))
     lines.extend(_selected_session_lines(snapshot.selected_session))
+    lines.extend(("", "Task Timeline", _rule()))
+    lines.extend(_task_timeline_lines(snapshot.selected_session))
     lines.extend(("", "World Facts", _rule()))
     lines.extend(_world_fact_lines(snapshot.session_explorer))
     lines.extend(("", "World Entities", _rule()))
@@ -455,6 +457,21 @@ def _selected_session_lines(session: SessionView | None) -> list[str]:
     return lines
 
 
+def _task_timeline_lines(session: SessionView | None) -> list[str]:
+    if session is None or not session.tasks:
+        return ["- none"]
+    return [
+        (
+            f"- {task.task_id}"
+            f" status={task.status.value}"
+            f" required={_tuple_text(task.required_criteria)}"
+            f" depends_on={_task_id_tuple_text(task.depends_on)}"
+            f" :: {task.description}"
+        )
+        for task in session.tasks
+    ]
+
+
 def _world_fact_lines(explorer: SessionExplorerView | None) -> list[str]:
     if explorer is None or not explorer.world_facts:
         return ["- none"]
@@ -599,6 +616,10 @@ def _identity_tuple_text(values: tuple[DomainIdentity, ...]) -> str:
 
 def _tuple_text(values: tuple[str, ...]) -> str:
     return ", ".join(values) if values else "none"
+
+
+def _task_id_tuple_text(values: tuple[Any, ...]) -> str:
+    return ", ".join(str(value) for value in values) if values else "none"
 
 
 def _retention_text(seconds: float | None) -> str:
