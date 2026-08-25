@@ -316,7 +316,8 @@ event-sourcing models or production migration systems.
 - P6 Distributed Runtime foundation: `WorkScheduler` maps session/task/action identity into stable local
   work kinds and idempotency keys; `InMemoryWorkQueue`, `FileWorkQueue` and `SQLiteWorkQueue` provide typed `WorkItem`, `WorkerLease` and
   status contracts for local scheduler/worker adapters, including priority ordering, idempotent enqueue,
-  lease acquisition, heartbeat renewal, retry-aware failure, cancellation and lease expiry; `WorkQueueWorker`
+  lease acquisition, heartbeat renewal, retry-aware failure, cancellation, lease expiry and
+  terminal item pruning for local retention maintenance; `WorkQueueWorker`
   consumes those leases through per-kind handlers, leases only declared work kinds by default, can
   register/heartbeat through `InMemoryWorkerRegistry`, renews queue and worker leases while async
   handlers run, stops leasing when draining/offline/lost, and maps handler completion, retry, failure

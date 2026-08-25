@@ -34,6 +34,15 @@ class DistributedMaintenanceResult:
 
 
 @dataclass(frozen=True, slots=True)
+class DistributedPruneResult:
+    ran_at: datetime
+    pruned_work_items: tuple[WorkItem, ...]
+    before: datetime | None
+    snapshot: DistributedRuntimeSnapshot
+    health: DistributedHealthReport
+
+
+@dataclass(frozen=True, slots=True)
 class DistributedCancellationResult:
     cancelled_work_item: WorkItem
     snapshot: DistributedRuntimeSnapshot
@@ -466,6 +475,33 @@ class DistributedRuntimeCoordinator:
             expired_work_items=expired_work_items,
             expired_locks=expired_locks,
             expired_workers=expired_workers,
+            snapshot=snapshot,
+            health=health,
+        )
+
+    def prune_terminal_work_items(
+        self,
+        *,
+        before: datetime | None = None,
+        now: datetime | None = None,
+        queued_backlog_warn_threshold: int = 100,
+        lease_expiry_warn_seconds: float = 10.0,
+        min_online_workers: int = 1,
+    ) -> DistributedPruneResult:
+        timestamp = now or utc_now()
+        pruned = self._queue.prune_terminal(before=before)
+        snapshot = self.snapshot()
+        health = build_distributed_health_report(
+            snapshot,
+            now=timestamp,
+            queued_backlog_warn_threshold=queued_backlog_warn_threshold,
+            lease_expiry_warn_seconds=lease_expiry_warn_seconds,
+            min_online_workers=min_online_workers,
+        )
+        return DistributedPruneResult(
+            ran_at=timestamp,
+            pruned_work_items=pruned,
+            before=before,
             snapshot=snapshot,
             health=health,
         )

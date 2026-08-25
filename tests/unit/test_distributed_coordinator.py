@@ -246,6 +246,39 @@ def test_distributed_runtime_coordinator_cancels_work_item_and_reports_state() -
     assert result.health.status is DistributedHealthStatus.OK
 
 
+def test_distributed_runtime_coordinator_prunes_terminal_work_and_reports_state() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.workers.register(
+        WorkerId("worker-a"),
+        capabilities=("agent_session",),
+        ttl_seconds=30,
+        now=now,
+    )
+    coordinator.queue.enqueue(kind="complete", priority=2, available_at=now)
+    retained = coordinator.queue.enqueue(kind="agent_session", priority=1, available_at=now)
+    leased = coordinator.queue.lease(worker_id=WorkerId("worker-a"), now=now)
+    assert leased.lease is not None
+    completed = coordinator.queue.complete(
+        leased.lease.lease_id,
+        worker_id=WorkerId("worker-a"),
+        now=now + timedelta(seconds=1),
+    )
+
+    result = coordinator.prune_terminal_work_items(
+        before=now + timedelta(seconds=1),
+        now=now + timedelta(seconds=2),
+    )
+
+    assert result.ran_at == now + timedelta(seconds=2)
+    assert result.before == now + timedelta(seconds=1)
+    assert [item.work_item_id for item in result.pruned_work_items] == [completed.work_item_id]
+    assert result.snapshot.work_queue.total_count == 1
+    assert result.snapshot.work_queue.queued_count == 1
+    assert result.snapshot.work_queue.items[0].work_item_id == retained.work_item_id
+    assert result.health.status is DistributedHealthStatus.OK
+
+
 def test_distributed_runtime_coordinator_accepts_injected_primitives() -> None:
     queue = InMemoryWorkQueue()
     locks = InMemoryDistributedLockRegistry()

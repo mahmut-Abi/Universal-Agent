@@ -592,6 +592,59 @@ def test_work_queue_cancel_removes_pending_or_leased_work_from_execution() -> No
         queue.lease(worker_id=WorkerId("worker-b"), now=now)
 
 
+@pytest.mark.parametrize("queue_kind", ("memory", "file", "sqlite"))
+def test_work_queue_prunes_terminal_items_with_optional_retention_window(
+    queue_kind: str,
+    tmp_path: Path,
+) -> None:
+    queue = _queue_for_kind(queue_kind, tmp_path)
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    queue.enqueue(kind="complete", priority=10, available_at=now)
+    queue.enqueue(kind="fail", priority=9, max_attempts=1, available_at=now)
+    cancelled = queue.enqueue(kind="cancel", priority=8, available_at=now)
+    queued = queue.enqueue(kind="queued", priority=1, available_at=now)
+    queue.enqueue(kind="leased", priority=2, available_at=now)
+
+    completed_lease = queue.lease(worker_id=WorkerId("worker-a"), now=now)
+    assert completed_lease.lease is not None
+    completed = queue.complete(
+        completed_lease.lease.lease_id,
+        worker_id=WorkerId("worker-a"),
+        now=now + timedelta(seconds=1),
+    )
+    failed_lease = queue.lease(worker_id=WorkerId("worker-b"), now=now)
+    assert failed_lease.lease is not None
+    failed = queue.fail(
+        failed_lease.lease.lease_id,
+        worker_id=WorkerId("worker-b"),
+        reason="terminal failure",
+        retry=False,
+        now=now + timedelta(seconds=2),
+    )
+    cancelled = queue.cancel(
+        cancelled.work_item_id,
+        reason="operator cancelled",
+        now=now + timedelta(seconds=3),
+    )
+    leased = queue.lease(worker_id=WorkerId("worker-c"), now=now)
+
+    pruned = queue.prune_terminal(before=now + timedelta(seconds=2))
+
+    assert [item.work_item_id for item in pruned] == [
+        completed.work_item_id,
+        failed.work_item_id,
+    ]
+    assert [item.kind for item in queue.list()] == ["cancel", "leased", "queued"]
+
+    remaining_pruned = queue.prune_terminal()
+
+    assert [item.work_item_id for item in remaining_pruned] == [cancelled.work_item_id]
+    assert [item.work_item_id for item in queue.list()] == [
+        leased.work_item_id,
+        queued.work_item_id,
+    ]
+
+
 def test_work_queue_rejects_completion_after_lease_expiry() -> None:
     queue = InMemoryWorkQueue()
     now = datetime(2026, 1, 1, tzinfo=UTC)

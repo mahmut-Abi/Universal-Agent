@@ -293,6 +293,23 @@ class InMemoryWorkQueue:
             expired.append(replacement)
         return tuple(expired)
 
+    def prune_terminal(self, *, before: datetime | None = None) -> tuple[WorkItem, ...]:
+        """Remove terminal work items, optionally only items completed before a timestamp."""
+
+        pruned = tuple(
+            sorted(
+                (
+                    item
+                    for item in self._items.values()
+                    if _is_prunable_terminal(item, before=before)
+                ),
+                key=_sort_key,
+            )
+        )
+        for item in pruned:
+            del self._items[item.work_item_id]
+        return pruned
+
     def get(self, work_item_id: WorkItemId) -> WorkItem:
         try:
             return self._items[work_item_id]
@@ -509,6 +526,14 @@ class FileWorkQueue(InMemoryWorkQueue):
             if expired:
                 self._save()
             return expired
+
+    def prune_terminal(self, *, before: datetime | None = None) -> tuple[WorkItem, ...]:
+        with self._locked():
+            self._load()
+            pruned = super().prune_terminal(before=before)
+            if pruned:
+                self._save()
+            return pruned
 
     def get(self, work_item_id: WorkItemId) -> WorkItem:
         with self._locked():
@@ -734,6 +759,14 @@ class SQLiteWorkQueue(InMemoryWorkQueue):
                 self._save(connection)
             return expired
 
+    def prune_terminal(self, *, before: datetime | None = None) -> tuple[WorkItem, ...]:
+        with self._transaction() as connection:
+            self._load(connection)
+            pruned = super().prune_terminal(before=before)
+            if pruned:
+                self._save(connection)
+            return pruned
+
     def get(self, work_item_id: WorkItemId) -> WorkItem:
         connection = self._transaction_connection
         if connection is not None:
@@ -864,6 +897,25 @@ def _is_terminal(item: WorkItem) -> bool:
         WorkItemStatus.FAILED,
         WorkItemStatus.CANCELLED,
     }
+
+
+def _is_prunable_terminal(item: WorkItem, *, before: datetime | None) -> bool:
+    if not _is_terminal(item):
+        return False
+    if before is None:
+        return True
+    terminal_at = _terminal_at(item)
+    return terminal_at is not None and terminal_at <= before
+
+
+def _terminal_at(item: WorkItem) -> datetime | None:
+    if item.status is WorkItemStatus.COMPLETED:
+        return item.completed_at
+    if item.status is WorkItemStatus.FAILED:
+        return item.failed_at
+    if item.status is WorkItemStatus.CANCELLED:
+        return item.cancelled_at
+    return None
 
 
 def _encode_work_item(item: WorkItem) -> dict[str, object]:
