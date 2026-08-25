@@ -1087,7 +1087,7 @@ async def test_cli_ecosystem_install_requires_explicit_unverified_signature_trus
     assert export_status == 0
     assert rejected_status == 2
     assert rejected_output.getvalue() == ""
-    assert "signature verification is not implemented" in rejected_error.getvalue()
+    assert "pass a signature verifier" in rejected_error.getvalue()
     assert allowed_plan_status == 0
     assert allowed_plan["status"] == "planned"
     assert allowed_plan["domain_package_count"] == 1

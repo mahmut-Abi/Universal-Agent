@@ -172,5 +172,8 @@ P7 ecosystem commands validate and register local metadata:
 - Profile configs
 - Ecosystem registry manifests
 
-They do not import Domain entrypoints, install external dependencies, verify
-signatures or activate runtimes by themselves.
+They do not import Domain entrypoints, install external dependencies or activate
+runtimes by themselves. CLI install refuses signature metadata by default unless
+the operator explicitly allows unverified local signatures; programmatic callers
+can instead pass an `EcosystemRegistrySignatureVerifier` before planning or
+installing signed registry metadata.

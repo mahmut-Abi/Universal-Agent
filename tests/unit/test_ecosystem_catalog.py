@@ -18,6 +18,7 @@ from universal_agent import (
     EcosystemRegistryInstallError,
     EcosystemRegistryItemNotFoundError,
     EcosystemRegistryManifest,
+    EcosystemRegistrySignatureVerification,
     EcosystemRegistryStoreNotFoundError,
     EcosystemRegistryTrustPolicy,
     EcosystemRegistryValidationError,
@@ -34,6 +35,29 @@ from universal_agent import (
     write_ecosystem_registry_manifest,
 )
 from universal_agent.core import DomainIdentity, JsonMapping
+
+
+class StaticRegistrySignatureVerifier:
+    def __init__(self, passed: bool, reason: str = "static registry signature check") -> None:
+        self._passed = passed
+        self._reason = reason
+
+    def verify_registry(
+        self,
+        manifest: EcosystemRegistryManifest,
+    ) -> EcosystemRegistrySignatureVerification:
+        signature = manifest.metadata.get("signature")
+        signer = None
+        if isinstance(signature, dict):
+            signed_by = signature.get("signed_by")
+            if isinstance(signed_by, str):
+                signer = signed_by
+        return EcosystemRegistrySignatureVerification(
+            passed=self._passed,
+            verifier="static-test-verifier",
+            reason=self._reason,
+            signer=signer,
+        )
 
 
 def write_json(path: Path, payload: dict[str, object]) -> None:
@@ -594,7 +618,7 @@ def test_ecosystem_registry_install_refuses_unverified_signature_metadata_by_def
         },
     )
 
-    with pytest.raises(EcosystemRegistryInstallError, match="signature verification is not"):
+    with pytest.raises(EcosystemRegistryInstallError, match="pass a signature verifier"):
         plan_ecosystem_install(signed)
 
     allowed = plan_ecosystem_install(
@@ -603,6 +627,59 @@ def test_ecosystem_registry_install_refuses_unverified_signature_metadata_by_def
     )
 
     assert allowed.domain_packages.identities == (DomainIdentity("kubernetes", "1.0.0"),)
+
+
+def test_ecosystem_registry_install_accepts_verified_signature_metadata(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    write_domain_package(domain_root / "kubernetes")
+    exported = load_ecosystem_catalog(domain_package_root=domain_root).registry_manifest()
+    signed = EcosystemRegistryManifest(
+        api_version=exported.api_version,
+        kind=exported.kind,
+        name=exported.name,
+        version=exported.version,
+        description=exported.description,
+        domain_packages=exported.domain_packages,
+        metadata={
+            "signature": {
+                "algorithm": "local-static",
+                "value": "valid",
+                "signed_by": "platform-team",
+            }
+        },
+    )
+
+    plan = plan_ecosystem_install(
+        signed,
+        signature_verifier=StaticRegistrySignatureVerifier(True),
+    )
+
+    assert plan.domain_packages.identities == (DomainIdentity("kubernetes", "1.0.0"),)
+
+
+def test_ecosystem_registry_install_rejects_failed_signature_verification(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    write_domain_package(domain_root / "kubernetes")
+    exported = load_ecosystem_catalog(domain_package_root=domain_root).registry_manifest()
+    signed = EcosystemRegistryManifest(
+        api_version=exported.api_version,
+        kind=exported.kind,
+        name=exported.name,
+        version=exported.version,
+        description=exported.description,
+        domain_packages=exported.domain_packages,
+        metadata={"signature": {"algorithm": "local-static", "value": "invalid"}},
+    )
+
+    with pytest.raises(EcosystemRegistryInstallError, match="bad signature"):
+        install_ecosystem_domain_packages(
+            signed,
+            signature_verifier=StaticRegistrySignatureVerifier(False, "bad signature"),
+        )
 
 
 def test_ecosystem_registry_install_can_require_signed_registry(
