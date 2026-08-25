@@ -151,14 +151,19 @@ class EcosystemDomainPackageRef:
     root_path: str = ""
     manifest_path: str = ""
     manifest_sha256: str = ""
+    entrypoint: str | None = None
+    resources: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _require_non_empty(self.name, "domain_packages[].name")
         _require_non_empty(self.version, "domain_packages[].version")
         _require_non_empty(self.description, "domain_packages[].description")
+        if self.entrypoint is not None:
+            _require_non_empty(self.entrypoint, "domain_packages[].entrypoint")
         _validate_strings("domain_packages[].tags", self.tags)
         _validate_strings("domain_packages[].capability_names", self.capability_names)
         _validate_strings("domain_packages[].required_tools", self.required_tools)
+        _validate_strings("domain_packages[].resources", self.resources)
         _validate_optional_sha256("domain_packages[].manifest_sha256", self.manifest_sha256)
         for index, dependency in enumerate(self.dependencies):
             _require_non_empty(
@@ -774,9 +779,11 @@ def encode_ecosystem_registry_manifest(manifest: EcosystemRegistryManifest) -> d
                 "version": package.version,
                 "description": package.description,
                 "author": package.author,
+                "entrypoint": package.entrypoint,
                 "tags": list(package.tags),
                 "capability_names": list(package.capability_names),
                 "required_tools": list(package.required_tools),
+                "resources": list(package.resources),
                 "dependencies": [_identity_body(item) for item in package.dependencies],
                 "compatibility": _compatibility_body(package.compatibility),
                 "security": dict(package.security),
@@ -911,12 +918,14 @@ def _domain_package_ref(package: DomainPackage) -> EcosystemDomainPackageRef:
         tags=manifest.tags,
         capability_names=manifest.capabilities,
         required_tools=manifest.required_tools,
+        resources=manifest.resources,
         dependencies=manifest.dependencies,
         compatibility=manifest.compatibility,
         security=manifest.security,
         root_path=str(package.root_path),
         manifest_path=str(package.manifest_path),
         manifest_sha256=_file_sha256(package.manifest_path),
+        entrypoint=manifest.entrypoint,
     )
 
 
@@ -1252,10 +1261,14 @@ def _verify_domain_package_ref_metadata(
 ) -> None:
     manifest = package.manifest
     mismatches: list[str] = []
+    if reference.entrypoint is not None and reference.entrypoint != manifest.entrypoint:
+        mismatches.append("entrypoint")
     if reference.capability_names and reference.capability_names != manifest.capabilities:
         mismatches.append("capability_names")
     if reference.required_tools and reference.required_tools != manifest.required_tools:
         mismatches.append("required_tools")
+    if reference.resources and reference.resources != manifest.resources:
+        mismatches.append("resources")
     if reference.dependencies and reference.dependencies != manifest.dependencies:
         mismatches.append("dependencies")
     if (
@@ -1530,6 +1543,11 @@ def _domain_package_refs(payload: JsonMapping) -> tuple[EcosystemDomainPackageRe
                 field_name=f"domain_packages[{index}].description",
             ),
             author=_optional_string(item, "author", field_name=f"domain_packages[{index}].author"),
+            entrypoint=_optional_string(
+                item,
+                "entrypoint",
+                field_name=f"domain_packages[{index}].entrypoint",
+            ),
             tags=_string_tuple(item, "tags", field_name=f"domain_packages[{index}].tags"),
             capability_names=_string_tuple(
                 item,
@@ -1540,6 +1558,11 @@ def _domain_package_refs(payload: JsonMapping) -> tuple[EcosystemDomainPackageRe
                 item,
                 "required_tools",
                 field_name=f"domain_packages[{index}].required_tools",
+            ),
+            resources=_string_tuple(
+                item,
+                "resources",
+                field_name=f"domain_packages[{index}].resources",
             ),
             dependencies=_identity_tuple(
                 item,

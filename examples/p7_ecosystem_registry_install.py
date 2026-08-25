@@ -31,6 +31,7 @@ def write_domain_package(root: Path, name: str) -> None:
             },
             "entrypoint": f"{name}.domain:build_domain",
             "capabilities": ["inspect_workload"],
+            "resources": ["resources/runbook.md", "schemas/workload.json"],
             "required_tools": [f"{name}_api"],
             "compatibility": {
                 "runtime_api": ">=0.1,<1",
@@ -115,6 +116,7 @@ def main() -> None:
         result = install_ecosystem(index)
 
         print(f"planned_packages={len(plan.domain_packages.candidates)}")
+        print(f"planned_resources={len(plan.domain_packages.candidates[0].reference.resources)}")
         print(f"planned_datasets={len(plan.evaluation_datasets)}")
         print(f"planned_profiles={len(plan.profiles)}")
         print(f"installed_packages={len(result.installed_domain_packages)}")

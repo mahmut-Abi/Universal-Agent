@@ -82,7 +82,9 @@ def write_domain_package(
                 "description": f"{name} domain package",
                 "tags": [name],
             },
+            "entrypoint": f"{name}.domain:build_domain",
             "capabilities": ["inspect_workload"],
+            "resources": ["resources/runbook.md", "schemas/workload.json"],
             "required_tools": ["kubernetes_api"],
             "dependencies": [
                 {"name": dependency.name, "version": dependency.version}
@@ -238,6 +240,11 @@ def test_ecosystem_registry_manifest_round_trips_catalog_metadata(tmp_path: Path
     assert decoded.name == "ops-ecosystem"
     assert decoded.version == "1.2.3"
     assert decoded.domain_packages[0].identity.name == "kubernetes"
+    assert decoded.domain_packages[0].entrypoint == "kubernetes.domain:build_domain"
+    assert decoded.domain_packages[0].resources == (
+        "resources/runbook.md",
+        "schemas/workload.json",
+    )
     assert decoded.domain_packages[0].compatibility.runtime_api == ">=0.1,<1"
     assert decoded.domain_packages[0].compatibility.domain_api == "agent.nantian.dev/v1alpha1"
     assert decoded.domain_packages[0].security["side_effects"] == "none"
@@ -250,6 +257,11 @@ def test_ecosystem_registry_manifest_round_trips_catalog_metadata(tmp_path: Path
         "domain_api": "agent.nantian.dev/v1alpha1",
         "runtime_api": ">=0.1,<1",
     }
+    assert encoded["domain_packages"][0]["entrypoint"] == "kubernetes.domain:build_domain"
+    assert encoded["domain_packages"][0]["resources"] == [
+        "resources/runbook.md",
+        "schemas/workload.json",
+    ]
     assert encoded["domain_packages"][0]["security"] == {
         "requires_confirmation": False,
         "side_effects": "none",
@@ -298,6 +310,8 @@ def test_ecosystem_registry_manifest_accepts_legacy_package_refs_without_optiona
 
     assert decoded.domain_packages[0].compatibility.runtime_api is None
     assert decoded.domain_packages[0].compatibility.domain_api is None
+    assert decoded.domain_packages[0].entrypoint is None
+    assert decoded.domain_packages[0].resources == ()
     assert decoded.domain_packages[0].security == {}
     assert decoded.domain_packages[0].manifest_sha256 == ""
 
@@ -850,12 +864,17 @@ def test_ecosystem_registry_install_refuses_domain_package_metadata_mismatch(
                 "1.0.0",
                 "Kubernetes",
                 capability_names=("restart_workload",),
+                entrypoint="different.domain:build_domain",
+                resources=("resources/different.md",),
                 manifest_path=str(tmp_path / "domains" / "kubernetes" / "manifest.json"),
             ),
         ),
     )
 
-    with pytest.raises(EcosystemRegistryInstallError, match="metadata mismatch"):
+    with pytest.raises(
+        EcosystemRegistryInstallError,
+        match=r"metadata mismatch:.*entrypoint.*capability_names.*resources",
+    ):
         install_ecosystem_domain_packages(manifest)
 
 

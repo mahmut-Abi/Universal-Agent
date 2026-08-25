@@ -366,7 +366,8 @@ detect accidental split state/event wiring. These adapters are local persistence
   referenced package manifests, evaluation datasets and Profile configs before registering metadata;
   install planning rejects sha256 drift, identity mismatch and registry metadata mismatch across
   Domain Package, Evaluation Dataset and Profile artifacts for CLI/CI and future package-registry
-  adapters. Local install planning also refuses registry manifests that declare signature metadata by
+  adapters, including Domain package entrypoint and package-local resource metadata. Local install
+  planning also refuses registry manifests that declare signature metadata by
   default unless programmatic callers provide an `EcosystemRegistrySignatureVerifier`; CLI users can
   still opt in with `--allow-unverified-signatures` only for trusted local registries.
   `agent ecosystem install` now exposes that full
