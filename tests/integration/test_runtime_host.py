@@ -202,6 +202,34 @@ async def test_runtime_host_builds_json_http_model_from_config_secret_ref() -> N
     assert "secret-value" not in str(config)
 
 
+@pytest.mark.asyncio
+async def test_runtime_host_builds_json_http_model_from_file_secret_ref(
+    tmp_path: Path,
+) -> None:
+    secret_path = tmp_path / "model-api-key"
+    secret_path.write_text("file-secret-value\n", encoding="utf-8")
+    transport = HostModelTransport()
+    config = RuntimeConfig(
+        secrets=(SecretRef.file("openai_api_key", str(secret_path)),),
+        model=ModelConfig.json_http(
+            name="runtime-decider",
+            endpoint="https://models.example.test/decide",
+            api_key_secret="openai_api_key",
+        ),
+    )
+    adapter = build_configured_model_adapter(
+        config,
+        secret_provider=EnvSecretProvider({}),
+        json_http_transport=transport,
+    )
+
+    decision = await adapter.decide(model_context())
+
+    assert decision.reason == "host model completed"
+    assert transport.headers["Authorization"] == "Bearer file-secret-value"
+    assert "file-secret-value" not in str(config)
+
+
 def test_runtime_host_builds_scripted_model_from_default_config() -> None:
     adapter = build_configured_model_adapter(
         RuntimeConfig(),

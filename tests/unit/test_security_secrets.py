@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from universal_agent import SecretRef
 from universal_agent.security import (
     EnvSecretProvider,
+    FileSecretProvider,
     SecretResolutionError,
     SecretResolutionStatus,
     is_sensitive_key,
@@ -12,6 +15,7 @@ from universal_agent.security import (
     redact_sensitive_value,
     resolve_secret_arguments,
     resolve_secret_refs,
+    resolve_secret_value,
     scan_for_secrets,
 )
 
@@ -115,6 +119,39 @@ def test_secret_resolver_blocks_missing_required_env_secrets() -> None:
     assert resolved.status is SecretResolutionStatus.MISSING_REQUIRED
 
 
+def test_secret_resolver_reads_file_secrets_without_projecting_values(tmp_path: Path) -> None:
+    secret_path = tmp_path / "model-api-key"
+    secret_path.write_text("file-secret-value\n", encoding="utf-8")
+    report = resolve_secret_refs(
+        (SecretRef.file("model_api_key", str(secret_path)),),
+        provider=EnvSecretProvider({}),
+    )
+
+    resolved = report.get("model_api_key")
+
+    assert report.passed is True
+    assert resolved is not None
+    assert resolved.source == "file"
+    assert resolved.key == str(secret_path)
+    assert resolved.status is SecretResolutionStatus.AVAILABLE
+    assert resolve_secret_value(resolved, provider=EnvSecretProvider({})) == "file-secret-value"
+    assert "file-secret-value" not in str(report)
+
+
+def test_file_secret_provider_returns_none_for_missing_empty_or_escaped_paths(
+    tmp_path: Path,
+) -> None:
+    empty_path = tmp_path / "empty-secret"
+    empty_path.write_text("\n", encoding="utf-8")
+    outside_path = tmp_path.parent / "outside-secret"
+    outside_path.write_text("outside", encoding="utf-8")
+    provider = FileSecretProvider(root=tmp_path)
+
+    assert provider.get_secret(str(tmp_path / "missing-secret")) is None
+    assert provider.get_secret("empty-secret") is None
+    assert provider.get_secret(str(outside_path)) is None
+
+
 def test_secret_argument_resolver_replaces_declared_secret_refs() -> None:
     provider = EnvSecretProvider({"API_KEY": "secret-value"})
     report = resolve_secret_refs(
@@ -135,6 +172,23 @@ def test_secret_argument_resolver_replaces_declared_secret_refs() -> None:
         "headers": {"authorization": "secret-value"},
         "safe": "visible",
     }
+
+
+def test_secret_argument_resolver_replaces_declared_file_secret_refs(tmp_path: Path) -> None:
+    secret_path = tmp_path / "api-key"
+    secret_path.write_text("file-secret-value\n", encoding="utf-8")
+    report = resolve_secret_refs(
+        (SecretRef.file("api_key", str(secret_path)),),
+        provider=EnvSecretProvider({}),
+    )
+
+    resolved = resolve_secret_arguments(
+        {"headers": {"authorization": {"secret_ref": "api_key"}}},
+        provider=EnvSecretProvider({}),
+        resolution=report,
+    )
+
+    assert resolved == {"headers": {"authorization": "file-secret-value"}}
 
 
 def test_secret_argument_resolver_rejects_unknown_or_malformed_refs() -> None:

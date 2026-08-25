@@ -119,6 +119,8 @@ def build_host(
 async def main() -> None:
     with TemporaryDirectory(prefix="universal-agent-config-") as directory:
         root = Path(directory)
+        secret_path = root / "openai-api-key"
+        secret_path.write_text("example-secret\n", encoding="utf-8")
         profile_path = root / "profile.json"
         profile_path.write_text(
             json.dumps(
@@ -131,8 +133,8 @@ async def main() -> None:
                         "environment": {"environment": "production"},
                         "secrets": {
                             "openai_api_key": {
-                                "source": "env",
-                                "key": "OPENAI_API_KEY",
+                                "source": "file",
+                                "key": str(secret_path),
                                 "required": True,
                             }
                         },

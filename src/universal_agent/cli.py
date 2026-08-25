@@ -184,7 +184,7 @@ from universal_agent.profile import (
     load_profile_catalog,
 )
 from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI, RuntimeEventBatch
-from universal_agent.security import EnvSecretProvider, SecretProvider
+from universal_agent.security import EnvSecretProvider, SecretProvider, resolve_secret_value
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
 from universal_agent.tui import build_tui_snapshot, render_tui_snapshot
@@ -2055,10 +2055,9 @@ def _configured_kubernetes_api_token(
         return None
     if config is None:
         raise ValueError("kubernetes_api bearer_token_secret requires runtime config")
-    provider = secret_provider or EnvSecretProvider()
     for secret in config.secrets:
         if secret.name == secret_name:
-            return provider.get_secret(secret.key)
+            return resolve_secret_value(secret, provider=secret_provider)
     raise ValueError(f"domain setting bearer_token_secret is not declared: {secret_name}")
 
 

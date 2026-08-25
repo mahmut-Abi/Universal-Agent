@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from os import environ
+from pathlib import Path
 from typing import Protocol
 
 from universal_agent.core import JsonMapping, JsonValue, immutable_json
@@ -156,6 +157,23 @@ class EnvSecretProvider:
 
 
 @dataclass(frozen=True, slots=True)
+class FileSecretProvider:
+    root: str | Path | None = None
+
+    def get_secret(self, key: str) -> str | None:
+        path = _file_secret_path(key, self.root)
+        if path is None or not path.is_file():
+            return None
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+        if not value:
+            return None
+        return value
+
+
+@dataclass(frozen=True, slots=True)
 class SecretResolution:
     name: str
     source: str
@@ -206,6 +224,19 @@ def resolve_secret_refs(
     )
 
 
+def resolve_secret_value(
+    secret: SecretReference,
+    *,
+    provider: SecretProvider | None = None,
+) -> str | None:
+    source = _source_name(secret.source)
+    if source == "env":
+        return (provider or EnvSecretProvider()).get_secret(secret.key)
+    if source == "file":
+        return FileSecretProvider().get_secret(secret.key)
+    return None
+
+
 def resolve_secret_arguments(
     arguments: JsonMapping,
     *,
@@ -237,9 +268,9 @@ def _resolve_secret_ref(
     provider: SecretProvider,
 ) -> SecretResolution:
     source = _source_name(secret.source)
-    if source != "env":
+    if source not in {"env", "file"}:
         status = SecretResolutionStatus.UNSUPPORTED_SOURCE
-    elif provider.get_secret(secret.key) is not None:
+    elif resolve_secret_value(secret, provider=provider) is not None:
         status = SecretResolutionStatus.AVAILABLE
     elif secret.required:
         status = SecretResolutionStatus.MISSING_REQUIRED
@@ -324,10 +355,26 @@ def _resolve_declared_secret(
         raise SecretResolutionError(
             f"{path} references unsupported secret source: {declared.source}"
         )
-    value = provider.get_secret(declared.key)
+    value = resolve_secret_value(declared, provider=provider)
     if value is None:
         raise SecretResolutionError(f"{path} references unavailable runtime secret: {name}")
     return value
+
+
+def _file_secret_path(key: str, root: str | Path | None) -> Path | None:
+    if not key.strip():
+        return None
+    raw_path = Path(key).expanduser()
+    if root is None:
+        return raw_path.resolve()
+    root_path = Path(root).expanduser().resolve()
+    path = raw_path if raw_path.is_absolute() else root_path / raw_path
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(root_path)
+    except ValueError:
+        return None
+    return resolved
 
 
 def _scan_value(value: object, path: str) -> tuple[SecretFinding, ...]:

@@ -79,6 +79,28 @@ def test_runtime_config_from_mapping_parses_secret_refs() -> None:
     )
 
 
+def test_runtime_config_from_mapping_parses_file_secret_refs() -> None:
+    config = RuntimeConfig.from_mapping(
+        {
+            "secrets": {
+                "model_api_key": {
+                    "source": "file",
+                    "key": "/run/secrets/model-api-key",
+                    "required": True,
+                }
+            }
+        }
+    )
+
+    assert config.secrets == (
+        SecretRef("model_api_key", SecretSource.FILE, "/run/secrets/model-api-key", True),
+    )
+    assert config.secrets[0] == SecretRef.file(
+        "model_api_key",
+        "/run/secrets/model-api-key",
+    )
+
+
 def test_runtime_config_rejects_invalid_secret_refs() -> None:
     with pytest.raises(ValueError, match="secrets must be an object"):
         RuntimeConfig.from_mapping({"secrets": []})

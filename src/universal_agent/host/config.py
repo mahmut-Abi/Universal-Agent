@@ -17,6 +17,7 @@ class StoreBackend(StrEnum):
 
 class SecretSource(StrEnum):
     ENV = "env"
+    FILE = "file"
 
 
 class ModelProvider(StrEnum):
@@ -34,6 +35,10 @@ class SecretRef:
     @classmethod
     def env(cls, name: str, key: str, *, required: bool = True) -> SecretRef:
         return cls(name, SecretSource.ENV, key, required)
+
+    @classmethod
+    def file(cls, name: str, path: str, *, required: bool = True) -> SecretRef:
+        return cls(name, SecretSource.FILE, path, required)
 
     @classmethod
     def from_mapping(cls, name: str, values: Mapping[str, JsonValue]) -> SecretRef:

@@ -1014,6 +1014,67 @@ async def test_cli_config_show_exposes_kubernetes_api_backend_without_secret_val
 
 
 @pytest.mark.asyncio
+async def test_cli_config_show_resolves_kubernetes_api_file_secret_without_values(
+    tmp_path: Path,
+) -> None:
+    token_path = tmp_path / "kubernetes-token"
+    token_path.write_text("file-secret-token\n", encoding="utf-8")
+    profile_path = tmp_path / "kubernetes-api-file-profile.json"
+    profile_path.write_text(
+        json.dumps(
+            {
+                "name": "production-operator",
+                "version": "1.0.0",
+                "domain": {"name": "kubernetes", "version": "0.2.0"},
+                "runtime": {
+                    "secrets": {
+                        "kubernetes_api_token": {
+                            "source": "file",
+                            "key": str(token_path),
+                            "required": True,
+                        }
+                    },
+                    "domain": {
+                        "name": "kubernetes",
+                        "version": "0.2.0",
+                        "backend": "kubernetes_api",
+                        "settings": {
+                            "api_server": "https://cluster.example.test",
+                            "default_namespace": "prod",
+                            "bearer_token_secret": "kubernetes_api_token",
+                        },
+                    },
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    output = StringIO()
+
+    status = await run_cli(
+        ["--profile-config", str(profile_path), "config", "show"],
+        stdout=output,
+    )
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["secrets"] == [
+        {
+            "name": "kubernetes_api_token",
+            "source": "file",
+            "key": str(token_path),
+            "required": True,
+            "available": True,
+            "status": "available",
+        }
+    ]
+    assert payload["domains"][0]["settings"]["bearer_token_secret"] == "<redacted>"
+    assert "file-secret-token" not in output.getvalue()
+
+
+@pytest.mark.asyncio
 async def test_cli_run_submits_goal_through_service() -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     output = StringIO()

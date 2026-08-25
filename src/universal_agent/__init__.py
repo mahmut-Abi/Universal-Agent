@@ -281,6 +281,7 @@ from universal_agent.runtime import (
 )
 from universal_agent.security import (
     EnvSecretProvider,
+    FileSecretProvider,
     SecretProvider,
     SecretReference,
     SecretResolution,
@@ -289,6 +290,7 @@ from universal_agent.security import (
     redact_sensitive_mapping,
     redact_sensitive_value,
     resolve_secret_refs,
+    resolve_secret_value,
 )
 from universal_agent.service import (
     AuditRecordView,
@@ -458,6 +460,7 @@ __all__ = [
     "FileEcosystemRegistryStore",
     "FileEventStore",
     "FileRuntimeStore",
+    "FileSecretProvider",
     "FileSessionStore",
     "FileWorkQueue",
     "FileWorkerRegistry",
@@ -630,6 +633,7 @@ __all__ = [
     "render_web_settings",
     "render_web_world_model_explorer",
     "resolve_secret_refs",
+    "resolve_secret_value",
     "scaffold_domain_package",
     "verify_domain_package",
     "verify_domain_package_registry",

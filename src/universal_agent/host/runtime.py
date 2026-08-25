@@ -43,10 +43,10 @@ from universal_agent.runtime import (
     RuntimeAPI,
 )
 from universal_agent.security import (
-    EnvSecretProvider,
     SecretProvider,
     SecretResolutionReport,
     resolve_secret_refs,
+    resolve_secret_value,
 )
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, SessionStore
@@ -95,10 +95,9 @@ def _configured_model_api_key(
     secret_name = config.model.api_key_secret
     if secret_name is None:
         return None
-    active_provider = provider or EnvSecretProvider()
     for secret in config.secrets:
         if secret.name == secret_name:
-            return active_provider.get_secret(secret.key)
+            return resolve_secret_value(secret, provider=provider)
     return None
 
 

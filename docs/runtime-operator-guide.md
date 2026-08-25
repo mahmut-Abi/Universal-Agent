@@ -79,7 +79,9 @@ The current built-in providers are `scripted` for deterministic local runs and
 `json_http` for dependency-free HTTP model bridges. JSON HTTP model config stores
 only endpoint/model metadata plus an optional `api_key_secret` reference; the
 secret value is resolved by `RuntimeHost` from the declared `secrets` block and
-is never returned by `config show` or `/v1/config`.
+is never returned by `config show` or `/v1/config`. Built-in secret references
+support `env` keys and local `file` paths; both are projected as availability
+metadata only.
 
 ```json
 {
@@ -92,6 +94,21 @@ is never returned by `config show` or `/v1/config`.
     "endpoint": "https://model-bridge.example/decide",
     "api_key_secret": "openai_api_key",
     "timeout_seconds": 30
+  }
+}
+```
+
+File-backed secrets use the same declaration shape with `source=file` and the
+secret file path in `key`:
+
+```json
+{
+  "secrets": {
+    "openai_api_key": {
+      "source": "file",
+      "key": "/run/secrets/openai-api-key",
+      "required": true
+    }
   }
 }
 ```

@@ -1,5 +1,6 @@
 from universal_agent.security.secrets import (
     EnvSecretProvider,
+    FileSecretProvider,
     SecretFinding,
     SecretProvider,
     SecretReference,
@@ -13,11 +14,13 @@ from universal_agent.security.secrets import (
     redact_sensitive_value,
     resolve_secret_arguments,
     resolve_secret_refs,
+    resolve_secret_value,
     scan_for_secrets,
 )
 
 __all__ = [
     "EnvSecretProvider",
+    "FileSecretProvider",
     "SecretFinding",
     "SecretProvider",
     "SecretReference",
@@ -31,5 +34,6 @@ __all__ = [
     "redact_sensitive_value",
     "resolve_secret_arguments",
     "resolve_secret_refs",
+    "resolve_secret_value",
     "scan_for_secrets",
 ]
