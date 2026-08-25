@@ -337,7 +337,7 @@ event-sourcing models or production migration systems.
   instances by read-only, allowed-profile and permission constraints; `AgentOrchestrator` delegates
   only through registered executors, marks instances busy
   while they run, and enforces parent
-  child-count, duration and reported-cost limits. `RuntimeAgentExecutor` projects child runtime
+  child-count, delegation-depth, duration and reported-cost limits. `RuntimeAgentExecutor` projects child runtime
   `ModelUsageRecorded` events into the structured `AgentTaskResult` usage contract so `max_cost`
   can be checked by the parent orchestrator. It can also execute a dependency-aware batch with structured
   spec/result payload helpers, running ready child tasks concurrently while rejecting downstream

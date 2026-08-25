@@ -149,6 +149,7 @@ class AgentOrchestrator:
         self._registry = registry
         self._executors: dict[AgentId, AgentExecutor] = dict(executors or {})
         self._child_counts: defaultdict[AgentTaskId, int] = defaultdict(int)
+        self._task_depths: dict[AgentTaskId, int] = {}
 
     def register_executor(self, agent_id: AgentId, executor: AgentExecutor) -> None:
         self._registry.instance(agent_id)
@@ -166,7 +167,7 @@ class AgentOrchestrator:
             raise AgentExecutorNotRegisteredError(
                 f"agent executor not registered: {instance.agent_id}"
             )
-        self._reserve_child_slot(request)
+        self._reserve_delegation(request)
         return await self._execute_on_instance(instance, executor, request)
 
     async def delegate_many(
@@ -267,15 +268,31 @@ class AgentOrchestrator:
             raise NoEligibleAgentError("no eligible agent instance")
         return eligible[0]
 
-    def _reserve_child_slot(self, request: AgentTaskRequest) -> None:
+    def _reserve_delegation(self, request: AgentTaskRequest) -> None:
+        self._validate_delegation_depth(request)
+        if request.parent_task_id is not None:
+            count = self._child_counts[request.parent_task_id]
+            if count >= request.constraints.max_children:
+                raise AgentDelegationLimitError(
+                    f"agent task max_children exceeded for parent {request.parent_task_id}"
+                )
+            self._child_counts[request.parent_task_id] = count + 1
+        self._task_depths[request.task_id] = request.delegation_depth
+
+    def _validate_delegation_depth(self, request: AgentTaskRequest) -> None:
         if request.parent_task_id is None:
+            if request.delegation_depth != 0:
+                raise AgentDelegationLimitError("root agent task delegation_depth must be 0")
             return
-        count = self._child_counts[request.parent_task_id]
-        if count >= request.constraints.max_children:
+        parent_depth = self._task_depths.get(request.parent_task_id)
+        if parent_depth is None:
+            return
+        expected_depth = parent_depth + 1
+        if request.delegation_depth != expected_depth:
             raise AgentDelegationLimitError(
-                f"agent task max_children exceeded for parent {request.parent_task_id}"
+                "agent task delegation_depth must be "
+                f"{expected_depth} for parent {request.parent_task_id}"
             )
-        self._child_counts[request.parent_task_id] = count + 1
 
 
 class RuntimeAgentExecutor:

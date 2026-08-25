@@ -516,6 +516,69 @@ async def test_agent_orchestrator_missing_executor_does_not_consume_child_limit(
 
 
 @pytest.mark.asyncio
+async def test_agent_orchestrator_tracks_delegation_depth_from_known_parent() -> None:
+    registry = AgentRegistry((profile(),), (instance(),))
+    orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): RecordingExecutor()})
+    parent = AgentTaskId("agent-task-parent")
+    constraints = AgentTaskConstraints(read_only=True, max_children=2, max_depth=2)
+
+    await orchestrator.delegate(
+        AgentTaskRequest(
+            goal="Run parent",
+            input=immutable_json({"task": "parent"}),
+            constraints=constraints,
+            expected_output=output(),
+            task_id=parent,
+        )
+    )
+
+    child = await orchestrator.delegate(
+        AgentTaskRequest(
+            goal="Run child",
+            input=immutable_json({"task": "child"}),
+            constraints=constraints,
+            expected_output=output(),
+            task_id=AgentTaskId("agent-task-child"),
+            parent_task_id=parent,
+            delegation_depth=1,
+        )
+    )
+
+    assert child.status is AgentTaskResultStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_agent_orchestrator_rejects_forged_child_delegation_depth() -> None:
+    registry = AgentRegistry((profile(),), (instance(),))
+    orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): RecordingExecutor()})
+    parent = AgentTaskId("agent-task-parent")
+    constraints = AgentTaskConstraints(read_only=True, max_children=2, max_depth=2)
+
+    await orchestrator.delegate(
+        AgentTaskRequest(
+            goal="Run parent",
+            input=immutable_json({"task": "parent"}),
+            constraints=constraints,
+            expected_output=output(),
+            task_id=parent,
+        )
+    )
+
+    with pytest.raises(AgentDelegationLimitError, match="delegation_depth must be 1"):
+        await orchestrator.delegate(
+            AgentTaskRequest(
+                goal="Run forged child",
+                input=immutable_json({"task": "child"}),
+                constraints=constraints,
+                expected_output=output(),
+                task_id=AgentTaskId("agent-task-child"),
+                parent_task_id=parent,
+                delegation_depth=0,
+            )
+        )
+
+
+@pytest.mark.asyncio
 async def test_agent_orchestrator_enforces_duration_limit() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
     orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): SlowExecutor()})
