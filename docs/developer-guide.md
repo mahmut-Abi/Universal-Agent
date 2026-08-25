@@ -69,6 +69,7 @@ Examples are organized by roadmap slice. Useful entry points:
 .venv/bin/python examples/p5_tui.py
 .venv/bin/python examples/p5_web_console.py
 .venv/bin/python examples/p6_distributed_worker.py
+.venv/bin/python examples/p6_distributed_prune.py
 .venv/bin/python examples/p7_ecosystem_catalog.py
 ```
 

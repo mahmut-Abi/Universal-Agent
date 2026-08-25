@@ -117,16 +117,37 @@ The P6 implementation is a local coordination foundation:
 - Coordinator
 - Snapshot and health projections
 - Bounded worker execution
+- Expiry and terminal item retention maintenance
 
 It supports memory, file and SQLite-backed local adapters, but it is not a
 networked high-availability control plane.
 
-Useful commands:
+Useful inspection and maintenance commands:
 
 ```bash
 .venv/bin/python -m universal_agent.cli distributed snapshot
 .venv/bin/python -m universal_agent.cli distributed health
 .venv/bin/python -m universal_agent.cli distributed expire
+.venv/bin/python -m universal_agent.cli distributed prune-terminal --before 2026-01-01T00:00:01+00:00
+```
+
+Useful scheduling and worker commands:
+
+```bash
+.venv/bin/python -m universal_agent.cli distributed schedule-session session-1 --priority 5 --max-attempts 2
+.venv/bin/python -m universal_agent.cli distributed schedule-pending-actions --confirmed true
+.venv/bin/python -m universal_agent.cli distributed worker-register worker-a --capability agent_session
+.venv/bin/python -m universal_agent.cli distributed worker-run-once worker-a
+.venv/bin/python -m universal_agent.cli distributed worker-run worker-a --max-items 5
+```
+
+Useful lock and cancellation commands:
+
+```bash
+.venv/bin/python -m universal_agent.cli distributed lock-acquire session/session-1 --owner-id worker-a
+.venv/bin/python -m universal_agent.cli distributed lock-heartbeat lock-lease-1 --owner-id worker-a
+.venv/bin/python -m universal_agent.cli distributed lock-release lock-lease-1 --owner-id worker-a
+.venv/bin/python -m universal_agent.cli distributed cancel work-1 --reason "operator cancelled queued work"
 ```
 
 ## Ecosystem Metadata

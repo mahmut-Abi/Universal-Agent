@@ -21,7 +21,7 @@ across the roadmap layers below:
 | P3.6-P3.7 | Metrics, cost, structured logs, traces, OTLP-shaped export, audit, doctor, evaluation harness, replay, deterministic runtime mode |
 | P4 | Structured Multi-Agent task/result contracts, registry, delegation, conflict resolution, merge/evaluation foundations |
 | P5 | Read-only TUI, Web Console, Session/Evidence/World/Domain/Doctor/Distributed/Evaluation views |
-| P6 | Local queue, worker registry, worker, leased locks, scheduler, coordinator, health and snapshot primitives |
+| P6 | Local queue, worker registry, worker, leased locks, scheduler, coordinator, health, snapshot and retention maintenance primitives |
 | P7 | Domain Package registry/scaffold, Evaluation Dataset catalog, Profile Catalog, Ecosystem Registry metadata/install planning |
 
 The project is not yet a production cluster control plane. It does not provide
