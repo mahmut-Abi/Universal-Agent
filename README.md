@@ -130,7 +130,8 @@ returns the same cursor batch as `text/event-stream` frames for SSE clients. `GE
 read-only HTML Web Console snapshot and `GET /console/sessions/{id}` returns a focused Session
 Detail page; `GET /console/sessions/{id}/evidence` and `/world` return focused Evidence and World
 Model Explorer pages, `GET /console/domains/{name}/{version}` returns a read-only Domain
-Manager detail page, and `GET /console/settings` returns Runtime settings built from the same
+Manager detail page, `GET /console/profiles` returns a read-only Profile Catalog page, and
+`GET /console/settings` returns Runtime settings built from the same
 RuntimeService projections. `AgentdAuthPolicy` can optionally require `Authorization: Bearer ...`
 for all non-health routes while leaving `GET /health` and `GET /ready` public for local probes;
 separate read-only bearer tokens may access `GET` routes but receive `403` for mutating requests. `AgentdHttpServer`
@@ -278,11 +279,12 @@ event-sourcing models or production migration systems.
   catalogs plus selected-session Evidence and World Facts without touching Kernel internals.
 - Web Console foundation: `build_web_console_snapshot` consumes the shared console snapshot builder
   and `render_web_console` / `render_web_session_detail` / `render_web_evidence_explorer` /
-  `render_web_world_model_explorer` / `render_web_domain_detail` / `render_web_settings` produce
+  `render_web_world_model_explorer` / `render_web_domain_detail` /
+  `render_web_profile_catalog` / `render_web_settings` produce
   deterministic read-only HTML for `AgentdApp`, including
   Profile/Domain/Capability/Tool/Policy/Evaluator/Memory catalogs plus focused Session Detail,
-  Evidence, World Model, Domain Manager and Settings views without a web framework dependency or
-  Kernel access.
+  Evidence, World Model, Domain Manager, Profile Catalog and Settings views without a web framework
+  dependency or Kernel access.
 - P6 Distributed Runtime foundation: `WorkScheduler` maps session/task/action identity into stable local
   work kinds and idempotency keys; `InMemoryWorkQueue`, `FileWorkQueue` and `SQLiteWorkQueue` provide typed `WorkItem`, `WorkerLease` and
   status contracts for local scheduler/worker adapters, including priority ordering, idempotent enqueue,

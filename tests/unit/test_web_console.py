@@ -49,6 +49,7 @@ from universal_agent.web import (
     render_web_console,
     render_web_domain_detail,
     render_web_evidence_explorer,
+    render_web_profile_catalog,
     render_web_session_detail,
     render_web_settings,
     render_web_world_model_explorer,
@@ -389,6 +390,17 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "allow-read" in domain_detail
     assert "workload-health" in domain_detail
     assert "kubernetes readiness" in domain_detail
+
+    profile_catalog = render_web_profile_catalog(snapshot)
+
+    assert "Universal Agent Runtime Profile Catalog" in profile_catalog
+    assert "Profile Catalog" in profile_catalog
+    assert "profiles=1" in profile_catalog
+    assert "production-operator" in profile_catalog
+    assert "Active Domains" in profile_catalog
+    assert "Configured Domains" in profile_catalog
+    assert "Capability Catalog" in profile_catalog
+    assert 'href="/console/settings"' in profile_catalog
 
     settings = render_web_settings(snapshot)
 

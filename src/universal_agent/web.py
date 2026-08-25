@@ -240,6 +240,40 @@ def render_web_domain_detail(
     )
 
 
+def render_web_profile_catalog(snapshot: WebConsoleSnapshot) -> str:
+    title = "Universal Agent Runtime Profile Catalog"
+    return "\n".join(
+        (
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f"<title>{_html(title)}</title>",
+            f"<style>{_stylesheet()}</style>",
+            "</head>",
+            "<body>",
+            '<main class="shell">',
+            _profile_hero(snapshot),
+            '<section class="grid cards" aria-label="Profile summary">',
+            _metric_card("Profiles", len(snapshot.profiles)),
+            _metric_card("Active Domains", len(snapshot.domains)),
+            _metric_card("Configured Domains", len(snapshot.config.domains)),
+            _metric_card("Capabilities", len(snapshot.capabilities)),
+            _metric_card("Tools", len(snapshot.tools)),
+            _metric_card("Ready", _ready_text(snapshot)),
+            "</section>",
+            _profiles(snapshot.profiles),
+            _domains(snapshot),
+            _configured_domains(snapshot),
+            _capabilities(snapshot.capabilities),
+            "</main>",
+            "</body>",
+            "</html>",
+        )
+    )
+
+
 def render_web_settings(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Settings"
     return "\n".join(
@@ -294,6 +328,7 @@ def _hero(snapshot: WebConsoleSnapshot) -> str:
             ),
             "</div>",
             '<div class="status">',
+            '<a class="pill link" href="/console/profiles">Profiles</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
@@ -323,6 +358,7 @@ def _settings_hero(snapshot: WebConsoleSnapshot) -> str:
             "</div>",
             '<div class="status">',
             '<a class="pill link" href="/console">Console</a>',
+            '<a class="pill link" href="/console/profiles">Profiles</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
             "</div>",
@@ -346,6 +382,34 @@ def _domain_hero(snapshot: WebConsoleSnapshot, domain: DomainView | None) -> str
             "</div>",
             '<div class="status">',
             '<a class="pill link" href="/console">Console</a>',
+            '<a class="pill link" href="/console/profiles">Profiles</a>',
+            f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
+            f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
+            "</div>",
+            "</section>",
+        )
+    )
+
+
+def _profile_hero(snapshot: WebConsoleSnapshot) -> str:
+    ready_class = "ok" if snapshot.ready.ready else "warn"
+    return "\n".join(
+        (
+            '<section class="hero">',
+            "<div>",
+            "<p>Universal Agent Runtime</p>",
+            "<h1>Profile Catalog</h1>",
+            (
+                "<span>"
+                f"profiles={len(snapshot.profiles)} "
+                f"domains={len(snapshot.domains)} "
+                f"store={_html(snapshot.config.store_backend)}"
+                "</span>"
+            ),
+            "</div>",
+            '<div class="status">',
+            '<a class="pill link" href="/console">Console</a>',
+            '<a class="pill link" href="/console/settings">Settings</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
             "</div>",
@@ -1328,6 +1392,7 @@ __all__ = [
     "render_web_console",
     "render_web_domain_detail",
     "render_web_evidence_explorer",
+    "render_web_profile_catalog",
     "render_web_session_detail",
     "render_web_settings",
     "render_web_world_model_explorer",
