@@ -266,6 +266,14 @@ def _validate_argument_value(name: str, value: JsonValue, spec: JsonMapping) -> 
             maximum_length = _integer(max_length, f"argument_schema.properties.{name}.maxLength")
             if len(value) > maximum_length:
                 return f"argument {name} length must be <= {maximum_length}"
+
+    object_error = _validate_object_constraints(name, value, spec)
+    if object_error is not None:
+        return object_error
+
+    array_error = _validate_array_constraints(name, value, spec)
+    if array_error is not None:
+        return array_error
     return None
 
 
@@ -288,6 +296,101 @@ def _matches_type(value: JsonValue, type_name: str) -> bool:
     if type_name == "null":
         return value is None
     return False
+
+
+def _validate_object_constraints(
+    name: str,
+    value: JsonValue,
+    spec: JsonMapping,
+) -> str | None:
+    has_object_constraints = (
+        "required" in spec or "properties" in spec or "additionalProperties" in spec
+    )
+    if not has_object_constraints:
+        return None
+    if _is_nullable_value(value, spec):
+        return None
+    if not isinstance(value, Mapping):
+        return f"argument {name} must be object"
+
+    required = _string_list(
+        spec.get("required", []),
+        f"argument_schema.properties.{name}.required",
+    )
+    missing = [property_name for property_name in required if property_name not in value]
+    if missing:
+        return f"argument {name} missing required properties: {', '.join(missing)}"
+
+    properties = _object(
+        spec.get("properties", {}),
+        f"argument_schema.properties.{name}.properties",
+    )
+    additional = spec.get("additionalProperties", True)
+    if not isinstance(additional, bool):
+        raise _ArgumentSchemaError(
+            f"argument_schema.properties.{name}.additionalProperties must be a boolean"
+        )
+    if not additional:
+        unknown = tuple(property_name for property_name in value if property_name not in properties)
+        if unknown:
+            return f"argument {name} has unexpected properties: {', '.join(sorted(unknown))}"
+
+    for property_name, property_value in value.items():
+        raw_spec = properties.get(property_name)
+        if raw_spec is None:
+            continue
+        property_spec = _object(
+            raw_spec,
+            f"argument_schema.properties.{name}.properties.{property_name}",
+        )
+        error = _validate_argument_value(f"{name}.{property_name}", property_value, property_spec)
+        if error is not None:
+            return error
+    return None
+
+
+def _validate_array_constraints(
+    name: str,
+    value: JsonValue,
+    spec: JsonMapping,
+) -> str | None:
+    has_array_constraints = "items" in spec or "minItems" in spec or "maxItems" in spec
+    if not has_array_constraints:
+        return None
+    if _is_nullable_value(value, spec):
+        return None
+    if not isinstance(value, list):
+        return f"argument {name} must be array"
+
+    min_items = spec.get("minItems")
+    if min_items is not None:
+        minimum = _integer(min_items, f"argument_schema.properties.{name}.minItems")
+        if len(value) < minimum:
+            return f"argument {name} length must be >= {minimum}"
+    max_items = spec.get("maxItems")
+    if max_items is not None:
+        maximum = _integer(max_items, f"argument_schema.properties.{name}.maxItems")
+        if len(value) > maximum:
+            return f"argument {name} length must be <= {maximum}"
+
+    raw_items = spec.get("items")
+    if raw_items is None:
+        return None
+    item_spec = _object(raw_items, f"argument_schema.properties.{name}.items")
+    for index, item in enumerate(value):
+        error = _validate_argument_value(f"{name}[{index}]", item, item_spec)
+        if error is not None:
+            return error
+    return None
+
+
+def _is_nullable_value(value: JsonValue, spec: JsonMapping) -> bool:
+    if value is not None:
+        return False
+    raw_types = spec.get("type")
+    if raw_types is None:
+        return False
+    return "null" in _type_names(raw_types, "type")
 
 
 def _object(value: JsonValue, field_name: str) -> JsonMapping:

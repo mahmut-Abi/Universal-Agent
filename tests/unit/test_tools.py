@@ -62,6 +62,54 @@ class SchemaTool:
         return immutable_json({"accepted": True})
 
 
+class NestedSchemaTool:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.definition = ToolDefinition(
+            name="nested_schema",
+            description="Validate nested structured arguments",
+            capabilities=("nested_schema_value",),
+            argument_schema=immutable_json(
+                {
+                    "required": ["metadata", "patches"],
+                    "properties": {
+                        "metadata": {
+                            "type": "object",
+                            "required": ["name", "namespace"],
+                            "properties": {
+                                "name": {"type": "string", "minLength": 1},
+                                "namespace": {"type": "string", "minLength": 1},
+                            },
+                            "additionalProperties": False,
+                        },
+                        "patches": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 2,
+                            "items": {
+                                "type": "object",
+                                "required": ["op", "path"],
+                                "properties": {
+                                    "op": {"type": "string", "enum": ["add", "replace"]},
+                                    "path": {"type": "string", "minLength": 1},
+                                    "value": {
+                                        "type": ["string", "number", "boolean", "null"],
+                                    },
+                                },
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "additionalProperties": False,
+                }
+            ),
+        )
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        self.calls += 1
+        return immutable_json({"accepted": True})
+
+
 class BrokenTool:
     definition = ToolDefinition("broken", "Fail", ("break",))
 
@@ -152,6 +200,69 @@ async def test_tool_runtime_validates_argument_schema_before_execution() -> None
     assert out_of_range.error == "argument count must be >= 1"
     assert bad_enum.error == "argument mode must be one of 'safe', 'fast'"
     assert unexpected.error == "unexpected arguments: extra"
+    assert accepted.status is ObservationStatus.SUCCEEDED
+    assert tool.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_runtime_validates_nested_argument_schema_before_execution() -> None:
+    registry = ToolRegistry()
+    tool = NestedSchemaTool()
+    registry.register(tool)
+    runtime = ToolRuntime(registry)
+
+    missing_nested = await runtime.execute(
+        call(
+            "nested_schema",
+            "nested_schema_value",
+            {"metadata": {"name": "api"}, "patches": [{"op": "add", "path": "/x"}]},
+        )
+    )
+    unexpected_nested = await runtime.execute(
+        call(
+            "nested_schema",
+            "nested_schema_value",
+            {
+                "metadata": {"name": "api", "namespace": "default", "uid": "abc"},
+                "patches": [{"op": "add", "path": "/x"}],
+            },
+        )
+    )
+    bad_item_type = await runtime.execute(
+        call(
+            "nested_schema",
+            "nested_schema_value",
+            {
+                "metadata": {"name": "api", "namespace": "default"},
+                "patches": [{"op": "remove", "path": "/x"}],
+            },
+        )
+    )
+    empty_array = await runtime.execute(
+        call(
+            "nested_schema",
+            "nested_schema_value",
+            {"metadata": {"name": "api", "namespace": "default"}, "patches": []},
+        )
+    )
+    accepted = await runtime.execute(
+        call(
+            "nested_schema",
+            "nested_schema_value",
+            {
+                "metadata": {"name": "api", "namespace": "default"},
+                "patches": [
+                    {"op": "add", "path": "/spec/template", "value": "patched"},
+                    {"op": "replace", "path": "/spec/paused", "value": False},
+                ],
+            },
+        )
+    )
+
+    assert missing_nested.error == "argument metadata missing required properties: namespace"
+    assert unexpected_nested.error == "argument metadata has unexpected properties: uid"
+    assert bad_item_type.error == "argument patches[0].op must be one of 'add', 'replace'"
+    assert empty_array.error == "argument patches length must be >= 1"
     assert accepted.status is ObservationStatus.SUCCEEDED
     assert tool.calls == 1
 
