@@ -5,11 +5,12 @@ from collections.abc import Mapping
 from typing import Any
 
 from universal_agent.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
-from universal_agent.core import SessionId
+from universal_agent.core import DomainIdentity, SessionId
 from universal_agent.operations import AuditRecordView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
 from universal_agent.service import (
     CapabilityView,
+    DomainPackageView,
     DomainView,
     EvaluatorView,
     MemoryView,
@@ -84,6 +85,8 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
     lines.extend(_distributed_runtime_lines(snapshot))
     lines.extend(("", "Active Domains", _rule()))
     lines.extend(_domain_lines(snapshot.domains))
+    lines.extend(("", "Domain Packages", _rule()))
+    lines.extend(_domain_package_lines(snapshot.domain_packages))
     lines.extend(("", "Agent Profiles", _rule()))
     lines.extend(_profile_lines(snapshot.profiles))
     lines.extend(("", "Capabilities", _rule()))
@@ -224,6 +227,22 @@ def _profile_lines(profiles: tuple[ProfileView, ...]) -> list[str]:
             f" :: {profile.description}"
         )
         for profile in profiles
+    ]
+
+
+def _domain_package_lines(packages: tuple[DomainPackageView, ...]) -> list[str]:
+    if not packages:
+        return ["- none"]
+    return [
+        (
+            f"- {package.name}@{package.version}"
+            f" capabilities={_tuple_text(package.capability_names)}"
+            f" tools={_tuple_text(package.tool_names)}"
+            f" dependencies={_identity_tuple_text(package.dependencies)}"
+            f" entrypoint={package.entrypoint or 'none'}"
+            f" :: {package.description}"
+        )
+        for package in packages
     ]
 
 
@@ -478,6 +497,12 @@ def _profile_domain_text(profile: ProfileView) -> str:
     if not profile.domains:
         return "none"
     return ", ".join(f"{identity.name}@{identity.version}" for identity in profile.domains)
+
+
+def _identity_tuple_text(values: tuple[DomainIdentity, ...]) -> str:
+    if not values:
+        return "none"
+    return ", ".join(f"{identity.name}@{identity.version}" for identity in values)
 
 
 def _tuple_text(values: tuple[str, ...]) -> str:

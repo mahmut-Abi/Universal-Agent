@@ -41,6 +41,7 @@ from universal_agent.runtime import (
 )
 from universal_agent.service import (
     CapabilityView,
+    DomainPackageView,
     DomainView,
     EvaluatorView,
     HealthView,
@@ -123,6 +124,32 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
                 ("Deployment",),
                 ("inspect_workload",),
                 ("criteria",),
+            ),
+        ),
+        domain_packages=(
+            DomainPackageView(
+                "kubernetes",
+                "0.2.0",
+                "Kubernetes domain package",
+                "Runtime Team",
+                "kubernetes.domain:build_domain",
+                ("ops", "kubernetes"),
+                ("Deployment",),
+                ("inspect_workload",),
+                ("kubernetes_inspect_workload",),
+                ("allow-read",),
+                ("diagnose_workload",),
+                ("kubernetes readiness",),
+                ("workload-health",),
+                ("kubernetes_context",),
+                (),
+                (DomainIdentity("observability", "1.0.0"),),
+                ("kubernetes_api",),
+                ">=0.1,<1",
+                "agent.nantian.dev/v1alpha1",
+                MappingProxyType({"side_effects": "reversible"}),
+                "/domains/kubernetes",
+                "/domains/kubernetes/manifest.json",
             ),
         ),
         profiles=(
@@ -318,6 +345,9 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "Operational Diagnostics" in rendered
     assert "No active operational issues" in rendered
     assert "kubernetes@0.2.0" in rendered
+    assert "Domain Package Catalog" in rendered
+    assert "kubernetes.domain:build_domain" in rendered
+    assert "observability@1.0.0" in rendered
     assert "Verify &lt;script&gt;alert(1)&lt;/script&gt;" in rendered
     assert "<script>alert(1)</script>" not in rendered
     assert "Profile Catalog" in rendered
@@ -525,6 +555,11 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
 
     catalogs = {
         WebCatalogPage.DOMAINS: ("Domain Catalog", "Configured Domains", "production-operator"),
+        WebCatalogPage.DOMAIN_PACKAGES: (
+            "Domain Package Catalog",
+            "kubernetes.domain:build_domain",
+            "observability@1.0.0",
+        ),
         WebCatalogPage.CAPABILITIES: ("Capability Catalog", "inspect_workload", "High Risk"),
         WebCatalogPage.TOOLS: ("Tool Catalog", "kubernetes_inspect_workload", "No Side Effect"),
         WebCatalogPage.POLICIES: ("Policy Catalog", "allow-read", "Confirm"),

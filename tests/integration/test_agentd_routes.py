@@ -956,7 +956,10 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
 
 @pytest.mark.asyncio
 async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
-    service, backend = build_service([inspect_workload(), finish()])
+    service, backend = build_service(
+        [inspect_workload(), finish()],
+        domain_packages=package_registry(),
+    )
     app = AgentdApp(service)
 
     created = await app.handle(HttpRequest("POST", "/v1/sessions", goal_submission_body()))
@@ -983,6 +986,7 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     settings_page = await app.handle(HttpRequest("GET", "/console/settings"))
     catalog_pages = {
         "domains": "Domain Catalog",
+        "domain-packages": "Domain Package Catalog",
         "capabilities": "Capability Catalog",
         "tools": "Tool Catalog",
         "policies": "Policy Catalog",
@@ -1011,6 +1015,8 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert "Runtime Console" in console.text_body
     assert "Verify workload health" in console.text_body
     assert "kubernetes@0.2.0" in console.text_body
+    assert "Domain Package Catalog" in console.text_body
+    assert "universal_agent.domains.kubernetes:KubernetesRemediationDomain" in console.text_body
     assert "Capability Catalog" in console.text_body
     assert "inspect_workload" in console.text_body
     assert "Tool Catalog" in console.text_body

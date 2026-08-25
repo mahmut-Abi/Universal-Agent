@@ -13,6 +13,7 @@ from universal_agent.operations import (
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
 from universal_agent.service import (
     CapabilityView,
+    DomainPackageView,
     DomainView,
     EvaluatorView,
     HealthView,
@@ -33,6 +34,7 @@ class RuntimeConsoleSnapshot:
     ready: ReadyView
     config: RuntimeConfigView
     domains: tuple[DomainView, ...]
+    domain_packages: tuple[DomainPackageView, ...]
     profiles: tuple[ProfileView, ...]
     capabilities: tuple[CapabilityView, ...]
     tools: tuple[ToolView, ...]
@@ -85,6 +87,7 @@ async def build_runtime_console_snapshot(
         ready=service.ready(),
         config=service.config(),
         domains=service.domains(),
+        domain_packages=service.domain_packages(),
         profiles=service.profiles(),
         capabilities=service.capabilities(),
         tools=service.tools(),

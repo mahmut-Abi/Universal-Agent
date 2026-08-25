@@ -138,7 +138,7 @@ and `GET /console/sessions/{id}` returns a focused Session Detail page;
 `GET /console/evidence`, `/world`, `/console/sessions/{id}/evidence` and
 `/console/sessions/{id}/world` return focused Evidence and World Model Explorer pages,
 `GET /console/domains/{name}/{version}` returns a read-only Domain
-Manager detail page, `GET /console/domains`, `/capabilities`, `/tools`, `/policies`,
+Manager detail page, `GET /console/domains`, `/domain-packages`, `/capabilities`, `/tools`, `/policies`,
 `/evaluators` and `/memory` return focused Runtime catalog pages, `GET /console/profiles`
 returns a read-only Profile Catalog page,
 `GET /console/doctor` returns a read-only Runtime Doctor page with Doctor checks,
@@ -305,7 +305,7 @@ detect accidental split state/event wiring. These adapters are local persistence
   persisted Evidence through Domain world updaters and exposes combined diagnostics plus dedicated
   Evidence and World Model Explorer routes through agentd/CLI.
 - TUI foundation: `build_tui_snapshot` consumes RuntimeService projections and `render_tui_snapshot`
-  produces a deterministic text view for CLI/operator use, including Profile/Capability/Tool/Policy/Evaluator/Memory
+  produces a deterministic text view for CLI/operator use, including Domain Package/Profile/Capability/Tool/Policy/Evaluator/Memory
   catalogs plus selected-session Evidence and World Facts without touching Kernel internals.
 - Web Console foundation: `build_web_console_snapshot` consumes the shared console snapshot builder
   and `render_web_console` / `render_web_sessions` / `render_web_session_detail` /
@@ -314,7 +314,7 @@ detect accidental split state/event wiring. These adapters are local persistence
   `render_web_catalog` / `render_web_profile_catalog` / `render_web_doctor` /
   `render_web_distributed` / `render_web_settings` produce
   deterministic read-only HTML for `AgentdApp`, including
-  Profile/Domain/Capability/Tool/Policy/Evaluator/Memory catalogs plus focused Session Detail,
+  Domain Package/Profile/Domain/Capability/Tool/Policy/Evaluator/Memory catalogs plus focused Session Detail,
   Evidence, World Model, Domain Manager, Profile Catalog, Runtime Doctor,
   Distributed Runtime, Evaluation Console and Settings views
   without a web framework dependency or Kernel access.

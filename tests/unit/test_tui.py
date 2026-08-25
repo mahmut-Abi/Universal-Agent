@@ -36,6 +36,7 @@ from universal_agent.runtime import (
 )
 from universal_agent.service import (
     CapabilityView,
+    DomainPackageView,
     DomainView,
     EvaluatorView,
     HealthView,
@@ -103,6 +104,32 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
                 ("Deployment",),
                 ("inspect_workload",),
                 ("criteria",),
+            ),
+        ),
+        domain_packages=(
+            DomainPackageView(
+                "kubernetes",
+                "0.2.0",
+                "Kubernetes domain package",
+                "Runtime Team",
+                "kubernetes.domain:build_domain",
+                ("ops", "kubernetes"),
+                ("Deployment",),
+                ("inspect_workload",),
+                ("kubernetes_inspect_workload",),
+                ("allow-read",),
+                ("diagnose_workload",),
+                ("kubernetes readiness",),
+                ("workload-health",),
+                ("kubernetes_context",),
+                (),
+                (DomainIdentity("observability", "1.0.0"),),
+                ("kubernetes_api",),
+                ">=0.1,<1",
+                "agent.nantian.dev/v1alpha1",
+                MappingProxyType({"side_effects": "reversible"}),
+                "/domains/kubernetes",
+                "/domains/kubernetes/manifest.json",
             ),
         ),
         profiles=(
@@ -313,6 +340,9 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
     assert "Distributed Runtime" in rendered
     assert "- not configured" in rendered
     assert "kubernetes@0.2.0" in rendered
+    assert "Domain Packages" in rendered
+    assert "kubernetes@0.2.0 capabilities=inspect_workload" in rendered
+    assert "dependencies=observability@1.0.0" in rendered
     assert "Agent Profiles" in rendered
     assert "production-operator@1.0.0" in rendered
     assert "Capabilities" in rendered

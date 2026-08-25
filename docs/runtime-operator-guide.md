@@ -76,7 +76,7 @@ caller needs in-process execution and session/event read models.
 - `agent tui` renders a deterministic text snapshot.
 - `/console` renders a read-only Web Console snapshot.
 - Focused Web pages exist for sessions, session detail, evidence, world model,
-  domains, catalogs, profiles, runtime doctor checks, local distributed runtime
+  domains, domain packages, catalogs, profiles, runtime doctor checks, local distributed runtime
   coordination, evaluation reports and settings.
 - `agent eval console --report-dir <dir>` renders persisted evaluation reports
   as deterministic HTML.

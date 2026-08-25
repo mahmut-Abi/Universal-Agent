@@ -13,6 +13,7 @@ from universal_agent.operations import AuditRecordView, DoctorReportView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
 from universal_agent.service import (
     CapabilityView,
+    DomainPackageView,
     DomainView,
     EvaluatorView,
     MemoryView,
@@ -28,6 +29,7 @@ WebConsoleSnapshot = RuntimeConsoleSnapshot
 
 class WebCatalogPage(StrEnum):
     DOMAINS = "domains"
+    DOMAIN_PACKAGES = "domain-packages"
     CAPABILITIES = "capabilities"
     TOOLS = "tools"
     POLICIES = "policies"
@@ -77,6 +79,7 @@ def render_web_console(snapshot: WebConsoleSnapshot) -> str:
             "</section>",
             _operational_diagnostics(snapshot),
             _domains(snapshot),
+            _domain_packages(snapshot.domain_packages),
             _profiles(snapshot.profiles),
             _capabilities(snapshot.capabilities),
             _tools(snapshot.tools),
@@ -482,6 +485,7 @@ def _hero(snapshot: WebConsoleSnapshot) -> str:
             "</div>",
             '<div class="status">',
             '<a class="pill link" href="/console/sessions">Sessions</a>',
+            '<a class="pill link" href="/console/domain-packages">Packages</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
             '<a class="pill link" href="/console/doctor">Doctor</a>',
             '<a class="pill link" href="/console/distributed">Distributed</a>',
@@ -622,6 +626,7 @@ def _catalog_hero(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> str:
 def _catalog_title(catalog: WebCatalogPage) -> str:
     titles = {
         WebCatalogPage.DOMAINS: "Domain Catalog",
+        WebCatalogPage.DOMAIN_PACKAGES: "Domain Package Catalog",
         WebCatalogPage.CAPABILITIES: "Capability Catalog",
         WebCatalogPage.TOOLS: "Tool Catalog",
         WebCatalogPage.POLICIES: "Policy Catalog",
@@ -636,9 +641,17 @@ def _catalog_metrics(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> t
         return (
             _metric_card("Active Domains", len(snapshot.domains)),
             _metric_card("Configured Domains", len(snapshot.config.domains)),
+            _metric_card("Packages", len(snapshot.domain_packages)),
             _metric_card("Profiles", len(snapshot.profiles)),
             _metric_card("Capabilities", len(snapshot.capabilities)),
-            _metric_card("Evaluators", len(snapshot.evaluators)),
+        )
+    if catalog is WebCatalogPage.DOMAIN_PACKAGES:
+        return (
+            _metric_card("Packages", len(snapshot.domain_packages)),
+            _metric_card("Dependencies", _domain_package_dependency_count(snapshot)),
+            _metric_card("Required Tools", _domain_package_required_tool_count(snapshot)),
+            _metric_card("Profiles", len(snapshot.profiles)),
+            _metric_card("Active Domains", len(snapshot.domains)),
             _metric_card("Ready", _ready_text(snapshot)),
         )
     if catalog is WebCatalogPage.CAPABILITIES:
@@ -692,6 +705,12 @@ def _catalog_metrics(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> t
 def _catalog_sections(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> tuple[str, ...]:
     if catalog is WebCatalogPage.DOMAINS:
         return (_domains(snapshot), _configured_domains(snapshot), _profiles(snapshot.profiles))
+    if catalog is WebCatalogPage.DOMAIN_PACKAGES:
+        return (
+            _domain_packages(snapshot.domain_packages),
+            _domains(snapshot),
+            _profiles(snapshot.profiles),
+        )
     if catalog is WebCatalogPage.CAPABILITIES:
         return (_capabilities(snapshot.capabilities), _domains(snapshot), _tools(snapshot.tools))
     if catalog is WebCatalogPage.TOOLS:
@@ -1240,6 +1259,42 @@ def _profiles(profiles: tuple[ProfileView, ...]) -> str:
     return _section(
         "Profile Catalog",
         _table(("Profile", "Version", "Primary Domain", "Domains", "Description"), tuple(rows)),
+    )
+
+
+def _domain_packages(packages: tuple[DomainPackageView, ...]) -> str:
+    rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(package.name)}@{_html(package.version)}</td>",
+                f"<td>{_html(package.entrypoint or 'none')}</td>",
+                f"<td>{_html(', '.join(package.capability_names) or 'none')}</td>",
+                f"<td>{_html(_domain_package_dependencies(package))}</td>",
+                f"<td>{_html(', '.join(package.required_tools) or 'none')}</td>",
+                f"<td>{_html(_value_text(package.security))}</td>",
+                f"<td>{_html(package.manifest_path)}</td>",
+                "</tr>",
+            )
+        )
+        for package in packages
+    ]
+    if not rows:
+        rows.append('<tr><td colspan="7">No domain packages</td></tr>')
+    return _section(
+        "Domain Package Catalog",
+        _table(
+            (
+                "Package",
+                "Entrypoint",
+                "Capabilities",
+                "Dependencies",
+                "Required Tools",
+                "Security",
+                "Manifest",
+            ),
+            tuple(rows),
+        ),
     )
 
 
@@ -1924,6 +1979,23 @@ def _profile_domain_text(profile: ProfileView) -> str:
     if not profile.domains:
         return "none"
     return ", ".join(f"{identity.name}@{identity.version}" for identity in profile.domains)
+
+
+def _domain_package_dependencies(package: DomainPackageView) -> str:
+    if not package.dependencies:
+        return "none"
+    return ", ".join(f"{identity.name}@{identity.version}" for identity in package.dependencies)
+
+
+def _domain_package_dependency_count(snapshot: WebConsoleSnapshot) -> int:
+    return sum(len(package.dependencies) for package in snapshot.domain_packages)
+
+
+def _domain_package_required_tool_count(snapshot: WebConsoleSnapshot) -> int:
+    required_tools = {
+        tool_name for package in snapshot.domain_packages for tool_name in package.required_tools
+    }
+    return len(required_tools)
 
 
 def _enum_tuple_text(values: tuple[Any, ...]) -> str:
