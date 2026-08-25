@@ -14,6 +14,7 @@ from universal_agent.service import (
     DomainView,
     EvaluatorView,
     MemoryView,
+    MultiAgentView,
     PolicyView,
     ProfileView,
     ReadyView,
@@ -83,6 +84,8 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
     lines.extend(_doctor_lines(snapshot))
     lines.extend(("", "Distributed Runtime", _rule()))
     lines.extend(_distributed_runtime_lines(snapshot))
+    lines.extend(("", "Multi-Agent", _rule()))
+    lines.extend(_multi_agent_lines(snapshot.multi_agent))
     lines.extend(("", "Active Domains", _rule()))
     lines.extend(_domain_lines(snapshot.domains))
     lines.extend(("", "Domain Packages", _rule()))
@@ -189,6 +192,51 @@ def _distributed_runtime_lines(snapshot: TuiSnapshot) -> list[str]:
     lines.extend(
         f"- recommendation {item.code}={item.severity.value}: {item.message}"
         for item in health.recommendations
+    )
+    return lines
+
+
+def _multi_agent_lines(multi_agent: MultiAgentView) -> list[str]:
+    if not multi_agent.enabled:
+        return ["- not configured"]
+    lines = [
+        (
+            f"- profiles={multi_agent.profile_count}"
+            f" instances={multi_agent.instance_count}"
+            f" ready={multi_agent.ready_instance_count}"
+            f" busy={multi_agent.busy_instance_count}"
+            f" draining={multi_agent.draining_instance_count}"
+            f" offline={multi_agent.offline_instance_count}"
+            f" delegation_tasks={multi_agent.delegation_task_count}"
+        )
+    ]
+    lines.extend(
+        (
+            f"- profile {profile.name}@{profile.version}"
+            f" domains={_identity_tuple_text(profile.domains)}"
+            f" permissions={_tuple_text(profile.permissions)}"
+            f" capabilities={_tuple_text(profile.capabilities)}"
+            f" :: {profile.description}"
+        )
+        for profile in multi_agent.profiles
+    )
+    lines.extend(
+        (
+            f"- instance {instance.agent_id}"
+            f" profile={instance.profile_name}@{instance.profile_version}"
+            f" status={instance.status.value}"
+            f" session={instance.session_id or 'none'}"
+            f" endpoint={instance.endpoint or 'none'}"
+        )
+        for instance in multi_agent.instances
+    )
+    lines.extend(
+        (
+            f"- delegation_task {task.task_id}"
+            f" children={task.child_count}"
+            f" depth={task.delegation_depth if task.delegation_depth is not None else 'unknown'}"
+        )
+        for task in multi_agent.delegation_tasks
     )
     return lines
 

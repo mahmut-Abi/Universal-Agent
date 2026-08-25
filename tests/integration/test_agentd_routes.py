@@ -8,7 +8,15 @@ from typing import cast
 import pytest
 
 from universal_agent import (
+    AgentDelegationState,
+    AgentDelegationTaskState,
+    AgentId,
+    AgentInstanceRecord,
+    AgentInstanceStatus,
+    AgentProfileRecord,
+    AgentRegistry,
     AgentRuntime,
+    AgentTaskId,
     Decision,
     DecisionType,
     DistributedLockOwnerId,
@@ -254,6 +262,8 @@ def build_service(
     usage: list[ModelUsage] | None = None,
     distributed_coordinator: DistributedRuntimeCoordinator | None = None,
     domain_packages: DomainPackageRegistry | None = None,
+    agent_registry: AgentRegistry | None = None,
+    agent_delegation_state: AgentDelegationState | None = None,
     environment: JsonMapping | None = None,
     secrets: tuple[SecretRef, ...] = (),
     secret_resolution: SecretResolutionReport | None = None,
@@ -289,6 +299,8 @@ def build_service(
         secret_resolution=secret_resolution,
         distributed_coordinator=distributed_coordinator,
         domain_packages=domain_packages,
+        agent_registry=agent_registry,
+        agent_delegation_state=agent_delegation_state,
     ), backend
 
 
@@ -748,6 +760,54 @@ async def test_agentd_profile_route_exposes_profile_catalog() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agentd_multi_agent_route_exposes_optional_registry_projection() -> None:
+    registry = AgentRegistry(
+        profiles=(
+            AgentProfileRecord(
+                "security-auditor",
+                "1.0.0",
+                (DomainIdentity("kubernetes", "0.2.0"),),
+                permissions=("read_only", "security_review"),
+                capabilities=("inspect_workload",),
+                description="Read-only security checks",
+            ),
+        ),
+        instances=(
+            AgentInstanceRecord(
+                AgentId("agent-1"),
+                "security-auditor",
+                "1.0.0",
+                status=AgentInstanceStatus.READY,
+            ),
+        ),
+    )
+    service, _ = build_service(
+        [],
+        agent_registry=registry,
+        agent_delegation_state=AgentDelegationState(
+            (AgentDelegationTaskState(AgentTaskId("parent-task"), 1, 0),)
+        ),
+    )
+    app = AgentdApp(service)
+
+    response = await app.handle(HttpRequest("GET", "/v1/multi-agent"))
+
+    assert response.status_code == 200
+    assert response.body["enabled"] is True
+    assert response.body["profile_count"] == 1
+    assert response.body["instance_count"] == 1
+    assert response.body["ready_instance_count"] == 1
+    profiles = json_array(response.body["profiles"])
+    instances = json_array(response.body["instances"])
+    delegation_tasks = json_array(response.body["delegation_tasks"])
+    assert json_object(profiles[0])["permissions"] == ["read_only", "security_review"]
+    assert json_object(instances[0])["agent_id"] == "agent-1"
+    assert delegation_tasks == [
+        {"task_id": "parent-task", "child_count": 1, "delegation_depth": 0}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_agentd_profile_show_route_exposes_one_profile() -> None:
     service, _ = build_profile_service([])
     app = AgentdApp(service)
@@ -986,6 +1046,7 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     profile_page = await app.handle(HttpRequest("GET", "/console/profiles"))
     doctor_page = await app.handle(HttpRequest("GET", "/console/doctor"))
     distributed_page = await app.handle(HttpRequest("GET", "/console/distributed"))
+    multi_agent_page = await app.handle(HttpRequest("GET", "/console/multi-agent"))
     settings_page = await app.handle(HttpRequest("GET", "/console/settings"))
     catalog_pages = {
         "domains": "Domain Catalog",
@@ -1106,6 +1167,11 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert "Distributed Runtime" in distributed_page.text_body
     assert "not configured" in distributed_page.text_body
     assert "Distributed Health Checks" in distributed_page.text_body
+    assert multi_agent_page.status_code == 200
+    assert multi_agent_page.headers["content-type"] == "text/html; charset=utf-8"
+    assert multi_agent_page.text_body is not None
+    assert "Universal Agent Runtime Multi-Agent" in multi_agent_page.text_body
+    assert "Multi-Agent registry is not configured" in multi_agent_page.text_body
     for name, title in catalog_pages.items():
         response = catalog_responses[name]
         assert response.status_code == 200

@@ -75,6 +75,7 @@ from universal_agent.service import (
     EvaluatorView,
     HealthView,
     MemoryView,
+    MultiAgentView,
     PolicyView,
     ProfileView,
     ReadyView,
@@ -109,6 +110,7 @@ from universal_agent.web import (
     render_web_domain_detail,
     render_web_domain_package_detail,
     render_web_evidence_explorer,
+    render_web_multi_agent,
     render_web_profile_catalog,
     render_web_session_detail,
     render_web_sessions,
@@ -281,6 +283,21 @@ class AgentdApp:
                     snapshot.distributed_snapshot,
                     snapshot.distributed_health,
                 ),
+                content_type="text/html; charset=utf-8",
+            )
+        if path == "/console/multi-agent":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                snapshot = await build_web_console_snapshot(
+                    self._service,
+                    session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
+                    event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
+                )
+            except ValueError as exc:
+                return bad_request(str(exc))
+            return text_response(
+                render_web_multi_agent(snapshot),
                 content_type="text/html; charset=utf-8",
             )
         console_explorer = _console_explorer_renderer(path)
@@ -498,6 +515,8 @@ class AgentdApp:
                     {"profiles": [profile_body(item) for item in self._service.profiles()]}
                 ),
             )
+        if path == "/v1/multi-agent":
+            return self._get(method, multi_agent_body(self._service.multi_agent()))
         if path == "/v1/config":
             return self._get(method, config_body(self._service.config()))
         profile_name = _profile_route(path)
@@ -2063,6 +2082,56 @@ def profile_body(view: ProfileView) -> dict[str, JsonValue]:
             {"name": identity.name, "version": identity.version} for identity in view.domains
         ],
     }
+
+
+def multi_agent_body(view: MultiAgentView) -> JsonMapping:
+    return immutable_json(
+        {
+            "enabled": view.enabled,
+            "profile_count": view.profile_count,
+            "instance_count": view.instance_count,
+            "ready_instance_count": view.ready_instance_count,
+            "busy_instance_count": view.busy_instance_count,
+            "draining_instance_count": view.draining_instance_count,
+            "offline_instance_count": view.offline_instance_count,
+            "delegation_task_count": view.delegation_task_count,
+            "profiles": [
+                {
+                    "name": profile.name,
+                    "version": profile.version,
+                    "domains": [
+                        {"name": identity.name, "version": identity.version}
+                        for identity in profile.domains
+                    ],
+                    "permissions": list(profile.permissions),
+                    "capabilities": list(profile.capabilities),
+                    "description": profile.description,
+                }
+                for profile in view.profiles
+            ],
+            "instances": [
+                {
+                    "agent_id": instance.agent_id,
+                    "profile_name": instance.profile_name,
+                    "profile_version": instance.profile_version,
+                    "status": instance.status.value,
+                    "session_id": None
+                    if instance.session_id is None
+                    else str(instance.session_id),
+                    "endpoint": instance.endpoint,
+                }
+                for instance in view.instances
+            ],
+            "delegation_tasks": [
+                {
+                    "task_id": task.task_id,
+                    "child_count": task.child_count,
+                    "delegation_depth": task.delegation_depth,
+                }
+                for task in view.delegation_tasks
+            ],
+        }
+    )
 
 
 def session_body(view: SessionView) -> JsonMapping:

@@ -37,6 +37,7 @@ from universal_agent.agentd.app import (
     log_records_body,
     memory_body,
     metrics_body,
+    multi_agent_body,
     policy_body,
     profile_body,
     ready_body,
@@ -372,6 +373,7 @@ def build_parser() -> argparse.ArgumentParser:
     traces.add_argument("--format", choices=("runtime", "otlp"), default="runtime")
     commands.add_parser("doctor")
     commands.add_parser("audit")
+    commands.add_parser("multi-agent")
     repair = commands.add_parser("repair")
     repair_commands = repair.add_subparsers(dest="repair_command", required=True)
     repair_state_events = repair_commands.add_parser("state-events")
@@ -832,6 +834,9 @@ async def _dispatch(
         return
     if command == "audit":
         _write_json(out, audit_records_body(await service.audit_records()))
+        return
+    if command == "multi-agent":
+        _write_json(out, multi_agent_body(service.multi_agent()))
         return
     if command == "repair":
         repair_command = cast(str, args.repair_command)

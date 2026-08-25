@@ -405,8 +405,10 @@ detect accidental split state/event wiring. These adapters are local persistence
   checks for merge status, required Evidence IDs, completed task IDs and missing/waiting/failed/review
   counts. Conflict resolutions, merge reports and Multi-Agent evaluation reports now provide strict
   payload encode/decode helpers for persistence, replay and future registry handoff without re-running
-  child Agents. This is a foundation for optional Multi-Agent execution, not a replacement for Domain
-  Composition.
+  child Agents. `RuntimeService.multi_agent`, `GET /v1/multi-agent`, `agent multi-agent`, the TUI
+  snapshot and `/console/multi-agent` expose this registry/delegation state as a read-only
+  application projection. This is a foundation for optional Multi-Agent execution, not a replacement
+  for Domain Composition.
 
 The Kubernetes Domain uses injected backends. Most tests and examples use fake backends; no real
 cluster is accessed unless a caller explicitly wires `KubectlBackend`. `KubectlBackend` implements
@@ -500,6 +502,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p4_multi_agent_cost_limit.py
 .venv/bin/python examples/p4_multi_agent_lifecycle.py
 .venv/bin/python examples/p4_multi_agent_registry_snapshot.py
+.venv/bin/python examples/p4_multi_agent_runtime_service_projection.py
 .venv/bin/python examples/p4_multi_agent_conflict_resolution.py
 .venv/bin/python examples/p4_multi_agent_result_merge.py
 .venv/bin/python examples/p4_multi_agent_evaluation.py

@@ -340,6 +340,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
     assert "- ok runtime_health: health status is ok" in rendered
     assert "Distributed Runtime" in rendered
     assert "- not configured" in rendered
+    assert "Multi-Agent" in rendered
     assert "kubernetes@0.2.0" in rendered
     assert "Domain Packages" in rendered
     assert "kubernetes@0.2.0 capabilities=inspect_workload" in rendered

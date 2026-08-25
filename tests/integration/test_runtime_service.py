@@ -6,7 +6,15 @@ from pathlib import Path
 import pytest
 
 from universal_agent import (
+    AgentDelegationState,
+    AgentDelegationTaskState,
+    AgentId,
+    AgentInstanceRecord,
+    AgentInstanceStatus,
+    AgentProfileRecord,
+    AgentRegistry,
     AgentRuntime,
+    AgentTaskId,
     Decision,
     DecisionType,
     DistributedLockOwnerId,
@@ -144,6 +152,8 @@ def build_service(
     usage: list[ModelUsage] | None = None,
     domain_packages: DomainPackageRegistry | None = None,
     distributed_coordinator: DistributedRuntimeCoordinator | None = None,
+    agent_registry: AgentRegistry | None = None,
+    agent_delegation_state: AgentDelegationState | None = None,
     environment: str = "staging",
 ) -> tuple[RuntimeService, ServiceBackend]:
     backend = ServiceBackend()
@@ -155,7 +165,58 @@ def build_service(
         components=components,
         domain_packages=domain_packages,
         distributed_coordinator=distributed_coordinator,
+        agent_registry=agent_registry,
+        agent_delegation_state=agent_delegation_state,
     ), backend
+
+
+def test_runtime_service_exposes_optional_multi_agent_projection() -> None:
+    service, _ = build_service([])
+    registry = AgentRegistry(
+        profiles=(
+            AgentProfileRecord(
+                name="security-auditor",
+                version="1.0.0",
+                domains=(DomainIdentity("kubernetes", "0.2.0"),),
+                permissions=("read_only", "security_review"),
+                capabilities=("inspect_workload",),
+                description="Read-only security checks",
+            ),
+        ),
+        instances=(
+            AgentInstanceRecord(
+                AgentId("agent-1"),
+                "security-auditor",
+                "1.0.0",
+                status=AgentInstanceStatus.BUSY,
+                session_id=SessionId("session-agent-1"),
+            ),
+        ),
+    )
+    configured_service, _ = build_service(
+        [],
+        agent_registry=registry,
+        agent_delegation_state=AgentDelegationState(
+            (
+                AgentDelegationTaskState(
+                    AgentTaskId("parent-task"),
+                    child_count=2,
+                    delegation_depth=0,
+                ),
+            )
+        ),
+    )
+
+    assert service.multi_agent().enabled is False
+    multi_agent = configured_service.multi_agent()
+
+    assert multi_agent.enabled is True
+    assert multi_agent.profile_count == 1
+    assert multi_agent.instance_count == 1
+    assert multi_agent.busy_instance_count == 1
+    assert multi_agent.profiles[0].permissions == ("read_only", "security_review")
+    assert multi_agent.instances[0].session_id == SessionId("session-agent-1")
+    assert multi_agent.delegation_tasks[0].task_id == "parent-task"
 
 
 def test_runtime_service_config_redacts_sensitive_environment_values() -> None:

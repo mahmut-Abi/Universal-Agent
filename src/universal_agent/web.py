@@ -7,7 +7,7 @@ from html import escape
 from typing import Any
 
 from universal_agent.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
-from universal_agent.core import SessionId
+from universal_agent.core import DomainIdentity, SessionId
 from universal_agent.distributed import DistributedHealthReport, DistributedRuntimeSnapshot
 from universal_agent.operations import AuditRecordView, DoctorReportView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
@@ -17,6 +17,7 @@ from universal_agent.service import (
     DomainView,
     EvaluatorView,
     MemoryView,
+    MultiAgentView,
     PolicyView,
     ProfileView,
     RuntimeService,
@@ -81,6 +82,7 @@ def render_web_console(snapshot: WebConsoleSnapshot) -> str:
             _domains(snapshot),
             _domain_packages(snapshot.domain_packages),
             _profiles(snapshot.profiles),
+            _multi_agent(snapshot.multi_agent),
             _capabilities(snapshot.capabilities),
             _tools(snapshot.tools),
             _policies(snapshot.policies),
@@ -243,6 +245,38 @@ def render_web_distributed(
             _distributed_work_queue(distributed),
             _distributed_workers(distributed),
             _distributed_locks(distributed),
+            "</main>",
+            "</body>",
+            "</html>",
+        )
+    )
+
+
+def render_web_multi_agent(snapshot: WebConsoleSnapshot) -> str:
+    title = "Universal Agent Runtime Multi-Agent"
+    multi_agent = snapshot.multi_agent
+    return "\n".join(
+        (
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f"<title>{_html(title)}</title>",
+            f"<style>{_stylesheet()}</style>",
+            "</head>",
+            "<body>",
+            '<main class="shell">',
+            _multi_agent_hero(snapshot),
+            '<section class="grid cards" aria-label="Multi-Agent summary">',
+            _metric_card("Status", "enabled" if multi_agent.enabled else "not configured"),
+            _metric_card("Profiles", multi_agent.profile_count),
+            _metric_card("Instances", multi_agent.instance_count),
+            _metric_card("Ready", multi_agent.ready_instance_count),
+            _metric_card("Busy", multi_agent.busy_instance_count),
+            _metric_card("Delegation Tasks", multi_agent.delegation_task_count),
+            "</section>",
+            _multi_agent(multi_agent),
             "</main>",
             "</body>",
             "</html>",
@@ -528,8 +562,10 @@ def _hero(snapshot: WebConsoleSnapshot) -> str:
             '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/domain-packages">Packages</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
+            '<a class="pill link" href="/console/multi-agent">Multi-Agent</a>',
             '<a class="pill link" href="/console/doctor">Doctor</a>',
             '<a class="pill link" href="/console/distributed">Distributed</a>',
+            '<a class="pill link" href="/console/multi-agent">Multi-Agent</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
@@ -564,6 +600,7 @@ def _settings_hero(snapshot: WebConsoleSnapshot) -> str:
             '<a class="pill link" href="/console/profiles">Profiles</a>',
             '<a class="pill link" href="/console/doctor">Doctor</a>',
             '<a class="pill link" href="/console/distributed">Distributed</a>',
+            '<a class="pill link" href="/console/multi-agent">Multi-Agent</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
@@ -845,6 +882,7 @@ def _doctor_hero(snapshot: WebConsoleSnapshot, doctor: DoctorReportView) -> str:
             '<a class="pill link" href="/console">Console</a>',
             '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/distributed">Distributed</a>',
+            '<a class="pill link" href="/console/multi-agent">Multi-Agent</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             f'<span class="pill {doctor_class}">Doctor: {_html(doctor.status)}</span>',
@@ -877,6 +915,32 @@ def _distributed_hero(
             '<a class="pill link" href="/console/settings">Settings</a>',
             f'<span class="pill {_status_class(distributed_status)}">'
             f"Distributed: {_html(distributed_status)}</span>",
+            f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
+            f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
+            "</div>",
+            "</section>",
+        )
+    )
+
+
+def _multi_agent_hero(snapshot: WebConsoleSnapshot) -> str:
+    ready_class = "ok" if snapshot.ready.ready else "warn"
+    status = "enabled" if snapshot.multi_agent.enabled else "not configured"
+    return "\n".join(
+        (
+            '<section class="hero">',
+            "<div>",
+            "<p>Universal Agent Runtime</p>",
+            "<h1>Multi-Agent</h1>",
+            f"<span>status={_html(status)}</span>",
+            "</div>",
+            '<div class="status">',
+            '<a class="pill link" href="/console">Console</a>',
+            '<a class="pill link" href="/console/sessions">Sessions</a>',
+            '<a class="pill link" href="/console/distributed">Distributed</a>',
+            '<a class="pill link" href="/console/doctor">Doctor</a>',
+            '<a class="pill link" href="/console/settings">Settings</a>',
+            f'<span class="pill {_status_class(status)}">Multi-Agent: {_html(status)}</span>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
             "</div>",
@@ -1201,6 +1265,75 @@ def _distributed_locks(distributed: DistributedRuntimeSnapshot | None) -> str:
         "Distributed Locks",
         _table(("Lock", "Owner", "Lease", "Heartbeat", "Lease Expires", "Metadata"), tuple(rows)),
     )
+
+
+def _multi_agent(multi_agent: MultiAgentView) -> str:
+    if not multi_agent.enabled:
+        return _section(
+            "Multi-Agent",
+            '<p class="empty">Multi-Agent registry is not configured</p>',
+        )
+    profile_rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(profile.name)}@{_html(profile.version)}</td>",
+                f"<td>{_html(_identity_tuple_text(profile.domains))}</td>",
+                f"<td>{_html(_string_tuple_text(profile.permissions))}</td>",
+                f"<td>{_html(_string_tuple_text(profile.capabilities))}</td>",
+                f"<td>{_html(profile.description)}</td>",
+                "</tr>",
+            )
+        )
+        for profile in multi_agent.profiles
+    ]
+    instance_rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(instance.agent_id)}</td>",
+                f"<td>{_html(instance.profile_name)}@{_html(instance.profile_version)}</td>",
+                f"<td>{_html(instance.status.value)}</td>",
+                f"<td>{_html(instance.session_id or 'none')}</td>",
+                f"<td>{_html(instance.endpoint or 'none')}</td>",
+                "</tr>",
+            )
+        )
+        for instance in multi_agent.instances
+    ]
+    task_rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(task.task_id)}</td>",
+                f"<td>{task.child_count}</td>",
+                f"<td>{_html(_delegation_depth_text(task.delegation_depth))}</td>",
+                "</tr>",
+            )
+        )
+        for task in multi_agent.delegation_tasks
+    ]
+    if not profile_rows:
+        profile_rows.append('<tr><td colspan="5">No agent profiles</td></tr>')
+    if not instance_rows:
+        instance_rows.append('<tr><td colspan="5">No agent instances</td></tr>')
+    if not task_rows:
+        task_rows.append('<tr><td colspan="3">No delegation tasks</td></tr>')
+    return _section(
+        "Multi-Agent",
+        _table(
+            ("Profile", "Domains", "Permissions", "Capabilities", "Description"),
+            tuple(profile_rows),
+        )
+        + _table(("Agent", "Profile", "Status", "Session", "Endpoint"), tuple(instance_rows))
+        + _table(("Task", "Children", "Depth"), tuple(task_rows)),
+    )
+
+
+def _delegation_depth_text(delegation_depth: int | None) -> str:
+    if delegation_depth is None:
+        return "unknown"
+    return str(delegation_depth)
 
 
 def _operational_diagnostics(snapshot: WebConsoleSnapshot) -> str:
@@ -2066,6 +2199,12 @@ def _domain_package_dependencies(package: DomainPackageView) -> str:
     return ", ".join(f"{identity.name}@{identity.version}" for identity in package.dependencies)
 
 
+def _identity_tuple_text(values: tuple[DomainIdentity, ...]) -> str:
+    if not values:
+        return "none"
+    return ", ".join(f"{identity.name}@{identity.version}" for identity in values)
+
+
 def _domain_package_dependency_count(snapshot: WebConsoleSnapshot) -> int:
     return sum(len(package.dependencies) for package in snapshot.domain_packages)
 
@@ -2490,6 +2629,7 @@ __all__ = [
     "render_web_domain_detail",
     "render_web_domain_package_detail",
     "render_web_evidence_explorer",
+    "render_web_multi_agent",
     "render_web_profile_catalog",
     "render_web_session_detail",
     "render_web_sessions",

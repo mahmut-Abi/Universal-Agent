@@ -60,6 +60,13 @@ from universal_agent.domain import (
 )
 from universal_agent.evidence import Evidence
 from universal_agent.memory import MemoryKind, MemoryRecord
+from universal_agent.multi_agent import (
+    AgentDelegationState,
+    AgentInstanceRecord,
+    AgentInstanceStatus,
+    AgentProfileRecord,
+    AgentRegistry,
+)
 from universal_agent.operations import (
     AuditRecordView,
     DoctorReportView,
@@ -240,6 +247,69 @@ class ProfileView:
     domains: tuple[DomainIdentity, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class MultiAgentProfileView:
+    name: str
+    version: str
+    domains: tuple[DomainIdentity, ...]
+    permissions: tuple[str, ...]
+    capabilities: tuple[str, ...]
+    description: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class MultiAgentInstanceView:
+    agent_id: str
+    profile_name: str
+    profile_version: str
+    status: AgentInstanceStatus
+    session_id: SessionId | None = None
+    endpoint: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MultiAgentDelegationTaskView:
+    task_id: str
+    child_count: int
+    delegation_depth: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class MultiAgentView:
+    enabled: bool
+    profiles: tuple[MultiAgentProfileView, ...] = ()
+    instances: tuple[MultiAgentInstanceView, ...] = ()
+    delegation_tasks: tuple[MultiAgentDelegationTaskView, ...] = ()
+
+    @property
+    def profile_count(self) -> int:
+        return len(self.profiles)
+
+    @property
+    def instance_count(self) -> int:
+        return len(self.instances)
+
+    @property
+    def ready_instance_count(self) -> int:
+        return _multi_agent_instance_status_count(self.instances, AgentInstanceStatus.READY)
+
+    @property
+    def busy_instance_count(self) -> int:
+        return _multi_agent_instance_status_count(self.instances, AgentInstanceStatus.BUSY)
+
+    @property
+    def draining_instance_count(self) -> int:
+        return _multi_agent_instance_status_count(self.instances, AgentInstanceStatus.DRAINING)
+
+    @property
+    def offline_instance_count(self) -> int:
+        return _multi_agent_instance_status_count(self.instances, AgentInstanceStatus.OFFLINE)
+
+    @property
+    def delegation_task_count(self) -> int:
+        return len(self.delegation_tasks)
+
+
 REDACTED_ENVIRONMENT_VALUE = "<redacted>"
 
 
@@ -408,6 +478,8 @@ class RuntimeService:
         secret_resolution: SecretResolutionReport | None = None,
         distributed_coordinator: DistributedRuntimeCoordinator | None = None,
         domain_packages: DomainPackageRegistry | None = None,
+        agent_registry: AgentRegistry | None = None,
+        agent_delegation_state: AgentDelegationState | None = None,
     ) -> None:
         self._runtime_api = runtime_api
         self._components = components
@@ -416,6 +488,8 @@ class RuntimeService:
         self._secret_resolution = secret_resolution
         self._distributed_coordinator = distributed_coordinator
         self._domain_packages = domain_packages or DomainPackageRegistry()
+        self._agent_registry = agent_registry
+        self._agent_delegation_state = agent_delegation_state or AgentDelegationState()
 
     def health(self) -> HealthView:
         return HealthView(status="ok", service="universal-agent-runtime")
@@ -540,6 +614,24 @@ class RuntimeService:
 
     def profiles(self) -> tuple[ProfileView, ...]:
         return tuple(profile_view(profile) for profile in self._profiles.all())
+
+    def multi_agent(self) -> MultiAgentView:
+        if self._agent_registry is None:
+            return MultiAgentView(enabled=False)
+        snapshot = self._agent_registry.snapshot()
+        return MultiAgentView(
+            enabled=True,
+            profiles=tuple(multi_agent_profile_view(item) for item in snapshot.profiles),
+            instances=tuple(multi_agent_instance_view(item) for item in snapshot.instances),
+            delegation_tasks=tuple(
+                MultiAgentDelegationTaskView(
+                    task_id=str(task.task_id),
+                    child_count=task.child_count,
+                    delegation_depth=task.delegation_depth,
+                )
+                for task in self._agent_delegation_state.tasks
+            ),
+        )
 
     def profile(self, name: str) -> ProfileView:
         return profile_view(self._profiles.get(name))
@@ -1594,6 +1686,35 @@ def profile_view(profile: AgentProfile) -> ProfileView:
         domain_version=profile.domain.version,
         domains=tuple(domain.identity() for domain in profile.configured_domains()),
     )
+
+
+def multi_agent_profile_view(profile: AgentProfileRecord) -> MultiAgentProfileView:
+    return MultiAgentProfileView(
+        name=profile.name,
+        version=profile.version,
+        domains=profile.domains,
+        permissions=profile.permissions,
+        capabilities=profile.capabilities,
+        description=profile.description,
+    )
+
+
+def multi_agent_instance_view(instance: AgentInstanceRecord) -> MultiAgentInstanceView:
+    return MultiAgentInstanceView(
+        agent_id=str(instance.agent_id),
+        profile_name=instance.profile_name,
+        profile_version=instance.profile_version,
+        status=instance.status,
+        session_id=instance.session_id,
+        endpoint=instance.endpoint,
+    )
+
+
+def _multi_agent_instance_status_count(
+    instances: tuple[MultiAgentInstanceView, ...],
+    status: AgentInstanceStatus,
+) -> int:
+    return sum(1 for instance in instances if instance.status is status)
 
 
 def policy_view(policy: Policy, domain: ActiveDomain) -> PolicyView:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from universal_agent.core import SessionId
 from universal_agent.distributed import DistributedHealthReport, DistributedRuntimeSnapshot
@@ -18,6 +18,7 @@ from universal_agent.service import (
     EvaluatorView,
     HealthView,
     MemoryView,
+    MultiAgentView,
     PolicyView,
     ProfileView,
     ReadyView,
@@ -51,6 +52,7 @@ class RuntimeConsoleSnapshot:
     session_explorer: SessionExplorerView | None
     events: tuple[RuntimeEventView, ...]
     audit_records: tuple[AuditRecordView, ...]
+    multi_agent: MultiAgentView = field(default_factory=lambda: MultiAgentView(False))
 
 
 async def build_runtime_console_snapshot(
@@ -104,6 +106,7 @@ async def build_runtime_console_snapshot(
         session_explorer=session_explorer,
         events=events,
         audit_records=audit_records,
+        multi_agent=service.multi_agent(),
     )
 
 

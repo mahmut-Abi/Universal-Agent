@@ -67,6 +67,7 @@ from universal_agent.web import (
     render_web_domain_detail,
     render_web_domain_package_detail,
     render_web_evidence_explorer,
+    render_web_multi_agent,
     render_web_profile_catalog,
     render_web_session_detail,
     render_web_sessions,
@@ -378,6 +379,8 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "capability=inspect_workload" in rendered
     assert "allow:allow-read" in rendered
     assert 'href="/console/doctor"' in rendered
+    assert 'href="/console/multi-agent"' in rendered
+    assert "Multi-Agent registry is not configured" in rendered
 
     sessions_page = render_web_sessions(snapshot)
 
@@ -423,6 +426,12 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "not configured" in distributed_missing
     assert "Distributed Health Checks" in distributed_missing
     assert "No distributed work items" in distributed_missing
+
+    multi_agent_page = render_web_multi_agent(snapshot)
+
+    assert "Universal Agent Runtime Multi-Agent" in multi_agent_page
+    assert "Multi-Agent: not configured" in multi_agent_page
+    assert "Multi-Agent registry is not configured" in multi_agent_page
 
     coordinator = DistributedRuntimeCoordinator()
     coordinator.schedule_session(SessionId("queued-session"))
