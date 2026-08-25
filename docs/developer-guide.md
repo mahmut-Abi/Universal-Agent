@@ -1,0 +1,93 @@
+# Developer Guide
+
+This guide describes the current local development workflow for Universal Agent
+Runtime.
+
+## Setup
+
+Python 3.12 or newer is required. The repository convention is to use the local
+virtual environment when present:
+
+```bash
+.venv/bin/python -m pip install -e '.[dev]'
+```
+
+## Quality Gates
+
+Run these before committing meaningful changes:
+
+```bash
+.venv/bin/python -m ruff format --check src tests examples
+.venv/bin/python -m ruff check .
+.venv/bin/python -m mypy
+.venv/bin/python -m pytest -q
+```
+
+Targeted checks are acceptable while developing, but a feature node should pass
+the relevant focused tests and the full static gates before commit.
+
+## Development Rules
+
+- Read `AGENTS.md` and the architecture design before changing runtime behavior.
+- Keep Domain-specific behavior out of the Kernel.
+- Prefer typed objects over loosely passed dictionaries for runtime contracts.
+- Do not use model output as authoritative state, authorization or completion.
+- Add tests through public seams such as `RuntimeAPI`, `RuntimeService`, CLI,
+  agentd routes, Domain package registries or UI renderers.
+- Keep examples as executable documentation when adding user-facing surfaces.
+
+## Common Test Targets
+
+```bash
+.venv/bin/python -m pytest tests/integration/test_agent_runtime.py -q
+.venv/bin/python -m pytest tests/integration/test_runtime_api.py -q
+.venv/bin/python -m pytest tests/integration/test_agentd_routes.py -q
+.venv/bin/python -m pytest tests/integration/test_cli.py -q
+.venv/bin/python -m pytest tests/unit/test_operations.py -q
+.venv/bin/python -m pytest tests/unit/test_web_console.py tests/unit/test_tui.py -q
+.venv/bin/python -m pytest tests/unit/test_ecosystem_catalog.py -q
+```
+
+## Executable Examples
+
+Examples are organized by roadmap slice. Useful entry points:
+
+```bash
+.venv/bin/python examples/p0_agent_loop.py
+.venv/bin/python examples/p1_kubernetes_domain.py
+.venv/bin/python examples/p2_evidence_recovery.py
+.venv/bin/python examples/p3_memory.py
+.venv/bin/python examples/p3_2_kubernetes_remediation.py
+.venv/bin/python examples/p3_5_runtime_api.py
+.venv/bin/python examples/p3_5_runtime_service.py
+.venv/bin/python examples/p3_5_agentd_routes.py
+.venv/bin/python examples/p3_5_cli_event_stream.py
+.venv/bin/python examples/p3_6_secret_redaction.py
+.venv/bin/python examples/p3_7_evaluation_runner.py
+.venv/bin/python examples/p4_multi_agent_contract.py
+.venv/bin/python examples/p5_tui.py
+.venv/bin/python examples/p5_web_console.py
+.venv/bin/python examples/p6_distributed_worker.py
+.venv/bin/python examples/p7_ecosystem_catalog.py
+```
+
+## Where To Put Changes
+
+- Runtime loop semantics: `src/universal_agent/runtime/`.
+- Application projections: `src/universal_agent/service/`.
+- HTTP route behavior: `src/universal_agent/agentd/`.
+- CLI commands: `src/universal_agent/cli.py`.
+- Read-only Web UI: `src/universal_agent/web.py`.
+- Read-only TUI: `src/universal_agent/tui.py`.
+- Domain metadata/package behavior: `src/universal_agent/domain/` or
+  `src/universal_agent/ecosystem/`.
+- Kubernetes-specific behavior: `src/universal_agent/domains/kubernetes/`.
+
+Avoid broad refactors across these areas unless the feature requires a real
+architectural seam change.
+
+## Commit Practice
+
+Commit meaningful feature nodes separately. A good node includes implementation,
+tests, any affected examples, and concise documentation updates when the
+behavior is user-facing.

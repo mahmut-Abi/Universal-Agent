@@ -1,0 +1,86 @@
+# Architecture Map
+
+The runtime follows the design rule:
+
+```text
+Kernel defines how an Agent works.
+Domain defines where and with what knowledge/capabilities it works.
+```
+
+The model proposes structured decisions. Runtime-owned components validate,
+authorize, execute, observe, produce Evidence, update World state, evaluate and
+recover.
+
+## Runtime Flow
+
+```text
+Goal
+  -> Task
+  -> Context
+  -> Decision(capability)
+  -> Capability Resolution
+  -> Policy
+  -> Tool
+  -> Observation
+  -> Evidence
+  -> World Model
+  -> Task Expansion
+  -> Evaluation
+  -> Continue / Recover / Finish
+```
+
+Important invariants:
+
+- LLM output is not authoritative state.
+- Tool success is not task success.
+- Policy is deterministic runtime code, not prompt text.
+- Capability and Tool are separate concepts.
+- Evidence is the traceable basis for World Model and Evaluation.
+- Domain-specific logic stays outside the Kernel.
+
+## Module Ownership
+
+| Area | Main modules | Responsibility |
+| --- | --- | --- |
+| Core contracts | `src/universal_agent/core/` | IDs, Goal/Task/Decision/Observation/Event contracts |
+| Agent Kernel | `src/universal_agent/runtime/` | loop orchestration, state transitions, actions, session rebuild, RuntimeAPI |
+| Domain Runtime | `src/universal_agent/domain/` | active domains, composition, package metadata, Domain loading |
+| Capability/Tool | `src/universal_agent/capability/`, `src/universal_agent/tools/` | semantic capability registry and concrete tool execution |
+| Policy | `src/universal_agent/policy/` | allow/confirm/deny rules and policy engine |
+| Evidence/World | `src/universal_agent/evidence/`, `src/universal_agent/world/` | Evidence store, facts, entities, relations, replayable World projection |
+| Recovery | `src/universal_agent/recovery/` | classified, budgeted recovery plans |
+| Context | `src/universal_agent/context/` | budget-aware context compilation from runtime-owned state |
+| Memory | `src/universal_agent/memory/` | advisory prior/episodic memory, not Evidence |
+| Service/API | `src/universal_agent/service/`, `src/universal_agent/agentd/` | RuntimeService projections, framework-free route adapter, HTTP bridge |
+| Persistence | `src/universal_agent/persistence/`, `src/universal_agent/state/` | in-memory/file/SQLite session and event stores |
+| Operations | `src/universal_agent/operations/` | metrics, logs, traces, cost, audit, doctor, repair views |
+| Evaluation | `src/universal_agent/evaluation/` | scenarios, suites, quality gates, reports, replay, deterministic mode |
+| UI | `src/universal_agent/tui.py`, `src/universal_agent/web.py`, `src/universal_agent/console.py` | read-only TUI/Web/console projections |
+| Distributed local primitives | `src/universal_agent/distributed/`, `src/universal_agent/coordination/` | queue, worker, lease, lock, scheduler, coordinator, health |
+| Multi-Agent optional layer | `src/universal_agent/multi_agent/` | structured task/result contracts, registry, delegation, merge/evaluation |
+| Ecosystem | `src/universal_agent/ecosystem/`, `src/universal_agent/profile/` | package/dataset/profile catalogs and registry metadata |
+| Kubernetes domain | `src/universal_agent/domains/kubernetes/` | first serious Domain Runtime and optional kubectl backend |
+
+## Application Boundaries
+
+Applications should use:
+
+- `RuntimeAPI` for stable in-process execution and session/event reads.
+- `RuntimeService` for application-facing projections.
+- `AgentdApp` / `AgentdHttpServer` for HTTP-shaped local service hosting.
+- `agent` CLI commands for operator workflows.
+
+They should not manipulate Kernel internals, stored snapshots or Domain
+implementation objects directly.
+
+## Current Boundary Conditions
+
+- The default Kubernetes domain uses injected fake/test backends unless a caller
+  explicitly wires `KubectlBackend`.
+- File and SQLite adapters are local persistence/coordination adapters, not a
+  high-availability distributed database layer.
+- Web and TUI are read-only inspection surfaces.
+- Multi-Agent is optional and structured; Domain Composition remains the
+  default way to combine multiple domains inside one Agent.
+- Ecosystem registry install planning validates metadata and checksums; it does
+  not import package entrypoints or install external dependencies.

@@ -1,0 +1,137 @@
+# Runtime Operator Guide
+
+This guide covers the current local operator surfaces: CLI, agentd route
+adapter, RuntimeService projections, read-only TUI/Web views and local
+coordination primitives.
+
+## CLI
+
+Use the local CLI through the installed console script or the module entry point.
+In this repository, tests and examples use:
+
+```bash
+.venv/bin/python -m universal_agent.cli health
+```
+
+Frequently used commands:
+
+```bash
+.venv/bin/python -m universal_agent.cli ready
+.venv/bin/python -m universal_agent.cli config show
+.venv/bin/python -m universal_agent.cli capabilities list
+.venv/bin/python -m universal_agent.cli tools list
+.venv/bin/python -m universal_agent.cli policies list
+.venv/bin/python -m universal_agent.cli profiles list
+.venv/bin/python -m universal_agent.cli session list
+```
+
+Session event reads support cursor semantics:
+
+```bash
+.venv/bin/python -m universal_agent.cli session events <session-id> --limit 20
+.venv/bin/python -m universal_agent.cli session events <session-id> --after <event-id>
+.venv/bin/python -m universal_agent.cli session events <session-id> --format sse
+.venv/bin/python -m universal_agent.cli session events <session-id> --after <event-id> --wait
+```
+
+`--wait` is bounded polling, not an infinite push stream. The default timeout is
+10 seconds and the maximum accepted timeout is 30 seconds.
+
+## agentd
+
+`AgentdApp` is a framework-free HTTP-shaped route adapter. `AgentdHttpServer`
+wraps it with the Python standard library HTTP server.
+
+Current route families include:
+
+- `GET /health`, `GET /ready`
+- `GET /v1/domains`, `/v1/capabilities`, `/v1/tools`, `/v1/policies`,
+  `/v1/evaluators`, `/v1/memory`
+- `POST /v1/sessions`, `GET /v1/sessions`, `GET /v1/sessions/{id}`
+- `GET /v1/sessions/{id}/events`
+- `GET /v1/sessions/{id}/events/stream`
+- `POST /v1/sessions/{id}/pause`, `/resume`, `/cancel`
+- operations routes for metrics, cost, logs, traces, doctor and audit
+- read-only console routes under `/console`
+
+SSE event batches share cursor semantics with JSON event reads. The stream route
+also accepts bounded wait polling parameters for local clients:
+
+```text
+GET /v1/sessions/{id}/events/stream?after=<event-id>&wait=true&timeout_seconds=10
+```
+
+## RuntimeService
+
+`RuntimeService` is the application-facing projection layer over `RuntimeAPI`.
+It exposes health/readiness, catalogs, sessions, events, diagnostics, operations,
+distributed coordination views and ecosystem/package views without reaching into
+Kernel internals.
+
+Use `RuntimeService` when building new local adapters. Use `RuntimeAPI` when the
+caller needs in-process execution and session/event read models.
+
+## Read-Only UI Surfaces
+
+- `agent tui` renders a deterministic text snapshot.
+- `/console` renders a read-only Web Console snapshot.
+- Focused Web pages exist for sessions, session detail, evidence, world model,
+  domains, catalogs, profiles, evaluation reports and settings.
+
+These UI surfaces are inspection views. They do not mutate runtime state.
+
+## Operations
+
+Runtime operations are event-derived:
+
+- metrics and Prometheus text export
+- cost projections
+- structured logs
+- trace spans and OTLP-shaped export
+- audit records
+- doctor checks
+- state/event consistency repair for terminal sessions missing terminal events
+
+Run:
+
+```bash
+.venv/bin/python -m universal_agent.cli metrics
+.venv/bin/python -m universal_agent.cli metrics --format prometheus
+.venv/bin/python -m universal_agent.cli doctor
+.venv/bin/python -m universal_agent.cli repair state-events --dry-run
+```
+
+## Local Distributed Runtime
+
+The P6 implementation is a local coordination foundation:
+
+- Work queue
+- Worker registry
+- Leased locks
+- Scheduler
+- Coordinator
+- Snapshot and health projections
+- Bounded worker execution
+
+It supports memory, file and SQLite-backed local adapters, but it is not a
+networked high-availability control plane.
+
+Useful commands:
+
+```bash
+.venv/bin/python -m universal_agent.cli distributed snapshot
+.venv/bin/python -m universal_agent.cli distributed health
+.venv/bin/python -m universal_agent.cli distributed expire
+```
+
+## Ecosystem Metadata
+
+P7 ecosystem commands validate and register local metadata:
+
+- Domain package manifests
+- Evaluation dataset manifests
+- Profile configs
+- Ecosystem registry manifests
+
+They do not import Domain entrypoints, install external dependencies, verify
+signatures or activate runtimes by themselves.
