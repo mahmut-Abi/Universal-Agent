@@ -364,7 +364,10 @@ detect accidental split state/event wiring. These adapters are local persistence
   referenced package manifests, evaluation datasets and Profile configs before registering metadata;
   install planning rejects sha256 drift, identity mismatch and registry metadata mismatch across
   Domain Package, Evaluation Dataset and Profile artifacts for CLI/CI and future package-registry
-  adapters. `agent ecosystem install` now exposes that full
+  adapters. Local install planning also refuses registry manifests that declare signature metadata by
+  default because signature verification is not implemented yet; callers must pass an explicit
+  trust policy, or CLI users must opt in with `--allow-unverified-signatures`, for trusted local
+  registries. `agent ecosystem install` now exposes that full
   package/dataset/Profile metadata install surface from registry manifests.
 - P4 Multi-Agent foundation: `AgentTaskRequest` / `AgentTaskResult` define the structured
   Agent-to-Agent contract with explicit constraints, expected output, Evidence IDs, result status and
@@ -527,6 +530,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p7_ecosystem_registry_manifest.py
 .venv/bin/python examples/p7_ecosystem_registry_store.py
 .venv/bin/python examples/p7_ecosystem_registry_install.py
+.venv/bin/python examples/p7_ecosystem_registry_trust_policy.py
 .venv/bin/python -m universal_agent.cli ecosystem store list --store-dir .tmp/ecosystem-registries
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli distributed health

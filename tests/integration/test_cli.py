@@ -1021,6 +1021,82 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+async def test_cli_ecosystem_install_requires_explicit_unverified_signature_trust(
+    tmp_path: Path,
+) -> None:
+    service, _ = build_cli_service([])
+    domain_root = tmp_path / "domains"
+    output_path = tmp_path / "registry" / "ecosystem.json"
+    write_domain_package_file(domain_root / "kubernetes")
+    export_output = StringIO()
+    rejected_output = StringIO()
+    rejected_error = StringIO()
+    allowed_plan_output = StringIO()
+    allowed_install_output = StringIO()
+
+    export_status = await run_cli(
+        [
+            "ecosystem",
+            "export",
+            "--domain-package-dir",
+            str(domain_root),
+            "--output",
+            str(output_path),
+        ],
+        service=service,
+        stdout=export_output,
+    )
+    signed_payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert isinstance(signed_payload, dict)
+    signed_payload["metadata"] = {
+        "name": "local-ecosystem",
+        "version": "0.1.0",
+        "description": "Local Universal Agent ecosystem registry",
+        "signature": {
+            "algorithm": "ed25519",
+            "value": "local-test-signature",
+        },
+    }
+    output_path.write_text(json.dumps(signed_payload), encoding="utf-8")
+
+    rejected_status = await run_cli(
+        ["ecosystem", "install", str(output_path), "--plan-only"],
+        service=service,
+        stdout=rejected_output,
+        stderr=rejected_error,
+    )
+    allowed_plan_status = await run_cli(
+        [
+            "ecosystem",
+            "install",
+            str(output_path),
+            "--plan-only",
+            "--allow-unverified-signatures",
+        ],
+        service=service,
+        stdout=allowed_plan_output,
+    )
+    allowed_install_status = await run_cli(
+        ["ecosystem", "install", str(output_path), "--allow-unverified-signatures"],
+        service=service,
+        stdout=allowed_install_output,
+    )
+    allowed_plan = read_json(allowed_plan_output)
+    allowed_install = read_json(allowed_install_output)
+
+    assert export_status == 0
+    assert rejected_status == 2
+    assert rejected_output.getvalue() == ""
+    assert "signature verification is not implemented" in rejected_error.getvalue()
+    assert allowed_plan_status == 0
+    assert allowed_plan["status"] == "planned"
+    assert allowed_plan["domain_package_count"] == 1
+    assert allowed_install_status == 0
+    assert allowed_install["status"] == "installed"
+    assert allowed_install["domain_package_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_cli_ecosystem_store_manages_file_backed_registry_manifests(
     tmp_path: Path,
 ) -> None:

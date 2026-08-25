@@ -100,6 +100,20 @@ class AmbiguousEcosystemRegistryItemError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class EcosystemRegistryTrustPolicy:
+    """Trust policy for local registry install planning.
+
+    Signature verification is intentionally not implemented in the local P7
+    registry foundation. This policy makes that boundary explicit: a registry
+    that declares signature metadata is rejected by default instead of being
+    treated as verified.
+    """
+
+    allow_unsigned: bool = True
+    allow_unverified_signatures: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class EcosystemDomainPackageRef:
     name: str
     version: str
@@ -485,6 +499,7 @@ def plan_ecosystem_domain_package_install(
     *,
     base_path: str | Path | None = None,
     verify: bool = True,
+    trust_policy: EcosystemRegistryTrustPolicy | None = None,
 ) -> EcosystemDomainPackageInstallPlan:
     """Validate local Domain package paths referenced by an ecosystem registry.
 
@@ -493,6 +508,7 @@ def plan_ecosystem_domain_package_install(
     """
 
     manifest = _registry_manifest(source)
+    _verify_registry_trust(manifest, trust_policy)
     if verify:
         _verify_registry_install_source(EcosystemRegistryIndex(manifest))
     candidates = tuple(
@@ -509,10 +525,16 @@ def install_ecosystem_domain_packages(
     registry: DomainPackageRegistry | None = None,
     base_path: str | Path | None = None,
     verify: bool = True,
+    trust_policy: EcosystemRegistryTrustPolicy | None = None,
 ) -> EcosystemDomainPackageInstallResult:
     """Install registry-referenced Domain package metadata into a local registry."""
 
-    plan = plan_ecosystem_domain_package_install(source, base_path=base_path, verify=verify)
+    plan = plan_ecosystem_domain_package_install(
+        source,
+        base_path=base_path,
+        verify=verify,
+        trust_policy=trust_policy,
+    )
     target = registry or DomainPackageRegistry()
     _reject_registry_install_duplicates(plan, target)
     for package in plan.packages:
@@ -525,6 +547,7 @@ def plan_ecosystem_install(
     *,
     base_path: str | Path | None = None,
     verify: bool = True,
+    trust_policy: EcosystemRegistryTrustPolicy | None = None,
 ) -> EcosystemInstallPlan:
     """Validate all local artifact paths referenced by an ecosystem registry.
 
@@ -533,6 +556,7 @@ def plan_ecosystem_install(
     """
 
     manifest = _registry_manifest(source)
+    _verify_registry_trust(manifest, trust_policy)
     if verify:
         _verify_registry_install_source(EcosystemRegistryIndex(manifest))
     return EcosystemInstallPlan(
@@ -540,6 +564,7 @@ def plan_ecosystem_install(
             manifest,
             base_path=base_path,
             verify=False,
+            trust_policy=trust_policy,
         ),
         evaluation_datasets=tuple(
             _evaluation_dataset_install_candidate(reference, base_path=base_path)
@@ -560,10 +585,16 @@ def install_ecosystem(
     profile_registry: ProfileRegistry | None = None,
     base_path: str | Path | None = None,
     verify: bool = True,
+    trust_policy: EcosystemRegistryTrustPolicy | None = None,
 ) -> EcosystemInstallResult:
     """Install registry-referenced ecosystem metadata into local registries."""
 
-    plan = plan_ecosystem_install(source, base_path=base_path, verify=verify)
+    plan = plan_ecosystem_install(
+        source,
+        base_path=base_path,
+        verify=verify,
+        trust_policy=trust_policy,
+    )
     domain_packages = domain_package_registry or DomainPackageRegistry()
     evaluation_datasets = evaluation_dataset_registry or EvaluationDatasetRegistry()
     _reject_registry_install_duplicates(plan.domain_packages, domain_packages)
@@ -980,6 +1011,37 @@ def _verify_registry_install_source(index: EcosystemRegistryIndex) -> None:
     raise EcosystemRegistryInstallError(
         f"ecosystem registry verification failed before package install: {failed}"
     )
+
+
+def _verify_registry_trust(
+    manifest: EcosystemRegistryManifest,
+    policy: EcosystemRegistryTrustPolicy | None,
+) -> None:
+    active = policy or EcosystemRegistryTrustPolicy()
+    signed = _registry_declares_signature(manifest)
+    if signed and not active.allow_unverified_signatures:
+        raise EcosystemRegistryInstallError(
+            "ecosystem registry declares signature metadata, but signature verification is not "
+            "implemented in the local registry installer; pass an explicit trust policy allowing "
+            "unverified signatures only for local trusted registries"
+        )
+    if not signed and not active.allow_unsigned:
+        raise EcosystemRegistryInstallError("unsigned ecosystem registry rejected by trust policy")
+
+
+def _registry_declares_signature(manifest: EcosystemRegistryManifest) -> bool:
+    metadata = manifest.metadata
+    if metadata.get("signature_required") is True:
+        return True
+    for key in ("signature", "signatures", "signature_ref", "signed_by"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return True
+        if isinstance(value, dict) and value:
+            return True
+        if isinstance(value, list) and value:
+            return True
+    return False
 
 
 def _domain_package_install_candidate(

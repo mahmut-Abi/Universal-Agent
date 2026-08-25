@@ -106,6 +106,7 @@ from universal_agent.ecosystem import (
     EcosystemRegistryManifest,
     EcosystemRegistryNotFoundError,
     EcosystemRegistryStoreNotFoundError,
+    EcosystemRegistryTrustPolicy,
     FileEcosystemRegistryStore,
     encode_ecosystem_registry_manifest,
     install_ecosystem,
@@ -547,6 +548,7 @@ def build_parser() -> argparse.ArgumentParser:
     ecosystem_install.add_argument("--base-path")
     ecosystem_install.add_argument("--no-verify", action="store_true")
     ecosystem_install.add_argument("--plan-only", action="store_true")
+    ecosystem_install.add_argument("--allow-unverified-signatures", action="store_true")
     ecosystem_store = ecosystem_commands.add_parser("store")
     ecosystem_store_commands = ecosystem_store.add_subparsers(
         dest="ecosystem_store_command",
@@ -1165,14 +1167,23 @@ def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:
         index = load_ecosystem_registry_index(cast(str, args.manifest))
         base_path = cast(str | None, args.base_path)
         verify = not cast(bool, args.no_verify)
+        trust_policy = EcosystemRegistryTrustPolicy(
+            allow_unverified_signatures=cast(bool, args.allow_unverified_signatures)
+        )
         if cast(bool, args.plan_only):
-            plan = plan_ecosystem_install(index, base_path=base_path, verify=verify)
+            plan = plan_ecosystem_install(
+                index,
+                base_path=base_path,
+                verify=verify,
+                trust_policy=trust_policy,
+            )
             _write_json(out, _ecosystem_install_plan_body(plan))
             return
         install_result = install_ecosystem(
             index,
             base_path=base_path,
             verify=verify,
+            trust_policy=trust_policy,
         )
         _write_json(out, _ecosystem_install_result_body(install_result))
         return

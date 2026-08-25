@@ -19,6 +19,7 @@ from universal_agent import (
     EcosystemRegistryItemNotFoundError,
     EcosystemRegistryManifest,
     EcosystemRegistryStoreNotFoundError,
+    EcosystemRegistryTrustPolicy,
     EcosystemRegistryValidationError,
     FileEcosystemRegistryStore,
     decode_ecosystem_registry_manifest,
@@ -567,6 +568,55 @@ def test_ecosystem_registry_installs_domain_packages_from_relative_paths(
     result = install_ecosystem_domain_packages(manifest, base_path=tmp_path)
 
     assert result.registry.identities() == (DomainIdentity("kubernetes", "1.0.0"),)
+
+
+def test_ecosystem_registry_install_refuses_unverified_signature_metadata_by_default(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    write_domain_package(domain_root / "kubernetes")
+    catalog = load_ecosystem_catalog(domain_package_root=domain_root)
+    exported = catalog.registry_manifest()
+    signed = EcosystemRegistryManifest(
+        api_version=exported.api_version,
+        kind=exported.kind,
+        name=exported.name,
+        version=exported.version,
+        description=exported.description,
+        domain_packages=exported.domain_packages,
+        evaluation_datasets=exported.evaluation_datasets,
+        profiles=exported.profiles,
+        metadata={
+            "signature": {
+                "algorithm": "ed25519",
+                "value": "local-test-signature",
+            }
+        },
+    )
+
+    with pytest.raises(EcosystemRegistryInstallError, match="signature verification is not"):
+        plan_ecosystem_install(signed)
+
+    allowed = plan_ecosystem_install(
+        signed,
+        trust_policy=EcosystemRegistryTrustPolicy(allow_unverified_signatures=True),
+    )
+
+    assert allowed.domain_packages.identities == (DomainIdentity("kubernetes", "1.0.0"),)
+
+
+def test_ecosystem_registry_install_can_require_signed_registry(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    write_domain_package(domain_root / "kubernetes")
+    unsigned = load_ecosystem_catalog(domain_package_root=domain_root).registry_manifest()
+
+    with pytest.raises(EcosystemRegistryInstallError, match="unsigned ecosystem registry"):
+        install_ecosystem_domain_packages(
+            unsigned,
+            trust_policy=EcosystemRegistryTrustPolicy(allow_unsigned=False),
+        )
 
 
 def test_ecosystem_registry_install_refuses_paths_outside_registry_base(
