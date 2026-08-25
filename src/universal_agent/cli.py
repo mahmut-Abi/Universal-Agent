@@ -508,6 +508,13 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--kubectl-context")
     init.add_argument("--kubectl-kubeconfig")
     init.add_argument("--kubectl-timeout-seconds", type=float, default=10.0)
+    init.add_argument("--model-provider", choices=("scripted", "json_http"), default="scripted")
+    init.add_argument("--model-name", default="scripted")
+    init.add_argument("--model-endpoint")
+    init.add_argument("--model-api-key-env")
+    init.add_argument("--model-api-key-secret", default="model_api_key")
+    init.add_argument("--model-timeout-seconds", type=float, default=30.0)
+    init.add_argument("--model-header", action="append", default=[])
     init.add_argument("--force", action="store_true")
 
     config = commands.add_parser("config")
@@ -1776,6 +1783,13 @@ def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
         kubectl_context=cast(str | None, args.kubectl_context),
         kubectl_kubeconfig=cast(str | None, args.kubectl_kubeconfig),
         kubectl_timeout_seconds=cast(float, args.kubectl_timeout_seconds),
+        model_provider=cast(str, args.model_provider),
+        model_name=cast(str, args.model_name),
+        model_endpoint=cast(str | None, args.model_endpoint),
+        model_api_key_env=cast(str | None, args.model_api_key_env),
+        model_api_key_secret=cast(str, args.model_api_key_secret),
+        model_timeout_seconds=cast(float, args.model_timeout_seconds),
+        model_headers=_parse_key_value_options(cast(list[str], args.model_header), "model-header"),
     )
     tmp_path = output.with_name(output.name + ".tmp")
     with tmp_path.open("w", encoding="utf-8") as handle:
@@ -1803,6 +1817,13 @@ def _profile_config_payload(
     kubectl_context: str | None,
     kubectl_kubeconfig: str | None,
     kubectl_timeout_seconds: float,
+    model_provider: str,
+    model_name: str,
+    model_endpoint: str | None,
+    model_api_key_env: str | None,
+    model_api_key_secret: str,
+    model_timeout_seconds: float,
+    model_headers: dict[str, str],
 ) -> dict[str, object]:
     domain = _profile_domain_config(
         domain_backend=domain_backend,
@@ -1825,6 +1846,15 @@ def _profile_config_payload(
         distributed_workers["path"] = distributed_workers_path
     runtime: dict[str, object] = {
         "environment": {"environment": environment},
+        "model": _profile_model_config(
+            model_provider=model_provider,
+            model_name=model_name,
+            model_endpoint=model_endpoint,
+            model_api_key_env=model_api_key_env,
+            model_api_key_secret=model_api_key_secret,
+            model_timeout_seconds=model_timeout_seconds,
+            model_headers=model_headers,
+        ),
         "store": store,
         "distributed_queue": distributed_queue,
         "distributed_locks": distributed_locks,
@@ -1832,6 +1862,14 @@ def _profile_config_payload(
         "limits": {"max_iterations": 20, "max_recovery_steps": 8},
         "domain": domain,
     }
+    if model_api_key_env is not None:
+        runtime["secrets"] = {
+            model_api_key_secret: {
+                "source": "env",
+                "key": model_api_key_env,
+                "required": True,
+            }
+        }
     if distributed_terminal_retention_seconds is not None:
         runtime["distributed_terminal_retention_seconds"] = distributed_terminal_retention_seconds
     return {
@@ -1867,6 +1905,53 @@ def _profile_domain_config(
     domain["backend"] = "kubectl"
     domain["settings"] = settings
     return domain
+
+
+def _profile_model_config(
+    *,
+    model_provider: str,
+    model_name: str,
+    model_endpoint: str | None,
+    model_api_key_env: str | None,
+    model_api_key_secret: str,
+    model_timeout_seconds: float,
+    model_headers: dict[str, str],
+) -> dict[str, object]:
+    model: dict[str, object] = {
+        "provider": model_provider,
+        "name": model_name,
+        "timeout_seconds": model_timeout_seconds,
+    }
+    if model_provider == "scripted":
+        if model_endpoint is not None:
+            raise ValueError("scripted model does not accept --model-endpoint")
+        if model_api_key_env is not None:
+            raise ValueError("scripted model does not accept --model-api-key-env")
+        if model_headers:
+            raise ValueError("scripted model does not accept --model-header")
+        return model
+    if model_provider != "json_http":
+        raise ValueError(f"unsupported model provider: {model_provider}")
+    if model_endpoint is None or not model_endpoint.strip():
+        raise ValueError("json_http model requires --model-endpoint")
+    model["endpoint"] = model_endpoint
+    if model_api_key_env is not None:
+        model["api_key_secret"] = model_api_key_secret
+    if model_headers:
+        model["headers"] = model_headers
+    return model
+
+
+def _parse_key_value_options(values: Sequence[str], label: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for value in values:
+        key, separator, option_value = value.partition("=")
+        if not separator or not key.strip() or not option_value.strip():
+            raise ValueError(f"{label} must be KEY=VALUE")
+        if key in parsed:
+            raise ValueError(f"duplicate {label}: {key}")
+        parsed[key] = option_value
+    return parsed
 
 
 def _setting_string(settings: JsonMapping, key: str, *, default: str) -> str:

@@ -22,6 +22,7 @@ from universal_agent import (
     Goal,
     InMemoryEventSink,
     InMemoryStateStore,
+    ModelConfig,
     ModelUsage,
     ProfileConfig,
     RuntimeAPI,
@@ -30,6 +31,7 @@ from universal_agent import (
     RuntimeLimitsConfig,
     RuntimeService,
     ScriptedModelAdapter,
+    SecretRef,
     StoreConfig,
     SuccessCriterion,
     Task,
@@ -655,6 +657,78 @@ async def test_cli_init_can_write_kubectl_domain_backend_config(tmp_path: Path) 
         "kubeconfig": "/tmp/kubeconfig",
         "timeout_seconds": 4.5,
     }
+
+
+@pytest.mark.asyncio
+async def test_cli_init_can_write_json_http_model_config(tmp_path: Path) -> None:
+    output = StringIO()
+    profile_path = tmp_path / "json-http-profile.json"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--model-provider",
+            "json_http",
+            "--model-name",
+            "runtime-decider",
+            "--model-endpoint",
+            "https://models.example.test/decide",
+            "--model-api-key-env",
+            "RUNTIME_MODEL_API_KEY",
+            "--model-api-key-secret",
+            "runtime_model_api_key",
+            "--model-timeout-seconds",
+            "4.5",
+            "--model-header",
+            "X-Agent-Runtime=test",
+        ],
+        stdout=output,
+    )
+    profile = ProfileConfig.from_json_file(profile_path).to_profile()
+
+    assert status == 0
+    assert profile.runtime.secrets == (
+        SecretRef.env("runtime_model_api_key", "RUNTIME_MODEL_API_KEY"),
+    )
+    assert profile.runtime.model == ModelConfig.json_http(
+        name="runtime-decider",
+        endpoint="https://models.example.test/decide",
+        api_key_secret="runtime_model_api_key",
+        timeout_seconds=4.5,
+        headers={"X-Agent-Runtime": "test"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_cli_init_rejects_invalid_model_header(tmp_path: Path) -> None:
+    output = StringIO()
+    error = StringIO()
+    profile_path = tmp_path / "json-http-profile.json"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--model-provider",
+            "json_http",
+            "--model-name",
+            "runtime-decider",
+            "--model-endpoint",
+            "https://models.example.test/decide",
+            "--model-header",
+            "X-Agent-Runtime",
+        ],
+        stdout=output,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert output.getvalue() == ""
+    assert "model-header must be KEY=VALUE" in error.getvalue()
+    assert not profile_path.exists()
 
 
 @pytest.mark.asyncio
