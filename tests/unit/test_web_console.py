@@ -45,7 +45,9 @@ from universal_agent.service import (
     WorldRelationView,
 )
 from universal_agent.web import (
+    WebCatalogPage,
     WebConsoleSnapshot,
+    render_web_catalog,
     render_web_console,
     render_web_domain_detail,
     render_web_evidence_explorer,
@@ -401,6 +403,21 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "Configured Domains" in profile_catalog
     assert "Capability Catalog" in profile_catalog
     assert 'href="/console/settings"' in profile_catalog
+
+    catalogs = {
+        WebCatalogPage.DOMAINS: ("Domain Catalog", "Configured Domains", "production-operator"),
+        WebCatalogPage.CAPABILITIES: ("Capability Catalog", "inspect_workload", "High Risk"),
+        WebCatalogPage.TOOLS: ("Tool Catalog", "kubernetes_inspect_workload", "No Side Effect"),
+        WebCatalogPage.POLICIES: ("Policy Catalog", "allow-read", "Confirm"),
+        WebCatalogPage.EVALUATORS: ("Evaluator Catalog", "workload-health", "Sessions"),
+        WebCatalogPage.MEMORY: ("Memory Catalog", "kubernetes readiness", "Scoped"),
+    }
+    for page, expected in catalogs.items():
+        catalog = render_web_catalog(snapshot, page)
+        assert f"Universal Agent Runtime {expected[0]}" in catalog
+        for text in expected:
+            assert text in catalog
+        assert 'href="/console/evaluations"' in catalog
 
     settings = render_web_settings(snapshot)
 

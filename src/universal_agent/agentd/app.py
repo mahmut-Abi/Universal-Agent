@@ -97,8 +97,10 @@ from universal_agent.service import (
 )
 from universal_agent.state import StateNotFoundError
 from universal_agent.web import (
+    WebCatalogPage,
     WebConsoleSnapshot,
     build_web_console_snapshot,
+    render_web_catalog,
     render_web_console,
     render_web_domain_detail,
     render_web_evidence_explorer,
@@ -239,6 +241,22 @@ class AgentdApp:
             )
             return text_response(
                 render_evaluation_console(evaluation_snapshot),
+                content_type="text/html; charset=utf-8",
+            )
+        console_catalog = _console_catalog_route(path)
+        if console_catalog is not None:
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                snapshot = await build_web_console_snapshot(
+                    self._service,
+                    session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
+                    event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
+                )
+            except ValueError as exc:
+                return bad_request(str(exc))
+            return text_response(
+                render_web_catalog(snapshot, console_catalog),
                 content_type="text/html; charset=utf-8",
             )
         console_domain_name, console_domain_version = _console_domain_route(path)
@@ -2156,6 +2174,16 @@ def _console_session_route(path: str) -> tuple[SessionId | None, str]:
     if len(segments) == 4 and segments[:2] == ("console", "sessions") and segments[2].strip():
         return SessionId(segments[2]), segments[3]
     return None, ""
+
+
+def _console_catalog_route(path: str) -> WebCatalogPage | None:
+    segments = tuple(segment for segment in path.split("/") if segment)
+    if len(segments) != 2 or segments[0] != "console":
+        return None
+    try:
+        return WebCatalogPage(segments[1])
+    except ValueError:
+        return None
 
 
 def _console_domain_route(path: str) -> tuple[str | None, str | None]:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from enum import StrEnum
 from html import escape
 from typing import Any
 
@@ -22,6 +23,15 @@ from universal_agent.service import (
 )
 
 WebConsoleSnapshot = RuntimeConsoleSnapshot
+
+
+class WebCatalogPage(StrEnum):
+    DOMAINS = "domains"
+    CAPABILITIES = "capabilities"
+    TOOLS = "tools"
+    POLICIES = "policies"
+    EVALUATORS = "evaluators"
+    MEMORY = "memory"
 
 
 async def build_web_console_snapshot(
@@ -274,6 +284,32 @@ def render_web_profile_catalog(snapshot: WebConsoleSnapshot) -> str:
     )
 
 
+def render_web_catalog(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> str:
+    title = f"Universal Agent Runtime {_catalog_title(catalog)}"
+    return "\n".join(
+        (
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f"<title>{_html(title)}</title>",
+            f"<style>{_stylesheet()}</style>",
+            "</head>",
+            "<body>",
+            '<main class="shell">',
+            _catalog_hero(snapshot, catalog),
+            '<section class="grid cards" aria-label="Catalog summary">',
+            *_catalog_metrics(snapshot, catalog),
+            "</section>",
+            *_catalog_sections(snapshot, catalog),
+            "</main>",
+            "</body>",
+            "</html>",
+        )
+    )
+
+
 def render_web_settings(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Settings"
     return "\n".join(
@@ -420,6 +456,123 @@ def _profile_hero(snapshot: WebConsoleSnapshot) -> str:
             "</section>",
         )
     )
+
+
+def _catalog_hero(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> str:
+    ready_class = "ok" if snapshot.ready.ready else "warn"
+    return "\n".join(
+        (
+            '<section class="hero">',
+            "<div>",
+            "<p>Universal Agent Runtime</p>",
+            f"<h1>{_html(_catalog_title(catalog))}</h1>",
+            (
+                "<span>"
+                f"catalog={_html(catalog.value)} "
+                f"domains={len(snapshot.domains)} "
+                f"store={_html(snapshot.config.store_backend)}"
+                "</span>"
+            ),
+            "</div>",
+            '<div class="status">',
+            '<a class="pill link" href="/console">Console</a>',
+            '<a class="pill link" href="/console/profiles">Profiles</a>',
+            '<a class="pill link" href="/console/evaluations">Evaluations</a>',
+            '<a class="pill link" href="/console/settings">Settings</a>',
+            f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
+            f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
+            "</div>",
+            "</section>",
+        )
+    )
+
+
+def _catalog_title(catalog: WebCatalogPage) -> str:
+    titles = {
+        WebCatalogPage.DOMAINS: "Domain Catalog",
+        WebCatalogPage.CAPABILITIES: "Capability Catalog",
+        WebCatalogPage.TOOLS: "Tool Catalog",
+        WebCatalogPage.POLICIES: "Policy Catalog",
+        WebCatalogPage.EVALUATORS: "Evaluator Catalog",
+        WebCatalogPage.MEMORY: "Memory Catalog",
+    }
+    return titles[catalog]
+
+
+def _catalog_metrics(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> tuple[str, ...]:
+    if catalog is WebCatalogPage.DOMAINS:
+        return (
+            _metric_card("Active Domains", len(snapshot.domains)),
+            _metric_card("Configured Domains", len(snapshot.config.domains)),
+            _metric_card("Profiles", len(snapshot.profiles)),
+            _metric_card("Capabilities", len(snapshot.capabilities)),
+            _metric_card("Evaluators", len(snapshot.evaluators)),
+            _metric_card("Ready", _ready_text(snapshot)),
+        )
+    if catalog is WebCatalogPage.CAPABILITIES:
+        return (
+            _metric_card("Capabilities", len(snapshot.capabilities)),
+            _metric_card("High Risk", _risk_count(snapshot.capabilities, "high")),
+            _metric_card("Medium Risk", _risk_count(snapshot.capabilities, "medium")),
+            _metric_card("Tools", len(snapshot.tools)),
+            _metric_card("Domains", len(snapshot.domains)),
+            _metric_card("Ready", _ready_text(snapshot)),
+        )
+    if catalog is WebCatalogPage.TOOLS:
+        return (
+            _metric_card("Tools", len(snapshot.tools)),
+            _metric_card("No Side Effect", _side_effect_count(snapshot.tools, "none")),
+            _metric_card("Reversible", _side_effect_count(snapshot.tools, "reversible")),
+            _metric_card("Destructive", _side_effect_count(snapshot.tools, "destructive")),
+            _metric_card("High Risk", _risk_count(snapshot.tools, "high")),
+        )
+    if catalog is WebCatalogPage.POLICIES:
+        return (
+            _metric_card("Policies", len(snapshot.policies)),
+            _metric_card("Allow", _policy_effect_count(snapshot.policies, "allow")),
+            _metric_card(
+                "Confirm",
+                _policy_effect_count(snapshot.policies, "require_confirmation"),
+            ),
+            _metric_card("Deny", _policy_effect_count(snapshot.policies, "deny")),
+            _metric_card("Domains", len(snapshot.domains)),
+            _metric_card("Ready", _ready_text(snapshot)),
+        )
+    if catalog is WebCatalogPage.EVALUATORS:
+        return (
+            _metric_card("Evaluators", len(snapshot.evaluators)),
+            _metric_card("Domains", len(snapshot.domains)),
+            _metric_card("Capabilities", len(snapshot.capabilities)),
+            _metric_card("Sessions", len(snapshot.sessions)),
+            _metric_card("Events", len(snapshot.events)),
+            _metric_card("Ready", _ready_text(snapshot)),
+        )
+    return (
+        _metric_card("Memories", len(snapshot.memories)),
+        _metric_card("Global", _global_memory_count(snapshot.memories)),
+        _metric_card("Scoped", _scoped_memory_count(snapshot.memories)),
+        _metric_card("Profiles", len(snapshot.profiles)),
+        _metric_card("Domains", len(snapshot.domains)),
+        _metric_card("Ready", _ready_text(snapshot)),
+    )
+
+
+def _catalog_sections(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> tuple[str, ...]:
+    if catalog is WebCatalogPage.DOMAINS:
+        return (_domains(snapshot), _configured_domains(snapshot), _profiles(snapshot.profiles))
+    if catalog is WebCatalogPage.CAPABILITIES:
+        return (_capabilities(snapshot.capabilities), _domains(snapshot), _tools(snapshot.tools))
+    if catalog is WebCatalogPage.TOOLS:
+        return (_tools(snapshot.tools), _capabilities(snapshot.capabilities), _domains(snapshot))
+    if catalog is WebCatalogPage.POLICIES:
+        return (
+            _policies(snapshot.policies),
+            _capabilities(snapshot.capabilities),
+            _domains(snapshot),
+        )
+    if catalog is WebCatalogPage.EVALUATORS:
+        return (_evaluators(snapshot.evaluators), _domains(snapshot), _sessions(snapshot.sessions))
+    return (_memory(snapshot.memories), _domains(snapshot), _profiles(snapshot.profiles))
 
 
 def _session_scoped_hero(snapshot: WebConsoleSnapshot, title: str) -> str:
@@ -1071,6 +1224,28 @@ def _selected_world_relation_count(explorer: SessionExplorerView | None) -> int:
     return len(explorer.world_relations)
 
 
+def _risk_count(items: tuple[CapabilityView, ...] | tuple[ToolView, ...], risk: str) -> int:
+    return sum(1 for item in items if item.risk.value == risk)
+
+
+def _side_effect_count(tools: tuple[ToolView, ...], side_effect: str) -> int:
+    return sum(1 for tool in tools if tool.side_effect.value == side_effect)
+
+
+def _policy_effect_count(policies: tuple[PolicyView, ...], effect: str) -> int:
+    return sum(
+        1 for policy in policies if policy.effect is not None and policy.effect.value == effect
+    )
+
+
+def _global_memory_count(memories: tuple[MemoryView, ...]) -> int:
+    return sum(1 for memory in memories if not memory.scope)
+
+
+def _scoped_memory_count(memories: tuple[MemoryView, ...]) -> int:
+    return sum(1 for memory in memories if memory.scope)
+
+
 def _selected_domain(
     snapshot: WebConsoleSnapshot,
     domain_name: str,
@@ -1391,8 +1566,10 @@ a {
 
 
 __all__ = [
+    "WebCatalogPage",
     "WebConsoleSnapshot",
     "build_web_console_snapshot",
+    "render_web_catalog",
     "render_web_console",
     "render_web_domain_detail",
     "render_web_evidence_explorer",

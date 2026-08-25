@@ -967,6 +967,18 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     domain_page = await app.handle(HttpRequest("GET", "/console/domains/kubernetes/0.2.0"))
     profile_page = await app.handle(HttpRequest("GET", "/console/profiles"))
     settings_page = await app.handle(HttpRequest("GET", "/console/settings"))
+    catalog_pages = {
+        "domains": "Domain Catalog",
+        "capabilities": "Capability Catalog",
+        "tools": "Tool Catalog",
+        "policies": "Policy Catalog",
+        "evaluators": "Evaluator Catalog",
+        "memory": "Memory Catalog",
+    }
+    catalog_responses = {
+        name: await app.handle(HttpRequest("GET", f"/console/{name}")) for name in catalog_pages
+    }
+    catalog_method = await app.handle(HttpRequest("POST", "/console/tools"))
     missing_domain_page = await app.handle(HttpRequest("GET", "/console/domains/missing/0.1.0"))
     unknown_detail_page = await app.handle(
         HttpRequest("GET", f"/console/sessions/{session_id}/unknown")
@@ -1024,6 +1036,13 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert "Universal Agent Runtime Profile Catalog" in profile_page.text_body
     assert "Profile Catalog" in profile_page.text_body
     assert "Active Domains" in profile_page.text_body
+    for name, title in catalog_pages.items():
+        response = catalog_responses[name]
+        assert response.status_code == 200
+        assert response.text_body is not None
+        assert f"Universal Agent Runtime {title}" in response.text_body
+        assert "kubernetes@0.2.0" in response.text_body
+    assert catalog_method.status_code == 405
     assert settings_page.status_code == 200
     assert settings_page.text_body is not None
     assert "Universal Agent Runtime Settings" in settings_page.text_body
