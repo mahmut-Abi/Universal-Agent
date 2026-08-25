@@ -528,6 +528,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p6_distributed_lock_lifecycle.py
 .venv/bin/python examples/p7_domain_package_registry.py
 .venv/bin/python examples/p7_domain_package_scaffold.py
+.venv/bin/python examples/p7_domain_sdk_base_runtime.py
 .venv/bin/python examples/p7_evaluation_dataset.py
 .venv/bin/python -m universal_agent.cli eval datasets --dataset-dir .tmp/evaluation-datasets --verify
 .venv/bin/python examples/p7_profile_catalog.py
