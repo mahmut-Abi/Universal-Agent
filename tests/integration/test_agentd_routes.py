@@ -1180,6 +1180,14 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
         ttl_seconds=999_999_999,
         now=now,
     )
+    coordinator.queue.enqueue(kind="completed-maintenance-test", priority=10, available_at=now)
+    completed_lease = coordinator.queue.lease(worker_id=WorkerId("worker-a"), now=now)
+    assert completed_lease.lease is not None
+    completed = coordinator.queue.complete(
+        completed_lease.lease.lease_id,
+        worker_id=WorkerId("worker-a"),
+        now=now,
+    )
     coordinator.locks.acquire(
         lock_key="session/session-1",
         owner_id=DistributedLockOwnerId("worker-a"),
@@ -1192,6 +1200,21 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
     snapshot = await app.handle(HttpRequest("GET", "/v1/distributed/snapshot"))
     health = await app.handle(HttpRequest("GET", "/v1/distributed/health"))
     distributed_page = await app.handle(HttpRequest("GET", "/console/distributed"))
+    pruned = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/prune-terminal",
+            immutable_json({"before": now.isoformat()}),
+        )
+    )
+    prune_get = await app.handle(HttpRequest("GET", "/v1/distributed/prune-terminal"))
+    invalid_prune_before = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/prune-terminal",
+            immutable_json({"before": "2026-01-01T00:00:00"}),
+        )
+    )
     expired_work = coordinator.queue.lease(
         worker_id=WorkerId("worker-a"),
         ttl_seconds=1,
@@ -1230,6 +1253,23 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
     assert "worker-a" in distributed_page.text_body
     assert "session/session-1" in distributed_page.text_body
     assert "Distributed Work Queue" in distributed_page.text_body
+    assert pruned.status_code == 200
+    assert pruned.body["before"] == now.isoformat()
+    assert pruned.body["pruned_count"] == 1
+    pruned_items = pruned.body["pruned_work_items"]
+    assert isinstance(pruned_items, list)
+    first_pruned = pruned_items[0]
+    assert isinstance(first_pruned, dict)
+    assert first_pruned["work_item_id"] == str(completed.work_item_id)
+    pruned_snapshot = json_object(pruned.body["snapshot"])
+    pruned_work_queue = json_object(pruned_snapshot["work_queue"])
+    assert pruned_work_queue["total_count"] == 1
+    assert prune_get.status_code == 405
+    assert invalid_prune_before.status_code == 400
+    assert invalid_prune_before.body["error"] == {
+        "code": "bad_request",
+        "message": "distributed prune before must include a timezone",
+    }
     assert expired.status_code == 200
     expired_items = expired.body["expired_work_items"]
     assert isinstance(expired_items, list)

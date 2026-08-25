@@ -37,6 +37,7 @@ from universal_agent.distributed import (
     DistributedLockLifecycleResult,
     DistributedLockOwnerId,
     DistributedMaintenanceResult,
+    DistributedPruneResult,
     DistributedRuntimeCoordinator,
     DistributedRuntimeSnapshot,
     DistributedSchedulingResult,
@@ -853,6 +854,19 @@ class RuntimeService:
         if self._distributed_coordinator is None:
             return None
         return self._distributed_coordinator.expire(now=now)
+
+    def distributed_prune_terminal_work_items(
+        self,
+        *,
+        before: datetime | None = None,
+        now: datetime | None = None,
+    ) -> DistributedPruneResult | None:
+        if self._distributed_coordinator is None:
+            return None
+        return self._distributed_coordinator.prune_terminal_work_items(
+            before=before,
+            now=now,
+        )
 
     def distributed_cancel_work_item(
         self,

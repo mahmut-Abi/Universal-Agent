@@ -325,7 +325,7 @@ event-sourcing models or production migration systems.
   `FileDistributedLockRegistry` add leased lock acquisition, heartbeat, conflict rejection, expiry,
   release and local file-backed lock state for host rebuilds; `InMemoryWorkerRegistry` and
   `FileWorkerRegistry` track worker registration, heartbeat, draining, offline, lost states and
-  local file-backed worker registry state for host rebuilds; `DistributedRuntimeCoordinator` exposes session, goal, task and confirmed pending-action scheduling, worker lifecycle, lock lifecycle, snapshot, health, expiry sweep and work-item cancellation over the queue, lock and worker primitives without changing AgentRuntime semantics; `RuntimeService.distributed_schedule_pending_actions` can sweep Runtime-owned waiting sessions and idempotently enqueue already-confirmed pending Actions; distributed session, task and action worker handlers acquire a session-scoped execution lock before resuming Runtime state; `RuntimeService.distributed_run_worker_once` and bounded `distributed_run_worker_until_idle` provide local queue → worker → RuntimeAPI paths for existing non-confirmation waiting sessions, matching current Tasks, confirmed pending Actions and newly scheduled Goals; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view; `build_distributed_health_report` projects that snapshot into HA-oriented checks for worker capacity, backlog, lease freshness, leased-work owners and worker registry health, plus deterministic maintenance recommendations for capacity gaps, backlog, expired leases and orphaned leased work.
+  local file-backed worker registry state for host rebuilds; `DistributedRuntimeCoordinator` exposes session, goal, task and confirmed pending-action scheduling, worker lifecycle, lock lifecycle, snapshot, health, expiry sweep, terminal work pruning and work-item cancellation over the queue, lock and worker primitives without changing AgentRuntime semantics; `RuntimeService.distributed_schedule_pending_actions` can sweep Runtime-owned waiting sessions and idempotently enqueue already-confirmed pending Actions; distributed session, task and action worker handlers acquire a session-scoped execution lock before resuming Runtime state; `RuntimeService.distributed_run_worker_once` and bounded `distributed_run_worker_until_idle` provide local queue → worker → RuntimeAPI paths for existing non-confirmation waiting sessions, matching current Tasks, confirmed pending Actions and newly scheduled Goals; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view; `build_distributed_health_report` projects that snapshot into HA-oriented checks for worker capacity, backlog, lease freshness, leased-work owners and worker registry health, plus deterministic maintenance recommendations for capacity gaps, backlog, expired leases and orphaned leased work.
   `RuntimeConfig.distributed_queue`, `RuntimeConfig.distributed_locks` and
   `RuntimeConfig.distributed_workers` let `RuntimeHost` assemble in-memory coordination primitives,
   local file-backed queue/lock/worker adapters, or SQLite-backed queue/lock/worker adapters for CLI/agentd deployments
@@ -501,6 +501,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p6_distributed_health.py
 .venv/bin/python examples/p6_distributed_coordinator.py
 .venv/bin/python examples/p6_distributed_cancel.py
+.venv/bin/python examples/p6_distributed_prune.py
 .venv/bin/python examples/p6_distributed_schedule.py
 .venv/bin/python examples/p6_distributed_action.py
 .venv/bin/python examples/p6_distributed_pending_actions.py
@@ -525,6 +526,7 @@ Python 3.12 or newer is required.
 .venv/bin/python -m universal_agent.cli distributed health
 .venv/bin/python -m universal_agent.cli distributed snapshot
 .venv/bin/python -m universal_agent.cli distributed expire
+.venv/bin/python -m universal_agent.cli distributed prune-terminal --before 2026-01-01T00:00:01+00:00
 .venv/bin/python -m universal_agent.cli distributed schedule-session session-1 --priority 5 --max-attempts 2
 .venv/bin/python -m universal_agent.cli distributed schedule-action session-1 task-1 action-1 --confirmed true --priority 5
 .venv/bin/python -m universal_agent.cli distributed schedule-pending-actions --confirmed true --priority 5

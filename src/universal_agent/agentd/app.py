@@ -34,6 +34,7 @@ from universal_agent.distributed import (
     DistributedLockLifecycleResult,
     DistributedLockOwnerId,
     DistributedMaintenanceResult,
+    DistributedPruneResult,
     DistributedRuntimeSnapshot,
     DistributedSchedulingResult,
     DistributedWorkerLifecycleResult,
@@ -798,6 +799,21 @@ class AgentdApp:
             if maintenance is None:
                 return not_found("distributed runtime coordinator is not configured")
             return json_response(distributed_maintenance_body(maintenance))
+        if path == "/v1/distributed/prune-terminal":
+            if method != "POST":
+                return method_not_allowed(("POST",))
+            try:
+                before = _optional_datetime_field(
+                    request.body,
+                    "before",
+                    "distributed prune before",
+                )
+            except ValueError as exc:
+                return bad_request(str(exc))
+            pruned = self._service.distributed_prune_terminal_work_items(before=before)
+            if pruned is None:
+                return not_found("distributed runtime coordinator is not configured")
+            return json_response(distributed_prune_body(pruned))
         distributed_cancel_work_item_id = _distributed_cancel_route(path)
         if distributed_cancel_work_item_id is not None:
             if method != "POST":
@@ -1219,6 +1235,25 @@ def _object_field(
     raise ValueError(f"{field} must be an object")
 
 
+def _optional_datetime_field(
+    payload: Mapping[str, JsonValue],
+    key: str,
+    field: str,
+) -> datetime | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be an ISO 8601 datetime string")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"{field} must be an ISO 8601 datetime string") from exc
+    if parsed.tzinfo is None:
+        raise ValueError(f"{field} must include a timezone")
+    return parsed
+
+
 def _list_field(payload: Mapping[str, JsonValue], key: str, field: str) -> list[JsonValue]:
     value = _required_field(payload, key, field)
     if isinstance(value, list):
@@ -1483,6 +1518,21 @@ def distributed_maintenance_body(view: DistributedMaintenanceResult) -> JsonMapp
                     "last_error": worker.last_error,
                 }
                 for worker in view.expired_workers
+            ],
+            "snapshot": dict(distributed_snapshot_body(view.snapshot)),
+            "health": dict(distributed_health_body(view.health)),
+        }
+    )
+
+
+def distributed_prune_body(view: DistributedPruneResult) -> JsonMapping:
+    return immutable_json(
+        {
+            "ran_at": view.ran_at.isoformat(),
+            "before": None if view.before is None else view.before.isoformat(),
+            "pruned_count": len(view.pruned_work_items),
+            "pruned_work_items": [
+                distributed_work_item_summary_body(item) for item in view.pruned_work_items
             ],
             "snapshot": dict(distributed_snapshot_body(view.snapshot)),
             "health": dict(distributed_health_body(view.health)),

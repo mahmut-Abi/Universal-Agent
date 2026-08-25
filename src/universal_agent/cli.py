@@ -5,6 +5,7 @@ import asyncio
 import json
 import sys
 from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TextIO, cast
@@ -21,6 +22,7 @@ from universal_agent.agentd.app import (
     distributed_lock_lifecycle_body,
     distributed_maintenance_body,
     distributed_pending_action_scheduling_body,
+    distributed_prune_body,
     distributed_scheduling_body,
     distributed_snapshot_body,
     distributed_worker_lifecycle_body,
@@ -381,6 +383,8 @@ def build_parser() -> argparse.ArgumentParser:
     distributed_commands.add_parser("snapshot")
     distributed_commands.add_parser("health")
     distributed_commands.add_parser("expire")
+    distributed_prune = distributed_commands.add_parser("prune-terminal")
+    distributed_prune.add_argument("--before")
     distributed_schedule = distributed_commands.add_parser("schedule-session")
     distributed_schedule.add_argument("session_id")
     distributed_schedule.add_argument("--priority", type=int, default=0)
@@ -920,6 +924,14 @@ async def _dispatch(
             if maintenance is None:
                 raise ValueError("distributed runtime coordinator is not configured")
             _write_json(out, distributed_maintenance_body(maintenance))
+            return
+        if distributed_command == "prune-terminal":
+            pruned = service.distributed_prune_terminal_work_items(
+                before=_parse_optional_datetime(cast(str | None, args.before))
+            )
+            if pruned is None:
+                raise ValueError("distributed runtime coordinator is not configured")
+            _write_json(out, distributed_prune_body(pruned))
             return
         if distributed_command == "cancel":
             cancellation = service.distributed_cancel_work_item(
@@ -2425,6 +2437,18 @@ def _optional_bool(value: str | None) -> bool | None:
     if value is None:
         return None
     return value == "true"
+
+
+def _parse_optional_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("--before must be an ISO 8601 datetime") from exc
+    if parsed.tzinfo is None:
+        raise ValueError("--before must include a timezone")
+    return parsed
 
 
 def _package_version() -> str:

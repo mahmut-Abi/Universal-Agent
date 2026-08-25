@@ -1559,6 +1559,14 @@ async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
         ttl_seconds=999_999_999,
         now=now,
     )
+    coordinator.queue.enqueue(kind="completed-maintenance-test", priority=10, available_at=now)
+    completed_lease = coordinator.queue.lease(worker_id=WorkerId("worker-a"), now=now)
+    assert completed_lease.lease is not None
+    completed = coordinator.queue.complete(
+        completed_lease.lease.lease_id,
+        worker_id=WorkerId("worker-a"),
+        now=now,
+    )
     service, _ = build_cli_service([], distributed_coordinator=coordinator)
     snapshot_output = StringIO()
     health_output = StringIO()
@@ -1579,6 +1587,12 @@ async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
     default_status = await run_cli(["distributed", "health"], stdout=default_output)
     expire_output = StringIO()
     expire_status = await run_cli(["distributed", "expire"], stdout=expire_output)
+    prune_output = StringIO()
+    prune_status = await run_cli(
+        ["distributed", "prune-terminal", "--before", now.isoformat()],
+        service=service,
+        stdout=prune_output,
+    )
     cancel_output = StringIO()
     cancel_status = await run_cli(
         [
@@ -1602,6 +1616,7 @@ async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
     health = read_json(health_output)
     default_health = read_json(default_output)
     expire = read_json(expire_output)
+    prune = read_json(prune_output)
     cancel = read_json(cancel_output)
 
     assert snapshot_status == 0
@@ -1613,6 +1628,11 @@ async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
     assert default_health["status"] == "ok"
     assert expire_status == 0
     assert expire["expired_work_items"] == []
+    assert prune_status == 0
+    assert prune["before"] == now.isoformat()
+    assert prune["pruned_count"] == 1
+    assert prune["pruned_work_items"][0]["work_item_id"] == str(completed.work_item_id)
+    assert prune["snapshot"]["work_queue"]["total_count"] == 1
     assert cancel_status == 0
     assert cancel["cancelled_work_item"]["work_item_id"] == str(scheduled.work_item_id)
     assert cancel["cancelled_work_item"]["status"] == "cancelled"
