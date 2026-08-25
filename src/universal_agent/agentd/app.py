@@ -1428,6 +1428,9 @@ def config_body(view: RuntimeConfigView) -> JsonMapping:
                 "backend": view.distributed_workers_backend,
                 "path": view.distributed_workers_path,
             },
+            "distributed_terminal_retention_seconds": (
+                view.distributed_terminal_retention_seconds
+            ),
             "limits": {
                 "max_iterations": view.max_iterations,
                 "max_recovery_steps": view.max_recovery_steps,

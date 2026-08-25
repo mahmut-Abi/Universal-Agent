@@ -527,6 +527,8 @@ Python 3.12 or newer is required.
 .venv/bin/python -m universal_agent.cli distributed snapshot
 .venv/bin/python -m universal_agent.cli distributed expire
 .venv/bin/python -m universal_agent.cli distributed prune-terminal --before 2026-01-01T00:00:01+00:00
+.venv/bin/python -m universal_agent.cli init --output .tmp/retention-profile.json --distributed-terminal-retention-seconds 86400 --force
+.venv/bin/python -m universal_agent.cli --profile-config .tmp/retention-profile.json distributed prune-terminal
 .venv/bin/python -m universal_agent.cli distributed schedule-session session-1 --priority 5 --max-attempts 2
 .venv/bin/python -m universal_agent.cli distributed schedule-action session-1 task-1 action-1 --confirmed true --priority 5
 .venv/bin/python -m universal_agent.cli distributed schedule-pending-actions --confirmed true --priority 5

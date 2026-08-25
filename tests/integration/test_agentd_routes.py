@@ -637,6 +637,7 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
         "distributed_queue": {"backend": "memory", "path": None},
         "distributed_locks": {"backend": "memory", "path": None},
         "distributed_workers": {"backend": "memory", "path": None},
+        "distributed_terminal_retention_seconds": None,
         "limits": {"max_iterations": 12, "max_recovery_steps": 4},
         "domains": [{"name": "kubernetes", "version": "0.2.0", "primary": True}],
     }

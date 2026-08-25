@@ -303,6 +303,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
 
     assert "Universal Agent Runtime TUI" in rendered
     assert "Health: ok | Ready: yes" in rendered
+    assert "retention=disabled" in rendered
     assert "Operational Diagnostics" in rendered
     assert "- ok no active operational issues" in rendered
     assert "Runtime Doctor" in rendered

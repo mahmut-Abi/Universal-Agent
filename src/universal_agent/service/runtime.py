@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
 from universal_agent.core import (
@@ -276,6 +276,7 @@ class RuntimeConfigView:
     max_recovery_steps: int
     domains: tuple[RuntimeConfigDomainView, ...]
     secrets: tuple[RuntimeSecretRefView, ...] = ()
+    distributed_terminal_retention_seconds: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -570,6 +571,7 @@ class RuntimeService:
                 max_iterations=20,
                 max_recovery_steps=8,
                 domains=runtime_config_domain_views(identities),
+                distributed_terminal_retention_seconds=None,
             )
         return RuntimeConfigView(
             environment=redact_environment(self._config.environment),
@@ -590,6 +592,9 @@ class RuntimeService:
             domains=runtime_config_domain_views(
                 identities,
                 self._config.configured_domains(),
+            ),
+            distributed_terminal_retention_seconds=(
+                self._config.distributed_terminal_retention_seconds
             ),
         )
 
@@ -863,9 +868,20 @@ class RuntimeService:
     ) -> DistributedPruneResult | None:
         if self._distributed_coordinator is None:
             return None
+        timestamp = now or utc_now()
+        retention_seconds = (
+            None
+            if self._config is None
+            else self._config.distributed_terminal_retention_seconds
+        )
+        retention_before = (
+            timestamp - timedelta(seconds=retention_seconds)
+            if before is None and retention_seconds is not None
+            else before
+        )
         return self._distributed_coordinator.prune_terminal_work_items(
-            before=before,
-            now=now,
+            before=retention_before,
+            now=timestamp,
         )
 
     def distributed_cancel_work_item(

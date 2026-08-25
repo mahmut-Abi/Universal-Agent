@@ -486,6 +486,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="memory",
     )
     init.add_argument("--distributed-workers-path", default=".universal-agent/workers.json")
+    init.add_argument("--distributed-terminal-retention-seconds", type=float)
     init.add_argument("--domain-backend", choices=("fake", "kubectl"), default="fake")
     init.add_argument("--kubectl-namespace", default="default")
     init.add_argument("--kubectl-context")
@@ -1685,6 +1686,9 @@ def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
         distributed_locks_path=cast(str, args.distributed_locks_path),
         distributed_workers_backend=cast(str, args.distributed_workers_backend),
         distributed_workers_path=cast(str, args.distributed_workers_path),
+        distributed_terminal_retention_seconds=cast(
+            float | None, args.distributed_terminal_retention_seconds
+        ),
         domain_backend=cast(str, args.domain_backend),
         kubectl_namespace=cast(str, args.kubectl_namespace),
         kubectl_context=cast(str | None, args.kubectl_context),
@@ -1711,6 +1715,7 @@ def _profile_config_payload(
     distributed_locks_path: str,
     distributed_workers_backend: str,
     distributed_workers_path: str,
+    distributed_terminal_retention_seconds: float | None,
     domain_backend: str,
     kubectl_namespace: str,
     kubectl_context: str | None,
@@ -1736,20 +1741,25 @@ def _profile_config_payload(
     distributed_workers: dict[str, str] = {"backend": distributed_workers_backend}
     if distributed_workers_backend != "memory":
         distributed_workers["path"] = distributed_workers_path
+    runtime: dict[str, object] = {
+        "environment": {"environment": environment},
+        "store": store,
+        "distributed_queue": distributed_queue,
+        "distributed_locks": distributed_locks,
+        "distributed_workers": distributed_workers,
+        "limits": {"max_iterations": 20, "max_recovery_steps": 8},
+        "domain": domain,
+    }
+    if distributed_terminal_retention_seconds is not None:
+        runtime["distributed_terminal_retention_seconds"] = (
+            distributed_terminal_retention_seconds
+        )
     return {
         "name": profile_name,
         "version": "0.1.0",
         "description": "Local fake-backed Kubernetes profile",
         "domain": domain,
-        "runtime": {
-            "environment": {"environment": environment},
-            "store": store,
-            "distributed_queue": distributed_queue,
-            "distributed_locks": distributed_locks,
-            "distributed_workers": distributed_workers,
-            "limits": {"max_iterations": 20, "max_recovery_steps": 8},
-            "domain": domain,
-        },
+        "runtime": runtime,
     }
 
 

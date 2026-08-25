@@ -412,6 +412,8 @@ async def test_cli_init_can_write_file_backed_distributed_queue_config(tmp_path:
             "file",
             "--distributed-workers-path",
             str(workers_path),
+            "--distributed-terminal-retention-seconds",
+            "3600",
         ],
         stdout=output,
     )
@@ -422,6 +424,7 @@ async def test_cli_init_can_write_file_backed_distributed_queue_config(tmp_path:
     assert profile.runtime.distributed_queue == StoreConfig.file(str(queue_path))
     assert profile.runtime.distributed_locks == StoreConfig.file(str(locks_path))
     assert profile.runtime.distributed_workers == StoreConfig.file(str(workers_path))
+    assert profile.runtime.distributed_terminal_retention_seconds == 3600.0
 
 
 @pytest.mark.asyncio
@@ -661,6 +664,7 @@ async def test_cli_profile_config_drives_run_and_persisted_session_reads(tmp_pat
     assert config_payload["distributed_queue"] == {"backend": "memory", "path": None}
     assert config_payload["distributed_locks"] == {"backend": "memory", "path": None}
     assert config_payload["distributed_workers"] == {"backend": "memory", "path": None}
+    assert config_payload["distributed_terminal_retention_seconds"] is None
     assert list((store_path / "sessions").glob("*.json"))
     assert (store_path / "events.jsonl").exists()
 
@@ -2090,6 +2094,7 @@ async def test_cli_config_show_exposes_runtime_configuration() -> None:
         "distributed_queue": {"backend": "memory", "path": None},
         "distributed_locks": {"backend": "memory", "path": None},
         "distributed_workers": {"backend": "memory", "path": None},
+        "distributed_terminal_retention_seconds": None,
         "limits": {"max_iterations": 12, "max_recovery_steps": 4},
         "domains": [{"name": "kubernetes", "version": "0.2.0", "primary": True}],
     }

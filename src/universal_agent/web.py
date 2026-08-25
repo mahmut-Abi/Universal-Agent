@@ -442,6 +442,10 @@ def render_web_settings(snapshot: WebConsoleSnapshot) -> str:
             _metric_card("Queue", snapshot.config.distributed_queue_backend),
             _metric_card("Locks", snapshot.config.distributed_locks_backend),
             _metric_card("Workers", snapshot.config.distributed_workers_backend),
+            _metric_card(
+                "Retention",
+                _retention_text(snapshot.config.distributed_terminal_retention_seconds),
+            ),
             _metric_card("Domains", len(snapshot.config.domains)),
             _metric_card("Max Iterations", snapshot.config.max_iterations),
             _metric_card("Recovery Steps", snapshot.config.max_recovery_steps),
@@ -892,6 +896,10 @@ def _runtime_settings(snapshot: WebConsoleSnapshot) -> str:
         ("Distributed Locks Path", snapshot.config.distributed_locks_path or "memory"),
         ("Distributed Workers Backend", snapshot.config.distributed_workers_backend),
         ("Distributed Workers Path", snapshot.config.distributed_workers_path or "memory"),
+        (
+            "Distributed Terminal Retention",
+            _retention_text(snapshot.config.distributed_terminal_retention_seconds),
+        ),
         ("Max Iterations", str(snapshot.config.max_iterations)),
         ("Max Recovery Steps", str(snapshot.config.max_recovery_steps)),
         ("Health", snapshot.health.status),
@@ -1757,6 +1765,12 @@ def _distributed_lock_count(distributed: DistributedRuntimeSnapshot | None) -> i
     if distributed is None:
         return 0
     return len(distributed.locks)
+
+
+def _retention_text(seconds: float | None) -> str:
+    if seconds is None:
+        return "disabled"
+    return f"{seconds:g}s"
 
 
 def _risk_count(items: tuple[CapabilityView, ...] | tuple[ToolView, ...], risk: str) -> int:

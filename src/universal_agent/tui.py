@@ -51,6 +51,7 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
             f" queue={snapshot.config.distributed_queue_backend}"
             f" locks={snapshot.config.distributed_locks_backend}"
             f" workers={snapshot.config.distributed_workers_backend}"
+            f" retention={_retention_text(snapshot.config.distributed_terminal_retention_seconds)}"
             f" max_iterations={snapshot.config.max_iterations}"
             f" max_recovery_steps={snapshot.config.max_recovery_steps}"
         ),
@@ -474,6 +475,12 @@ def _profile_domain_text(profile: ProfileView) -> str:
 
 def _tuple_text(values: tuple[str, ...]) -> str:
     return ", ".join(values) if values else "none"
+
+
+def _retention_text(seconds: float | None) -> str:
+    if seconds is None:
+        return "disabled"
+    return f"{seconds:g}s"
 
 
 def _enum_tuple_text(values: tuple[Any, ...]) -> str:

@@ -133,6 +133,8 @@ Useful inspection and maintenance commands:
 .venv/bin/python -m universal_agent.cli distributed health
 .venv/bin/python -m universal_agent.cli distributed expire
 .venv/bin/python -m universal_agent.cli distributed prune-terminal --before 2026-01-01T00:00:01+00:00
+.venv/bin/python -m universal_agent.cli init --output .tmp/retention-profile.json --distributed-terminal-retention-seconds 86400 --force
+.venv/bin/python -m universal_agent.cli --profile-config .tmp/retention-profile.json distributed prune-terminal
 ```
 
 Useful scheduling and worker commands:

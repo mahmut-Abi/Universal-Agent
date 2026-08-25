@@ -143,6 +143,7 @@ class RuntimeConfig:
     distributed_queue: StoreConfig = field(default_factory=StoreConfig.memory)
     distributed_locks: StoreConfig = field(default_factory=StoreConfig.memory)
     distributed_workers: StoreConfig = field(default_factory=StoreConfig.memory)
+    distributed_terminal_retention_seconds: float | None = None
     limits: RuntimeLimitsConfig = field(default_factory=RuntimeLimitsConfig)
     domain: DomainConfig = field(default_factory=DomainConfig)
     domains: tuple[DomainConfig, ...] = ()
@@ -175,6 +176,10 @@ class RuntimeConfig:
             distributed_workers=StoreConfig.from_mapping(
                 _object(values.get("distributed_workers", {}), "distributed_workers")
             ),
+            distributed_terminal_retention_seconds=_optional_float(
+                values.get("distributed_terminal_retention_seconds"),
+                "distributed_terminal_retention_seconds",
+            ),
             limits=RuntimeLimitsConfig.from_mapping(_object(values.get("limits", {}), "limits")),
             domain=domain,
             domains=domains,
@@ -192,6 +197,11 @@ class RuntimeConfig:
         self.distributed_queue.validate()
         self.distributed_locks.validate()
         self.distributed_workers.validate()
+        if (
+            self.distributed_terminal_retention_seconds is not None
+            and self.distributed_terminal_retention_seconds <= 0
+        ):
+            raise ValueError("distributed_terminal_retention_seconds must be positive")
         self.limits.validate()
         self.domain.validate()
         for domain in self.domains:
@@ -281,6 +291,14 @@ def _int(value: JsonValue, field: str) -> int:
     if isinstance(value, int) and not isinstance(value, bool):
         return value
     raise ValueError(f"{field} must be an integer")
+
+
+def _optional_float(value: JsonValue, field: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return float(value)
+    raise ValueError(f"{field} must be a number")
 
 
 def _bool(value: JsonValue, field: str) -> bool:

@@ -1195,6 +1195,48 @@ async def test_runtime_service_doctor_recommends_distributed_terminal_pruning() 
     assert distributed_queue.message == "terminal_work_items=1 prune recommended"
 
 
+def test_runtime_service_uses_configured_terminal_retention_for_pruning() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    coordinator = DistributedRuntimeCoordinator()
+    coordinator.queue.enqueue(kind="old-terminal", available_at=now - timedelta(seconds=30))
+    coordinator.queue.enqueue(kind="fresh-terminal", available_at=now - timedelta(seconds=30))
+    old_lease = coordinator.queue.lease(
+        worker_id=WorkerId("worker-a"),
+        now=now - timedelta(seconds=30),
+    )
+    fresh_lease = coordinator.queue.lease(
+        worker_id=WorkerId("worker-a"),
+        now=now - timedelta(seconds=30),
+    )
+    assert old_lease.lease is not None
+    assert fresh_lease.lease is not None
+    old = coordinator.queue.complete(
+        old_lease.lease.lease_id,
+        worker_id=WorkerId("worker-a"),
+        now=now - timedelta(seconds=20),
+    )
+    fresh = coordinator.queue.complete(
+        fresh_lease.lease.lease_id,
+        worker_id=WorkerId("worker-a"),
+        now=now - timedelta(seconds=5),
+    )
+    active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
+    components = RuntimeBuilder().build(active)
+    service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+        config=RuntimeConfig(distributed_terminal_retention_seconds=10.0),
+        distributed_coordinator=coordinator,
+    )
+
+    pruned = service.distributed_prune_terminal_work_items(now=now)
+
+    assert pruned is not None
+    assert pruned.before == now - timedelta(seconds=10)
+    assert [item.work_item_id for item in pruned.pruned_work_items] == [old.work_item_id]
+    assert [item.work_item_id for item in pruned.snapshot.work_queue.items] == [fresh.work_item_id]
+
+
 def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     service, _ = build_service([])
 

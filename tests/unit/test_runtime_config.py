@@ -32,6 +32,7 @@ def test_runtime_config_from_mapping_parses_typed_values() -> None:
                 "backend": "file",
                 "path": "/tmp/universal-agent/workers.json",
             },
+            "distributed_terminal_retention_seconds": 3600,
             "limits": {"max_iterations": 7, "max_recovery_steps": 3},
             "domain": {"name": "kubernetes", "version": "0.2.0"},
         }
@@ -45,6 +46,7 @@ def test_runtime_config_from_mapping_parses_typed_values() -> None:
         "/tmp/universal-agent/distributed-locks.json"
     )
     assert config.distributed_workers == StoreConfig.file("/tmp/universal-agent/workers.json")
+    assert config.distributed_terminal_retention_seconds == 3600.0
     assert config.store.backend is StoreBackend.FILE
     assert config.limits == RuntimeLimitsConfig(max_iterations=7, max_recovery_steps=3)
     assert config.domain == DomainConfig("kubernetes", "0.2.0")
@@ -233,6 +235,9 @@ def test_runtime_config_rejects_invalid_store_and_limits() -> None:
 
     with pytest.raises(ValueError, match="environment must be an object"):
         RuntimeConfig.from_mapping({"environment": "production"})
+
+    with pytest.raises(ValueError, match="distributed_terminal_retention_seconds must be positive"):
+        RuntimeConfig.from_mapping({"distributed_terminal_retention_seconds": 0})
 
     with pytest.raises(ValueError, match="duplicate configured domains"):
         RuntimeConfig.from_mapping(
