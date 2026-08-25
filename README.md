@@ -130,8 +130,9 @@ returns the same cursor batch as `text/event-stream` frames for SSE clients. `GE
 read-only HTML Web Console snapshot and `GET /console/sessions/{id}` returns a focused Session
 Detail page; `GET /console/sessions/{id}/evidence` and `/world` return focused Evidence and World
 Model Explorer pages, `GET /console/domains/{name}/{version}` returns a read-only Domain
-Manager detail page, `GET /console/profiles` returns a read-only Profile Catalog page, and
-`GET /console/settings` returns Runtime settings built from the same
+Manager detail page, `GET /console/profiles` returns a read-only Profile Catalog page,
+`GET /console/evaluations` returns the persisted Evaluation Console when `AgentdApp` is configured
+with a report directory, and `GET /console/settings` returns Runtime settings built from the same
 RuntimeService projections. `AgentdAuthPolicy` can optionally require `Authorization: Bearer ...`
 for all non-health routes while leaving `GET /health` and `GET /ready` public for local probes;
 separate read-only bearer tokens may access `GET` routes but receive `403` for mutating requests. `AgentdHttpServer`
@@ -151,7 +152,9 @@ It also exposes operations commands for metrics, cost, logs, traces, doctor, aud
 JSON-compatible trace payloads from the same event-derived span projection. `agent serve` starts the
 standard-library `AgentdHttpServer` around the same service and accepts `--auth-token` /
 `--auth-token-env` plus `--read-only-auth-token` / `--read-only-auth-token-env` to enable the same
-optional bearer-token protection without requiring secrets in the process command line; `agent eval run` executes the
+optional bearer-token protection without requiring secrets in the process command line.
+`agent serve --evaluation-report-dir` also wires persisted reports into `/console/evaluations`;
+`agent eval run` executes the
 local or file-backed evaluation suite through `EvaluationRunner`, and `agent eval compare` compares
 persisted golden reports for CLI/CI regression checks. `agent eval replay` records and checks
 deterministic golden replay recordings through the same suite selector. `agent eval list`,
@@ -270,7 +273,8 @@ event-sourcing models or production migration systems.
   for golden regression fixtures.
 - Evaluation Console foundation: `build_evaluation_console_snapshot` loads persisted evaluation
   reports and `render_evaluation_console` produces deterministic read-only HTML for CLI/CI review
-  without coupling report visualization to Kernel or RuntimeService internals.
+  and the read-only agentd `/console/evaluations` route without coupling report visualization to
+  Kernel or RuntimeService internals.
 - Session Explorer foundation: `RuntimeService.session_explorer` rebuilds read-only world facts from
   persisted Evidence through Domain world updaters and exposes combined diagnostics plus dedicated
   Evidence and World Model Explorer routes through agentd/CLI.
@@ -283,8 +287,8 @@ event-sourcing models or production migration systems.
   `render_web_profile_catalog` / `render_web_settings` produce
   deterministic read-only HTML for `AgentdApp`, including
   Profile/Domain/Capability/Tool/Policy/Evaluator/Memory catalogs plus focused Session Detail,
-  Evidence, World Model, Domain Manager, Profile Catalog and Settings views without a web framework
-  dependency or Kernel access.
+  Evidence, World Model, Domain Manager, Profile Catalog, Evaluation Console and Settings views
+  without a web framework dependency or Kernel access.
 - P6 Distributed Runtime foundation: `WorkScheduler` maps session/task/action identity into stable local
   work kinds and idempotency keys; `InMemoryWorkQueue`, `FileWorkQueue` and `SQLiteWorkQueue` provide typed `WorkItem`, `WorkerLease` and
   status contracts for local scheduler/worker adapters, including priority ordering, idempotent enqueue,
@@ -523,6 +527,7 @@ Python 3.12 or newer is required.
 .venv/bin/python -m universal_agent.cli eval list local-kubernetes --kind policy --tag kubernetes
 .venv/bin/python -m universal_agent.cli eval run local-kubernetes --kind regression --tag smoke --report-dir .tmp/eval-reports --fail-on-fail
 .venv/bin/python -m universal_agent.cli eval reports --report-dir .tmp/eval-reports
+.venv/bin/python -m universal_agent.cli serve --port 8765 --evaluation-report-dir .tmp/eval-reports
 .venv/bin/python -m universal_agent.cli eval replay local-kubernetes --recording-dir .tmp/replay-recordings --kind regression --update
 .venv/bin/python -m universal_agent.cli eval recordings --recording-dir .tmp/replay-recordings
 .venv/bin/python -m universal_agent.cli eval replay local-kubernetes --recording-dir .tmp/replay-recordings --kind regression --fail-on-fail

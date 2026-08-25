@@ -499,6 +499,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--auth-token-env")
     serve.add_argument("--read-only-auth-token")
     serve.add_argument("--read-only-auth-token-env")
+    serve.add_argument("--evaluation-report-dir")
 
     run = commands.add_parser("run")
     run.add_argument("profile")
@@ -1809,6 +1810,7 @@ def _dispatch_serve(
                 bearer_token=auth_token,
                 read_only_bearer_token=read_only_auth_token,
             ),
+            evaluation_report_dir=cast(str | None, args.evaluation_report_dir),
         ),
         AgentdServerConfig(host=host, port=port),
     )
@@ -1822,6 +1824,7 @@ def _dispatch_serve(
                 "port": server.server_address[1],
                 "auth_required": auth_token is not None or read_only_auth_token is not None,
                 "read_only_auth_enabled": read_only_auth_token is not None,
+                "evaluation_report_dir": cast(str | None, args.evaluation_report_dir),
             },
         )
         out.flush()

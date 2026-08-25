@@ -2407,6 +2407,34 @@ async def test_cli_serve_starts_agentd_http_server_with_injected_runner() -> Non
     assert payload["base_url"].startswith("http://127.0.0.1:")
     assert payload["auth_required"] is False
     assert payload["read_only_auth_enabled"] is False
+    assert payload["evaluation_report_dir"] is None
+
+
+@pytest.mark.asyncio
+async def test_cli_serve_exposes_evaluation_report_dir(tmp_path: Path) -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+    observed_urls: list[str] = []
+    report_dir = tmp_path / "reports"
+
+    def runner(server: AgentdHttpServer) -> None:
+        observed_urls.append(server.base_url)
+
+    try:
+        status = await run_cli(
+            ["serve", "--port", "0", "--evaluation-report-dir", str(report_dir)],
+            service=service,
+            server_runner=runner,
+            stdout=output,
+        )
+    except PermissionError as exc:
+        pytest.skip(f"local socket bind unavailable: {exc}")
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["status"] == "serving"
+    assert payload["base_url"] == observed_urls[0]
+    assert payload["evaluation_report_dir"] == str(report_dir)
 
 
 @pytest.mark.asyncio

@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from types import MappingProxyType
 from urllib.parse import parse_qs, urlsplit
 
@@ -44,6 +45,11 @@ from universal_agent.distributed import (
     WorkItemNotFoundError,
 )
 from universal_agent.domain import AmbiguousDomainPackageError, DomainPackageNotFoundError
+from universal_agent.evaluation.console import (
+    EvaluationConsoleSnapshot,
+    build_evaluation_console_snapshot,
+    render_evaluation_console,
+)
 from universal_agent.profile import ProfileNotFoundError
 from universal_agent.runtime import (
     EvaluationView,
@@ -168,9 +174,18 @@ class AgentdApp:
     without learning Kernel internals.
     """
 
-    def __init__(self, service: RuntimeService, auth: AgentdAuthPolicy | None = None) -> None:
+    def __init__(
+        self,
+        service: RuntimeService,
+        auth: AgentdAuthPolicy | None = None,
+        *,
+        evaluation_report_dir: str | Path | None = None,
+    ) -> None:
         self._service = service
         self._auth = auth or AgentdAuthPolicy()
+        self._evaluation_report_dir = (
+            None if evaluation_report_dir is None else str(evaluation_report_dir)
+        )
 
     async def handle(self, request: HttpRequest) -> HttpResponse:
         method = request.method.upper()
@@ -212,6 +227,18 @@ class AgentdApp:
                 return bad_request(str(exc))
             return text_response(
                 render_web_profile_catalog(snapshot),
+                content_type="text/html; charset=utf-8",
+            )
+        if path == "/console/evaluations":
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            evaluation_snapshot = (
+                EvaluationConsoleSnapshot("not configured", ())
+                if self._evaluation_report_dir is None
+                else build_evaluation_console_snapshot(self._evaluation_report_dir)
+            )
+            return text_response(
+                render_evaluation_console(evaluation_snapshot),
                 content_type="text/html; charset=utf-8",
             )
         console_domain_name, console_domain_version = _console_domain_route(path)

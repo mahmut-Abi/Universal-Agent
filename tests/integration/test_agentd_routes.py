@@ -41,6 +41,15 @@ from universal_agent.domain import (
     DomainPackageRegistry,
 )
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.evaluation.harness import EvaluationScenarioKind
+from universal_agent.evaluation.recording import (
+    EvaluationCheckRecording,
+    EvaluationGateRecording,
+    EvaluationReportRecording,
+    EvaluationScenarioRecording,
+    EvaluationSummaryRecording,
+    FileEvaluationReportStore,
+)
 from universal_agent.security import EnvSecretProvider, SecretResolutionReport, resolve_secret_refs
 
 
@@ -193,6 +202,49 @@ def json_array(value: JsonValue) -> list[JsonValue]:
 def json_string(value: JsonValue) -> str:
     assert isinstance(value, str)
     return value
+
+
+def evaluation_report(suite_name: str) -> EvaluationReportRecording:
+    return EvaluationReportRecording(
+        suite_name,
+        True,
+        EvaluationSummaryRecording(
+            scenario_count=1,
+            passed_count=1,
+            failed_count=0,
+            goal_completed_count=1,
+            task_completed_count=1,
+            action_started_count=1,
+            action_completed_count=1,
+            tool_failure_count=0,
+            policy_denial_count=0,
+            recovery_planned_count=0,
+            human_intervention_count=0,
+            execution_duration_ms=42,
+            model_call_count=1,
+            model_total_token_count=123,
+            model_estimated_cost_micros=7,
+        ),
+        (
+            EvaluationScenarioRecording(
+                "healthy workload",
+                True,
+                ExecutionStatus.COMPLETED,
+                None,
+                kind=EvaluationScenarioKind.REGRESSION,
+                tags=("smoke", "kubernetes"),
+                satisfied_criteria=immutable_json({"healthy": True}),
+                checks=(EvaluationCheckRecording("status", True, "matched"),),
+                event_types=("ActionStarted", "GoalCompleted", "EvaluationCompleted"),
+                action_capabilities=("inspect_workload",),
+                evidence_claims=("healthy",),
+            ),
+        ),
+        EvaluationGateRecording(
+            True,
+            (EvaluationCheckRecording("min_pass_rate", True, "matched"),),
+        ),
+    )
 
 
 def build_service(
@@ -985,6 +1037,32 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert invalid_limit.status_code == 400
     assert invalid_detail_limit.status_code == 400
     assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_agentd_evaluation_console_route_renders_persisted_reports(tmp_path: Path) -> None:
+    report_dir = tmp_path / "reports"
+    FileEvaluationReportStore(report_dir).save(evaluation_report("nightly behavior suite"))
+    service, _ = build_service([])
+    app = AgentdApp(service, evaluation_report_dir=report_dir)
+
+    evaluation_page = await app.handle(HttpRequest("GET", "/console/evaluations"))
+    missing_config = await AgentdApp(service).handle(HttpRequest("GET", "/console/evaluations"))
+    method_not_allowed_response = await app.handle(HttpRequest("POST", "/console/evaluations"))
+
+    assert evaluation_page.status_code == 200
+    assert evaluation_page.headers["content-type"] == "text/html; charset=utf-8"
+    assert evaluation_page.text_body is not None
+    assert "Universal Agent Evaluation Console" in evaluation_page.text_body
+    assert "Evaluation Console" in evaluation_page.text_body
+    assert "nightly behavior suite" in evaluation_page.text_body
+    assert "Scenario Results" in evaluation_page.text_body
+    assert "inspect_workload" in evaluation_page.text_body
+    assert missing_config.status_code == 200
+    assert missing_config.text_body is not None
+    assert "report_dir=not configured" in missing_config.text_body
+    assert "No evaluation reports" in missing_config.text_body
+    assert method_not_allowed_response.status_code == 405
 
 
 @pytest.mark.asyncio
