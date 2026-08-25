@@ -106,6 +106,10 @@ Run:
 .venv/bin/python -m universal_agent.cli repair state-events --dry-run
 ```
 
+When local distributed coordination is configured, `doctor` also reports queue
+health, invalid session work references and terminal work backlog that should be
+pruned through the distributed maintenance commands below.
+
 ## Local Distributed Runtime
 
 The P6 implementation is a local coordination foundation:
