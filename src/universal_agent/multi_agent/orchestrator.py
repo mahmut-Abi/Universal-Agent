@@ -91,6 +91,31 @@ class AgentDelegationBatchResult:
         return self.status is AgentDelegationBatchStatus.COMPLETED
 
 
+@dataclass(frozen=True, slots=True)
+class AgentDelegationTaskState:
+    task_id: AgentTaskId
+    child_count: int = 0
+    delegation_depth: int | None = None
+
+    def __post_init__(self) -> None:
+        if not str(self.task_id).strip():
+            raise ValueError("agent delegation task state task_id must not be empty")
+        if self.child_count < 0:
+            raise ValueError("agent delegation task state child_count must be non-negative")
+        if self.delegation_depth is not None and self.delegation_depth < 0:
+            raise ValueError("agent delegation task state delegation_depth must be non-negative")
+
+
+@dataclass(frozen=True, slots=True)
+class AgentDelegationState:
+    tasks: tuple[AgentDelegationTaskState, ...] = ()
+
+    def __post_init__(self) -> None:
+        duplicates = _duplicates(tuple(task.task_id for task in self.tasks))
+        if duplicates:
+            raise ValueError("duplicate agent delegation state task ids: " + ", ".join(duplicates))
+
+
 def agent_delegation_spec_payload(spec: AgentDelegationSpec) -> JsonMapping:
     return MappingProxyType(
         {
@@ -138,6 +163,36 @@ def decode_agent_delegation_batch_result(payload: JsonMapping) -> AgentDelegatio
     )
 
 
+def agent_delegation_state_payload(state: AgentDelegationState) -> JsonMapping:
+    return MappingProxyType(
+        {
+            "tasks": [
+                {
+                    "task_id": str(task.task_id),
+                    "child_count": task.child_count,
+                    "delegation_depth": task.delegation_depth,
+                }
+                for task in state.tasks
+            ],
+        }
+    )
+
+
+def decode_agent_delegation_state(payload: JsonMapping) -> AgentDelegationState:
+    return AgentDelegationState(
+        tasks=tuple(
+            AgentDelegationTaskState(
+                task_id=AgentTaskId(_string(item.get("task_id"), "tasks.task_id")),
+                child_count=_int(item.get("child_count"), "tasks.child_count", 0),
+                delegation_depth=_optional_int(
+                    item.get("delegation_depth"), "tasks.delegation_depth"
+                ),
+            )
+            for item in _mapping_list(payload.get("tasks"), "tasks")
+        )
+    )
+
+
 class AgentOrchestrator:
     """Optional Multi-Agent delegation layer above independent Runtime instances."""
 
@@ -145,15 +200,38 @@ class AgentOrchestrator:
         self,
         registry: AgentRegistry,
         executors: Mapping[AgentId, AgentExecutor] | None = None,
+        delegation_state: AgentDelegationState | None = None,
     ) -> None:
         self._registry = registry
         self._executors: dict[AgentId, AgentExecutor] = dict(executors or {})
         self._child_counts: defaultdict[AgentTaskId, int] = defaultdict(int)
         self._task_depths: dict[AgentTaskId, int] = {}
+        if delegation_state is not None:
+            self._restore_delegation_state(delegation_state)
 
     def register_executor(self, agent_id: AgentId, executor: AgentExecutor) -> None:
         self._registry.instance(agent_id)
         self._executors[agent_id] = executor
+
+    def snapshot(self) -> AgentDelegationState:
+        task_ids = set(self._child_counts) | set(self._task_depths)
+        return AgentDelegationState(
+            tuple(
+                AgentDelegationTaskState(
+                    task_id=task_id,
+                    child_count=self._child_counts.get(task_id, 0),
+                    delegation_depth=self._task_depths.get(task_id),
+                )
+                for task_id in sorted(task_ids)
+            )
+        )
+
+    def _restore_delegation_state(self, state: AgentDelegationState) -> None:
+        for task in state.tasks:
+            if task.child_count:
+                self._child_counts[task.task_id] = task.child_count
+            if task.delegation_depth is not None:
+                self._task_depths[task.task_id] = task.delegation_depth
 
     async def delegate(
         self,
@@ -482,6 +560,20 @@ def _string(value: object, field_name: str, default: str | None = None) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{field_name} must be a string")
     return value
+
+
+def _int(value: object, field_name: str, default: int) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field_name} must be an integer")
+    return value
+
+
+def _optional_int(value: object, field_name: str) -> int | None:
+    if value is None:
+        return None
+    return _int(value, field_name, 0)
 
 
 def _optional_str(value: object | None) -> JsonValue:

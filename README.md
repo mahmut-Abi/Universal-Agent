@@ -339,7 +339,9 @@ event-sourcing models or production migration systems.
   while they run, and enforces parent
   child-count, delegation-depth, duration and reported-cost limits. `RuntimeAgentExecutor` projects child runtime
   `ModelUsageRecorded` events into the structured `AgentTaskResult` usage contract so `max_cost`
-  can be checked by the parent orchestrator. It can also execute a dependency-aware batch with structured
+  can be checked by the parent orchestrator. The orchestrator can now snapshot and restore delegation
+  child counts and depth state, so resumed Multi-Agent coordination keeps the same deterministic limits.
+  It can also execute a dependency-aware batch with structured
   spec/result payload helpers, running ready child tasks concurrently while rejecting downstream
   tasks whose dependencies fail. `RuntimeAgentExecutor` adapts a target `RuntimeAPI` without creating
   a second Agent loop or bypassing the target Runtime's policy/evaluation path.

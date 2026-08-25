@@ -33,12 +33,14 @@ from universal_agent.multi_agent import (
     NoEligibleAgentError,
     agent_delegation_batch_result_payload,
     agent_delegation_spec_payload,
+    agent_delegation_state_payload,
     agent_registry_from_snapshot,
     agent_registry_snapshot_payload,
     agent_task_request_payload,
     agent_task_result_payload,
     decode_agent_delegation_batch_result,
     decode_agent_delegation_spec,
+    decode_agent_delegation_state,
     decode_agent_registry_snapshot,
     decode_agent_task_request,
     decode_agent_task_result,
@@ -574,6 +576,70 @@ async def test_agent_orchestrator_rejects_forged_child_delegation_depth() -> Non
                 task_id=AgentTaskId("agent-task-child"),
                 parent_task_id=parent,
                 delegation_depth=0,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_agent_orchestrator_snapshot_restores_delegation_limits() -> None:
+    registry = AgentRegistry((profile(),), (instance(),))
+    executor = RecordingExecutor()
+    parent = AgentTaskId("agent-task-parent")
+    child = AgentTaskId("agent-task-child")
+    constraints = AgentTaskConstraints(read_only=True, max_children=1, max_depth=2)
+    orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): executor})
+
+    await orchestrator.delegate(
+        AgentTaskRequest(
+            goal="Run parent",
+            input=immutable_json({"task": "parent"}),
+            constraints=constraints,
+            expected_output=output(),
+            task_id=parent,
+        )
+    )
+    await orchestrator.delegate(
+        AgentTaskRequest(
+            goal="Run child",
+            input=immutable_json({"task": "child"}),
+            constraints=constraints,
+            expected_output=output(),
+            task_id=child,
+            parent_task_id=parent,
+            delegation_depth=1,
+        )
+    )
+
+    restored = AgentOrchestrator(
+        registry,
+        {AgentId("agent-1"): executor},
+        delegation_state=decode_agent_delegation_state(
+            agent_delegation_state_payload(orchestrator.snapshot())
+        ),
+    )
+
+    with pytest.raises(AgentDelegationLimitError, match="max_children exceeded"):
+        await restored.delegate(
+            AgentTaskRequest(
+                goal="Run second child",
+                input=immutable_json({"task": "second-child"}),
+                constraints=constraints,
+                expected_output=output(),
+                task_id=AgentTaskId("agent-task-second-child"),
+                parent_task_id=parent,
+                delegation_depth=1,
+            )
+        )
+    with pytest.raises(AgentDelegationLimitError, match="delegation_depth must be 2"):
+        await restored.delegate(
+            AgentTaskRequest(
+                goal="Run forged grandchild",
+                input=immutable_json({"task": "grandchild"}),
+                constraints=AgentTaskConstraints(read_only=True, max_children=1, max_depth=3),
+                expected_output=output(),
+                task_id=AgentTaskId("agent-task-grandchild"),
+                parent_task_id=child,
+                delegation_depth=1,
             )
         )
 
