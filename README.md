@@ -129,8 +129,9 @@ query parameters. `GET /v1/sessions/{id}/events/stream`
 returns the same cursor batch as `text/event-stream` frames for SSE clients. `GET /console` returns a
 read-only HTML Web Console snapshot, `GET /console/sessions` returns a focused Sessions list,
 and `GET /console/sessions/{id}` returns a focused Session Detail page;
-`GET /console/sessions/{id}/evidence` and `/world` return focused Evidence and World
-Model Explorer pages, `GET /console/domains/{name}/{version}` returns a read-only Domain
+`GET /console/evidence`, `/world`, `/console/sessions/{id}/evidence` and
+`/console/sessions/{id}/world` return focused Evidence and World Model Explorer pages,
+`GET /console/domains/{name}/{version}` returns a read-only Domain
 Manager detail page, `GET /console/domains`, `/capabilities`, `/tools`, `/policies`,
 `/evaluators` and `/memory` return focused Runtime catalog pages, `GET /console/profiles`
 returns a read-only Profile Catalog page,

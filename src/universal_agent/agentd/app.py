@@ -244,6 +244,25 @@ class AgentdApp:
                 render_evaluation_console(evaluation_snapshot),
                 content_type="text/html; charset=utf-8",
             )
+        console_explorer = _console_explorer_renderer(path)
+        if console_explorer is not None:
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                snapshot = await build_web_console_snapshot(
+                    self._service,
+                    session_id=_optional_session_id_query(request.path),
+                    session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
+                    event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
+                )
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
+            except ValueError as exc:
+                return bad_request(str(exc))
+            return text_response(
+                console_explorer(snapshot),
+                content_type="text/html; charset=utf-8",
+            )
         console_catalog = _console_catalog_route(path)
         if console_catalog is not None:
             if method != "GET":
@@ -2419,6 +2438,16 @@ def _domain_not_found_message(name: str, version: str | None) -> str:
     if version is None:
         return f"domain not found or ambiguous: {name}"
     return f"domain not found: {name}@{version}"
+
+
+def _console_explorer_renderer(
+    path: str,
+) -> Callable[[WebConsoleSnapshot], str] | None:
+    if path == "/console/evidence":
+        return render_web_evidence_explorer
+    if path == "/console/world":
+        return render_web_world_model_explorer
+    return None
 
 
 def _console_session_renderer(
