@@ -172,6 +172,13 @@ P7 ecosystem commands validate and register local metadata:
 - Profile configs
 - Ecosystem registry manifests
 
+Domain package scaffolding can declare package-local resources for runbooks,
+schemas, templates and other non-code assets:
+
+```bash
+.venv/bin/python -m universal_agent.cli domain-packages scaffold ai-ops --description "AI ops domain" --output .tmp/ai-ops-domain --resource resources/runbook.md --resource schemas/incident.json
+```
+
 They do not import Domain entrypoints, install external dependencies or activate
 runtimes by themselves. CLI install refuses signature metadata by default unless
 the operator explicitly allows unverified local signatures; programmatic callers

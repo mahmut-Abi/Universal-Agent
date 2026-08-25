@@ -667,6 +667,7 @@ def build_parser() -> argparse.ArgumentParser:
     domain_package_scaffold.add_argument("--evaluator", action="append", default=[])
     domain_package_scaffold.add_argument("--context-provider", action="append", default=[])
     domain_package_scaffold.add_argument("--prompt", action="append", default=[])
+    domain_package_scaffold.add_argument("--resource", action="append", default=[])
     domain_package_scaffold.add_argument("--dependency", action="append", default=[])
     domain_package_scaffold.add_argument("--required-tool", action="append", default=[])
     domain_package_scaffold.add_argument("--runtime-api")
@@ -1636,6 +1637,7 @@ def _domain_package_scaffold_spec(args: argparse.Namespace) -> DomainPackageScaf
         evaluators=tuple(cast(list[str], args.evaluator)),
         context_providers=tuple(cast(list[str], args.context_provider)),
         prompts=tuple(cast(list[str], args.prompt)),
+        resources=tuple(cast(list[str], args.resource)),
         dependencies=tuple(
             _parse_domain_identity(item) for item in cast(list[str], args.dependency)
         ),

@@ -1578,6 +1578,10 @@ async def test_cli_scaffolds_domain_package(tmp_path: Path) -> None:
             "incident_context",
             "--prompt",
             "incident_prompt",
+            "--resource",
+            "resources/runbook.md",
+            "--resource",
+            "schemas/incident.json",
             "--dependency",
             "observability@1.0.0",
             "--required-tool",
@@ -1620,6 +1624,10 @@ async def test_cli_scaffolds_domain_package(tmp_path: Path) -> None:
             str(package_root),
             "--version",
             "1.1.0",
+            "--resource",
+            "resources/runbook.md",
+            "--resource",
+            "schemas/incident.json",
             "--force",
         ],
         service=service,
@@ -1641,8 +1649,11 @@ async def test_cli_scaffolds_domain_package(tmp_path: Path) -> None:
     assert force_payload["version"] == "1.1.0"
     assert manifest["metadata"]["version"] == "1.1.0"
     assert manifest["entrypoint"] == "ai_ops.domain:build_domain"
+    assert manifest["resources"] == ["resources/runbook.md", "schemas/incident.json"]
     assert (package_root / "capabilities").is_dir()
     assert (package_root / "context_providers").is_dir()
+    assert (package_root / "resources" / "runbook.md").is_file()
+    assert (package_root / "schemas" / "incident.json").is_file()
 
 
 @pytest.mark.asyncio
