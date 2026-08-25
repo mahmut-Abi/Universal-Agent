@@ -157,6 +157,16 @@ class RuntimeSessionBatch:
     next_cursor: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class StateEventCommitView:
+    supported: bool
+    strategy: str
+    shared_store: bool
+    session_store_type: str
+    event_reader_type: str
+    event_sink_type: str | None
+
+
 class RuntimeEventRepairUnavailableError(RuntimeError):
     pass
 
@@ -283,6 +293,23 @@ class RuntimeAPI:
         for event in events:
             await self._event_sink.emit(event)
         return tuple(event_view(event) for event in events)
+
+    def state_event_commit(self) -> StateEventCommitView:
+        supported = hasattr(self._session_store, "commit_session_event")
+        session_store = cast(object, self._session_store)
+        event_reader = cast(object, self._event_reader)
+        event_sink = None if self._event_sink is None else cast(object, self._event_sink)
+        return StateEventCommitView(
+            supported=supported,
+            strategy=_state_event_commit_strategy(self._session_store)
+            if supported
+            else "split_store",
+            shared_store=session_store is event_reader
+            and (event_sink is None or session_store is event_sink),
+            session_store_type=type(self._session_store).__name__,
+            event_reader_type=type(self._event_reader).__name__,
+            event_sink_type=None if self._event_sink is None else type(self._event_sink).__name__,
+        )
 
 
 def session_view(snapshot: SessionSnapshot) -> SessionView:
@@ -418,6 +445,11 @@ def event_view(event: RuntimeEvent) -> RuntimeEventView:
         data=MappingProxyType(dict(event.data)),
         occurred_at=event.occurred_at,
     )
+
+
+def _state_event_commit_strategy(store: object) -> str:
+    strategy = getattr(store, "state_event_commit_strategy", None)
+    return strategy if isinstance(strategy, str) and strategy else "custom_committer"
 
 
 def evidence_view(evidence: Evidence) -> EvidenceView:

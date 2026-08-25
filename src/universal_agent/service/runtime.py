@@ -277,6 +277,9 @@ class RuntimeConfigView:
     domains: tuple[RuntimeConfigDomainView, ...]
     secrets: tuple[RuntimeSecretRefView, ...] = ()
     distributed_terminal_retention_seconds: float | None = None
+    state_event_commit_supported: bool | None = None
+    state_event_commit_strategy: str | None = None
+    state_event_commit_shared_store: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -556,6 +559,7 @@ class RuntimeService:
 
     def config(self) -> RuntimeConfigView:
         identities = self._components.domain_composition.identities
+        state_event_commit = self._runtime_api.state_event_commit()
         if self._config is None:
             return RuntimeConfigView(
                 environment=immutable_json(),
@@ -572,6 +576,9 @@ class RuntimeService:
                 max_recovery_steps=8,
                 domains=runtime_config_domain_views(identities),
                 distributed_terminal_retention_seconds=None,
+                state_event_commit_supported=state_event_commit.supported,
+                state_event_commit_strategy=state_event_commit.strategy,
+                state_event_commit_shared_store=state_event_commit.shared_store,
             )
         return RuntimeConfigView(
             environment=redact_environment(self._config.environment),
@@ -596,6 +603,9 @@ class RuntimeService:
             distributed_terminal_retention_seconds=(
                 self._config.distributed_terminal_retention_seconds
             ),
+            state_event_commit_supported=state_event_commit.supported,
+            state_event_commit_strategy=state_event_commit.strategy,
+            state_event_commit_shared_store=state_event_commit.shared_store,
         )
 
     def distributed_snapshot(self) -> DistributedRuntimeSnapshot | None:
@@ -870,9 +880,7 @@ class RuntimeService:
             return None
         timestamp = now or utc_now()
         retention_seconds = (
-            None
-            if self._config is None
-            else self._config.distributed_terminal_retention_seconds
+            None if self._config is None else self._config.distributed_terminal_retention_seconds
         )
         retention_before = (
             timestamp - timedelta(seconds=retention_seconds)
@@ -1333,6 +1341,9 @@ class RuntimeService:
             store_backend=config.store_backend,
             max_iterations=config.max_iterations,
             max_recovery_steps=config.max_recovery_steps,
+            state_event_commit_supported=config.state_event_commit_supported,
+            state_event_commit_strategy=config.state_event_commit_strategy,
+            state_event_commit_shared_store=config.state_event_commit_shared_store,
             distributed_health_status=None
             if distributed_health is None
             else distributed_health.status.value,
@@ -1489,7 +1500,6 @@ class RuntimeService:
                 if pending is None or pending.action_id != item.action_id:
                     invalid_count += 1
         return invalid_count
-
 
     def _distributed_terminal_work_item_count(
         self,

@@ -146,6 +146,8 @@ class FileRuntimeStore(FileSessionStore, FileEventStore):
     applied, then replayed on later reads if the process stopped mid-commit.
     """
 
+    state_event_commit_strategy = "file_journal"
+
     def __init__(self, root: str | Path) -> None:
         self._root = Path(root)
         self._sessions = self._root / "sessions"

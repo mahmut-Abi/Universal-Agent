@@ -1751,9 +1751,7 @@ def _profile_config_payload(
         "domain": domain,
     }
     if distributed_terminal_retention_seconds is not None:
-        runtime["distributed_terminal_retention_seconds"] = (
-            distributed_terminal_retention_seconds
-        )
+        runtime["distributed_terminal_retention_seconds"] = distributed_terminal_retention_seconds
     return {
         "name": profile_name,
         "version": "0.1.0",

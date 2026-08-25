@@ -164,6 +164,8 @@ class SQLiteEventStore:
 class SQLiteRuntimeStore(SQLiteSessionStore, SQLiteEventStore):
     """SQLite adapter that can commit a SessionSnapshot and RuntimeEvent atomically."""
 
+    state_event_commit_strategy = "sqlite_transaction"
+
     async def commit_session_event(
         self,
         snapshot: SessionSnapshot,

@@ -254,6 +254,7 @@ from universal_agent.runtime import (
     RuntimeSessionBatch,
     SessionDiagnosticsView,
     SessionSummaryView,
+    StateEventCommitView,
 )
 from universal_agent.security import (
     EnvSecretProvider,
@@ -488,6 +489,7 @@ __all__ = [
     "SessionExplorerView",
     "SessionSummaryView",
     "SessionWorldView",
+    "StateEventCommitView",
     "StateEventRepairReport",
     "StateEventRepairSkipView",
     "StateEventRepairView",

@@ -2091,6 +2091,11 @@ async def test_cli_config_show_exposes_runtime_configuration() -> None:
         "environment": {"environment": "staging"},
         "secrets": [],
         "store": {"backend": "memory", "path": None},
+        "state_event_commit": {
+            "supported": False,
+            "strategy": "split_store",
+            "shared_store": False,
+        },
         "distributed_queue": {"backend": "memory", "path": None},
         "distributed_locks": {"backend": "memory", "path": None},
         "distributed_workers": {"backend": "memory", "path": None},

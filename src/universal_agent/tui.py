@@ -51,6 +51,7 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
             f" queue={snapshot.config.distributed_queue_backend}"
             f" locks={snapshot.config.distributed_locks_backend}"
             f" workers={snapshot.config.distributed_workers_backend}"
+            f" state_event_commit={_state_event_commit_text(snapshot)}"
             f" retention={_retention_text(snapshot.config.distributed_terminal_retention_seconds)}"
             f" max_iterations={snapshot.config.max_iterations}"
             f" max_recovery_steps={snapshot.config.max_recovery_steps}"
@@ -147,10 +148,7 @@ def _operational_diagnostic_lines(snapshot: TuiSnapshot) -> list[str]:
 def _doctor_lines(snapshot: TuiSnapshot) -> list[str]:
     doctor = snapshot.doctor
     lines = [f"- status={doctor.status} checks={len(doctor.checks)}"]
-    lines.extend(
-        f"- {check.status} {check.name}: {check.message}"
-        for check in doctor.checks
-    )
+    lines.extend(f"- {check.status} {check.name}: {check.message}" for check in doctor.checks)
     return lines
 
 
@@ -183,14 +181,23 @@ def _distributed_runtime_lines(snapshot: TuiSnapshot) -> list[str]:
         f"- locks active={len(distributed.locks)}",
     ]
     lines.extend(
-        f"- check {check.name}={check.status.value}: {check.message}"
-        for check in health.checks
+        f"- check {check.name}={check.status.value}: {check.message}" for check in health.checks
     )
     lines.extend(
         f"- recommendation {item.code}={item.severity.value}: {item.message}"
         for item in health.recommendations
     )
     return lines
+
+
+def _state_event_commit_text(snapshot: TuiSnapshot) -> str:
+    supported = snapshot.config.state_event_commit_supported
+    strategy = snapshot.config.state_event_commit_strategy or "unknown"
+    shared_store = snapshot.config.state_event_commit_shared_store
+    if supported is None:
+        return "unknown"
+    status = "enabled" if supported and shared_store else "split"
+    return f"{status}/{strategy}"
 
 
 def _domain_lines(domains: tuple[DomainView, ...]) -> list[str]:

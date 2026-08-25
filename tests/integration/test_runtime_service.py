@@ -279,6 +279,23 @@ def test_runtime_service_config_exposes_domain_backend_settings() -> None:
     }
 
 
+def test_runtime_service_config_exposes_state_event_commit_projection() -> None:
+    backend = ServiceBackend()
+    active = DomainLoader().load(KubernetesRemediationDomain(backend, backend))
+    components = RuntimeBuilder().build(active)
+    service = RuntimeService(
+        runtime_api=build_api(components, []),
+        components=components,
+    )
+
+    config = service.config()
+
+    assert config.store_backend == "memory"
+    assert config.state_event_commit_supported is False
+    assert config.state_event_commit_strategy == "split_store"
+    assert config.state_event_commit_shared_store is False
+
+
 def package_registry() -> DomainPackageRegistry:
     package = DomainPackage(
         manifest=DomainPackageManifest(

@@ -145,6 +145,62 @@ async def test_persistent_session_stores_reject_stale_snapshot_versions(
     assert latest.state.iteration == 1
 
 
+def test_runtime_api_reports_state_event_commit_strategy(tmp_path: Path) -> None:
+    backend = PersistentRemediationBackend()
+    components = RuntimeBuilder().build(
+        DomainLoader().load(KubernetesRemediationDomain(backend, backend))
+    )
+
+    file_store = FileRuntimeStore(tmp_path / "file")
+    file_runtime = AgentRuntime(
+        model=ScriptedModelAdapter([]),
+        state_store=file_store,
+        components=components,
+        event_sink=file_store,
+        environment=immutable_json({"environment": "production"}),
+    )
+    file_api = RuntimeAPI(runtime=file_runtime, session_store=file_store, event_reader=file_store)
+
+    sqlite_store = SQLiteRuntimeStore(tmp_path / "runtime.sqlite3")
+    sqlite_runtime = AgentRuntime(
+        model=ScriptedModelAdapter([]),
+        state_store=sqlite_store,
+        components=components,
+        event_sink=sqlite_store,
+        environment=immutable_json({"environment": "production"}),
+    )
+    sqlite_api = RuntimeAPI(
+        runtime=sqlite_runtime,
+        session_store=sqlite_store,
+        event_reader=sqlite_store,
+    )
+
+    legacy_sessions = SQLiteSessionStore(tmp_path / "legacy.sqlite3")
+    legacy_events = SQLiteEventStore(tmp_path / "legacy.sqlite3")
+    legacy_runtime = AgentRuntime(
+        model=ScriptedModelAdapter([]),
+        state_store=legacy_sessions,
+        components=components,
+        event_sink=legacy_events,
+        environment=immutable_json({"environment": "production"}),
+    )
+    legacy_api = RuntimeAPI(
+        runtime=legacy_runtime,
+        session_store=legacy_sessions,
+        event_reader=legacy_events,
+    )
+
+    assert file_api.state_event_commit().supported is True
+    assert file_api.state_event_commit().strategy == "file_journal"
+    assert file_api.state_event_commit().shared_store is True
+    assert sqlite_api.state_event_commit().supported is True
+    assert sqlite_api.state_event_commit().strategy == "sqlite_transaction"
+    assert sqlite_api.state_event_commit().shared_store is True
+    assert legacy_api.state_event_commit().supported is False
+    assert legacy_api.state_event_commit().strategy == "split_store"
+    assert legacy_api.state_event_commit().shared_store is False
+
+
 @pytest.mark.asyncio
 async def test_sqlite_runtime_store_commits_session_and_event_atomically(
     tmp_path: Path,
@@ -291,21 +347,20 @@ def build_sqlite_api(
     backend: PersistentRemediationBackend,
     decisions: list[Decision],
 ) -> RuntimeAPI:
-    session_store = SQLiteSessionStore(path)
-    event_store = SQLiteEventStore(path)
+    store = SQLiteRuntimeStore(path)
     runtime = AgentRuntime(
         model=ScriptedModelAdapter(decisions),
-        state_store=session_store,
+        state_store=store,
         components=RuntimeBuilder().build(
             DomainLoader().load(KubernetesRemediationDomain(backend, backend))
         ),
-        event_sink=event_store,
+        event_sink=store,
         environment=immutable_json({"environment": "production"}),
     )
     return RuntimeAPI(
         runtime=runtime,
-        session_store=session_store,
-        event_reader=event_store,
+        session_store=store,
+        event_reader=store,
     )
 
 

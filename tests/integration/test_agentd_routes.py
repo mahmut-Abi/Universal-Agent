@@ -634,6 +634,11 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
         "environment": {"environment": "staging"},
         "secrets": [],
         "store": {"backend": "memory", "path": None},
+        "state_event_commit": {
+            "supported": False,
+            "strategy": "split_store",
+            "shared_store": False,
+        },
         "distributed_queue": {"backend": "memory", "path": None},
         "distributed_locks": {"backend": "memory", "path": None},
         "distributed_workers": {"backend": "memory", "path": None},

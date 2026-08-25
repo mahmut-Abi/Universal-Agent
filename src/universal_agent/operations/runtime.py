@@ -366,6 +366,9 @@ def build_doctor_report(
     distributed_terminal_work_item_count: int | None = None,
     secret_resolution: SecretResolutionReport | None = None,
     secret_scan_payload: object | None = None,
+    state_event_commit_supported: bool | None = None,
+    state_event_commit_strategy: str | None = None,
+    state_event_commit_shared_store: bool | None = None,
 ) -> DoctorReportView:
     metrics = build_runtime_metrics(sessions, events)
     cost = build_runtime_cost(events)
@@ -395,6 +398,12 @@ def build_doctor_report(
         _secret_scanning_check(secret_scan_payload),
         DoctorCheckView("session_store", "ok", f"sessions listed: {len(sessions)}"),
         _event_stream_check(sessions, events),
+        _state_event_commit_check(
+            store_backend=store_backend,
+            supported=state_event_commit_supported,
+            strategy=state_event_commit_strategy,
+            shared_store=state_event_commit_shared_store,
+        ),
         _state_event_consistency_check(sessions, events),
         DoctorCheckView("structured_logs", "ok", f"log records projected: {len(logs)}"),
         _trace_projection_check(sessions, events, trace_spans),
@@ -970,6 +979,55 @@ def _state_event_consistency_check(
         "state_event_consistency",
         "ok",
         f"sessions={len(sessions)} events={len(events)} terminal_events_verified",
+    )
+
+
+def _state_event_commit_check(
+    *,
+    store_backend: str | None,
+    supported: bool | None,
+    strategy: str | None,
+    shared_store: bool | None,
+) -> DoctorCheckView:
+    if supported is None:
+        return DoctorCheckView("state_event_commit", "ok", "state/event commit path not inspected")
+
+    backend = store_backend or "unknown"
+    detail = f"backend={backend} strategy={strategy or 'unknown'} shared_store={shared_store}"
+    if backend == "memory":
+        return DoctorCheckView(
+            "state_event_commit",
+            "ok",
+            f"in-memory runtime uses non-durable state/event writes: {detail}",
+        )
+    if backend in {"file", "sqlite"}:
+        if supported and shared_store:
+            return DoctorCheckView(
+                "state_event_commit",
+                "ok",
+                f"persistent state/event commit is enabled: {detail}",
+            )
+        if supported:
+            return DoctorCheckView(
+                "state_event_commit",
+                "error",
+                f"persistent state/event committer is split from event reads: {detail}",
+            )
+        return DoctorCheckView(
+            "state_event_commit",
+            "error",
+            f"persistent store lacks state/event commit support: {detail}",
+        )
+    if supported and shared_store:
+        return DoctorCheckView(
+            "state_event_commit",
+            "ok",
+            f"custom state/event commit path is enabled: {detail}",
+        )
+    return DoctorCheckView(
+        "state_event_commit",
+        "warn",
+        f"custom store state/event commit path is not verified: {detail}",
     )
 
 

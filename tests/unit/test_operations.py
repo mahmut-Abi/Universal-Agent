@@ -576,6 +576,7 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
         "secret_scanning",
         "session_store",
         "event_stream",
+        "state_event_commit",
         "state_event_consistency",
         "structured_logs",
         "traces",
@@ -588,6 +589,9 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
         "cost_tracking",
     ]
     assert next(check for check in report.checks if check.name == "event_stream").status == "warn"
+    assert (
+        next(check for check in report.checks if check.name == "state_event_commit").status == "ok"
+    )
     assert (
         next(check for check in report.checks if check.name == "state_event_consistency").status
         == "warn"
@@ -688,6 +692,51 @@ def test_doctor_report_accepts_consistent_terminal_session_events() -> None:
 
     assert consistency.status == "ok"
     assert "terminal_events_verified" in consistency.message
+
+
+def test_doctor_report_errors_when_persistent_state_event_commit_is_split() -> None:
+    report = build_doctor_report(
+        health_status="ok",
+        ready=True,
+        ready_reason="ready",
+        domain_count=1,
+        capability_count=2,
+        tool_count=2,
+        sessions=(),
+        events=(),
+        store_backend="sqlite",
+        state_event_commit_supported=False,
+        state_event_commit_strategy="split_store",
+        state_event_commit_shared_store=False,
+    )
+
+    commit = next(check for check in report.checks if check.name == "state_event_commit")
+
+    assert report.status == "error"
+    assert commit.status == "error"
+    assert "persistent store lacks state/event commit support" in commit.message
+
+
+def test_doctor_report_accepts_persistent_state_event_commit_strategy() -> None:
+    report = build_doctor_report(
+        health_status="ok",
+        ready=True,
+        ready_reason="ready",
+        domain_count=1,
+        capability_count=2,
+        tool_count=2,
+        sessions=(),
+        events=(),
+        store_backend="file",
+        state_event_commit_supported=True,
+        state_event_commit_strategy="file_journal",
+        state_event_commit_shared_store=True,
+    )
+
+    commit = next(check for check in report.checks if check.name == "state_event_commit")
+
+    assert commit.status == "ok"
+    assert "file_journal" in commit.message
 
 
 def test_doctor_report_errors_on_invalid_runtime_config_projection() -> None:

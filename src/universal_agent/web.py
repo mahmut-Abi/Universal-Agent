@@ -890,6 +890,7 @@ def _runtime_settings(snapshot: WebConsoleSnapshot) -> str:
     items = (
         ("Store Backend", snapshot.config.store_backend),
         ("Store Path", snapshot.config.store_path or "memory"),
+        ("State/Event Commit", _state_event_commit_text(snapshot)),
         ("Distributed Queue Backend", snapshot.config.distributed_queue_backend),
         ("Distributed Queue Path", snapshot.config.distributed_queue_path or "memory"),
         ("Distributed Locks Backend", snapshot.config.distributed_locks_backend),
@@ -935,6 +936,16 @@ def _doctor_checks(doctor: DoctorReportView) -> str:
         "Doctor Checks",
         _table(("Check", "Status", "Message"), tuple(rows)),
     )
+
+
+def _state_event_commit_text(snapshot: WebConsoleSnapshot) -> str:
+    supported = snapshot.config.state_event_commit_supported
+    strategy = snapshot.config.state_event_commit_strategy or "unknown"
+    shared_store = snapshot.config.state_event_commit_shared_store
+    if supported is None:
+        return "unknown"
+    status = "enabled" if supported and shared_store else "split"
+    return f"{status} ({strategy})"
 
 
 def _distributed_not_configured(distributed: DistributedRuntimeSnapshot | None) -> str:
