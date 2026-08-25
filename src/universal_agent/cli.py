@@ -538,12 +538,14 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--kubernetes-api-server")
     init.add_argument("--kubernetes-api-namespace", default="default")
     init.add_argument("--kubernetes-api-token-env")
+    init.add_argument("--kubernetes-api-token-file")
     init.add_argument("--kubernetes-api-token-secret", default="kubernetes_api_token")
     init.add_argument("--kubernetes-api-timeout-seconds", type=float, default=10.0)
     init.add_argument("--model-provider", choices=("scripted", "json_http"), default="scripted")
     init.add_argument("--model-name", default="scripted")
     init.add_argument("--model-endpoint")
     init.add_argument("--model-api-key-env")
+    init.add_argument("--model-api-key-file")
     init.add_argument("--model-api-key-secret", default="model_api_key")
     init.add_argument("--model-timeout-seconds", type=float, default=30.0)
     init.add_argument("--model-header", action="append", default=[])
@@ -1818,12 +1820,14 @@ def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
         kubernetes_api_server=cast(str | None, args.kubernetes_api_server),
         kubernetes_api_namespace=cast(str, args.kubernetes_api_namespace),
         kubernetes_api_token_env=cast(str | None, args.kubernetes_api_token_env),
+        kubernetes_api_token_file=cast(str | None, args.kubernetes_api_token_file),
         kubernetes_api_token_secret=cast(str, args.kubernetes_api_token_secret),
         kubernetes_api_timeout_seconds=cast(float, args.kubernetes_api_timeout_seconds),
         model_provider=cast(str, args.model_provider),
         model_name=cast(str, args.model_name),
         model_endpoint=cast(str | None, args.model_endpoint),
         model_api_key_env=cast(str | None, args.model_api_key_env),
+        model_api_key_file=cast(str | None, args.model_api_key_file),
         model_api_key_secret=cast(str, args.model_api_key_secret),
         model_timeout_seconds=cast(float, args.model_timeout_seconds),
         model_headers=_parse_key_value_options(cast(list[str], args.model_header), "model-header"),
@@ -1857,16 +1861,28 @@ def _profile_config_payload(
     kubernetes_api_server: str | None,
     kubernetes_api_namespace: str,
     kubernetes_api_token_env: str | None,
+    kubernetes_api_token_file: str | None,
     kubernetes_api_token_secret: str,
     kubernetes_api_timeout_seconds: float,
     model_provider: str,
     model_name: str,
     model_endpoint: str | None,
     model_api_key_env: str | None,
+    model_api_key_file: str | None,
     model_api_key_secret: str,
     model_timeout_seconds: float,
     model_headers: dict[str, str],
 ) -> dict[str, object]:
+    model_secret_source = _single_secret_source(
+        "--model-api-key",
+        env_key=model_api_key_env,
+        file_path=model_api_key_file,
+    )
+    kubernetes_api_token_source = _single_secret_source(
+        "--kubernetes-api-token",
+        env_key=kubernetes_api_token_env,
+        file_path=kubernetes_api_token_file,
+    )
     domain = _profile_domain_config(
         domain_backend=domain_backend,
         kubectl_namespace=kubectl_namespace,
@@ -1876,7 +1892,7 @@ def _profile_config_payload(
         kubernetes_api_server=kubernetes_api_server,
         kubernetes_api_namespace=kubernetes_api_namespace,
         kubernetes_api_token_secret=(
-            kubernetes_api_token_secret if kubernetes_api_token_env is not None else None
+            kubernetes_api_token_secret if kubernetes_api_token_source is not None else None
         ),
         kubernetes_api_timeout_seconds=kubernetes_api_timeout_seconds,
     )
@@ -1898,7 +1914,7 @@ def _profile_config_payload(
             model_provider=model_provider,
             model_name=model_name,
             model_endpoint=model_endpoint,
-            model_api_key_env=model_api_key_env,
+            model_api_key_source=model_secret_source,
             model_api_key_secret=model_api_key_secret,
             model_timeout_seconds=model_timeout_seconds,
             model_headers=model_headers,
@@ -1911,10 +1927,10 @@ def _profile_config_payload(
         "domain": domain,
     }
     secrets: dict[str, dict[str, object]] = {}
-    if model_api_key_env is not None:
-        _add_env_secret(secrets, model_api_key_secret, model_api_key_env)
-    if kubernetes_api_token_env is not None:
-        _add_env_secret(secrets, kubernetes_api_token_secret, kubernetes_api_token_env)
+    if model_secret_source is not None:
+        _add_secret(secrets, model_api_key_secret, model_secret_source)
+    if kubernetes_api_token_source is not None:
+        _add_secret(secrets, kubernetes_api_token_secret, kubernetes_api_token_source)
     if secrets:
         runtime["secrets"] = secrets
     if distributed_terminal_retention_seconds is not None:
@@ -1971,14 +1987,34 @@ def _profile_domain_config(
     raise ValueError(f"unsupported domain backend: {domain_backend}")
 
 
-def _add_env_secret(secrets: dict[str, dict[str, object]], name: str, env_key: str) -> None:
+def _single_secret_source(
+    label: str,
+    *,
+    env_key: str | None,
+    file_path: str | None,
+) -> tuple[str, str] | None:
+    if env_key is not None and file_path is not None:
+        raise ValueError(f"{label} accepts either env or file, not both")
+    if env_key is not None:
+        return ("env", env_key)
+    if file_path is not None:
+        return ("file", file_path)
+    return None
+
+
+def _add_secret(
+    secrets: dict[str, dict[str, object]],
+    name: str,
+    source: tuple[str, str],
+) -> None:
+    source_name, key = source
     if not name.strip():
         raise ValueError("secret name must not be empty")
-    if not env_key.strip():
-        raise ValueError(f"secret {name} env key must not be empty")
+    if not key.strip():
+        raise ValueError(f"secret {name} {source_name} key must not be empty")
     if name in secrets:
         raise ValueError(f"duplicate runtime secret: {name}")
-    secrets[name] = {"source": "env", "key": env_key, "required": True}
+    secrets[name] = {"source": source_name, "key": key, "required": True}
 
 
 def _profile_model_config(
@@ -1986,7 +2022,7 @@ def _profile_model_config(
     model_provider: str,
     model_name: str,
     model_endpoint: str | None,
-    model_api_key_env: str | None,
+    model_api_key_source: tuple[str, str] | None,
     model_api_key_secret: str,
     model_timeout_seconds: float,
     model_headers: dict[str, str],
@@ -1999,8 +2035,8 @@ def _profile_model_config(
     if model_provider == "scripted":
         if model_endpoint is not None:
             raise ValueError("scripted model does not accept --model-endpoint")
-        if model_api_key_env is not None:
-            raise ValueError("scripted model does not accept --model-api-key-env")
+        if model_api_key_source is not None:
+            raise ValueError("scripted model does not accept model API key secrets")
         if model_headers:
             raise ValueError("scripted model does not accept --model-header")
         return model
@@ -2009,7 +2045,7 @@ def _profile_model_config(
     if model_endpoint is None or not model_endpoint.strip():
         raise ValueError("json_http model requires --model-endpoint")
     model["endpoint"] = model_endpoint
-    if model_api_key_env is not None:
+    if model_api_key_source is not None:
         model["api_key_secret"] = model_api_key_secret
     if model_headers:
         model["headers"] = model_headers

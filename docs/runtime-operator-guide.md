@@ -25,6 +25,14 @@ Frequently used commands:
 .venv/bin/python -m universal_agent.cli session list
 ```
 
+`agent init` can generate either environment-backed or file-backed secret
+references:
+
+```bash
+.venv/bin/python -m universal_agent.cli init --model-provider json_http --model-endpoint https://model-bridge.example/decide --model-api-key-file /run/secrets/model-api-key
+.venv/bin/python -m universal_agent.cli init --domain-backend kubernetes_api --kubernetes-api-server https://cluster.example.test --kubernetes-api-token-file /run/secrets/kubernetes-token
+```
+
 Session event reads support cursor semantics:
 
 ```bash

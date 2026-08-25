@@ -585,6 +585,7 @@ Python 3.12 or newer is required.
 .venv/bin/python -m universal_agent.cli init --output .tmp/kubectl-profile.json --domain-backend kubectl --kubectl-namespace prod --kubectl-context prod-cluster --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/kubectl-profile.json config show
 .venv/bin/python -m universal_agent.cli init --output .tmp/kubernetes-api-profile.json --domain-backend kubernetes_api --kubernetes-api-server https://cluster.example.test --kubernetes-api-token-env KUBERNETES_API_TOKEN --force
+.venv/bin/python -m universal_agent.cli init --output .tmp/kubernetes-api-file-profile.json --domain-backend kubernetes_api --kubernetes-api-server https://cluster.example.test --kubernetes-api-token-file /run/secrets/kubernetes-token --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/kubernetes-api-profile.json config show
 .venv/bin/python -m universal_agent.cli init --output .tmp/file-queue-profile.json --distributed-queue-backend file --distributed-queue-path .tmp/work-queue.json --force
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/file-queue-profile.json config show
