@@ -1427,6 +1427,8 @@ def sse_event_batch_text(batch: RuntimeEventBatch) -> str:
         chunks.append("data: ")
         chunks.append(json.dumps(event_body(event), sort_keys=True))
         chunks.append("\n\n")
+    if not batch.events:
+        chunks.append(": heartbeat\n\n")
     if batch.next_cursor is not None:
         chunks.append(f": next_cursor={batch.next_cursor}\n\n")
     return "".join(chunks)

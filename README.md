@@ -133,7 +133,8 @@ session/evidence/world fact inspection, dedicated `GET /v1/sessions/{id}/evidenc
 query parameters. `GET /v1/sessions/{id}/events/stream`
 returns the same cursor batch as `text/event-stream` frames for SSE clients, and accepts bounded
 `wait=true` long-polling parameters for clients that want to hold the connection until new events
-appear. `GET /console` returns a
+appear; timed-out empty batches return an SSE heartbeat comment plus the current cursor instead of
+an empty response. `GET /console` returns a
 read-only HTML Web Console snapshot, `GET /console/sessions` returns a focused Sessions list,
 and `GET /console/sessions/{id}` returns a focused Session Detail page;
 `GET /console/evidence`, `/world`, `/console/sessions/{id}/evidence` and

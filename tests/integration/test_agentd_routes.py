@@ -2296,6 +2296,27 @@ async def test_agentd_events_stream_route_projects_cursor_batch_as_sse() -> None
     assert "event: GoalCreated\n" in response.text_body
     assert "data: " in response.text_body
     assert f": next_cursor={response.body['next_cursor']}\n\n" in response.text_body
+    events_response = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/events"))
+    event_items = events_response.body["events"]
+    assert isinstance(event_items, list)
+    last_event = event_items[-1]
+    assert isinstance(last_event, dict)
+    last_cursor = last_event["event_id"]
+    assert isinstance(last_cursor, str)
+    heartbeat = await app.handle(
+        HttpRequest(
+            "GET",
+            (
+                f"/v1/sessions/{session_id}/events/stream?after={last_cursor}"
+                "&wait=true&timeout_seconds=0"
+            ),
+        )
+    )
+
+    assert heartbeat.status_code == 200
+    assert heartbeat.body["events"] == []
+    assert heartbeat.body["next_cursor"] == last_cursor
+    assert heartbeat.text_body == f": heartbeat\n\n: next_cursor={last_cursor}\n\n"
 
     invalid_wait = await app.handle(
         HttpRequest("GET", f"/v1/sessions/{session_id}/events/stream?wait=maybe")
