@@ -20,7 +20,13 @@ from universal_agent.core import (
 )
 from universal_agent.evidence import EvidenceId
 from universal_agent.memory import MemoryKind
-from universal_agent.operations import AuditRecordView, RuntimeCostView, RuntimeMetricsView
+from universal_agent.operations import (
+    AuditRecordView,
+    DoctorCheckView,
+    DoctorReportView,
+    RuntimeCostView,
+    RuntimeMetricsView,
+)
 from universal_agent.runtime import (
     EvidenceView,
     RuntimeEventView,
@@ -50,6 +56,7 @@ from universal_agent.web import (
     WebConsoleSnapshot,
     render_web_catalog,
     render_web_console,
+    render_web_doctor,
     render_web_domain_detail,
     render_web_evidence_explorer,
     render_web_profile_catalog,
@@ -327,6 +334,7 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "ActionStarted" in rendered
     assert "capability=inspect_workload" in rendered
     assert "allow:allow-read" in rendered
+    assert 'href="/console/doctor"' in rendered
 
     sessions_page = render_web_sessions(snapshot)
 
@@ -337,6 +345,33 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "Selected Session" in sessions_page
     assert "Recent Events" in sessions_page
     assert "Audit" in sessions_page
+    assert 'href="/console/doctor"' in sessions_page
+
+    doctor_page = render_web_doctor(
+        snapshot,
+        DoctorReportView(
+            "warn",
+            (
+                DoctorCheckView("runtime_health", "ok", "health status is ok"),
+                DoctorCheckView(
+                    "state_event_consistency",
+                    "warn",
+                    "sessions exist but no events were listed",
+                ),
+                DoctorCheckView("audit", "error", "expected 1 audit records, projected 0"),
+            ),
+        ),
+    )
+
+    assert "Universal Agent Runtime Doctor" in doctor_page
+    assert "Runtime Doctor" in doctor_page
+    assert "Doctor: warn" in doctor_page
+    assert "Doctor Checks" in doctor_page
+    assert "runtime_health" in doctor_page
+    assert "state_event_consistency" in doctor_page
+    assert "expected 1 audit records, projected 0" in doctor_page
+    assert "Operational Diagnostics" in doctor_page
+    assert "Runtime Configuration" in doctor_page
 
     session_detail = render_web_session_detail(snapshot)
 
@@ -355,6 +390,7 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "Session Evidence" in session_detail
     assert "ActionStarted" in session_detail
     assert "allow:allow-read" in session_detail
+    assert 'href="/console/doctor"' in session_detail
 
     evidence_explorer = render_web_evidence_explorer(snapshot)
 

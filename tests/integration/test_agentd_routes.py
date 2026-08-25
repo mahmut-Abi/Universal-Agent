@@ -972,6 +972,7 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     top_world_page = await app.handle(HttpRequest("GET", f"/console/world?session_id={session_id}"))
     domain_page = await app.handle(HttpRequest("GET", "/console/domains/kubernetes/0.2.0"))
     profile_page = await app.handle(HttpRequest("GET", "/console/profiles"))
+    doctor_page = await app.handle(HttpRequest("GET", "/console/doctor"))
     settings_page = await app.handle(HttpRequest("GET", "/console/settings"))
     catalog_pages = {
         "domains": "Domain Catalog",
@@ -1055,6 +1056,15 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert "Universal Agent Runtime Profile Catalog" in profile_page.text_body
     assert "Profile Catalog" in profile_page.text_body
     assert "Active Domains" in profile_page.text_body
+    assert doctor_page.status_code == 200
+    assert doctor_page.headers["content-type"] == "text/html; charset=utf-8"
+    assert doctor_page.text_body is not None
+    assert "Universal Agent Runtime Doctor" in doctor_page.text_body
+    assert "Runtime Doctor" in doctor_page.text_body
+    assert "Doctor Checks" in doctor_page.text_body
+    assert "state_event_consistency" in doctor_page.text_body
+    assert "Operational Diagnostics" in doctor_page.text_body
+    assert "Runtime Configuration" in doctor_page.text_body
     for name, title in catalog_pages.items():
         response = catalog_responses[name]
         assert response.status_code == 200

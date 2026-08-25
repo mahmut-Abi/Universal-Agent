@@ -41,6 +41,7 @@ async def main() -> None:
     world = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/world"))
     domain = await app.handle(HttpRequest("GET", "/console/domains/kubernetes/0.2.0"))
     profiles = await app.handle(HttpRequest("GET", "/console/profiles"))
+    doctor = await app.handle(HttpRequest("GET", "/console/doctor"))
     evaluations = await app.handle(HttpRequest("GET", "/console/evaluations"))
     assert response.text_body is not None
     assert detail.text_body is not None
@@ -48,6 +49,7 @@ async def main() -> None:
     assert world.text_body is not None
     assert domain.text_body is not None
     assert profiles.text_body is not None
+    assert doctor.text_body is not None
     assert evaluations.text_body is not None
     print(f"status={response.status_code}")
     print(response.headers["content-type"])
@@ -58,6 +60,7 @@ async def main() -> None:
     print(f"world_status={world.status_code}")
     print(f"domain_status={domain.status_code}")
     print(f"profiles_status={profiles.status_code}")
+    print(f"doctor_status={doctor.status_code}")
     print(f"evaluations_status={evaluations.status_code}")
 
 

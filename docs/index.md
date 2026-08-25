@@ -20,7 +20,7 @@ across the roadmap layers below:
 | P3.5 | Runtime API, RuntimeService, agentd route adapter, standard-library HTTP bridge, CLI, persistence, cursor Event reads, bounded wait polling |
 | P3.6-P3.7 | Metrics, cost, structured logs, traces, OTLP-shaped export, audit, doctor, evaluation harness, replay, deterministic runtime mode |
 | P4 | Structured Multi-Agent task/result contracts, registry, delegation, conflict resolution, merge/evaluation foundations |
-| P5 | Read-only TUI, Web Console, Session/Evidence/World/Domain/Evaluation views |
+| P5 | Read-only TUI, Web Console, Session/Evidence/World/Domain/Doctor/Evaluation views |
 | P6 | Local queue, worker registry, worker, leased locks, scheduler, coordinator, health and snapshot primitives |
 | P7 | Domain Package registry/scaffold, Evaluation Dataset catalog, Profile Catalog, Ecosystem Registry metadata/install planning |
 

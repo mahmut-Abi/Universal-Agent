@@ -138,6 +138,8 @@ and `GET /console/sessions/{id}` returns a focused Session Detail page;
 Manager detail page, `GET /console/domains`, `/capabilities`, `/tools`, `/policies`,
 `/evaluators` and `/memory` return focused Runtime catalog pages, `GET /console/profiles`
 returns a read-only Profile Catalog page,
+`GET /console/doctor` returns a read-only Runtime Doctor page with Doctor checks,
+operational diagnostics and runtime settings,
 `GET /console/evaluations` returns the persisted Evaluation Console when `AgentdApp` is configured
 with a report directory, and `GET /console/settings` returns Runtime settings built from the same
 RuntimeService projections. `AgentdAuthPolicy` can optionally require `Authorization: Bearer ...`
@@ -301,10 +303,11 @@ event-sourcing models or production migration systems.
   and `render_web_console` / `render_web_sessions` / `render_web_session_detail` /
   `render_web_evidence_explorer` /
   `render_web_world_model_explorer` / `render_web_domain_detail` /
-  `render_web_catalog` / `render_web_profile_catalog` / `render_web_settings` produce
+  `render_web_catalog` / `render_web_profile_catalog` / `render_web_doctor` /
+  `render_web_settings` produce
   deterministic read-only HTML for `AgentdApp`, including
   Profile/Domain/Capability/Tool/Policy/Evaluator/Memory catalogs plus focused Session Detail,
-  Evidence, World Model, Domain Manager, Profile Catalog, Evaluation Console and Settings views
+  Evidence, World Model, Domain Manager, Profile Catalog, Runtime Doctor, Evaluation Console and Settings views
   without a web framework dependency or Kernel access.
 - P6 Distributed Runtime foundation: `WorkScheduler` maps session/task/action identity into stable local
   work kinds and idempotency keys; `InMemoryWorkQueue`, `FileWorkQueue` and `SQLiteWorkQueue` provide typed `WorkItem`, `WorkerLease` and

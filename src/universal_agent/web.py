@@ -8,7 +8,7 @@ from typing import Any
 
 from universal_agent.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
 from universal_agent.core import SessionId
-from universal_agent.operations import AuditRecordView
+from universal_agent.operations import AuditRecordView, DoctorReportView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
 from universal_agent.service import (
     CapabilityView,
@@ -163,6 +163,39 @@ def render_web_sessions(snapshot: WebConsoleSnapshot) -> str:
             _selected_session(snapshot.selected_session),
             _events(snapshot.events),
             _audit(snapshot.audit_records),
+            "</main>",
+            "</body>",
+            "</html>",
+        )
+    )
+
+
+def render_web_doctor(snapshot: WebConsoleSnapshot, doctor: DoctorReportView) -> str:
+    title = "Universal Agent Runtime Doctor"
+    return "\n".join(
+        (
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f"<title>{_html(title)}</title>",
+            f"<style>{_stylesheet()}</style>",
+            "</head>",
+            "<body>",
+            '<main class="shell">',
+            _doctor_hero(snapshot, doctor),
+            '<section class="grid cards" aria-label="Doctor summary">',
+            _metric_card("Status", doctor.status),
+            _metric_card("Checks", len(doctor.checks)),
+            _metric_card("Errors", _doctor_check_count(doctor, "error")),
+            _metric_card("Warnings", _doctor_check_count(doctor, "warn")),
+            _metric_card("OK", _doctor_check_count(doctor, "ok")),
+            _metric_card("Ready", _ready_text(snapshot)),
+            "</section>",
+            _doctor_checks(doctor),
+            _operational_diagnostics(snapshot),
+            _runtime_settings(snapshot),
             "</main>",
             "</body>",
             "</html>",
@@ -402,6 +435,7 @@ def _hero(snapshot: WebConsoleSnapshot) -> str:
             '<div class="status">',
             '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
+            '<a class="pill link" href="/console/doctor">Doctor</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
@@ -434,6 +468,7 @@ def _settings_hero(snapshot: WebConsoleSnapshot) -> str:
             '<a class="pill link" href="/console">Console</a>',
             '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
+            '<a class="pill link" href="/console/doctor">Doctor</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
@@ -460,6 +495,7 @@ def _domain_hero(snapshot: WebConsoleSnapshot, domain: DomainView | None) -> str
             '<a class="pill link" href="/console">Console</a>',
             '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
+            '<a class="pill link" href="/console/doctor">Doctor</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
@@ -488,6 +524,7 @@ def _profile_hero(snapshot: WebConsoleSnapshot) -> str:
             '<div class="status">',
             '<a class="pill link" href="/console">Console</a>',
             '<a class="pill link" href="/console/sessions">Sessions</a>',
+            '<a class="pill link" href="/console/doctor">Doctor</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
@@ -518,6 +555,7 @@ def _catalog_hero(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> str:
             '<a class="pill link" href="/console">Console</a>',
             '<a class="pill link" href="/console/sessions">Sessions</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
+            '<a class="pill link" href="/console/doctor">Doctor</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
@@ -635,8 +673,34 @@ def _sessions_hero(snapshot: WebConsoleSnapshot) -> str:
             '<div class="status">',
             '<a class="pill link" href="/console">Console</a>',
             '<a class="pill link" href="/console/profiles">Profiles</a>',
+            '<a class="pill link" href="/console/doctor">Doctor</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
+            f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
+            f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
+            "</div>",
+            "</section>",
+        )
+    )
+
+
+def _doctor_hero(snapshot: WebConsoleSnapshot, doctor: DoctorReportView) -> str:
+    ready_class = "ok" if snapshot.ready.ready else "warn"
+    doctor_class = _status_class(doctor.status)
+    return "\n".join(
+        (
+            '<section class="hero">',
+            "<div>",
+            "<p>Universal Agent Runtime</p>",
+            "<h1>Runtime Doctor</h1>",
+            f"<span>status={_html(doctor.status)} checks={len(doctor.checks)}</span>",
+            "</div>",
+            '<div class="status">',
+            '<a class="pill link" href="/console">Console</a>',
+            '<a class="pill link" href="/console/sessions">Sessions</a>',
+            '<a class="pill link" href="/console/settings">Settings</a>',
+            '<a class="pill link" href="/console/evaluations">Evaluations</a>',
+            f'<span class="pill {doctor_class}">Doctor: {_html(doctor.status)}</span>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
             "</div>",
@@ -675,6 +739,7 @@ def _session_nav(session: SessionView | None) -> str:
     links = [
         '<a class="pill link" href="/console">Console</a>',
         '<a class="pill link" href="/console/sessions">Sessions</a>',
+        '<a class="pill link" href="/console/doctor">Doctor</a>',
     ]
     if session is not None:
         session_id = _attr(session.session_id)
@@ -756,6 +821,30 @@ def _runtime_settings(snapshot: WebConsoleSnapshot) -> str:
         '<dl class="details">'
         + "".join(f"<dt>{_html(label)}</dt><dd>{_html(value)}</dd>" for label, value in items)
         + "</dl>",
+    )
+
+
+def _doctor_checks(doctor: DoctorReportView) -> str:
+    rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(check.name)}</td>",
+                (
+                    '<td><span class="severity '
+                    f'{_status_class(check.status)}">{_html(check.status)}</span></td>'
+                ),
+                f"<td>{_html(check.message)}</td>",
+                "</tr>",
+            )
+        )
+        for check in doctor.checks
+    ]
+    if not rows:
+        rows.append('<tr><td colspan="3">No doctor checks</td></tr>')
+    return _section(
+        "Doctor Checks",
+        _table(("Check", "Status", "Message"), tuple(rows)),
     )
 
 
@@ -1368,6 +1457,10 @@ def _selected_world_relation_count(explorer: SessionExplorerView | None) -> int:
     return len(explorer.world_relations)
 
 
+def _doctor_check_count(doctor: DoctorReportView, status: str) -> int:
+    return sum(1 for check in doctor.checks if check.status == status)
+
+
 def _risk_count(items: tuple[CapabilityView, ...] | tuple[ToolView, ...], risk: str) -> int:
     return sum(1 for item in items if item.risk.value == risk)
 
@@ -1530,6 +1623,14 @@ def _html(value: object) -> str:
 
 def _attr(value: object) -> str:
     return escape(str(value), quote=True)
+
+
+def _status_class(status: str) -> str:
+    if status == "error":
+        return "error"
+    if status == "warn":
+        return "warn"
+    return "ok"
 
 
 def _stylesheet() -> str:
@@ -1728,6 +1829,7 @@ __all__ = [
     "build_web_console_snapshot",
     "render_web_catalog",
     "render_web_console",
+    "render_web_doctor",
     "render_web_domain_detail",
     "render_web_evidence_explorer",
     "render_web_profile_catalog",
