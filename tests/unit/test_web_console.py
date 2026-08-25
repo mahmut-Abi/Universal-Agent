@@ -65,6 +65,7 @@ from universal_agent.web import (
     render_web_distributed,
     render_web_doctor,
     render_web_domain_detail,
+    render_web_domain_package_detail,
     render_web_evidence_explorer,
     render_web_profile_catalog,
     render_web_session_detail,
@@ -544,6 +545,26 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "allow-read" in domain_detail
     assert "workload-health" in domain_detail
     assert "kubernetes readiness" in domain_detail
+
+    domain_package_detail = render_web_domain_package_detail(
+        snapshot,
+        package_name="kubernetes",
+        package_version="0.2.0",
+    )
+
+    assert 'href="/console/domain-packages/kubernetes/0.2.0"' in rendered
+    assert "Universal Agent Runtime Domain Package" in domain_package_detail
+    assert "Domain Package" in domain_package_detail
+    assert "package=kubernetes@0.2.0" in domain_package_detail
+    assert "kubernetes.domain:build_domain" in domain_package_detail
+    assert "resources/runbook.md" in domain_package_detail
+    assert "schemas/workload.json" in domain_package_detail
+    assert "observability@1.0.0" in domain_package_detail
+    assert "Package Security" in domain_package_detail
+    assert "reversible" in domain_package_detail
+    assert "Matching Active Domains" in domain_package_detail
+    assert "Matching Profiles" in domain_package_detail
+    assert "production-operator" in domain_package_detail
 
     profile_catalog = render_web_profile_catalog(snapshot)
 

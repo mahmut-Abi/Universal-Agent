@@ -107,6 +107,7 @@ from universal_agent.web import (
     render_web_distributed,
     render_web_doctor,
     render_web_domain_detail,
+    render_web_domain_package_detail,
     render_web_evidence_explorer,
     render_web_profile_catalog,
     render_web_session_detail,
@@ -315,6 +316,38 @@ class AgentdApp:
                 return bad_request(str(exc))
             return text_response(
                 render_web_catalog(snapshot, console_catalog),
+                content_type="text/html; charset=utf-8",
+            )
+        console_package_name, console_package_version = _console_domain_package_route(path)
+        if console_package_name is not None:
+            if method != "GET":
+                return method_not_allowed(("GET",))
+            try:
+                snapshot = await build_web_console_snapshot(
+                    self._service,
+                    session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
+                    event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
+                )
+            except ValueError as exc:
+                return bad_request(str(exc))
+            package = _console_domain_package_view(
+                snapshot,
+                console_package_name,
+                console_package_version,
+            )
+            if package is None:
+                return not_found(
+                    _domain_package_not_found_message(
+                        console_package_name,
+                        console_package_version,
+                    )
+                )
+            return text_response(
+                render_web_domain_package_detail(
+                    snapshot,
+                    package_name=package.name,
+                    package_version=package.version,
+                ),
                 content_type="text/html; charset=utf-8",
             )
         console_domain_name, console_domain_version = _console_domain_route(path)
@@ -2390,6 +2423,24 @@ def _console_domain_route(path: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _console_domain_package_route(path: str) -> tuple[str | None, str | None]:
+    segments = tuple(segment for segment in path.split("/") if segment)
+    if (
+        len(segments) == 3
+        and segments[:2] == ("console", "domain-packages")
+        and segments[2].strip()
+    ):
+        return segments[2], None
+    if (
+        len(segments) == 4
+        and segments[:2] == ("console", "domain-packages")
+        and segments[2].strip()
+        and segments[3].strip()
+    ):
+        return segments[2], segments[3]
+    return None, None
+
+
 def _distributed_lock_lease_route(path: str) -> tuple[DistributedLockLeaseId | None, str]:
     segments = tuple(segment for segment in path.split("/") if segment)
     if (
@@ -2589,10 +2640,31 @@ def _console_domain_view(
     return matches[0]
 
 
+def _console_domain_package_view(
+    snapshot: WebConsoleSnapshot,
+    name: str,
+    version: str | None,
+) -> DomainPackageView | None:
+    matches = tuple(
+        package
+        for package in snapshot.domain_packages
+        if package.name == name and (version is None or package.version == version)
+    )
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
 def _domain_not_found_message(name: str, version: str | None) -> str:
     if version is None:
         return f"domain not found or ambiguous: {name}"
     return f"domain not found: {name}@{version}"
+
+
+def _domain_package_not_found_message(name: str, version: str | None) -> str:
+    if version is None:
+        return f"domain package not found or ambiguous: {name}"
+    return f"domain package not found: {name}@{version}"
 
 
 def _console_explorer_renderer(

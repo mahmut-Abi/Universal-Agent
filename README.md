@@ -138,7 +138,8 @@ and `GET /console/sessions/{id}` returns a focused Session Detail page;
 `GET /console/evidence`, `/world`, `/console/sessions/{id}/evidence` and
 `/console/sessions/{id}/world` return focused Evidence and World Model Explorer pages,
 `GET /console/domains/{name}/{version}` returns a read-only Domain
-Manager detail page, `GET /console/domains`, `/domain-packages`, `/capabilities`, `/tools`, `/policies`,
+Manager detail page, `GET /console/domain-packages/{name}/{version}` returns a read-only Domain
+Package detail page, `GET /console/domains`, `/domain-packages`, `/capabilities`, `/tools`, `/policies`,
 `/evaluators` and `/memory` return focused Runtime catalog pages, `GET /console/profiles`
 returns a read-only Profile Catalog page,
 `GET /console/doctor` returns a read-only Runtime Doctor page with Doctor checks,
@@ -311,11 +312,12 @@ detect accidental split state/event wiring. These adapters are local persistence
   and `render_web_console` / `render_web_sessions` / `render_web_session_detail` /
   `render_web_evidence_explorer` /
   `render_web_world_model_explorer` / `render_web_domain_detail` /
+  `render_web_domain_package_detail` /
   `render_web_catalog` / `render_web_profile_catalog` / `render_web_doctor` /
   `render_web_distributed` / `render_web_settings` produce
   deterministic read-only HTML for `AgentdApp`, including
   Domain Package/Profile/Domain/Capability/Tool/Policy/Evaluator/Memory catalogs, including Domain Package resource metadata, plus focused Session Detail,
-  Evidence, World Model, Domain Manager, Profile Catalog, Runtime Doctor,
+  Evidence, World Model, Domain Manager, Domain Package detail, Profile Catalog, Runtime Doctor,
   Distributed Runtime, Evaluation Console and Settings views
   without a web framework dependency or Kernel access.
 - P6 Distributed Runtime foundation: `WorkScheduler` maps session/task/action identity into stable local

@@ -40,6 +40,7 @@ async def main() -> None:
     evidence = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/evidence"))
     world = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/world"))
     domain = await app.handle(HttpRequest("GET", "/console/domains/kubernetes/0.2.0"))
+    packages = await app.handle(HttpRequest("GET", "/console/domain-packages"))
     profiles = await app.handle(HttpRequest("GET", "/console/profiles"))
     doctor = await app.handle(HttpRequest("GET", "/console/doctor"))
     distributed = await app.handle(HttpRequest("GET", "/console/distributed"))
@@ -49,6 +50,7 @@ async def main() -> None:
     assert evidence.text_body is not None
     assert world.text_body is not None
     assert domain.text_body is not None
+    assert packages.text_body is not None
     assert profiles.text_body is not None
     assert doctor.text_body is not None
     assert distributed.text_body is not None
@@ -61,6 +63,7 @@ async def main() -> None:
     print(f"evidence_status={evidence.status_code}")
     print(f"world_status={world.status_code}")
     print(f"domain_status={domain.status_code}")
+    print(f"packages_status={packages.status_code}")
     print(f"profiles_status={profiles.status_code}")
     print(f"doctor_status={doctor.status_code}")
     print(f"distributed_status={distributed.status_code}")

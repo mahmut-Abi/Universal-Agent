@@ -365,6 +365,47 @@ def render_web_domain_detail(
     )
 
 
+def render_web_domain_package_detail(
+    snapshot: WebConsoleSnapshot,
+    *,
+    package_name: str,
+    package_version: str | None = None,
+) -> str:
+    package = _selected_domain_package(snapshot, package_name, package_version)
+    title = "Universal Agent Runtime Domain Package"
+    return "\n".join(
+        (
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f"<title>{_html(title)}</title>",
+            f"<style>{_stylesheet()}</style>",
+            "</head>",
+            "<body>",
+            '<main class="shell">',
+            _domain_package_hero(snapshot, package),
+            '<section class="grid cards" aria-label="Domain package summary">',
+            _metric_card("Capabilities", _package_capability_count(package)),
+            _metric_card("Tools", _package_tool_count(package)),
+            _metric_card("Policies", _package_policy_count(package)),
+            _metric_card("Evaluators", _package_evaluator_count(package)),
+            _metric_card("Resources", _package_resource_count(package)),
+            _metric_card("Dependencies", _package_dependency_count(package)),
+            "</section>",
+            _domain_package_details(package),
+            _domain_package_resources(package),
+            _domain_package_security(package),
+            _domain_package_active_domains(snapshot, package),
+            _domain_package_profiles(snapshot, package),
+            "</main>",
+            "</body>",
+            "</html>",
+        )
+    )
+
+
 def render_web_profile_catalog(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Profile Catalog"
     return "\n".join(
@@ -582,6 +623,37 @@ def _profile_hero(snapshot: WebConsoleSnapshot) -> str:
             '<a class="pill link" href="/console/doctor">Doctor</a>',
             '<a class="pill link" href="/console/distributed">Distributed</a>',
             '<a class="pill link" href="/console/evaluations">Evaluations</a>',
+            '<a class="pill link" href="/console/settings">Settings</a>',
+            f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
+            f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
+            "</div>",
+            "</section>",
+        )
+    )
+
+
+def _domain_package_hero(
+    snapshot: WebConsoleSnapshot,
+    package: DomainPackageView | None,
+) -> str:
+    ready_class = "ok" if snapshot.ready.ready else "warn"
+    package_text = "No selected package"
+    if package is not None:
+        package_text = f"{package.name}@{package.version}"
+    return "\n".join(
+        (
+            '<section class="hero">',
+            "<div>",
+            "<p>Universal Agent Runtime</p>",
+            "<h1>Domain Package</h1>",
+            f"<span>package={_html(package_text)}</span>",
+            "</div>",
+            '<div class="status">',
+            '<a class="pill link" href="/console">Console</a>',
+            '<a class="pill link" href="/console/domain-packages">Packages</a>',
+            '<a class="pill link" href="/console/domains">Domains</a>',
+            '<a class="pill link" href="/console/profiles">Profiles</a>',
+            '<a class="pill link" href="/console/doctor">Doctor</a>',
             '<a class="pill link" href="/console/settings">Settings</a>',
             f'<span class="pill ok">Health: {_html(snapshot.health.status)}</span>',
             f'<span class="pill {ready_class}">Ready: {_ready_text(snapshot)}</span>',
@@ -1268,7 +1340,11 @@ def _domain_packages(packages: tuple[DomainPackageView, ...]) -> str:
         "\n".join(
             (
                 "<tr>",
-                f"<td>{_html(package.name)}@{_html(package.version)}</td>",
+                (
+                    '<td><a href="/console/domain-packages/'
+                    f'{_attr(package.name)}/{_attr(package.version)}">'
+                    f"{_html(package.name)}@{_html(package.version)}</a></td>"
+                ),
                 f"<td>{_html(package.entrypoint or 'none')}</td>",
                 f"<td>{_html(', '.join(package.capability_names) or 'none')}</td>",
                 f"<td>{_html(_domain_package_dependencies(package))}</td>",
@@ -1994,6 +2070,30 @@ def _domain_package_dependency_count(snapshot: WebConsoleSnapshot) -> int:
     return sum(len(package.dependencies) for package in snapshot.domain_packages)
 
 
+def _package_capability_count(package: DomainPackageView | None) -> int:
+    return 0 if package is None else len(package.capability_names)
+
+
+def _package_tool_count(package: DomainPackageView | None) -> int:
+    return 0 if package is None else len(package.tool_names)
+
+
+def _package_policy_count(package: DomainPackageView | None) -> int:
+    return 0 if package is None else len(package.policy_names)
+
+
+def _package_evaluator_count(package: DomainPackageView | None) -> int:
+    return 0 if package is None else len(package.evaluator_names)
+
+
+def _package_resource_count(package: DomainPackageView | None) -> int:
+    return 0 if package is None else len(package.resource_names)
+
+
+def _package_dependency_count(package: DomainPackageView | None) -> int:
+    return 0 if package is None else len(package.dependencies)
+
+
 def _domain_package_required_tool_count(snapshot: WebConsoleSnapshot) -> int:
     required_tools = {
         tool_name for package in snapshot.domain_packages for tool_name in package.required_tools
@@ -2006,6 +2106,157 @@ def _domain_package_resource_count(snapshot: WebConsoleSnapshot) -> int:
         resource for package in snapshot.domain_packages for resource in package.resource_names
     }
     return len(resources)
+
+
+def _selected_domain_package(
+    snapshot: WebConsoleSnapshot,
+    package_name: str,
+    package_version: str | None,
+) -> DomainPackageView | None:
+    matches = tuple(
+        package
+        for package in snapshot.domain_packages
+        if package.name == package_name
+        and (package_version is None or package.version == package_version)
+    )
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def _domain_package_details(package: DomainPackageView | None) -> str:
+    if package is None:
+        return _section("Domain Package", '<p class="empty">No selected domain package</p>')
+    items = (
+        ("Package", f"{package.name}@{package.version}"),
+        ("Description", package.description),
+        ("Author", package.author or "none"),
+        ("Entrypoint", package.entrypoint or "none"),
+        ("Tags", _string_tuple_text(package.tags)),
+        ("Ontology", _string_tuple_text(package.ontology)),
+        ("Capabilities", _string_tuple_text(package.capability_names)),
+        ("Tools", _string_tuple_text(package.tool_names)),
+        ("Policies", _string_tuple_text(package.policy_names)),
+        ("Procedures", _string_tuple_text(package.procedure_names)),
+        ("Knowledge", _string_tuple_text(package.knowledge_names)),
+        ("Evaluators", _string_tuple_text(package.evaluator_names)),
+        ("Context Providers", _string_tuple_text(package.context_provider_names)),
+        ("Prompts", _string_tuple_text(package.prompt_names)),
+        ("Dependencies", _domain_package_dependencies(package)),
+        ("Required Tools", _string_tuple_text(package.required_tools)),
+        ("Runtime API Compatibility", package.runtime_api_compatibility or "none"),
+        ("Domain API Compatibility", package.domain_api_compatibility or "none"),
+        ("Root Path", package.root_path),
+        ("Manifest Path", package.manifest_path),
+    )
+    return _section(
+        "Domain Package",
+        '<dl class="details">'
+        + "".join(f"<dt>{_html(label)}</dt><dd>{_html(value)}</dd>" for label, value in items)
+        + "</dl>",
+    )
+
+
+def _domain_package_resources(package: DomainPackageView | None) -> str:
+    rows = []
+    if package is not None:
+        rows = [
+            "\n".join(("<tr>", f"<td>{_html(resource)}</td>", "</tr>"))
+            for resource in package.resource_names
+        ]
+    if not rows:
+        rows.append("<tr><td>No package resources</td></tr>")
+    return _section("Package Resources", _table(("Resource",), tuple(rows)))
+
+
+def _domain_package_security(package: DomainPackageView | None) -> str:
+    if package is None:
+        return _section("Package Security", '<p class="empty">No package security metadata</p>')
+    items = (
+        ("Security Metadata", _value_text(package.security)),
+        ("Required Tools", _string_tuple_text(package.required_tools)),
+        ("Runtime API Compatibility", package.runtime_api_compatibility or "none"),
+        ("Domain API Compatibility", package.domain_api_compatibility or "none"),
+    )
+    return _section(
+        "Package Security",
+        '<dl class="details">'
+        + "".join(f"<dt>{_html(label)}</dt><dd>{_html(value)}</dd>" for label, value in items)
+        + "</dl>",
+    )
+
+
+def _domain_package_active_domains(
+    snapshot: WebConsoleSnapshot,
+    package: DomainPackageView | None,
+) -> str:
+    if package is None:
+        return _section("Matching Active Domains", '<p class="empty">No selected package</p>')
+    matches = tuple(
+        domain
+        for domain in snapshot.domains
+        if domain.name == package.name and domain.version == package.version
+    )
+    return _section("Matching Active Domains", _domain_rows(matches))
+
+
+def _domain_package_profiles(
+    snapshot: WebConsoleSnapshot,
+    package: DomainPackageView | None,
+) -> str:
+    if package is None:
+        return _section("Matching Profiles", '<p class="empty">No selected package</p>')
+    matches = tuple(
+        profile
+        for profile in snapshot.profiles
+        if any(
+            identity.name == package.name and identity.version == package.version
+            for identity in profile.domains
+        )
+    )
+    rows = [
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(profile.name)}</td>",
+                f"<td>{_html(profile.version)}</td>",
+                f"<td>{_html(profile.domain_name)}@{_html(profile.domain_version)}</td>",
+                f"<td>{_html(_profile_domain_text(profile))}</td>",
+                f"<td>{_html(profile.description)}</td>",
+                "</tr>",
+            )
+        )
+        for profile in matches
+    ]
+    if not rows:
+        rows.append('<tr><td colspan="5">No matching profiles</td></tr>')
+    return _section(
+        "Matching Profiles",
+        _table(("Profile", "Version", "Primary Domain", "Domains", "Description"), tuple(rows)),
+    )
+
+
+def _domain_rows(domains: tuple[DomainView, ...]) -> str:
+    rows = [
+        "\n".join(
+            (
+                "<tr>",
+                (
+                    '<td><a href="/console/domains/'
+                    f'{_attr(domain.name)}/{_attr(domain.version)}">'
+                    f"{_html(domain.name)}@{_html(domain.version)}</a></td>"
+                ),
+                f"<td>{'yes' if domain.primary else 'no'}</td>",
+                f"<td>{len(domain.capability_names)}</td>",
+                f"<td>{len(domain.evaluator_names)}</td>",
+                "</tr>",
+            )
+        )
+        for domain in domains
+    ]
+    if not rows:
+        rows.append('<tr><td colspan="4">No matching active domains</td></tr>')
+    return _table(("Domain", "Primary", "Capabilities", "Evaluators"), tuple(rows))
 
 
 def _enum_tuple_text(values: tuple[Any, ...]) -> str:
@@ -2237,6 +2488,7 @@ __all__ = [
     "render_web_distributed",
     "render_web_doctor",
     "render_web_domain_detail",
+    "render_web_domain_package_detail",
     "render_web_evidence_explorer",
     "render_web_profile_catalog",
     "render_web_session_detail",

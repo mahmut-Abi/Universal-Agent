@@ -982,6 +982,7 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     )
     top_world_page = await app.handle(HttpRequest("GET", f"/console/world?session_id={session_id}"))
     domain_page = await app.handle(HttpRequest("GET", "/console/domains/kubernetes/0.2.0"))
+    package_page = await app.handle(HttpRequest("GET", "/console/domain-packages/kubernetes/0.2.0"))
     profile_page = await app.handle(HttpRequest("GET", "/console/profiles"))
     doctor_page = await app.handle(HttpRequest("GET", "/console/doctor"))
     distributed_page = await app.handle(HttpRequest("GET", "/console/distributed"))
@@ -1000,6 +1001,12 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     }
     catalog_method = await app.handle(HttpRequest("POST", "/console/tools"))
     missing_domain_page = await app.handle(HttpRequest("GET", "/console/domains/missing/0.1.0"))
+    missing_package_page = await app.handle(
+        HttpRequest("GET", "/console/domain-packages/missing/0.1.0")
+    )
+    package_method = await app.handle(
+        HttpRequest("POST", "/console/domain-packages/kubernetes/0.2.0")
+    )
     unknown_detail_page = await app.handle(
         HttpRequest("GET", f"/console/sessions/{session_id}/unknown")
     )
@@ -1066,6 +1073,18 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert "domain=kubernetes@0.2.0" in domain_page.text_body
     assert "inspect_workload" in domain_page.text_body
     assert "kubernetes_inspect_workload" in domain_page.text_body
+    assert package_page.status_code == 200
+    assert package_page.text_body is not None
+    assert "Universal Agent Runtime Domain Package" in package_page.text_body
+    assert "package=kubernetes@0.2.0" in package_page.text_body
+    assert (
+        "universal_agent.domains.kubernetes:KubernetesRemediationDomain" in package_page.text_body
+    )
+    assert "Package Resources" in package_page.text_body
+    assert "resources/runbook.md" in package_page.text_body
+    assert "Package Security" in package_page.text_body
+    assert "reversible" in package_page.text_body
+    assert "Matching Active Domains" in package_page.text_body
     assert profile_page.status_code == 200
     assert profile_page.text_body is not None
     assert "Universal Agent Runtime Profile Catalog" in profile_page.text_body
@@ -1101,6 +1120,8 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert "Configured Domains" in settings_page.text_body
     assert "kubernetes" in settings_page.text_body
     assert missing_domain_page.status_code == 404
+    assert missing_package_page.status_code == 404
+    assert package_method.status_code == 405
     assert unknown_detail_page.status_code == 404
     assert missing.status_code == 404
     assert missing_detail.status_code == 404
