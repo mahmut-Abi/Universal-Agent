@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hmac
 import json
 from collections.abc import Callable, Mapping, Sequence
@@ -922,11 +923,7 @@ class AgentdApp:
             if method != "GET":
                 return method_not_allowed(("GET",))
             try:
-                batch = await self._service.stream_events(
-                    session_id,
-                    after_event_id=_optional_event_cursor(request.path),
-                    limit=_optional_positive_int_query(request.path, "limit"),
-                )
+                batch = await _stream_events_for_sse(self._service, session_id, request.path)
                 return sse_event_batch_response(batch)
             except StateNotFoundError as exc:
                 return not_found(str(exc))
@@ -1249,6 +1246,39 @@ def session_batch_body(batch: RuntimeSessionBatch) -> JsonMapping:
             "next_cursor": batch.next_cursor,
         }
     )
+
+
+async def _stream_events_for_sse(
+    service: RuntimeService,
+    session_id: SessionId,
+    path: str,
+) -> RuntimeEventBatch:
+    after_event_id = _optional_event_cursor(path)
+    limit = _optional_positive_int_query(path, "limit")
+    if not (_optional_bool_query(path, "wait") or False):
+        return await service.stream_events(session_id, after_event_id=after_event_id, limit=limit)
+
+    timeout_seconds = _optional_float_query(
+        path,
+        "timeout_seconds",
+        default=10.0,
+        minimum=0.0,
+        maximum=30.0,
+    )
+    poll_interval_seconds = _optional_float_query(
+        path,
+        "poll_interval_seconds",
+        default=0.25,
+        minimum=0.001,
+        maximum=5.0,
+    )
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_seconds
+    batch = await service.stream_events(session_id, after_event_id=after_event_id, limit=limit)
+    while not batch.events and loop.time() < deadline:
+        await asyncio.sleep(min(poll_interval_seconds, max(0.0, deadline - loop.time())))
+        batch = await service.stream_events(session_id, after_event_id=after_event_id, limit=limit)
+    return batch
 
 
 def sse_event_batch_response(batch: RuntimeEventBatch) -> HttpResponse:
@@ -2164,6 +2194,38 @@ def _optional_session_id_query(path: str) -> SessionId | None:
     if value is None:
         return None
     return SessionId(value)
+
+
+def _optional_bool_query(path: str, key: str) -> bool | None:
+    value = _optional_query_value(path, key)
+    if value is None:
+        return None
+    normalized = value.lower()
+    if normalized in {"true", "1", "yes"}:
+        return True
+    if normalized in {"false", "0", "no"}:
+        return False
+    raise ValueError(f"{key} must be a boolean")
+
+
+def _optional_float_query(
+    path: str,
+    key: str,
+    *,
+    default: float,
+    minimum: float,
+    maximum: float,
+) -> float:
+    value = _optional_query_value(path, key)
+    if value is None:
+        return default
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise ValueError(f"{key} must be a number") from exc
+    if parsed < minimum or parsed > maximum:
+        raise ValueError(f"{key} must be between {minimum:g} and {maximum:g}")
+    return parsed
 
 
 def _optional_positive_int_query(path: str, key: str) -> int | None:

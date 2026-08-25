@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -2092,6 +2093,70 @@ async def test_agentd_events_stream_route_projects_cursor_batch_as_sse() -> None
     assert "event: GoalCreated\n" in response.text_body
     assert "data: " in response.text_body
     assert f": next_cursor={response.body['next_cursor']}\n\n" in response.text_body
+
+    invalid_wait = await app.handle(
+        HttpRequest("GET", f"/v1/sessions/{session_id}/events/stream?wait=maybe")
+    )
+    invalid_timeout = await app.handle(
+        HttpRequest(
+            "GET",
+            f"/v1/sessions/{session_id}/events/stream?wait=true&timeout_seconds=31",
+        )
+    )
+
+    assert invalid_wait.status_code == 400
+    assert invalid_wait.body["error"] == {
+        "code": "bad_request",
+        "message": "wait must be a boolean",
+    }
+    assert invalid_timeout.status_code == 400
+    assert invalid_timeout.body["error"] == {
+        "code": "bad_request",
+        "message": "timeout_seconds must be between 0 and 30",
+    }
+
+
+@pytest.mark.asyncio
+async def test_agentd_events_stream_waits_for_new_session_events() -> None:
+    service, _ = build_service([wait(), inspect_workload(), finish()])
+    app = AgentdApp(service)
+    created = await app.handle(HttpRequest("POST", "/v1/sessions", goal_submission_body()))
+    result = created.body["result"]
+    assert isinstance(result, dict)
+    session_id = result["session_id"]
+    assert isinstance(session_id, str)
+    events_response = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/events"))
+    event_items = events_response.body["events"]
+    assert isinstance(event_items, list)
+    last_event = event_items[-1]
+    assert isinstance(last_event, dict)
+    last_cursor = last_event["event_id"]
+    assert isinstance(last_cursor, str)
+
+    wait_task = asyncio.create_task(
+        app.handle(
+            HttpRequest(
+                "GET",
+                (
+                    f"/v1/sessions/{session_id}/events/stream?after={last_cursor}"
+                    "&wait=true&timeout_seconds=1&poll_interval_seconds=0.001"
+                ),
+            )
+        )
+    )
+    await asyncio.sleep(0.01)
+    resumed = await app.handle(HttpRequest("POST", f"/v1/sessions/{session_id}/resume"))
+    response = await wait_task
+
+    assert resumed.status_code == 200
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/event-stream"
+    assert response.text_body is not None
+    assert (
+        "event: StateUpdated\n" in response.text_body
+        or "event: GoalCompleted\n" in response.text_body
+    )
+    assert response.body["events"]
 
 
 @pytest.mark.asyncio
