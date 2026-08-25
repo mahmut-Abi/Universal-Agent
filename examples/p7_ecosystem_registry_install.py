@@ -18,6 +18,10 @@ def write_json(path: Path, payload: dict[str, object]) -> None:
 
 
 def write_domain_package(root: Path, name: str) -> None:
+    (root / "resources").mkdir(parents=True, exist_ok=True)
+    (root / "resources" / "runbook.md").touch()
+    (root / "schemas").mkdir(parents=True, exist_ok=True)
+    (root / "schemas" / "workload.json").touch()
     write_json(
         root / "manifest.json",
         {
