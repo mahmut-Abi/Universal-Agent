@@ -69,6 +69,7 @@ from universal_agent.distributed import (
 )
 from universal_agent.domain import (
     AmbiguousDomainPackageError,
+    BaseDomainRuntime,
     DomainLoader,
     DomainPackage,
     DomainPackageCheck,
@@ -349,6 +350,7 @@ __all__ = [
     "AmbiguousEcosystemRegistryItemError",
     "AmbiguousEvaluationDatasetError",
     "AuditRecordView",
+    "BaseDomainRuntime",
     "ConflictResolution",
     "ConflictResolutionStatus",
     "Decision",

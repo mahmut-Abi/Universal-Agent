@@ -343,6 +343,8 @@ detect accidental split state/event wiring. These adapters are local persistence
   checks for local package metadata so CLI/CI can catch missing package dependencies before
   activation; `agent domain-packages verify --local-paths` additionally re-checks local package
   root, manifest integrity and declared resource existence when callers need to detect path drift.
+  `BaseDomainRuntime` provides a lightweight Domain SDK base class with default empty optional
+  hooks while keeping manifest/capability/tool/evaluator contracts explicit.
   `DomainPackageScaffoldSpec` and `scaffold_domain_package` provide the first Domain SDK surface for
   generating a standard package layout and validated manifest from typed metadata, including
   package-local resource parents for runbooks, schemas, templates and other declarative assets.

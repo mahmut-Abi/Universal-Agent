@@ -77,6 +77,50 @@ class DomainRuntime(Protocol):
     def memories(self) -> tuple[MemoryRecord, ...]: ...
 
 
+class BaseDomainRuntime:
+    """Convenience base class for Domain SDK implementations.
+
+    Domain authors must provide the semantic contract that defines their Domain:
+    manifest, capabilities, tools and evaluators. Optional runtime extension
+    hooks default to empty tuples so new Domains do not need to implement every
+    internal integration point up front.
+    """
+
+    @property
+    def manifest(self) -> DomainManifest:
+        raise NotImplementedError("DomainRuntime.manifest must be implemented")
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        raise NotImplementedError("DomainRuntime.capabilities must be implemented")
+
+    def tools(self) -> tuple[Tool, ...]:
+        raise NotImplementedError("DomainRuntime.tools must be implemented")
+
+    def policies(self) -> tuple[Policy, ...]:
+        return ()
+
+    def evaluators(self) -> tuple[Evaluator, ...]:
+        raise NotImplementedError("DomainRuntime.evaluators must be implemented")
+
+    def context_providers(self) -> tuple[DomainContextProvider, ...]:
+        return ()
+
+    def evidence_extractors(self) -> tuple[EvidenceExtractor, ...]:
+        return ()
+
+    def world_updaters(self) -> tuple[WorldUpdater, ...]:
+        return ()
+
+    def task_expanders(self) -> tuple[TaskExpander, ...]:
+        return ()
+
+    def recovery_rules(self) -> tuple[RecoveryRule, ...]:
+        return ()
+
+    def memories(self) -> tuple[MemoryRecord, ...]:
+        return ()
+
+
 @dataclass(frozen=True, slots=True)
 class ActiveDomain:
     manifest: DomainManifest

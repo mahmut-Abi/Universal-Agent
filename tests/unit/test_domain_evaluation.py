@@ -8,6 +8,7 @@ from universal_agent.core import (
     CapabilityCategory,
     CapabilityDefinition,
     ContextFragment,
+    DomainIdentity,
     DomainManifest,
     DomainMetadata,
     EvaluationContext,
@@ -28,6 +29,7 @@ from universal_agent.core import (
 )
 from universal_agent.domain import (
     AmbiguousDomainError,
+    BaseDomainRuntime,
     DomainComposition,
     DomainLoader,
     DomainManager,
@@ -106,6 +108,30 @@ class TestDomain:
 
     def memories(self) -> tuple[MemoryRecord, ...]:
         return ()
+
+
+class MinimalSDKDomain(BaseDomainRuntime):
+    manifest = DomainManifest(
+        "agent.nantian.dev/v1alpha1",
+        "Domain",
+        DomainMetadata("sdk", "1.0.0", "SDK domain"),
+        ("Thing",),
+        ("inspect",),
+        ("criteria",),
+    )
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        return (CapabilityDefinition("inspect", "Inspect", CapabilityCategory.OBSERVATION),)
+
+    def tools(self) -> tuple[Tool, ...]:
+        return (TestTool(),)
+
+    def evaluators(self) -> tuple[Evaluator, ...]:
+        return (CriteriaEvaluator(),)
+
+
+class IncompleteSDKDomain(BaseDomainRuntime):
+    pass
 
 
 class NamedTool:
@@ -312,6 +338,25 @@ class RoutedDomain:
 
     def memories(self) -> tuple[MemoryRecord, ...]:
         return ()
+
+
+def test_base_domain_runtime_defaults_optional_extension_hooks() -> None:
+    loaded = DomainLoader().load(MinimalSDKDomain())
+
+    assert loaded.identity == DomainIdentity("sdk", "1.0.0")
+    assert loaded.policies == ()
+    assert loaded.context_providers == ()
+    assert loaded.evidence_extractors == ()
+    assert loaded.world_updaters == ()
+    assert loaded.task_expanders == ()
+    assert loaded.recovery_rules == ()
+    assert loaded.action_argument_providers == ()
+    assert loaded.memories == ()
+
+
+def test_base_domain_runtime_requires_core_contract_methods() -> None:
+    with pytest.raises(NotImplementedError, match="manifest"):
+        _ = IncompleteSDKDomain().manifest
 
 
 def test_domain_loader_activates_structured_domain() -> None:
