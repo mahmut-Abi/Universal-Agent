@@ -337,7 +337,9 @@ event-sourcing models or production migration systems.
   instances by read-only, allowed-profile and permission constraints; `AgentOrchestrator` delegates
   only through registered executors, marks instances busy
   while they run, and enforces parent
-  child-count and duration limits. It can also execute a dependency-aware batch with structured
+  child-count, duration and reported-cost limits. `RuntimeAgentExecutor` projects child runtime
+  `ModelUsageRecorded` events into the structured `AgentTaskResult` usage contract so `max_cost`
+  can be checked by the parent orchestrator. It can also execute a dependency-aware batch with structured
   spec/result payload helpers, running ready child tasks concurrently while rejecting downstream
   tasks whose dependencies fail. `RuntimeAgentExecutor` adapts a target `RuntimeAPI` without creating
   a second Agent loop or bypassing the target Runtime's policy/evaluation path.
@@ -440,6 +442,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p4_multi_agent_contract.py
 .venv/bin/python examples/p4_multi_agent_batch_delegation.py
 .venv/bin/python examples/p4_multi_agent_timeout.py
+.venv/bin/python examples/p4_multi_agent_cost_limit.py
 .venv/bin/python examples/p4_multi_agent_lifecycle.py
 .venv/bin/python examples/p4_multi_agent_registry_snapshot.py
 .venv/bin/python examples/p4_multi_agent_conflict_resolution.py

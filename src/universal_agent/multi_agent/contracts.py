@@ -94,6 +94,31 @@ class AgentTaskRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentTaskUsage:
+    model_call_count: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_cost: float = 0.0
+    currency: str = "USD"
+
+    def __post_init__(self) -> None:
+        if self.model_call_count < 0:
+            raise ValueError("agent task usage model_call_count must not be negative")
+        if self.input_tokens < 0:
+            raise ValueError("agent task usage input_tokens must not be negative")
+        if self.output_tokens < 0:
+            raise ValueError("agent task usage output_tokens must not be negative")
+        if self.estimated_cost < 0:
+            raise ValueError("agent task usage estimated_cost must not be negative")
+        if not self.currency.strip():
+            raise ValueError("agent task usage currency must not be empty")
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+
+@dataclass(frozen=True, slots=True)
 class AgentTaskResult:
     task_id: AgentTaskId
     status: AgentTaskResultStatus
@@ -103,6 +128,7 @@ class AgentTaskResult:
     session_id: SessionId | None = None
     error_code: ErrorCode | None = None
     api_version: str = AGENT_TASK_API_VERSION
+    usage: AgentTaskUsage = field(default_factory=AgentTaskUsage)
 
     def __post_init__(self) -> None:
         if self.api_version != AGENT_TASK_API_VERSION:
@@ -156,6 +182,14 @@ def agent_task_result_payload(result: AgentTaskResult) -> JsonMapping:
             "reason": result.reason,
             "session_id": _optional_str(result.session_id),
             "error_code": None if result.error_code is None else result.error_code.value,
+            "usage": {
+                "model_call_count": result.usage.model_call_count,
+                "input_tokens": result.usage.input_tokens,
+                "output_tokens": result.usage.output_tokens,
+                "total_tokens": result.usage.total_tokens,
+                "estimated_cost": result.usage.estimated_cost,
+                "currency": result.usage.currency,
+            },
         }
     )
 
@@ -192,6 +226,7 @@ def decode_agent_task_result(payload: JsonMapping) -> AgentTaskResult:
         session_id=_optional_session_id(payload.get("session_id")),
         error_code=_optional_error_code(payload.get("error_code")),
         api_version=_string(payload.get("api_version"), "api_version", AGENT_TASK_API_VERSION),
+        usage=_decode_usage(_mapping(payload.get("usage"), "usage", default_empty=True)),
     )
 
 
@@ -211,6 +246,20 @@ def _decode_constraints(payload: JsonMapping) -> AgentTaskConstraints:
             payload.get("required_permissions"), "constraints.required_permissions"
         ),
     )
+
+
+def _decode_usage(payload: JsonMapping) -> AgentTaskUsage:
+    total_tokens = _optional_int(payload.get("total_tokens"), "usage.total_tokens")
+    usage = AgentTaskUsage(
+        model_call_count=_int(payload.get("model_call_count"), "usage.model_call_count", 0),
+        input_tokens=_int(payload.get("input_tokens"), "usage.input_tokens", 0),
+        output_tokens=_int(payload.get("output_tokens"), "usage.output_tokens", 0),
+        estimated_cost=_float(payload.get("estimated_cost"), "usage.estimated_cost", 0.0),
+        currency=_string(payload.get("currency"), "usage.currency", "USD"),
+    )
+    if total_tokens is not None and total_tokens != usage.total_tokens:
+        raise ValueError("usage.total_tokens does not match input_tokens + output_tokens")
+    return usage
 
 
 def _agent_task_id(goal: str) -> str:
@@ -271,6 +320,22 @@ def _optional_float(value: object, field_name: str) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{field_name} must be a number")
     return float(value)
+
+
+def _float(value: object, field_name: str, default: float) -> float:
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field_name} must be a number")
+    return float(value)
+
+
+def _optional_int(value: object, field_name: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field_name} must be an integer")
+    return value
 
 
 def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:

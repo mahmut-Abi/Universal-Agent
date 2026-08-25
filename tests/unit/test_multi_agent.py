@@ -29,6 +29,7 @@ from universal_agent.multi_agent import (
     AgentTaskRequest,
     AgentTaskResult,
     AgentTaskResultStatus,
+    AgentTaskUsage,
     NoEligibleAgentError,
     agent_delegation_batch_result_payload,
     agent_delegation_spec_payload,
@@ -102,6 +103,27 @@ class SlowExecutor:
             status=AgentTaskResultStatus.COMPLETED,
             result=immutable_json({"slow": True}),
             reason="slow executor completed",
+        )
+
+
+class CostReportingExecutor:
+    def __init__(self, estimated_cost: float) -> None:
+        self.estimated_cost = estimated_cost
+
+    async def execute_agent_task(self, request: AgentTaskRequest) -> AgentTaskResult:
+        await asyncio.sleep(0)
+        return AgentTaskResult(
+            task_id=request.task_id,
+            status=AgentTaskResultStatus.COMPLETED,
+            result=immutable_json({"cost_checked": True}),
+            evidence_ids=(EvidenceId("evidence-cost"),),
+            reason="cost reported",
+            usage=AgentTaskUsage(
+                model_call_count=2,
+                input_tokens=50,
+                output_tokens=10,
+                estimated_cost=self.estimated_cost,
+            ),
         )
 
 
@@ -224,6 +246,12 @@ def test_agent_task_result_payload_preserves_evidence_contract() -> None:
         evidence_ids=(EvidenceId("evidence-denied"),),
         reason="policy denied",
         error_code=ErrorCode.POLICY_DENIED,
+        usage=AgentTaskUsage(
+            model_call_count=1,
+            input_tokens=12,
+            output_tokens=3,
+            estimated_cost=0.000015,
+        ),
     )
 
     payload = agent_task_result_payload(result)
@@ -236,6 +264,17 @@ def test_agent_task_result_payload_preserves_evidence_contract() -> None:
     assert decoded.status is AgentTaskResultStatus.REJECTED
     assert decoded.evidence_ids == (EvidenceId("evidence-denied"),)
     assert decoded.error_code is ErrorCode.POLICY_DENIED
+    assert decoded.usage.model_call_count == 1
+    assert decoded.usage.total_tokens == 15
+    assert decoded.usage.estimated_cost == 0.000015
+
+
+def test_agent_task_usage_rejects_invalid_values() -> None:
+    with pytest.raises(ValueError, match="model_call_count must not be negative"):
+        AgentTaskUsage(model_call_count=-1)
+
+    with pytest.raises(ValueError, match="estimated_cost must not be negative"):
+        AgentTaskUsage(estimated_cost=-0.1)
 
 
 def test_agent_task_decoders_reject_invalid_payload_values() -> None:
@@ -497,6 +536,28 @@ async def test_agent_orchestrator_enforces_duration_limit() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agent_orchestrator_enforces_cost_limit() -> None:
+    registry = AgentRegistry((profile(),), (instance(),))
+    orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): CostReportingExecutor(0.25)})
+
+    result = await orchestrator.delegate(
+        request(
+            constraints=AgentTaskConstraints(
+                read_only=True,
+                max_cost=0.1,
+            )
+        )
+    )
+
+    assert result.status is AgentTaskResultStatus.FAILED
+    assert result.error_code is ErrorCode.INVALID_STATE
+    assert result.reason == "agent task exceeded max_cost=0.1 observed=0.25 USD"
+    assert result.usage.estimated_cost == 0.25
+    assert result.evidence_ids == (EvidenceId("evidence-cost"),)
+    assert registry.instance(AgentId("agent-1")).status is AgentInstanceStatus.READY
+
+
+@pytest.mark.asyncio
 async def test_agent_orchestrator_restores_instance_after_executor_failure() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
     orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): RaisingExecutor()})
@@ -744,6 +805,43 @@ async def test_agent_orchestrator_delegates_many_collects_executor_failures() ->
     assert result.results[0].error_code is ErrorCode.UNKNOWN_EXECUTION
     assert result.results[1].status is AgentTaskResultStatus.REJECTED
     assert result.results[2].status is AgentTaskResultStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_agent_orchestrator_delegates_many_collects_cost_limit_failures() -> None:
+    registry = AgentRegistry((profile(),), (instance("agent-1"), instance("agent-2")))
+    orchestrator = AgentOrchestrator(
+        registry,
+        {
+            AgentId("agent-1"): CostReportingExecutor(0.03),
+            AgentId("agent-2"): CostReportingExecutor(0.20),
+        },
+    )
+
+    result = await orchestrator.delegate_many(
+        (
+            AgentDelegationSpec(
+                batch_request("agent-task-a"),
+                agent_id=AgentId("agent-1"),
+            ),
+            AgentDelegationSpec(
+                AgentTaskRequest(
+                    goal="Run agent-task-b",
+                    input=immutable_json({"task": "agent-task-b"}),
+                    constraints=AgentTaskConstraints(read_only=True, max_children=3, max_cost=0.1),
+                    expected_output=output(),
+                    task_id=AgentTaskId("agent-task-b"),
+                ),
+                agent_id=AgentId("agent-2"),
+            ),
+        )
+    )
+
+    assert result.status is AgentDelegationBatchStatus.PARTIAL
+    assert result.results[0].status is AgentTaskResultStatus.COMPLETED
+    assert result.results[1].status is AgentTaskResultStatus.FAILED
+    assert result.results[1].error_code is ErrorCode.INVALID_STATE
+    assert result.results[1].usage.estimated_cost == 0.20
 
 
 def test_agent_orchestrator_delegates_many_rejects_invalid_dependencies() -> None:

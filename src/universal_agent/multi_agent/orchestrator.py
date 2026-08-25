@@ -22,6 +22,7 @@ from universal_agent.multi_agent.contracts import (
     AgentTaskRequest,
     AgentTaskResult,
     AgentTaskResultStatus,
+    AgentTaskUsage,
     agent_task_request_payload,
     agent_task_result_payload,
     decode_agent_task_request,
@@ -243,7 +244,7 @@ class AgentOrchestrator:
     ) -> AgentTaskResult:
         self._registry.update_instance_status(instance.agent_id, AgentInstanceStatus.BUSY)
         try:
-            return await _execute_agent_task(executor, request)
+            return _enforce_cost_limit(request, await _execute_agent_task(executor, request))
         finally:
             self._registry.update_instance_status(instance.agent_id, AgentInstanceStatus.READY)
 
@@ -292,6 +293,9 @@ class RuntimeAgentExecutor:
             Task(request.goal, ()),
         )
         diagnostics = await self._runtime_api.get_session_diagnostics(run.result.session_id)
+        usage = _agent_task_usage_from_events(
+            await self._runtime_api.list_events(run.result.session_id)
+        )
         return AgentTaskResult(
             task_id=request.task_id,
             status=_agent_task_status(run.result.status),
@@ -306,6 +310,7 @@ class RuntimeAgentExecutor:
             reason=run.result.reason,
             session_id=run.result.session_id,
             error_code=run.result.error_code,
+            usage=usage,
         )
 
 
@@ -350,6 +355,29 @@ def rejected_agent_task_result(
     )
 
 
+def _enforce_cost_limit(request: AgentTaskRequest, result: AgentTaskResult) -> AgentTaskResult:
+    max_cost = request.constraints.max_cost
+    if (
+        max_cost is None
+        or result.status is not AgentTaskResultStatus.COMPLETED
+        or result.usage.estimated_cost <= max_cost
+    ):
+        return result
+    return AgentTaskResult(
+        task_id=result.task_id,
+        status=AgentTaskResultStatus.FAILED,
+        result=result.result,
+        evidence_ids=result.evidence_ids,
+        reason=(
+            f"agent task exceeded max_cost={max_cost} "
+            f"observed={result.usage.estimated_cost} {result.usage.currency}"
+        ),
+        session_id=result.session_id,
+        error_code=ErrorCode.INVALID_STATE,
+        usage=result.usage,
+    )
+
+
 async def _execute_agent_task(
     executor: AgentExecutor,
     request: AgentTaskRequest,
@@ -371,6 +399,48 @@ async def _execute_agent_task(
             ),
             error_code=ErrorCode.TIMEOUT,
         )
+
+
+def _agent_task_usage_from_events(events: tuple[object, ...]) -> AgentTaskUsage:
+    model_call_count = 0
+    input_tokens = 0
+    output_tokens = 0
+    estimated_cost_micros = 0
+    currencies: set[str] = set()
+    for event in events:
+        if getattr(event, "type", None) != "ModelUsageRecorded":
+            continue
+        data = getattr(event, "data", {})
+        if not isinstance(data, Mapping):
+            continue
+        model_call_count += 1
+        input_tokens += _non_negative_int(data.get("input_tokens"))
+        output_tokens += _non_negative_int(data.get("output_tokens"))
+        estimated_cost_micros += _non_negative_int(data.get("estimated_cost_micros"))
+        currency = _string(data.get("currency"), "currency", "USD")
+        if currency:
+            currencies.add(currency)
+    return AgentTaskUsage(
+        model_call_count=model_call_count,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        estimated_cost=round(estimated_cost_micros / 1_000_000, 6),
+        currency=_aggregate_currency(currencies),
+    )
+
+
+def _non_negative_int(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 0
+    return value
+
+
+def _aggregate_currency(currencies: set[str]) -> str:
+    if not currencies:
+        return "USD"
+    if len(currencies) == 1:
+        return next(iter(currencies))
+    return "MIXED"
 
 
 def _mapping(value: object, field_name: str) -> JsonMapping:

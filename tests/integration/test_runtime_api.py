@@ -6,13 +6,18 @@ from typing import cast
 import pytest
 
 from universal_agent import (
+    AgentExpectedOutput,
     AgentRuntime,
+    AgentTaskRequest,
+    AgentTaskResultStatus,
     Decision,
     DecisionType,
     DomainLoader,
     Goal,
     InMemoryEventSink,
     InMemoryStateStore,
+    ModelUsage,
+    RuntimeAgentExecutor,
     RuntimeAPI,
     RuntimeBuilder,
     ScriptedModelAdapter,
@@ -140,12 +145,14 @@ def remediation_goal_task() -> tuple[Goal, Task]:
 
 def build_health_api(
     decisions: list[Decision],
+    *,
+    usage: tuple[ModelUsage, ...] = (),
 ) -> tuple[RuntimeAPI, InMemoryStateStore, InMemoryEventSink, HealthBackend]:
     backend = HealthBackend()
     store = InMemoryStateStore()
     events = InMemoryEventSink()
     runtime = AgentRuntime(
-        model=ScriptedModelAdapter(decisions),
+        model=ScriptedModelAdapter(decisions, usage=usage),
         state_store=store,
         components=RuntimeBuilder().build(DomainLoader().load(KubernetesDomain(backend))),
         event_sink=events,
@@ -174,6 +181,47 @@ def build_remediation_api(
         environment=immutable_json({"environment": "production"}),
     )
     return RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
+
+
+@pytest.mark.asyncio
+async def test_runtime_agent_executor_reports_usage_from_runtime_events() -> None:
+    api, _, _, _ = build_health_api(
+        [inspect_workload("healthy"), finish()],
+        usage=(
+            ModelUsage(
+                "scripted",
+                "child-runtime",
+                input_tokens=20,
+                output_tokens=5,
+                estimated_cost_micros=30,
+            ),
+            ModelUsage(
+                "scripted",
+                "child-runtime",
+                input_tokens=10,
+                output_tokens=2,
+                estimated_cost_micros=12,
+            ),
+        ),
+    )
+
+    result = await RuntimeAgentExecutor(api).execute_agent_task(
+        AgentTaskRequest(
+            goal="Verify delegated workload health",
+            expected_output=AgentExpectedOutput(
+                "health_report",
+                immutable_json({"success_criteria": [{"key": "healthy", "expected": True}]}),
+            ),
+        )
+    )
+
+    assert result.status is AgentTaskResultStatus.COMPLETED
+    assert result.usage.model_call_count == 2
+    assert result.usage.input_tokens == 30
+    assert result.usage.output_tokens == 7
+    assert result.usage.total_tokens == 37
+    assert result.usage.estimated_cost == 0.000042
+    assert result.usage.currency == "USD"
 
 
 @pytest.mark.asyncio
