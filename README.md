@@ -256,7 +256,16 @@ event-sourcing models or production migration systems.
 - P3.6/P3.7 foundation: event-derived `metrics`, Prometheus metrics text export, `cost`, `logs`,
   `traces`, OTLP trace export, `doctor` and `audit` projections exposed through RuntimeService,
   agentd-shaped routes and CLI commands, plus optional
-  `ModelUsageRecorded` events from model adapters. Structured log projections preserve runtime identifiers, event types, severity and redacted event data for CLI/agentd consumers. Trace span projections derive session/action trees plus decision, model usage, policy, observation, resource lock, resource conflict and evaluation phase spans from the same event stream with redacted attributes for OpenTelemetry-shaped consumers, and the OTLP adapter projects those spans into dependency-free collector payloads. Resource lock metrics and doctor checks report acquired/released locks, conflicts and active locks derived from runtime events; Doctor also validates state/event consistency by detecting orphan events and terminal sessions missing matching terminal events. The Evaluation Harness can assert status, error
+  `ModelUsageRecorded` events from model adapters. A shared security redaction projection keeps
+  sensitive keyed values out of config, log and trace surfaces while preserving public token metrics.
+  Structured log projections preserve runtime identifiers, event types, severity and redacted event
+  data for CLI/agentd consumers. Trace span projections derive session/action trees plus decision,
+  model usage, policy, observation, resource lock, resource conflict and evaluation phase spans from
+  the same event stream with redacted attributes for OpenTelemetry-shaped consumers, and the OTLP
+  adapter projects those spans into dependency-free collector payloads. Resource lock metrics and
+  doctor checks report acquired/released locks, conflicts and active locks derived from runtime
+  events; Doctor also validates state/event consistency by detecting orphan events and terminal
+  sessions missing matching terminal events. The Evaluation Harness can assert status, error
   codes, events, Evidence claims, executed capabilities, audit coverage, policy denials, recovery plans, criteria,
   resource lock conflicts, active resource locks, action counts, iteration budgets, execution duration
   budgets and model token/cost budgets for behavior scenarios.
@@ -443,6 +452,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_cli_event_stream.py
 .venv/bin/python examples/p3_5_cli_run.py
 .venv/bin/python examples/p3_6_cost_tracking.py
+.venv/bin/python examples/p3_6_secret_redaction.py
 .venv/bin/python examples/p3_6_structured_logs.py
 .venv/bin/python examples/p3_6_traces.py
 .venv/bin/python examples/p3_7_evaluation_harness.py

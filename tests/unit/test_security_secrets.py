@@ -8,10 +8,17 @@ from universal_agent.security import (
     SecretResolutionError,
     SecretResolutionStatus,
     is_sensitive_key,
+    redact_sensitive_mapping,
+    redact_sensitive_value,
     resolve_secret_arguments,
     resolve_secret_refs,
     scan_for_secrets,
 )
+
+
+class _DebugValue:
+    def __str__(self) -> str:
+        return "debug-value"
 
 
 def test_secret_scanner_reports_unredacted_sensitive_values() -> None:
@@ -47,6 +54,30 @@ def test_secret_scanner_allows_redacted_values_and_secret_reference_metadata() -
     assert is_sensitive_key("api_token") is True
     assert is_sensitive_key("secrets") is False
     assert is_sensitive_key("model_total_tokens") is False
+
+
+def test_redact_sensitive_mapping_uses_shared_sensitive_key_rules() -> None:
+    redacted = redact_sensitive_mapping(
+        {
+            "environment": "production",
+            "access_key": "access-secret",
+            "headers": {"authorization": "Bearer secret", "accept": "json"},
+            "usage": {"model_total_tokens": 42},
+            "items": [{"password": "pw-value", "name": "kept"}],
+            "metadata": _DebugValue(),
+        },
+        replacement="<redacted>",
+    )
+
+    assert redacted == {
+        "environment": "production",
+        "access_key": "<redacted>",
+        "headers": {"authorization": "<redacted>", "accept": "json"},
+        "usage": {"model_total_tokens": 42},
+        "items": [{"password": "<redacted>", "name": "kept"}],
+        "metadata": "debug-value",
+    }
+    assert redact_sensitive_value("token", ["secret"], replacement="<redacted>") == "<redacted>"
 
 
 def test_secret_resolver_reports_env_secret_availability_without_values() -> None:

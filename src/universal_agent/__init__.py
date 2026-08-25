@@ -261,6 +261,8 @@ from universal_agent.security import (
     SecretResolution,
     SecretResolutionReport,
     SecretResolutionStatus,
+    redact_sensitive_mapping,
+    redact_sensitive_value,
     resolve_secret_refs,
 )
 from universal_agent.service import (
@@ -570,6 +572,8 @@ __all__ = [
     "multi_agent_evaluation_report_payload",
     "plan_ecosystem_domain_package_install",
     "plan_ecosystem_install",
+    "redact_sensitive_mapping",
+    "redact_sensitive_value",
     "rejected_agent_task_result",
     "render_tui_snapshot",
     "render_web_console",

@@ -88,7 +88,11 @@ from universal_agent.runtime import (
     SessionView,
     event_view,
 )
-from universal_agent.security import SecretResolution, SecretResolutionReport
+from universal_agent.security import (
+    SecretResolution,
+    SecretResolutionReport,
+    redact_sensitive_mapping,
+)
 from universal_agent.state import StateNotFoundError
 from universal_agent.world import (
     InMemoryWorldModel,
@@ -235,16 +239,6 @@ class ProfileView:
 
 
 REDACTED_ENVIRONMENT_VALUE = "<redacted>"
-SENSITIVE_ENVIRONMENT_KEY_PARTS = (
-    "api_key",
-    "apikey",
-    "access_key",
-    "credential",
-    "password",
-    "private_key",
-    "secret",
-    "token",
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1644,28 +1638,10 @@ def _format_identities(identities: tuple[DomainIdentity, ...]) -> str:
 
 
 def redact_environment(environment: JsonMapping) -> JsonMapping:
-    return immutable_json(
-        {key: _redact_environment_item(key, value) for key, value in environment.items()}
+    return redact_sensitive_mapping(
+        environment,
+        replacement=REDACTED_ENVIRONMENT_VALUE,
     )
-
-
-def _redact_environment_item(key: str, value: JsonValue) -> JsonValue:
-    if _is_sensitive_environment_key(key):
-        return REDACTED_ENVIRONMENT_VALUE
-    return _redact_environment_value(value)
-
-
-def _redact_environment_value(value: JsonValue) -> JsonValue:
-    if isinstance(value, Mapping):
-        return {key: _redact_environment_item(key, item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_redact_environment_value(item) for item in value]
-    return value
-
-
-def _is_sensitive_environment_key(key: str) -> bool:
-    normalized = key.lower().replace("-", "_")
-    return any(part in normalized for part in SENSITIVE_ENVIRONMENT_KEY_PARTS)
 
 
 def runtime_config_domain_views(

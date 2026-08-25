@@ -16,7 +16,12 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView
-from universal_agent.security import SecretResolutionReport, scan_for_secrets
+from universal_agent.security import (
+    SecretResolutionReport,
+    redact_sensitive_mapping,
+    redact_sensitive_value,
+    scan_for_secrets,
+)
 
 _TERMINAL_EVENT_BY_GOAL_STATUS = {
     GoalStatus.COMPLETED: "GoalCompleted",
@@ -1281,47 +1286,11 @@ def _unix_nano(value: datetime) -> int:
 
 
 def _redacted_mapping(values: JsonMapping) -> JsonMapping:
-    return immutable_json({key: _redacted_value(key, value) for key, value in values.items()})
+    return redact_sensitive_mapping(values)
 
 
 def _redacted_value(key: str, value: object) -> JsonValue:
-    if _sensitive_key(key):
-        return "[REDACTED]"
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, dict):
-        return {
-            str(item_key): _redacted_value(str(item_key), item) for item_key, item in value.items()
-        }
-    if isinstance(value, list | tuple):
-        return [_redacted_value(key, item) for item in value]
-    return str(value)
-
-
-def _sensitive_key(key: str) -> bool:
-    normalized = key.lower().replace("-", "_")
-    public_token_metrics = {
-        "cached_tokens",
-        "input_tokens",
-        "model_input_tokens",
-        "model_output_tokens",
-        "model_total_tokens",
-        "output_tokens",
-        "total_tokens",
-    }
-    if normalized in public_token_metrics:
-        return False
-    return any(
-        marker in normalized
-        for marker in (
-            "api_key",
-            "authorization",
-            "credential",
-            "password",
-            "secret",
-            "token",
-        )
-    )
+    return redact_sensitive_value(key, value)
 
 
 def _event_words(event_type: str) -> str:

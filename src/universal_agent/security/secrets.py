@@ -32,6 +32,7 @@ SECRET_REFERENCE_CONTAINER_KEYS = frozenset(
 SENSITIVE_KEY_PARTS = (
     "api_key",
     "apikey",
+    "access_key",
     "authorization",
     "credential",
     "password",
@@ -62,6 +63,50 @@ class SecretScanReport:
 
 def scan_for_secrets(value: object, *, path: str = "$") -> SecretScanReport:
     return SecretScanReport(tuple(_scan_value(value, path)))
+
+
+def redact_sensitive_mapping(
+    values: Mapping[str, object],
+    *,
+    replacement: str = "[REDACTED]",
+) -> JsonMapping:
+    """Return a JSON-safe mapping with sensitive keyed values replaced.
+
+    This is the shared security projection seam for logs, traces, config views,
+    diagnostics and future HTTP surfaces. The caller chooses the replacement
+    token, but the sensitive-key vocabulary stays runtime-owned here.
+    """
+
+    return immutable_json(
+        {
+            str(key): redact_sensitive_value(str(key), value, replacement=replacement)
+            for key, value in values.items()
+        }
+    )
+
+
+def redact_sensitive_value(
+    key: str,
+    value: object,
+    *,
+    replacement: str = "[REDACTED]",
+) -> JsonValue:
+    if is_sensitive_key(key):
+        return replacement
+    if value is None or isinstance(value, bool | int | float | str):
+        return value
+    if isinstance(value, Mapping):
+        return {
+            str(item_key): redact_sensitive_value(
+                str(item_key),
+                item,
+                replacement=replacement,
+            )
+            for item_key, item in value.items()
+        }
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
+        return [redact_sensitive_value(key, item, replacement=replacement) for item in value]
+    return str(value)
 
 
 class SecretResolutionError(ValueError):
