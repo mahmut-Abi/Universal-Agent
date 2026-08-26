@@ -274,10 +274,11 @@ detect accidental split state/event wiring. These adapters are local persistence
   embedding SDK facade with SDK-owned goal/task/result contracts over `RuntimeService`.
   `JsonHttpModelAdapter` adds a dependency-free
   provider bridge for HTTP endpoints that accept compiled runtime context JSON, including structured
-  goal success criteria and current task required criteria, and return structured `Decision` JSON
-  plus optional token/cost usage. `OpenAIResponsesModelAdapter` adds a direct dependency-free OpenAI
-  Responses provider path that requests structured `Decision` JSON and still validates the decoded
-  decision locally before the Runtime acts.
+  goal success criteria, current task required criteria, and capability-level input contracts derived
+  from deterministic tool resolution, then return structured `Decision` JSON plus optional
+  token/cost usage. `OpenAIResponsesModelAdapter` adds a direct dependency-free OpenAI Responses
+  provider path that requests structured `Decision` JSON and still validates the decoded decision
+  locally before the Runtime acts.
 - P3.6/P3.7 foundation: event-derived `metrics`, Prometheus metrics text export, `cost`, `logs`,
   `traces`, OTLP trace export, `doctor` and `audit` projections exposed through RuntimeService,
   agentd-shaped routes and CLI commands, plus optional

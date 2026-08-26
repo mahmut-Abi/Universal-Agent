@@ -70,6 +70,13 @@ def context() -> DecisionContext:
                 "Inspect a workload",
                 CapabilityCategory.OBSERVATION,
                 RiskLevel.LOW,
+                required_arguments=("name",),
+                argument_schema=immutable_json(
+                    {
+                        "required": ["name"],
+                        "properties": {"name": {"type": "string", "minLength": 1}},
+                    }
+                ),
             ),
         ),
         goal_success_criteria=(SuccessCriterion("healthy", True),),
@@ -140,6 +147,11 @@ async def test_json_http_model_adapter_posts_context_and_decodes_decision_usage(
     capabilities = cast(list[JsonValue], context_payload["capabilities"])
     first_capability = cast(Mapping[str, JsonValue], capabilities[0])
     assert first_capability["name"] == "inspect_workload"
+    assert first_capability["required_arguments"] == ["name"]
+    assert first_capability["argument_schema"] == {
+        "required": ["name"],
+        "properties": {"name": {"type": "string", "minLength": 1}},
+    }
 
 
 @pytest.mark.asyncio

@@ -336,6 +336,8 @@ def _capability_payload(capability: CapabilitySummary) -> dict[str, JsonValue]:
         "description": capability.description,
         "category": capability.category.value,
         "risk": capability.risk.value,
+        "required_arguments": list(capability.required_arguments),
+        "argument_schema": dict(capability.argument_schema),
     }
 
 

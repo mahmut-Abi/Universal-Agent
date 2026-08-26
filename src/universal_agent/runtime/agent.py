@@ -3,10 +3,13 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import cast
 
+from universal_agent.capability import CapabilityUnavailableError, UnknownCapabilityError
 from universal_agent.context import BasicContextCompiler, ContextCompiler
 from universal_agent.core import (
     ActionId,
     AgentState,
+    CapabilityDefinition,
+    CapabilityInputContract,
     Decision,
     DecisionType,
     ErrorCode,
@@ -239,15 +242,17 @@ class AgentRuntime:
         while state.iteration < self._max_iterations:
             state.iteration += 1
             await self._save(session)
+            capabilities = self._components.capabilities.all()
             context = self._context_compiler.compile(
                 state,
-                self._components.capabilities.all(),
+                capabilities,
                 self._components.policy_engine.summary,
                 self._components.context_providers,
                 session.world(),
                 session.query(limit=8),
                 session.tasks,
                 self._recall(session),
+                self._capability_input_contracts(capabilities),
             )
             try:
                 decision = await self._model.decide(context)
@@ -557,6 +562,26 @@ class AgentRuntime:
         )
         candidates = self._components.memory_retriever.retrieve(request)
         return self._components.memory_filter.filter(candidates, request)
+
+    def _capability_input_contracts(
+        self,
+        capabilities: tuple[CapabilityDefinition, ...],
+    ) -> tuple[CapabilityInputContract, ...]:
+        contracts: list[CapabilityInputContract] = []
+        for capability in capabilities:
+            try:
+                resolution = self._components.resolver.resolve_registration(capability.name)
+            except (UnknownCapabilityError, CapabilityUnavailableError):
+                continue
+            tool = resolution.tool.definition
+            contracts.append(
+                CapabilityInputContract(
+                    capability.name,
+                    required_arguments=tool.required_arguments,
+                    argument_schema=tool.argument_schema,
+                )
+            )
+        return tuple(contracts)
 
     def _record_episodic(
         self,

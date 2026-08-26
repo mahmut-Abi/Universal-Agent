@@ -6,6 +6,7 @@ from typing import Protocol
 from universal_agent.core import (
     AgentState,
     CapabilityDefinition,
+    CapabilityInputContract,
     CapabilitySummary,
     ContextFragment,
     DecisionContext,
@@ -35,6 +36,7 @@ class ContextCompiler(Protocol):
         evidence: tuple[Evidence, ...] = (),
         tasks: TaskManager | None = None,
         memories: tuple[MemoryRecord, ...] = (),
+        capability_input_contracts: tuple[CapabilityInputContract, ...] = (),
     ) -> DecisionContext: ...
 
 
@@ -62,8 +64,10 @@ class BasicContextCompiler:
         evidence: tuple[Evidence, ...] = (),
         tasks: TaskManager | None = None,
         memories: tuple[MemoryRecord, ...] = (),
+        capability_input_contracts: tuple[CapabilityInputContract, ...] = (),
     ) -> DecisionContext:
         fragments = self._select_fragments(state, providers)
+        contracts = {item.capability: item for item in capability_input_contracts}
         return DecisionContext(
             session_id=state.session_id,
             goal_id=state.goal.id,
@@ -74,8 +78,7 @@ class BasicContextCompiler:
             satisfied_criteria=immutable_json(state.satisfied_criteria),
             latest_observation=state.latest_observation,
             capabilities=tuple(
-                CapabilitySummary(item.name, item.description, item.category, item.risk)
-                for item in capabilities
+                self._capability_summary(item, contracts.get(item.name)) for item in capabilities
             ),
             goal_success_criteria=state.goal.success_criteria,
             current_task_required_criteria=state.current_task.required_criteria,
@@ -85,6 +88,20 @@ class BasicContextCompiler:
             task_context=self._task_fragments(tasks),
             memory_context=self._memory_fragments(memories),
             policy_summary=policy_summary,
+        )
+
+    def _capability_summary(
+        self,
+        capability: CapabilityDefinition,
+        contract: CapabilityInputContract | None,
+    ) -> CapabilitySummary:
+        return CapabilitySummary(
+            capability.name,
+            capability.description,
+            capability.category,
+            capability.risk,
+            required_arguments=() if contract is None else contract.required_arguments,
+            argument_schema=immutable_json() if contract is None else contract.argument_schema,
         )
 
     def _select_fragments(

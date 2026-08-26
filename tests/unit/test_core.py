@@ -9,6 +9,7 @@ from universal_agent.core import (
     AgentState,
     CapabilityCategory,
     CapabilityDefinition,
+    CapabilityInputContract,
     Decision,
     DecisionType,
     Goal,
@@ -87,10 +88,24 @@ def test_basic_context_exposes_capabilities_not_tools() -> None:
         ),
         ("read-only",),
         (),
+        capability_input_contracts=(
+            CapabilityInputContract(
+                "inspect_service",
+                required_arguments=("name",),
+                argument_schema=immutable_json(
+                    {
+                        "required": ["name"],
+                        "properties": {"name": {"type": "string", "minLength": 1}},
+                    }
+                ),
+            ),
+        ),
     )
     assert context.goal_id == state.goal.id
     assert context.satisfied_criteria == immutable_json({"healthy": False})
     assert context.capabilities[0].name == "inspect_service"
+    assert context.capabilities[0].required_arguments == ("name",)
+    assert context.capabilities[0].argument_schema["required"] == ["name"]
     assert context.goal_success_criteria == (SuccessCriterion("healthy", True),)
     assert context.current_task_required_criteria == ("healthy",)
     assert context.policy_summary == ("read-only",)

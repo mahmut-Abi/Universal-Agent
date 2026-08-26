@@ -121,9 +121,11 @@ support `env` keys and local `file` paths; both are projected as availability
 metadata only.
 
 Model request context includes runtime-owned `goal_success_criteria` and
-`current_task_required_criteria` fields. Providers can use these explicit
-criteria to choose the next capability, but Runtime evaluation remains the only
-authority that decides task or goal completion.
+`current_task_required_criteria` fields plus each available capability's
+`required_arguments` and `argument_schema`. Providers can use these explicit
+contracts to choose the next capability and construct arguments, but Runtime
+validation and evaluation remain authoritative for action execution and task or
+goal completion.
 
 ```json
 {

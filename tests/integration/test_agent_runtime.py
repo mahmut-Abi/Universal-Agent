@@ -272,6 +272,11 @@ async def test_normal_loop_requires_evaluator_before_finish() -> None:
     assert state.goal.status is GoalStatus.COMPLETED
     assert state.current_task.status is TaskStatus.COMPLETED
     assert model.contexts[0].capabilities[0].name == "inspect_cluster"
+    workload_capability = next(
+        item for item in model.contexts[0].capabilities if item.name == "inspect_workload"
+    )
+    assert workload_capability.required_arguments == ("name",)
+    assert workload_capability.argument_schema["required"] == ["name"]
     assert not hasattr(model.contexts[0], "tools")
     event_types = [event.type for event in events.events]
     assert event_types.count("EvaluationCompleted") == 2

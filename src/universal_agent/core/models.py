@@ -297,6 +297,15 @@ class CapabilitySummary:
     description: str
     category: CapabilityCategory
     risk: RiskLevel
+    required_arguments: tuple[str, ...] = ()
+    argument_schema: JsonMapping = field(default_factory=immutable_json)
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityInputContract:
+    capability: str
+    required_arguments: tuple[str, ...] = ()
+    argument_schema: JsonMapping = field(default_factory=immutable_json)
 
 
 @dataclass(frozen=True, slots=True)
