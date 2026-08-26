@@ -2177,6 +2177,9 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
     assert metrics.body["session_count"] == 1
     assert metrics.body["completed_goal_count"] == 1
     assert metrics.body["action_started_count"] == 2
+    assert metrics.body["decision_generated_count"] == 3
+    assert metrics.body["decision_validated_count"] == 3
+    assert metrics.body["decision_rejected_count"] == 0
     assert metrics.body["model_call_count"] == 3
     assert metrics.body["model_total_token_count"] == 215
     assert prometheus_metrics.status_code == 200
@@ -2185,6 +2188,7 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
     )
     assert prometheus_metrics.text_body is not None
     assert "universal_agent_runtime_completed_goals 1\n" in prometheus_metrics.text_body
+    assert "universal_agent_runtime_decisions_validated 3\n" in prometheus_metrics.text_body
     assert "universal_agent_runtime_model_total_tokens 215\n" in prometheus_metrics.text_body
     assert cost.status_code == 200
     assert cost.body == session_cost.body

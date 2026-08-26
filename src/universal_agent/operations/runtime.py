@@ -51,6 +51,9 @@ class RuntimeMetricsView:
     resource_lock_released_count: int
     resource_conflict_count: int
     active_resource_lock_count: int
+    decision_generated_count: int = 0
+    decision_validated_count: int = 0
+    decision_rejected_count: int = 0
     model_call_count: int = 0
     model_input_token_count: int = 0
     model_output_token_count: int = 0
@@ -193,6 +196,9 @@ def build_runtime_metrics(
         resource_lock_released_count=_count(events, "ResourceLockReleased"),
         resource_conflict_count=_count(events, "ResourceConflictDetected"),
         active_resource_lock_count=len(active_resource_locks),
+        decision_generated_count=_count(events, "DecisionGenerated"),
+        decision_validated_count=_count(events, "DecisionValidated"),
+        decision_rejected_count=_count(events, "DecisionRejected"),
         model_call_count=cost.model_call_count,
         model_input_token_count=cost.input_tokens,
         model_output_token_count=cost.output_tokens,
@@ -225,6 +231,21 @@ def build_prometheus_metrics_export(
         ("events", "Runtime events recorded", metrics.event_count),
         ("actions_started", "Runtime actions started", metrics.action_started_count),
         ("actions_completed", "Runtime actions completed", metrics.action_completed_count),
+        (
+            "decisions_generated",
+            "Runtime model decisions generated",
+            metrics.decision_generated_count,
+        ),
+        (
+            "decisions_validated",
+            "Runtime decisions accepted by deterministic validation",
+            metrics.decision_validated_count,
+        ),
+        (
+            "decisions_rejected",
+            "Runtime decisions rejected by deterministic validation",
+            metrics.decision_rejected_count,
+        ),
         ("tool_failures", "Runtime tool failures observed", metrics.tool_failure_count),
         ("policy_denials", "Runtime policy denials observed", metrics.policy_denial_count),
         (

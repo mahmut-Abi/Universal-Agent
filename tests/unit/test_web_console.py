@@ -773,6 +773,7 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
             resource_lock_released_count=0,
             resource_conflict_count=1,
             active_resource_lock_count=1,
+            decision_rejected_count=1,
         ),
     )
 
@@ -784,6 +785,7 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
         assert "store unavailable" in degraded_rendered
         assert "failed_goals" in degraded_rendered
         assert "tool_failures" in degraded_rendered
+        assert "decisions_rejected" in degraded_rendered
         assert "recovery_exhausted" in degraded_rendered
         assert "policy_denials" in degraded_rendered
         assert "confirmations_required" in degraded_rendered

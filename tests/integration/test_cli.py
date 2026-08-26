@@ -3268,12 +3268,16 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     assert session_otlp_traces_status == 0
     assert metrics["completed_goal_count"] == 1
     assert metrics["action_started_count"] == 2
+    assert metrics["decision_generated_count"] == 3
+    assert metrics["decision_validated_count"] == 3
+    assert metrics["decision_rejected_count"] == 0
     assert metrics["model_call_count"] == 3
     assert metrics["model_total_token_count"] == 165
     prometheus_metrics = prometheus_metrics_output.getvalue()
     assert "universal_agent_runtime_completed_goals 1\n" in prometheus_metrics
     assert "universal_agent_runtime_action_started_count" not in prometheus_metrics
     assert "universal_agent_runtime_actions_started 2\n" in prometheus_metrics
+    assert "universal_agent_runtime_decisions_validated 3\n" in prometheus_metrics
     assert "universal_agent_runtime_model_total_tokens 165\n" in prometheus_metrics
     assert cost == session_cost
     assert cost["model_call_count"] == 3

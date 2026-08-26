@@ -69,6 +69,7 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
             " actions="
             f"{snapshot.metrics.action_started_count}/"
             f"{snapshot.metrics.action_completed_count}"
+            f" decisions_rejected={snapshot.metrics.decision_rejected_count}"
             f" policy_denials={snapshot.metrics.policy_denial_count}"
             f" recoveries={snapshot.metrics.recovery_planned_count}"
         ),
@@ -141,6 +142,8 @@ def _operational_diagnostic_lines(snapshot: TuiSnapshot) -> list[str]:
         lines.append(f"- error failed_goals={metrics.failed_goal_count}")
     if metrics.tool_failure_count:
         lines.append(f"- error tool_failures={metrics.tool_failure_count}")
+    if metrics.decision_rejected_count:
+        lines.append(f"- error decisions_rejected={metrics.decision_rejected_count}")
     if metrics.recovery_exhausted_count:
         lines.append(f"- error recovery_exhausted={metrics.recovery_exhausted_count}")
     if metrics.policy_denial_count:

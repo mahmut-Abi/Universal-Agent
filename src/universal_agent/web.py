@@ -80,6 +80,7 @@ def render_web_console(snapshot: WebConsoleSnapshot) -> str:
             _metric_card("Active", snapshot.metrics.active_session_count),
             _metric_card("Events", snapshot.metrics.event_count),
             _metric_card("Actions", _action_count(snapshot)),
+            _metric_card("Rejected Decisions", snapshot.metrics.decision_rejected_count),
             _metric_card("Tokens", snapshot.cost.total_tokens),
             _metric_card("Cost micros", snapshot.cost.estimated_cost_micros),
             "</section>",
@@ -1380,6 +1381,8 @@ def _operational_diagnostic_rows(snapshot: WebConsoleSnapshot) -> list[str]:
         rows.append(_diagnostic_row("error", "failed_goals", metrics.failed_goal_count))
     if metrics.tool_failure_count:
         rows.append(_diagnostic_row("error", "tool_failures", metrics.tool_failure_count))
+    if metrics.decision_rejected_count:
+        rows.append(_diagnostic_row("error", "decisions_rejected", metrics.decision_rejected_count))
     if metrics.recovery_exhausted_count:
         rows.append(
             _diagnostic_row("error", "recovery_exhausted", metrics.recovery_exhausted_count)

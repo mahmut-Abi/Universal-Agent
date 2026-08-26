@@ -472,6 +472,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
             resource_lock_released_count=0,
             resource_conflict_count=1,
             active_resource_lock_count=1,
+            decision_rejected_count=1,
         ),
     )
 
@@ -480,6 +481,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
     assert "- error ready=no reason=store unavailable" in degraded_rendered
     assert "- error failed_goals=1" in degraded_rendered
     assert "- error tool_failures=1" in degraded_rendered
+    assert "- error decisions_rejected=1" in degraded_rendered
     assert "- error recovery_exhausted=1" in degraded_rendered
     assert "- warn policy_denials=1" in degraded_rendered
     assert "- warn confirmations_required=1" in degraded_rendered

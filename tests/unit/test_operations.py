@@ -80,10 +80,13 @@ def test_runtime_metrics_are_derived_from_sessions_and_events() -> None:
         event("event-1", "PolicyChecked", action_id="action-1", data={"effect": "allow"}),
         event("event-2", "ActionStarted", action_id="action-1"),
         event("event-3", "ActionCompleted", action_id="action-1", data={"status": "succeeded"}),
-        event("event-4", "ConfirmationRequired", action_id="action-2"),
-        event("event-5", "RecoveryPlanned", action_id="action-3"),
+        event("event-4", "DecisionGenerated", data={"decision_type": "execute"}),
+        event("event-5", "DecisionValidated", data={"decision_type": "execute"}),
+        event("event-6", "DecisionRejected", data={"decision_type": "execute"}),
+        event("event-7", "ConfirmationRequired", action_id="action-2"),
+        event("event-8", "RecoveryPlanned", action_id="action-3"),
         event(
-            "event-6",
+            "event-9",
             "ModelUsageRecorded",
             data={
                 "provider": "scripted",
@@ -95,19 +98,19 @@ def test_runtime_metrics_are_derived_from_sessions_and_events() -> None:
             },
         ),
         event(
-            "event-7",
+            "event-10",
             "ResourceLockAcquired",
             action_id="action-2",
             data={"resource_key": "deployment/example"},
         ),
         event(
-            "event-8",
+            "event-11",
             "ResourceLockReleased",
             action_id="action-2",
             data={"resource_key": "deployment/example"},
         ),
         event(
-            "event-9",
+            "event-12",
             "ResourceConflictDetected",
             action_id="action-4",
             data={"resource_key": "deployment/example"},
@@ -119,9 +122,12 @@ def test_runtime_metrics_are_derived_from_sessions_and_events() -> None:
     assert metrics.session_count == 2
     assert metrics.completed_goal_count == 1
     assert metrics.waiting_session_count == 1
-    assert metrics.event_count == 9
+    assert metrics.event_count == 12
     assert metrics.action_started_count == 1
     assert metrics.action_completed_count == 1
+    assert metrics.decision_generated_count == 1
+    assert metrics.decision_validated_count == 1
+    assert metrics.decision_rejected_count == 1
     assert metrics.tool_failure_count == 0
     assert metrics.confirmation_required_count == 1
     assert metrics.human_intervention_count == 1
@@ -143,6 +149,9 @@ def test_prometheus_metrics_export_projects_runtime_metrics_text() -> None:
         (
             event("event-1", "ActionStarted", action_id="action-1"),
             event("event-2", "ActionCompleted", action_id="action-1"),
+            event("event-5", "DecisionGenerated", data={"decision_type": "execute"}),
+            event("event-6", "DecisionValidated", data={"decision_type": "execute"}),
+            event("event-7", "DecisionRejected", data={"decision_type": "execute"}),
             event(
                 "event-4",
                 "ResourceLockAcquired",
@@ -170,6 +179,9 @@ def test_prometheus_metrics_export_projects_runtime_metrics_text() -> None:
     assert "universal_agent_runtime_sessions 2\n" in exported
     assert "universal_agent_runtime_waiting_sessions 1\n" in exported
     assert "universal_agent_runtime_actions_completed 1\n" in exported
+    assert "universal_agent_runtime_decisions_generated 1\n" in exported
+    assert "universal_agent_runtime_decisions_validated 1\n" in exported
+    assert "universal_agent_runtime_decisions_rejected 1\n" in exported
     assert "universal_agent_runtime_active_resource_locks 1\n" in exported
     assert "universal_agent_runtime_model_total_tokens 125\n" in exported
     assert "universal_agent_runtime_model_estimated_cost_micros 42\n" in exported
