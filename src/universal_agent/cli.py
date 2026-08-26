@@ -324,6 +324,28 @@ def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
     return host.service
 
 
+def build_configured_probe_service(profile_config_path: str | Path) -> RuntimeService:
+    """Build RuntimeService metadata without requiring the configured model to connect."""
+
+    profile = ProfileConfig.from_json_file(profile_config_path).to_profile()
+    secret_provider = EnvSecretProvider()
+    backend = _configured_kubernetes_backend(
+        profile.runtime.configured_domains() or (profile.domain,),
+        config=profile.runtime,
+        secret_provider=secret_provider,
+    )
+    host = RuntimeHost.from_profile(
+        profile=profile,
+        model=ScriptedModelAdapter(_default_decisions()),
+        domain=KubernetesRemediationDomain(
+            cast(KubernetesBackend, backend),
+            cast(KubernetesMutationBackend, backend),
+        ),
+        secret_provider=secret_provider,
+    )
+    return host.service
+
+
 def _configured_kubernetes_backend(
     domains: tuple[DomainConfig, ...],
     *,
@@ -893,7 +915,16 @@ def _service_from_args(args: argparse.Namespace) -> RuntimeService:
     profile_config = cast(str | None, args.profile_config)
     if profile_config is None:
         return build_default_service()
+    if _is_kubernetes_model_probe(args):
+        return build_configured_probe_service(profile_config)
     return build_configured_service(profile_config)
+
+
+def _is_kubernetes_model_probe(args: argparse.Namespace) -> bool:
+    return (
+        cast(str | None, getattr(args, "command", None)) == "kubernetes"
+        and cast(str | None, getattr(args, "kubernetes_command", None)) == "model-probe"
+    )
 
 
 def _add_evaluation_selector_arguments(command: argparse.ArgumentParser) -> None:
@@ -1365,8 +1396,8 @@ async def _kubernetes_model_probe_report(
     namespace = _optional_kubernetes_namespace(cast(str | None, args.namespace))
     config = service.config()
     context = _kubernetes_model_probe_context(service, workload, namespace)
-    model = _kubernetes_model_probe_adapter(args, workload, namespace)
     try:
+        model = _kubernetes_model_probe_adapter(args, workload, namespace)
         decision = await model.decide(context)
         decision.validate()
         validation_error = _validate_probe_decision(decision, context)

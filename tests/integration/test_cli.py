@@ -1497,6 +1497,61 @@ async def test_cli_kubernetes_model_probe_validates_decision_without_cluster_act
 
 
 @pytest.mark.asyncio
+async def test_cli_kubernetes_model_probe_reports_missing_model_secret(
+    tmp_path: Path,
+) -> None:
+    profile_path = tmp_path / "profile.json"
+    init_output = StringIO()
+    probe_output = StringIO()
+    probe_error = StringIO()
+
+    init_status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--profile",
+            "production-operator",
+            "--model-provider",
+            "openai_chat_completions",
+            "--model-name",
+            "gpt-runtime",
+            "--model-api-key-env",
+            "UNIVERSAL_AGENT_TEST_MISSING_OPENAI_KEY",
+            "--model-response-format",
+            "prompt_json",
+        ],
+        stdout=init_output,
+    )
+    probe_status = await run_cli(
+        [
+            "--profile-config",
+            str(profile_path),
+            "kubernetes",
+            "model-probe",
+            "production-operator",
+            "--workload",
+            "deployment/api",
+            "--namespace",
+            "prod",
+        ],
+        stdout=probe_output,
+        stderr=probe_error,
+    )
+    payload = read_json(probe_output)
+
+    assert init_status == 0
+    assert probe_status == 1
+    assert probe_error.getvalue() == ""
+    assert payload["status"] == "failed"
+    assert payload["model"]["provider"] == "openai_chat_completions"
+    assert payload["model"]["response_format"] == "prompt_json"
+    assert payload["error"]["type"] == "ValueError"
+    assert "requires resolved api_key_secret" in payload["error"]["message"]
+    assert payload["next_step"]["type"] == "fix_model_provider"
+
+
+@pytest.mark.asyncio
 async def test_cli_kubernetes_run_submits_production_workload_goal() -> None:
     service, backend = build_cli_service(
         [
