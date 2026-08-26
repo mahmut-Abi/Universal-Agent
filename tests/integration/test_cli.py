@@ -868,6 +868,32 @@ async def test_cli_init_can_write_openai_responses_model_config(tmp_path: Path) 
 
 
 @pytest.mark.asyncio
+async def test_cli_init_openai_responses_requires_model_name(tmp_path: Path) -> None:
+    output = StringIO()
+    error = StringIO()
+    profile_path = tmp_path / "openai-profile.json"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--model-provider",
+            "openai_responses",
+            "--model-api-key-env",
+            "OPENAI_API_KEY",
+        ],
+        stdout=output,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert output.getvalue() == ""
+    assert "openai_responses model requires --model-name" in error.getvalue()
+    assert not profile_path.exists()
+
+
+@pytest.mark.asyncio
 async def test_cli_init_openai_responses_requires_api_key_secret(tmp_path: Path) -> None:
     output = StringIO()
     error = StringIO()

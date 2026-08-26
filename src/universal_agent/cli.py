@@ -2066,6 +2066,8 @@ def _profile_model_config(
             raise ValueError("json_http model requires --model-endpoint")
         model["endpoint"] = model_endpoint
     elif model_provider == "openai_responses":
+        if model_name == "scripted":
+            raise ValueError("openai_responses model requires --model-name")
         if model_api_key_source is None:
             raise ValueError("openai_responses model requires model API key secret")
         if model_endpoint is not None:
