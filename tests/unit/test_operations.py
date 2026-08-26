@@ -370,6 +370,12 @@ def test_runtime_trace_spans_project_decision_model_and_evaluation_phases() -> N
         ),
         event(
             "event-3",
+            "DecisionValidated",
+            data={"decision_type": "execute", "capability": "inspect_workload"},
+            occurred_at=datetime(2026, 1, 1, 0, 0, 2, tzinfo=UTC),
+        ),
+        event(
+            "event-4",
             "ModelUsageRecorded",
             data={
                 "provider": "scripted",
@@ -378,18 +384,18 @@ def test_runtime_trace_spans_project_decision_model_and_evaluation_phases() -> N
                 "output_tokens": 3,
                 "estimated_cost_micros": 1,
             },
-            occurred_at=datetime(2026, 1, 1, 0, 0, 2, tzinfo=UTC),
-        ),
-        event(
-            "event-4",
-            "EvaluationCompleted",
-            data={"status": "completed", "evaluator": "workload-health"},
             occurred_at=datetime(2026, 1, 1, 0, 0, 3, tzinfo=UTC),
         ),
         event(
             "event-5",
-            "GoalCompleted",
+            "EvaluationCompleted",
+            data={"status": "completed", "evaluator": "workload-health"},
             occurred_at=datetime(2026, 1, 1, 0, 0, 4, tzinfo=UTC),
+        ),
+        event(
+            "event-6",
+            "GoalCompleted",
+            occurred_at=datetime(2026, 1, 1, 0, 0, 5, tzinfo=UTC),
         ),
     )
 
@@ -398,19 +404,51 @@ def test_runtime_trace_spans_project_decision_model_and_evaluation_phases() -> N
     assert [span.name for span in spans] == [
         "runtime.session",
         "runtime.decision",
+        "runtime.decision.validation",
         "runtime.model_usage",
         "runtime.evaluation",
     ]
-    root, decision, model_usage, evaluation = spans
+    root, decision, validation, model_usage, evaluation = spans
     assert decision.parent_span_id == root.span_id
     assert decision.duration_ms == 0.0
     assert decision.attributes["decision_type"] == "execute"
+    assert validation.parent_span_id == root.span_id
+    assert validation.status == "ok"
+    assert validation.attributes["capability"] == "inspect_workload"
     assert model_usage.parent_span_id == root.span_id
     assert model_usage.attributes["provider"] == "scripted"
     assert model_usage.attributes["input_tokens"] == 10
     assert evaluation.parent_span_id == root.span_id
     assert evaluation.status == "ok"
     assert evaluation.attributes["evaluator"] == "workload-health"
+
+
+def test_runtime_logs_and_traces_project_rejected_decisions() -> None:
+    events = (
+        event("event-1", "GoalCreated"),
+        event(
+            "event-2",
+            "DecisionRejected",
+            data={
+                "decision_type": "execute",
+                "capability": "inspect_workload",
+                "error_code": "validation_error",
+                "validation_stage": "context",
+                "rejection_reason": "missing required arguments: name",
+            },
+        ),
+        event("event-3", "GoalFailed", data={"error_code": "validation_error"}),
+    )
+
+    logs = build_runtime_logs(events=events)
+    spans = build_runtime_trace_spans(events)
+
+    rejected_log = next(log for log in logs if log.event_type == "DecisionRejected")
+    rejected_span = next(span for span in spans if span.name == "runtime.decision.rejection")
+    assert rejected_log.level == "error"
+    assert rejected_log.message == "decision rejected: missing required arguments: name"
+    assert rejected_span.status == "error"
+    assert rejected_span.attributes["validation_stage"] == "context"
 
 
 def test_runtime_trace_spans_project_resource_lock_phases() -> None:

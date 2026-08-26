@@ -255,7 +255,8 @@ detect accidental split state/event wiring. These adapters are local persistence
   `RuntimeSessionBatch` / `RuntimeEventBatch`, action idempotency metadata (`idempotency_key`,
   `parameters_hash`, `attempt`) carried through pending-action views, events and persistence,
   explicit `UNKNOWN_EXECUTION` observations for uncertain tool outcomes, deterministic Tool argument
-  schema validation for scalar and nested object/array arguments,
+  schema validation for scalar and nested object/array arguments, runtime-owned Decision input-contract
+  validation before policy/action execution, plus `DecisionValidated` / `DecisionRejected` events,
   runtime-owned resource locking and optimistic resource version checks for side-effecting actions
   (`resource_key`, optional `resource_version`, conflict detection, version check/update events
   and lock lifecycle events), and

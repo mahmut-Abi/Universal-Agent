@@ -56,9 +56,11 @@ async def main() -> None:
     )
 
     event_types = [event.type for event in events.events]
+    rejected = next(event for event in events.events if event.type == "DecisionRejected")
     error_code = "none" if result.error_code is None else result.error_code.value
     print(f"status={result.status.value} error_code={error_code}")
     print(f"reason={result.reason}")
+    print(f"decision_rejected={rejected.data['rejection_reason']}")
     print(f"backend_calls={backend.calls}")
     print(f"policy_checked={'PolicyChecked' in event_types}")
     print(f"action_started={'ActionStarted' in event_types}")

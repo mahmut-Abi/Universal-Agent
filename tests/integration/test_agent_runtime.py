@@ -361,6 +361,10 @@ async def test_non_executable_context_capability_fails_before_action() -> None:
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error_code is ErrorCode.NO_CAPABILITY_TOOL
+    rejection = next(event for event in events.events if event.type == "DecisionRejected")
+    assert rejection.data["error_code"] == ErrorCode.NO_CAPABILITY_TOOL.value
+    assert rejection.data["validation_stage"] == "context"
+    assert rejection.data["capability"] == "inspect_missing"
     assert not any(event.type == "ActionStarted" for event in events.events)
 
 
@@ -386,6 +390,11 @@ async def test_decision_arguments_are_validated_against_context_before_action() 
     assert "invalid decision arguments for capability inspect_workload" in result.reason
     assert "missing required arguments: name" in result.reason
     assert backend.calls == 0
+    rejection = next(event for event in events.events if event.type == "DecisionRejected")
+    assert rejection.data["error_code"] == ErrorCode.VALIDATION_ERROR.value
+    assert rejection.data["validation_stage"] == "context"
+    assert rejection.data["capability"] == "inspect_workload"
+    assert rejection.data["argument_names"] == ()
     assert not any(event.type == "PolicyChecked" for event in events.events)
     assert not any(event.type == "ActionStarted" for event in events.events)
 
@@ -411,6 +420,9 @@ async def test_decision_argument_schema_is_validated_against_context_before_acti
     assert result.error_code is ErrorCode.VALIDATION_ERROR
     assert "argument name length must be >= 1" in result.reason
     assert backend.calls == 0
+    rejection = next(event for event in events.events if event.type == "DecisionRejected")
+    assert rejection.data["argument_names"] == ("name",)
+    assert rejection.data["expected_observations"] == ("healthy",)
     assert not any(event.type == "PolicyChecked" for event in events.events)
     assert not any(event.type == "ActionStarted" for event in events.events)
 
@@ -438,6 +450,7 @@ async def test_normal_loop_requires_evaluator_before_finish() -> None:
     assert workload_capability.argument_schema["required"] == ["name"]
     assert not hasattr(model.contexts[0], "tools")
     event_types = [event.type for event in events.events]
+    assert event_types.count("DecisionValidated") == 3
     assert event_types.count("EvaluationCompleted") == 2
     assert event_types[-1] == "GoalCompleted"
     assert all(event.session_id == result.session_id for event in events.events)

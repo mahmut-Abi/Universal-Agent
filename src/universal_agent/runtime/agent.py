@@ -285,9 +285,17 @@ class AgentRuntime:
             try:
                 decision.validate()
             except ValueError as exc:
+                reason = f"invalid decision: {exc}"
+                await self._emit_decision_rejected(
+                    state,
+                    decision,
+                    ErrorCode.VALIDATION_ERROR,
+                    reason,
+                    validation_stage="contract",
+                )
                 return await self._settle(
                     session,
-                    fail(session, ErrorCode.VALIDATION_ERROR, f"invalid decision: {exc}"),
+                    fail(session, ErrorCode.VALIDATION_ERROR, reason),
                 )
             context_error = self._validate_decision_context(
                 decision,
@@ -296,7 +304,22 @@ class AgentRuntime:
             )
             if context_error is not None:
                 error_code, reason = context_error
+                await self._emit_decision_rejected(
+                    state,
+                    decision,
+                    error_code,
+                    reason,
+                    validation_stage="context",
+                )
                 return await self._settle(session, fail(session, error_code, reason))
+            await self._emit(
+                state,
+                "DecisionValidated",
+                data={
+                    **self._decision_event_data(decision),
+                    "available_capability_count": len(capabilities),
+                },
+            )
             result = await self._apply_decision(session, decision)
             if result is not None:
                 return result
@@ -653,6 +676,41 @@ class AgentRuntime:
             source_session_id=state.session_id,
         )
         self._components.memory_store.add(record)
+
+    async def _emit_decision_rejected(
+        self,
+        state: AgentState,
+        decision: Decision,
+        error_code: ErrorCode,
+        reason: str,
+        *,
+        validation_stage: str,
+    ) -> None:
+        await self._emit(
+            state,
+            "DecisionRejected",
+            data={
+                **self._decision_event_data(decision),
+                "error_code": error_code.value,
+                "validation_stage": validation_stage,
+                "rejection_reason": reason,
+            },
+        )
+
+    def _decision_event_data(self, decision: Decision) -> dict[str, object]:
+        data: dict[str, object] = {
+            "decision_type": decision.type.value,
+            "reason": decision.reason,
+            "argument_names": tuple(sorted(decision.arguments)),
+            "expected_observations": decision.expected_observations,
+        }
+        if decision.capability is not None:
+            data["capability"] = decision.capability
+        if decision.target is not None:
+            data["target"] = decision.target
+        if decision.message is not None:
+            data["message"] = decision.message
+        return data
 
     async def _reject_session(self, snapshot: SessionSnapshot, reason: str) -> ExecutionResult:
         """Fail a session that could not be hydrated into a runtime state."""

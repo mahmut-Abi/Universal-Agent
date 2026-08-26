@@ -634,6 +634,8 @@ def _audit_status(policy_effect: str, completed_status: str) -> str:
 
 
 def _log_level(event: RuntimeEventView) -> str:
+    if event.type == "DecisionRejected":
+        return "error"
     if event.type == "ResourceConflictDetected":
         return "error"
     if event.type == "PolicyChecked" and _string(event.data.get("effect")) == "deny":
@@ -660,6 +662,11 @@ def _log_level(event: RuntimeEventView) -> str:
 def _log_message(event: RuntimeEventView) -> str:
     if event.type == "DecisionGenerated":
         return f"decision generated: {_string(event.data.get('decision_type')) or 'unknown'}"
+    if event.type == "DecisionValidated":
+        return f"decision validated: {_string(event.data.get('decision_type')) or 'unknown'}"
+    if event.type == "DecisionRejected":
+        reason = _string(event.data.get("rejection_reason")) or "unknown reason"
+        return f"decision rejected: {reason}"
     if event.type == "PolicyChecked":
         return f"policy checked: {_string(event.data.get('effect')) or 'unknown'}"
     if event.type == "ActionStarted":
@@ -791,6 +798,10 @@ def _phase_trace_span(
 def _phase_span_name(event_type: str) -> str | None:
     if event_type == "DecisionGenerated":
         return "runtime.decision"
+    if event_type == "DecisionValidated":
+        return "runtime.decision.validation"
+    if event_type == "DecisionRejected":
+        return "runtime.decision.rejection"
     if event_type == "ModelUsageRecorded":
         return "runtime.model_usage"
     if event_type == "PolicyChecked":
@@ -807,6 +818,8 @@ def _phase_span_name(event_type: str) -> str | None:
 
 
 def _phase_span_status(event: RuntimeEventView) -> str:
+    if event.type == "DecisionRejected":
+        return "error"
     if event.type == "ResourceConflictDetected":
         return "error"
     if event.type == "PolicyChecked" and _string(event.data.get("effect")) == "deny":
