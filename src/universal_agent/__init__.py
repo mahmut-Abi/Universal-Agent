@@ -279,6 +279,14 @@ from universal_agent.runtime import (
     SessionSummaryView,
     StateEventCommitView,
 )
+from universal_agent.sdk import (
+    RuntimeSDKError,
+    SDKGoal,
+    SDKRunResult,
+    SDKSuccessCriterion,
+    SDKTask,
+    UniversalAgentRuntime,
+)
 from universal_agent.security import (
     EnvSecretProvider,
     FileSecretProvider,
@@ -507,10 +515,15 @@ __all__ = [
     "RuntimeLimitsConfig",
     "RuntimeLogRecordView",
     "RuntimeMetricsView",
+    "RuntimeSDKError",
     "RuntimeSecretRefView",
     "RuntimeService",
     "RuntimeSessionBatch",
     "RuntimeTraceSpanView",
+    "SDKGoal",
+    "SDKRunResult",
+    "SDKSuccessCriterion",
+    "SDKTask",
     "SQLiteDistributedLockRegistry",
     "SQLiteEventStore",
     "SQLiteRuntimeStore",
@@ -542,6 +555,7 @@ __all__ = [
     "Tool",
     "ToolDefinition",
     "TuiSnapshot",
+    "UniversalAgentRuntime",
     "WebConsoleSnapshot",
     "WorkHandler",
     "WorkHandlerResult",

@@ -79,6 +79,23 @@ Kernel internals.
 Use `RuntimeService` when building new local adapters. Use `RuntimeAPI` when the
 caller needs in-process execution and session/event read models.
 
+## Embedding SDK
+
+`UniversalAgentRuntime` is the first public embedding facade over
+`RuntimeService`. It accepts SDK-owned goal/task input types or simple strings,
+validates optional Profile selection through the service, and returns compact SDK
+run results while keeping lifecycle control in the Runtime.
+
+```python
+result = await sdk.submit_goal(
+    "Verify workload health",
+    success_criteria={"healthy": True},
+    task="Inspect workload",
+)
+events = await sdk.stream_events(result.session_id)
+```
+
+See `examples/p3_5_runtime_sdk.py` for a complete local embedding example.
 
 ## Runtime Configuration
 

@@ -111,10 +111,12 @@ Configuration: it validates the configured Domain identity, resolves environment
 file-backed secret references into non-value availability reports, builds memory or file-backed stores, applies runtime
 limits/environment, optionally builds a configured model adapter from non-secret model metadata
 and secret-reference names, optionally binds an application-level Agent Profile, and exposes both
-`RuntimeAPI` and `RuntimeService` without teaching applications Kernel internals. See
+`RuntimeAPI` and `RuntimeService` without teaching applications Kernel internals.
+`UniversalAgentRuntime` is the first embedding SDK facade over `RuntimeService`, with public
+SDK input/result types for goal submission, lifecycle control, session reads and event reads. See
 `examples/p3_5_runtime_api.py`, `examples/p3_5_runtime_service.py`,
-`examples/p3_5_runtime_config.py`, `examples/p3_5_cli_config.py`, and
-`examples/p3_5_cli_event_stream.py` for minimal
+`examples/p3_5_runtime_sdk.py`, `examples/p3_5_runtime_config.py`,
+`examples/p3_5_cli_config.py`, and `examples/p3_5_cli_event_stream.py` for minimal
 application-facing usage.
 
 `AgentdApp` is the framework-free route adapter foundation for `agentd`. It accepts small
@@ -268,7 +270,9 @@ detect accidental split state/event wiring. These adapters are local persistence
   a local CLI adapter, and typed `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for
   environment, secret references, limits, memory/file/SQLite store backends,
   Domain identity validation, multi-Domain composition activation, and CLI loading of generated
-  Profile config files through `RuntimeHost`. `JsonHttpModelAdapter` adds a dependency-free
+  Profile config files through `RuntimeHost`. `UniversalAgentRuntime` adds the first public
+  embedding SDK facade with SDK-owned goal/task/result contracts over `RuntimeService`.
+  `JsonHttpModelAdapter` adds a dependency-free
   provider bridge for HTTP endpoints that accept compiled runtime context JSON and return structured
   `Decision` JSON plus optional token/cost usage.
 - P3.6/P3.7 foundation: event-derived `metrics`, Prometheus metrics text export, `cost`, `logs`,
@@ -484,6 +488,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_2_kubernetes_api_backend.py
 .venv/bin/python examples/p3_5_runtime_api.py
 .venv/bin/python examples/p3_5_runtime_service.py
+.venv/bin/python examples/p3_5_runtime_sdk.py
 .venv/bin/python examples/p3_5_agentd_routes.py
 .venv/bin/python examples/p3_5_agentd_auth.py
 .venv/bin/python examples/p3_5_persistence.py

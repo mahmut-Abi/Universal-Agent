@@ -60,6 +60,7 @@ Examples are organized by roadmap slice. Useful entry points:
 .venv/bin/python examples/p3_2_kubernetes_remediation.py
 .venv/bin/python examples/p3_5_runtime_api.py
 .venv/bin/python examples/p3_5_runtime_service.py
+.venv/bin/python examples/p3_5_runtime_sdk.py
 .venv/bin/python examples/p3_5_agentd_routes.py
 .venv/bin/python examples/p3_5_cli_event_stream.py
 .venv/bin/python examples/p3_6_state_event_commit.py

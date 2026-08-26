@@ -17,7 +17,7 @@ across the roadmap layers below:
 | Layer | Implemented foundation |
 | --- | --- |
 | P0-P3 | Typed Agent loop, Domain Runtime, Evidence, World Model, Recovery, Memory, Multi-Domain composition, Agent Profiles |
-| P3.5 | Runtime API, RuntimeService, agentd route adapter, standard-library HTTP bridge, CLI, persistence, cursor Event reads, bounded wait polling |
+| P3.5 | Runtime API, RuntimeService, embedding SDK facade, agentd route adapter, standard-library HTTP bridge, CLI, persistence, cursor Event reads, bounded wait polling |
 | P3.6-P3.7 | Metrics, cost, structured logs, traces, OTLP-shaped export, audit, doctor, evaluation harness, replay, deterministic runtime mode |
 | P4 | Structured Multi-Agent task/result contracts, registry, delegation, conflict resolution, merge/evaluation foundations |
 | P5 | Read-only TUI, Web Console, Session/Evidence/World/Domain/Doctor/Distributed/Evaluation views |
