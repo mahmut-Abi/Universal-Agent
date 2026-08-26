@@ -109,6 +109,7 @@ def build_configured_model_adapter(
             endpoint=config.model.endpoint or OpenAIChatCompletionsModelAdapter.DEFAULT_ENDPOINT,
             extra_headers=_configured_model_headers(config),
             timeout_seconds=config.model.timeout_seconds,
+            response_format=config.model.response_format or "json_schema",
             transport=json_http_transport,
         )
     raise ValueError(f"unsupported model provider: {config.model.provider}")

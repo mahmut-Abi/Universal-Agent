@@ -311,6 +311,7 @@ class OpenAIChatCompletionsModelAdapter:
         endpoint: str = DEFAULT_ENDPOINT,
         extra_headers: Mapping[str, str] | None = None,
         timeout_seconds: float = 30.0,
+        response_format: str = "json_schema",
         transport: JsonHttpModelTransport | None = None,
     ) -> None:
         if not model.strip():
@@ -321,12 +322,17 @@ class OpenAIChatCompletionsModelAdapter:
             raise ValueError("OpenAI chat completions endpoint must not be empty")
         if timeout_seconds <= 0:
             raise ValueError("model timeout_seconds must be positive")
+        if response_format not in {"json_schema", "json_object"}:
+            raise ValueError(
+                "OpenAI chat completions response_format must be json_schema or json_object"
+            )
         _validate_headers(extra_headers or {})
         self._model = model
         self._api_key = api_key
         self._endpoint = endpoint
         self._extra_headers = dict(extra_headers or {})
         self._timeout_seconds = timeout_seconds
+        self._response_format = response_format
         self._transport = transport or StdlibJsonHttpTransport()
         self._last_usage: ModelUsage | None = None
 
@@ -399,14 +405,7 @@ class OpenAIChatCompletionsModelAdapter:
                     "content": json.dumps(prompt, sort_keys=True, separators=(",", ":")),
                 },
             ],
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "universal_agent_decision",
-                    "strict": True,
-                    "schema": _openai_decision_json_schema(),
-                },
-            },
+            "response_format": _openai_chat_response_format(self._response_format),
         }
         return immutable_json(payload)
 
@@ -625,6 +624,21 @@ def _openai_chat_completion_content(response: JsonMapping) -> str:
         if joined:
             return joined
     raise JsonHttpModelError("OpenAI chat completion message missing content")
+
+
+def _openai_chat_response_format(mode: str) -> dict[str, JsonValue]:
+    if mode == "json_object":
+        return {"type": "json_object"}
+    if mode == "json_schema":
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "universal_agent_decision",
+                "strict": True,
+                "schema": _openai_decision_json_schema(),
+            },
+        }
+    raise ValueError("OpenAI chat completions response_format must be json_schema or json_object")
 
 
 def _openai_decision_json_schema() -> dict[str, JsonValue]:

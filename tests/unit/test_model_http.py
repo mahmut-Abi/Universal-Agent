@@ -330,6 +330,46 @@ async def test_openai_chat_completions_model_adapter_posts_structured_request() 
 
 
 @pytest.mark.asyncio
+async def test_openai_chat_completions_model_adapter_can_request_json_object_format() -> None:
+    transport = RecordingTransport(
+        immutable_json(
+            {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": json_text(
+                                {
+                                    "type": "finish",
+                                    "reason": "Runtime criteria are already satisfied.",
+                                    "capability": None,
+                                    "target": None,
+                                    "arguments": {},
+                                    "expected_observations": [],
+                                    "message": None,
+                                }
+                            ),
+                        },
+                    }
+                ],
+            }
+        )
+    )
+    adapter = OpenAIChatCompletionsModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        response_format="json_object",
+        transport=transport,
+    )
+
+    decision = await adapter.decide(context())
+
+    assert decision.type is DecisionType.FINISH
+    assert transport.requests[0].payload["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
 async def test_openai_chat_completions_model_adapter_rejects_tool_call_finish() -> None:
     adapter = OpenAIChatCompletionsModelAdapter(
         "gpt-runtime",
@@ -400,6 +440,12 @@ def test_openai_chat_completions_model_adapter_validates_configuration() -> None
             "gpt-runtime",
             api_key="secret",
             extra_headers={"X-Test": "bad\n"},
+        )
+    with pytest.raises(ValueError, match="response_format"):
+        OpenAIChatCompletionsModelAdapter(
+            "gpt-runtime",
+            api_key="secret",
+            response_format="text",
         )
 
 

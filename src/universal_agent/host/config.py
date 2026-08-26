@@ -155,6 +155,7 @@ class ModelConfig:
     api_key_secret: str | None = None
     timeout_seconds: float = 30.0
     headers: JsonMapping = field(default_factory=immutable_json)
+    response_format: str | None = None
 
     @classmethod
     def scripted(cls, name: str = "scripted") -> ModelConfig:
@@ -177,6 +178,7 @@ class ModelConfig:
             api_key_secret,
             timeout_seconds,
             immutable_json(dict(headers or {})),
+            None,
         )
 
     @classmethod
@@ -196,6 +198,7 @@ class ModelConfig:
             api_key_secret,
             timeout_seconds,
             immutable_json(dict(headers or {})),
+            None,
         )
 
     @classmethod
@@ -207,6 +210,7 @@ class ModelConfig:
         endpoint: str | None = None,
         timeout_seconds: float = 30.0,
         headers: Mapping[str, str] | None = None,
+        response_format: str | None = None,
     ) -> ModelConfig:
         return cls(
             ModelProvider.OPENAI_CHAT_COMPLETIONS,
@@ -215,6 +219,7 @@ class ModelConfig:
             api_key_secret,
             timeout_seconds,
             immutable_json(dict(headers or {})),
+            response_format,
         )
 
     @classmethod
@@ -228,6 +233,7 @@ class ModelConfig:
             api_key_secret=_optional_string(values.get("api_key_secret"), "api_key_secret"),
             timeout_seconds=_float(values.get("timeout_seconds", 30.0), "timeout_seconds"),
             headers=immutable_json(_string_mapping(values.get("headers", {}), "headers")),
+            response_format=_optional_string(values.get("response_format"), "response_format"),
         )
         config.validate()
         return config
@@ -243,24 +249,34 @@ class ModelConfig:
                 raise ValueError("scripted model does not accept endpoint")
             if self.api_key_secret is not None:
                 raise ValueError("scripted model does not accept api_key_secret")
+            if self.response_format is not None:
+                raise ValueError("scripted model does not accept response_format")
             return
         if self.provider is ModelProvider.JSON_HTTP:
             if self.endpoint is None or not self.endpoint.strip():
                 raise ValueError("json_http model requires endpoint")
             if self.api_key_secret is not None and not self.api_key_secret.strip():
                 raise ValueError("model api_key_secret must not be empty")
+            if self.response_format is not None:
+                raise ValueError("json_http model does not accept response_format")
             return
         if self.provider is ModelProvider.OPENAI_RESPONSES:
             if self.endpoint is not None and not self.endpoint.strip():
                 raise ValueError("openai_responses model endpoint must not be empty")
             if self.api_key_secret is None or not self.api_key_secret.strip():
                 raise ValueError("openai_responses model requires api_key_secret")
+            if self.response_format is not None:
+                raise ValueError("openai_responses model does not accept response_format")
             return
         if self.provider is ModelProvider.OPENAI_CHAT_COMPLETIONS:
             if self.endpoint is not None and not self.endpoint.strip():
                 raise ValueError("openai_chat_completions model endpoint must not be empty")
             if self.api_key_secret is None or not self.api_key_secret.strip():
                 raise ValueError("openai_chat_completions model requires api_key_secret")
+            if self.response_format not in {None, "json_schema", "json_object"}:
+                raise ValueError(
+                    "openai_chat_completions response_format must be json_schema or json_object"
+                )
             return
         raise ValueError(f"unsupported model provider: {self.provider}")
 

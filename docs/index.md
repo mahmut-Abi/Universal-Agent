@@ -35,6 +35,8 @@ or automatic external package installation.
 - [Developer Guide](developer-guide.md): setup, tests, examples, and contribution workflow.
 - [Domain SDK](domain-sdk.md): Domain authoring interfaces, package metadata and validation.
 - [Runtime Operator Guide](runtime-operator-guide.md): running the local CLI/agentd/runtime surfaces.
+- [Kubernetes Production Run Spec](kubernetes-production-run-spec.md): current production-first Kubernetes operator slice.
+- [Kubernetes Production Slice Spec](kubernetes-production-slice-spec.md): Chat Completions and preflight slice history.
 - [Dependency Adoption Plan](dependency-adoption-plan.md): third-party library introduction plan, tiers, and roadmap.
 - [Revision Notes](revision/): dated status snapshots and implementation audits.
 

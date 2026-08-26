@@ -1,6 +1,9 @@
 # Kubernetes Production Slice Spec
 
-Status: implementation plan for the next production-oriented slice.
+Status: implemented foundation for the current Kubernetes production path.
+
+Follow-up production run entry point:
+[`docs/kubernetes-production-run-spec.md`](kubernetes-production-run-spec.md).
 
 ## Problem
 

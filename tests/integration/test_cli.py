@@ -54,6 +54,7 @@ from universal_agent.evaluation.recording import (
     FileReplayRecordingStore,
     encode_evaluation_report,
 )
+from universal_agent.security import EnvSecretProvider, SecretResolutionReport, resolve_secret_refs
 
 
 class CliBackend:
@@ -146,6 +147,8 @@ def build_cli_service(
     distributed_coordinator: DistributedRuntimeCoordinator | None = None,
     domain_packages: DomainPackageRegistry | None = None,
     environment: str = "staging",
+    config: RuntimeConfig | None = None,
+    secret_resolution: SecretResolutionReport | None = None,
 ) -> tuple[RuntimeService, CliBackend]:
     backend = CliBackend()
     components = RuntimeBuilder().build(
@@ -161,7 +164,7 @@ def build_cli_service(
         environment=immutable_json({"environment": environment}),
     )
     api = RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
-    config = RuntimeConfig(
+    runtime_config = config or RuntimeConfig(
         environment=immutable_json({"environment": environment}),
         store=StoreConfig.memory(),
         limits=RuntimeLimitsConfig(max_iterations=12, max_recovery_steps=4),
@@ -171,7 +174,8 @@ def build_cli_service(
         runtime_api=api,
         components=components,
         profiles=(cli_profile(),),
-        config=config,
+        config=runtime_config,
+        secret_resolution=secret_resolution,
         distributed_coordinator=distributed_coordinator,
         domain_packages=domain_packages,
     ), backend
@@ -860,6 +864,8 @@ async def test_cli_init_can_write_openai_chat_completions_kubectl_profile(
             "openai_api_key",
             "--model-timeout-seconds",
             "4.5",
+            "--model-response-format",
+            "json_object",
             "--model-header",
             "OpenAI-Organization=org-test",
         ],
@@ -887,6 +893,7 @@ async def test_cli_init_can_write_openai_chat_completions_kubectl_profile(
         api_key_secret="openai_api_key",
         timeout_seconds=4.5,
         headers={"OpenAI-Organization": "org-test"},
+        response_format="json_object",
     )
 
 
@@ -1397,6 +1404,140 @@ async def test_cli_kubernetes_preflight_can_skip_cluster_inspection() -> None:
     assert payload["status"] == "ok"
     assert checks["cluster_inspection"]["status"] == "skipped"
     assert payload["observations"] == {}
+
+
+@pytest.mark.asyncio
+async def test_cli_kubernetes_run_submits_production_workload_goal() -> None:
+    service, backend = build_cli_service([inspect_workload(), finish()])
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "kubernetes",
+            "run",
+            "production-operator",
+            "--workload",
+            "api",
+            "--namespace",
+            "prod",
+            "--skip-preflight",
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+    run = payload["run"]
+    assert isinstance(run, dict)
+    session = run["session"]
+    assert isinstance(session, dict)
+
+    assert status == 0
+    assert payload["status"] == "completed"
+    assert payload["operation"] == {
+        "profile": "production-operator",
+        "workload": "deployment/api",
+        "namespace": "prod",
+    }
+    assert payload["preflight"] is None
+    assert payload["next_step"] is None
+    assert run["result"]["status"] == "completed"
+    assert (
+        session["goal_description"]
+        == "Restore Kubernetes workload deployment/api in namespace prod to healthy state. "
+        "Inspect, diagnose, apply only policy-allowed safe remediation, "
+        "and verify fresh health evidence."
+    )
+    assert session["current_task_description"] == (
+        "Inspect Kubernetes workload deployment/api in namespace prod and determine whether "
+        "remediation is required."
+    )
+    assert session["tasks"][0]["required_criteria"] == ["healthy"]
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cli_kubernetes_run_reports_confirmation_next_step() -> None:
+    service, backend = build_cli_service([scale_workload()], environment="production")
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "--profile-config",
+            "profile.json",
+            "kubernetes",
+            "run",
+            "production-operator",
+            "--workload",
+            "deployment/example",
+            "--namespace",
+            "prod",
+            "--skip-preflight",
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+    next_step = payload["next_step"]
+    assert isinstance(next_step, dict)
+    run = payload["run"]
+    assert isinstance(run, dict)
+    session = run["session"]
+    assert isinstance(session, dict)
+
+    assert status == 0
+    assert payload["status"] == "waiting"
+    assert run["result"]["status"] == "waiting"
+    assert session["pending_action"]["capability"] == "scale_workload"
+    assert next_step["type"] == "confirm_pending_action"
+    assert "--profile-config profile.json session resume" in next_step["command"]
+    assert "--confirmed true" in next_step["command"]
+    assert backend.mutation_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_cli_kubernetes_run_stops_before_runtime_when_preflight_fails() -> None:
+    config = RuntimeConfig(
+        environment=immutable_json({"environment": "staging"}),
+        secrets=(SecretRef.env("openai_api_key", "OPENAI_API_KEY"),),
+        model=ModelConfig.openai_chat_completions(
+            name="gpt-runtime",
+            api_key_secret="openai_api_key",
+        ),
+        store=StoreConfig.memory(),
+        limits=RuntimeLimitsConfig(max_iterations=12, max_recovery_steps=4),
+        domain=DomainConfig("kubernetes", "0.2.0"),
+    )
+    service, backend = build_cli_service(
+        [inspect_workload(), finish()],
+        config=config,
+        secret_resolution=resolve_secret_refs(config.secrets, provider=EnvSecretProvider({})),
+    )
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "kubernetes",
+            "run",
+            "production-operator",
+            "--workload",
+            "deployment/api",
+            "--namespace",
+            "prod",
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+    preflight = payload["preflight"]
+    assert isinstance(preflight, dict)
+    checks = {item["name"]: item for item in preflight["checks"]}
+
+    assert status == 1
+    assert payload["status"] == "failed"
+    assert payload["run"] is None
+    assert payload["next_step"]["type"] == "fix_preflight"
+    assert checks["model_secret"]["status"] == "failed"
+    assert backend.inspect_calls == 0
 
 
 @pytest.mark.asyncio

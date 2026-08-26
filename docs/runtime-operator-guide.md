@@ -45,6 +45,22 @@ report and exits with status `1`.
 .venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes preflight --skip-cluster
 ```
 
+Use `kubernetes run` for the first production-oriented Kubernetes flow. It runs
+preflight by default, submits a health-remediation goal with `healthy=true`, and
+returns the normal runtime session body plus a focused `next_step` for operators.
+
+```bash
+.venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes run production-operator --workload deployment/api --namespace prod
+.venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes run production-operator --workload deployment/api --namespace prod --skip-preflight
+```
+
+In `production`, policy-gated `scale_workload` decisions return `waiting` until
+the pending action is reviewed and explicitly confirmed:
+
+```bash
+.venv/bin/python -m universal_agent.cli --profile-config profile.json session resume <session-id> --confirmed true
+```
+
 `agent run` defaults to the historical `healthy=true` success criterion. Use
 `--success KEY=JSON` to run other concrete goals without changing code. Repeat
 the flag for multiple required criteria; `distributed schedule-goal` accepts the

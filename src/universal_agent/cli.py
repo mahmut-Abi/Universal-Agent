@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import shlex
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
@@ -183,7 +184,13 @@ from universal_agent.profile import (
     ProfileConfigNotFoundError,
     load_profile_catalog,
 )
-from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI, RuntimeEventBatch
+from universal_agent.runtime import (
+    AgentRuntime,
+    InMemoryEventSink,
+    RuntimeAPI,
+    RuntimeEventBatch,
+    RuntimeRun,
+)
 from universal_agent.security import EnvSecretProvider, SecretProvider, resolve_secret_value
 from universal_agent.service import RuntimeConfigDomainView, RuntimeConfigView, RuntimeService
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
@@ -566,6 +573,11 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--model-api-key-file")
     init.add_argument("--model-api-key-secret", default="model_api_key")
     init.add_argument("--model-timeout-seconds", type=float, default=30.0)
+    init.add_argument(
+        "--model-response-format",
+        choices=("json_schema", "json_object"),
+        help="Response format for openai_chat_completions profiles.",
+    )
     init.add_argument("--model-header", action="append", default=[])
     init.add_argument("--force", action="store_true")
 
@@ -599,6 +611,12 @@ def build_parser() -> argparse.ArgumentParser:
     kubernetes_preflight.add_argument("--workload")
     kubernetes_preflight.add_argument("--namespace")
     kubernetes_preflight.add_argument("--skip-cluster", action="store_true")
+    kubernetes_run = kubernetes_commands.add_parser("run")
+    kubernetes_run.add_argument("profile")
+    kubernetes_run.add_argument("--workload", required=True)
+    kubernetes_run.add_argument("--namespace")
+    kubernetes_run.add_argument("--skip-preflight", action="store_true")
+    kubernetes_run.add_argument("--skip-cluster", action="store_true")
 
     tui = commands.add_parser("tui")
     tui.add_argument("--session-id")
@@ -1214,10 +1232,20 @@ async def _dispatch_kubernetes(
 ) -> None:
     command = cast(str, args.kubernetes_command)
     if command == "preflight":
-        report = await _kubernetes_preflight_report(args, service)
-        _write_json(out, report)
-        if report["status"] == "failed":
+        standalone_preflight = await _kubernetes_preflight_report(args, service)
+        _write_json(out, standalone_preflight)
+        if standalone_preflight["status"] == "failed":
             raise CliExit(1)
+        return
+    if command == "run":
+        preflight_report: JsonMapping | None = None
+        if not cast(bool, args.skip_preflight):
+            preflight_report = await _kubernetes_preflight_report(args, service)
+            if preflight_report["status"] == "failed":
+                _write_json(out, _kubernetes_run_preflight_failed_body(args, preflight_report))
+                raise CliExit(1)
+        run = await _run_kubernetes_remediation(args, service)
+        _write_json(out, _kubernetes_run_body(args, run, preflight_report))
         return
     raise ValueError(f"unknown kubernetes command: {command}")
 
@@ -1467,6 +1495,130 @@ def _preflight_failed(checks: list[JsonValue]) -> bool:
         if isinstance(check, Mapping) and check.get("status") == "failed":
             return True
     return False
+
+
+async def _run_kubernetes_remediation(
+    args: argparse.Namespace,
+    service: RuntimeService,
+) -> RuntimeRun:
+    profile = cast(str, args.profile)
+    if not service.accepts_profile(profile):
+        raise ValueError(f"unknown profile: {profile}")
+    workload = _kubernetes_workload_resource(cast(str, args.workload))
+    namespace = _optional_kubernetes_namespace(cast(str | None, args.namespace))
+    goal = Goal(
+        _kubernetes_remediation_goal_description(workload, namespace),
+        (SuccessCriterion("healthy", True),),
+    )
+    task = Task(
+        _kubernetes_remediation_task_description(workload, namespace),
+        ("healthy",),
+    )
+    return await service.run_goal(goal, task)
+
+
+def _kubernetes_run_body(
+    args: argparse.Namespace,
+    run: RuntimeRun,
+    preflight: JsonMapping | None,
+) -> JsonMapping:
+    profile_config = cast(str | None, args.profile_config)
+    return immutable_json(
+        {
+            "status": run.result.status.value,
+            "operation": {
+                "profile": cast(str, args.profile),
+                "workload": _kubernetes_workload_resource(cast(str, args.workload)),
+                "namespace": _optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
+            },
+            "preflight": None if preflight is None else dict(preflight),
+            "run": dict(runtime_run_body(run)),
+            "next_step": _kubernetes_run_next_step(run, profile_config),
+        }
+    )
+
+
+def _kubernetes_run_preflight_failed_body(
+    args: argparse.Namespace,
+    preflight: JsonMapping,
+) -> JsonMapping:
+    return immutable_json(
+        {
+            "status": "failed",
+            "operation": {
+                "profile": cast(str, args.profile),
+                "workload": _kubernetes_workload_resource(cast(str, args.workload)),
+                "namespace": _optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
+            },
+            "preflight": dict(preflight),
+            "run": None,
+            "next_step": {
+                "type": "fix_preflight",
+                "message": "Resolve failed Kubernetes preflight checks before running remediation.",
+            },
+        }
+    )
+
+
+def _kubernetes_run_next_step(
+    run: RuntimeRun,
+    profile_config: str | None,
+) -> JsonValue:
+    if run.session.pending_action is not None:
+        command = ["python", "-m", "universal_agent.cli"]
+        if profile_config is not None:
+            command.extend(("--profile-config", profile_config))
+        command.extend(("session", "resume", str(run.result.session_id), "--confirmed", "true"))
+        return {
+            "type": "confirm_pending_action",
+            "message": (
+                "Review pending_action before confirming the policy-gated Kubernetes mutation."
+            ),
+            "command": shlex.join(command),
+        }
+    if run.result.status is ExecutionStatus.FAILED:
+        command = ["python", "-m", "universal_agent.cli"]
+        if profile_config is not None:
+            command.extend(("--profile-config", profile_config))
+        command.extend(("session", "diagnostics", str(run.result.session_id)))
+        return {
+            "type": "inspect_failure",
+            "message": "Inspect session diagnostics before retrying the Kubernetes operation.",
+            "command": shlex.join(command),
+        }
+    return None
+
+
+def _kubernetes_workload_resource(workload: str) -> str:
+    normalized = workload.strip()
+    if not normalized:
+        raise ValueError("kubernetes workload must not be empty")
+    if "/" in normalized:
+        return normalized
+    return f"deployment/{normalized}"
+
+
+def _optional_kubernetes_namespace(namespace: str | None) -> str | None:
+    if namespace is None:
+        return None
+    normalized = namespace.strip()
+    if not normalized:
+        raise ValueError("kubernetes namespace must not be empty")
+    return normalized
+
+
+def _kubernetes_remediation_goal_description(workload: str, namespace: str | None) -> str:
+    scope = workload if namespace is None else f"{workload} in namespace {namespace}"
+    return (
+        f"Restore Kubernetes workload {scope} to healthy state. "
+        "Inspect, diagnose, apply only policy-allowed safe remediation, "
+        "and verify fresh health evidence."
+    )
+
+
+def _kubernetes_remediation_task_description(workload: str, namespace: str | None) -> str:
+    scope = workload if namespace is None else f"{workload} in namespace {namespace}"
+    return f"Inspect Kubernetes workload {scope} and determine whether remediation is required."
 
 
 async def _dispatch_tui(
@@ -2131,6 +2283,7 @@ def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
         model_api_key_file=cast(str | None, args.model_api_key_file),
         model_api_key_secret=cast(str, args.model_api_key_secret),
         model_timeout_seconds=cast(float, args.model_timeout_seconds),
+        model_response_format=cast(str | None, args.model_response_format),
         model_headers=_parse_key_value_options(cast(list[str], args.model_header), "model-header"),
     )
     tmp_path = output.with_name(output.name + ".tmp")
@@ -2172,6 +2325,7 @@ def _profile_config_payload(
     model_api_key_file: str | None,
     model_api_key_secret: str,
     model_timeout_seconds: float,
+    model_response_format: str | None,
     model_headers: dict[str, str],
 ) -> dict[str, object]:
     model_secret_source = _single_secret_source(
@@ -2218,6 +2372,7 @@ def _profile_config_payload(
             model_api_key_source=model_secret_source,
             model_api_key_secret=model_api_key_secret,
             model_timeout_seconds=model_timeout_seconds,
+            model_response_format=model_response_format,
             model_headers=model_headers,
         ),
         "store": store,
@@ -2326,6 +2481,7 @@ def _profile_model_config(
     model_api_key_source: tuple[str, str] | None,
     model_api_key_secret: str,
     model_timeout_seconds: float,
+    model_response_format: str | None,
     model_headers: dict[str, str],
 ) -> dict[str, object]:
     model: dict[str, object] = {
@@ -2338,12 +2494,16 @@ def _profile_model_config(
             raise ValueError("scripted model does not accept --model-endpoint")
         if model_api_key_source is not None:
             raise ValueError("scripted model does not accept model API key secrets")
+        if model_response_format is not None:
+            raise ValueError("scripted model does not accept --model-response-format")
         if model_headers:
             raise ValueError("scripted model does not accept --model-header")
         return model
     if model_provider == "json_http":
         if model_endpoint is None or not model_endpoint.strip():
             raise ValueError("json_http model requires --model-endpoint")
+        if model_response_format is not None:
+            raise ValueError("json_http model does not accept --model-response-format")
         model["endpoint"] = model_endpoint
     elif model_provider in {"openai_chat_completions", "openai_responses"}:
         if model_name == "scripted":
@@ -2354,6 +2514,10 @@ def _profile_model_config(
             if not model_endpoint.strip():
                 raise ValueError(f"{model_provider} model endpoint must not be empty")
             model["endpoint"] = model_endpoint
+        if model_response_format is not None:
+            if model_provider != "openai_chat_completions":
+                raise ValueError(f"{model_provider} model does not accept --model-response-format")
+            model["response_format"] = model_response_format
     else:
         raise ValueError(f"unsupported model provider: {model_provider}")
     if model_api_key_source is not None:

@@ -304,6 +304,7 @@ async def test_runtime_host_builds_openai_chat_completions_model_from_config_sec
             api_key_secret="openai_api_key",
             timeout_seconds=4.5,
             headers={"OpenAI-Organization": "org-test"},
+            response_format="json_object",
         ),
     )
     adapter = build_configured_model_adapter(
@@ -319,7 +320,7 @@ async def test_runtime_host_builds_openai_chat_completions_model_from_config_sec
     assert transport.headers["OpenAI-Organization"] == "org-test"
     assert transport.payloads[0]["model"] == "gpt-runtime"
     assert "messages" in transport.payloads[0]
-    assert "response_format" in transport.payloads[0]
+    assert transport.payloads[0]["response_format"] == {"type": "json_object"}
     assert "store" not in transport.payloads[0]
     assert "secret-value" not in str(config)
 

@@ -343,6 +343,7 @@ class RuntimeModelConfigView:
     api_key_secret: str | None = None
     timeout_seconds: float = 30.0
     headers: JsonMapping = field(default_factory=immutable_json)
+    response_format: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1888,6 +1889,7 @@ def runtime_model_config_view(model: ModelConfig) -> RuntimeModelConfigView:
         model.api_key_secret,
         model.timeout_seconds,
         redact_environment(model.headers),
+        model.response_format,
     )
 
 

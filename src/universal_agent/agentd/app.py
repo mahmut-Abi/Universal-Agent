@@ -1548,6 +1548,8 @@ def _runtime_model_config_body(view: RuntimeModelConfigView) -> dict[str, JsonVa
         body["api_key_secret"] = view.api_key_secret
     if view.headers:
         body["headers"] = _json_value(view.headers)
+    if view.response_format is not None:
+        body["response_format"] = view.response_format
     return body
 
 
