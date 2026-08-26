@@ -23,6 +23,7 @@ from universal_agent.service import (
     RuntimeService,
     SessionExplorerView,
     ToolView,
+    WorldNeighborhoodView,
 )
 
 WebConsoleSnapshot = RuntimeConsoleSnapshot
@@ -44,6 +45,8 @@ async def build_web_console_snapshot(
     session_id: SessionId | None = None,
     session_limit: int = 10,
     event_limit: int = 20,
+    world_entity_id: str | None = None,
+    world_relation: str | None = None,
 ) -> WebConsoleSnapshot:
     """Build a read-only Web Console snapshot from RuntimeService projections."""
 
@@ -52,6 +55,8 @@ async def build_web_console_snapshot(
         session_id=session_id,
         session_limit=session_limit,
         event_limit=event_limit,
+        world_entity_id=world_entity_id,
+        world_relation=world_relation,
     )
 
 
@@ -353,6 +358,7 @@ def render_web_world_model_explorer(snapshot: WebConsoleSnapshot) -> str:
             _selected_session(snapshot.selected_session),
             _world_facts(snapshot.session_explorer),
             _world_fact_history(snapshot.session_explorer),
+            _world_neighborhood(snapshot.world_neighborhood),
             _world_entities(snapshot.session_explorer),
             _world_relations(snapshot.session_explorer),
             _evidence(snapshot.session_explorer),
@@ -1821,22 +1827,55 @@ def _world_fact_history(explorer: SessionExplorerView | None) -> str:
     )
 
 
+def _world_neighborhood(neighborhood: WorldNeighborhoodView | None) -> str:
+    if neighborhood is None:
+        return _section(
+            "Focused World Neighborhood",
+            '<p class="empty">No focused world neighborhood selected</p>',
+        )
+    root = (
+        '<p class="empty">No root entity matched the requested focus</p>'
+        if neighborhood.root is None
+        else _table(
+            ("Entity", "Kind", "Attributes", "Evidence"),
+            (_world_entity_row(neighborhood.root),),
+        )
+    )
+    return _section(
+        "Focused World Neighborhood",
+        root
+        + _table(
+            ("Fact Subject", "Claim", "Value", "Confidence", "Evidence"),
+            _world_fact_rows(neighborhood.facts, empty="No focused world facts"),
+        )
+        + _table(
+            ("Source", "Relation", "Target", "Evidence"),
+            _world_relation_rows(
+                neighborhood.outgoing_relations,
+                empty="No outgoing focused relations",
+            ),
+        )
+        + _table(
+            ("Source", "Relation", "Target", "Evidence"),
+            _world_relation_rows(
+                neighborhood.incoming_relations,
+                empty="No incoming focused relations",
+            ),
+        )
+        + _table(
+            ("Related Entity", "Kind", "Attributes", "Evidence"),
+            _world_entity_rows(
+                neighborhood.related_entities,
+                empty="No related focused entities",
+            ),
+        ),
+    )
+
+
 def _world_entities(explorer: SessionExplorerView | None) -> str:
     rows = []
     if explorer is not None:
-        rows = [
-            "\n".join(
-                (
-                    "<tr>",
-                    f"<td>{_html(entity.entity_id)}</td>",
-                    f"<td>{_html(entity.kind)}</td>",
-                    f"<td>{_html(_value_text(entity.attributes))}</td>",
-                    f"<td>{_html(', '.join(entity.evidence_ids))}</td>",
-                    "</tr>",
-                )
-            )
-            for entity in explorer.world_entities
-        ]
+        rows = list(_world_entity_rows(explorer.world_entities, empty=""))
     if not rows:
         rows.append('<tr><td colspan="4">No world entities</td></tr>')
     return _section(
@@ -1848,19 +1887,7 @@ def _world_entities(explorer: SessionExplorerView | None) -> str:
 def _world_relations(explorer: SessionExplorerView | None) -> str:
     rows = []
     if explorer is not None:
-        rows = [
-            "\n".join(
-                (
-                    "<tr>",
-                    f"<td>{_html(relation.source)}</td>",
-                    f"<td>{_html(relation.relation)}</td>",
-                    f"<td>{_html(relation.target)}</td>",
-                    f"<td>{_html(', '.join(relation.evidence_ids))}</td>",
-                    "</tr>",
-                )
-            )
-            for relation in explorer.world_relations
-        ]
+        rows = list(_world_relation_rows(explorer.world_relations, empty=""))
     if not rows:
         rows.append('<tr><td colspan="4">No world relations</td></tr>')
     return _section(
@@ -1972,6 +1999,65 @@ def _table(headers: tuple[str, ...], rows: tuple[str, ...]) -> str:
         + "".join(rows)
         + "</tbody></table></div>"
     )
+
+
+def _world_fact_rows(facts: tuple[Any, ...], *, empty: str) -> tuple[str, ...]:
+    rows = tuple(
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(fact.subject)}</td>",
+                f"<td>{_html(fact.claim)}</td>",
+                f"<td>{_html(_value_text(fact.value))}</td>",
+                f"<td>{fact.confidence:.2f}</td>",
+                f"<td>{_html(', '.join(fact.evidence_ids))}</td>",
+                "</tr>",
+            )
+        )
+        for fact in facts
+    )
+    if rows or not empty:
+        return rows
+    return (f'<tr><td colspan="5">{_html(empty)}</td></tr>',)
+
+
+def _world_entity_rows(entities: tuple[Any, ...], *, empty: str) -> tuple[str, ...]:
+    rows = tuple(_world_entity_row(entity) for entity in entities)
+    if rows or not empty:
+        return rows
+    return (f'<tr><td colspan="4">{_html(empty)}</td></tr>',)
+
+
+def _world_entity_row(entity: Any) -> str:
+    return "\n".join(
+        (
+            "<tr>",
+            f"<td>{_html(entity.entity_id)}</td>",
+            f"<td>{_html(entity.kind)}</td>",
+            f"<td>{_html(_value_text(entity.attributes))}</td>",
+            f"<td>{_html(', '.join(entity.evidence_ids))}</td>",
+            "</tr>",
+        )
+    )
+
+
+def _world_relation_rows(relations: tuple[Any, ...], *, empty: str) -> tuple[str, ...]:
+    rows = tuple(
+        "\n".join(
+            (
+                "<tr>",
+                f"<td>{_html(relation.source)}</td>",
+                f"<td>{_html(relation.relation)}</td>",
+                f"<td>{_html(relation.target)}</td>",
+                f"<td>{_html(', '.join(relation.evidence_ids))}</td>",
+                "</tr>",
+            )
+        )
+        for relation in relations
+    )
+    if rows or not empty:
+        return rows
+    return (f'<tr><td colspan="4">{_html(empty)}</td></tr>',)
 
 
 def _action_count(snapshot: WebConsoleSnapshot) -> str:

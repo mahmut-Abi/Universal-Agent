@@ -305,12 +305,23 @@ class AgentdApp:
         if console_explorer is not None:
             if method != "GET":
                 return method_not_allowed(("GET",))
+            is_world_explorer = path == "/console/world"
             try:
                 snapshot = await build_web_console_snapshot(
                     self._service,
                     session_id=_optional_session_id_query(request.path),
                     session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
                     event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
+                    world_entity_id=(
+                        _optional_query_value(request.path, "entity_id")
+                        if is_world_explorer
+                        else None
+                    ),
+                    world_relation=(
+                        _optional_query_value(request.path, "relation")
+                        if is_world_explorer
+                        else None
+                    ),
                 )
             except StateNotFoundError as exc:
                 return not_found(str(exc))
@@ -412,12 +423,23 @@ class AgentdApp:
         if console_session_id is not None:
             if method != "GET":
                 return method_not_allowed(("GET",))
+            is_world_explorer = console_session_suffix == "world"
             try:
                 snapshot = await build_web_console_snapshot(
                     self._service,
                     session_id=console_session_id,
                     session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
                     event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
+                    world_entity_id=(
+                        _optional_query_value(request.path, "entity_id")
+                        if is_world_explorer
+                        else None
+                    ),
+                    world_relation=(
+                        _optional_query_value(request.path, "relation")
+                        if is_world_explorer
+                        else None
+                    ),
                 )
             except StateNotFoundError as exc:
                 return not_found(str(exc))

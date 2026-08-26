@@ -1072,10 +1072,22 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     detail = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}?event_limit=20"))
     evidence_page = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/evidence"))
     world_page = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/world"))
+    focused_world_page = await app.handle(
+        HttpRequest(
+            "GET",
+            f"/console/sessions/{session_id}/world?entity_id=deployment/example",
+        )
+    )
     top_evidence_page = await app.handle(
         HttpRequest("GET", f"/console/evidence?session_id={session_id}")
     )
     top_world_page = await app.handle(HttpRequest("GET", f"/console/world?session_id={session_id}"))
+    top_focused_world_page = await app.handle(
+        HttpRequest(
+            "GET",
+            f"/console/world?session_id={session_id}&entity_id=deployment/example&relation=owns",
+        )
+    )
     domain_page = await app.handle(HttpRequest("GET", "/console/domains/kubernetes/0.2.0"))
     package_page = await app.handle(HttpRequest("GET", "/console/domain-packages/kubernetes/0.2.0"))
     profile_page = await app.handle(HttpRequest("GET", "/console/profiles"))
@@ -1111,6 +1123,9 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     invalid_limit = await app.handle(HttpRequest("GET", "/console?event_limit=0"))
     invalid_detail_limit = await app.handle(
         HttpRequest("GET", f"/console/sessions/{session_id}?event_limit=0")
+    )
+    invalid_world_filter = await app.handle(
+        HttpRequest("GET", f"/console/sessions/{session_id}/world?relation=owns")
     )
 
     assert console.status_code == 200
@@ -1154,6 +1169,12 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert "Universal Agent Runtime World Model Explorer" in world_page.text_body
     assert "World Facts" in world_page.text_body
     assert "healthy" in world_page.text_body
+    assert "No focused world neighborhood selected" in world_page.text_body
+    assert focused_world_page.status_code == 200
+    assert focused_world_page.text_body is not None
+    assert "Focused World Neighborhood" in focused_world_page.text_body
+    assert "deployment/example" in focused_world_page.text_body
+    assert "pod/example-1" in focused_world_page.text_body
     assert top_evidence_page.status_code == 200
     assert top_evidence_page.text_body is not None
     assert "Universal Agent Runtime Evidence Explorer" in top_evidence_page.text_body
@@ -1162,6 +1183,10 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert top_world_page.text_body is not None
     assert "Universal Agent Runtime World Model Explorer" in top_world_page.text_body
     assert "healthy" in top_world_page.text_body
+    assert top_focused_world_page.status_code == 200
+    assert top_focused_world_page.text_body is not None
+    assert "Focused World Neighborhood" in top_focused_world_page.text_body
+    assert "No incoming focused relations" in top_focused_world_page.text_body
     assert domain_page.status_code == 200
     assert domain_page.text_body is not None
     assert "Universal Agent Runtime Domain Manager" in domain_page.text_body
@@ -1228,6 +1253,7 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     assert missing_detail.status_code == 404
     assert invalid_limit.status_code == 400
     assert invalid_detail_limit.status_code == 400
+    assert invalid_world_filter.status_code == 400
     assert backend.inspect_calls == 1
 
 

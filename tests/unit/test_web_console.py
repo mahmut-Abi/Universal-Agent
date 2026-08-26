@@ -58,6 +58,7 @@ from universal_agent.service import (
     WorldFactEvidenceView,
     WorldFactHistoryView,
     WorldFactView,
+    WorldNeighborhoodView,
     WorldRelationView,
 )
 from universal_agent.web import (
@@ -601,6 +602,55 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "pod/example-1" in world_explorer
     assert "healthy" in world_explorer
     assert "Session Evidence" in world_explorer
+    assert "Focused World Neighborhood" in world_explorer
+    assert "No focused world neighborhood selected" in world_explorer
+
+    focused_world_explorer = render_web_world_model_explorer(
+        replace(
+            snapshot,
+            world_neighborhood=WorldNeighborhoodView(
+                WorldEntityView(
+                    "deployment/example",
+                    "Deployment",
+                    MappingProxyType({"healthy": True}),
+                    ("evidence-2",),
+                ),
+                (
+                    WorldFactView(
+                        "deployment/example",
+                        "healthy",
+                        True,
+                        0.99,
+                        timestamp,
+                        ("evidence-1",),
+                    ),
+                ),
+                (
+                    WorldRelationView(
+                        "deployment/example",
+                        "owns",
+                        "pod/example-1",
+                        ("evidence-3",),
+                    ),
+                ),
+                (),
+                (
+                    WorldEntityView(
+                        "pod/example-1",
+                        "Pod",
+                        MappingProxyType({"phase": "Running"}),
+                        ("evidence-5",),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert "Focused World Neighborhood" in focused_world_explorer
+    assert "deployment/example" in focused_world_explorer
+    assert "No incoming focused relations" in focused_world_explorer
+    assert "pod/example-1" in focused_world_explorer
+    assert '{"phase": "Running"}' in focused_world_explorer
 
     domain_detail = render_web_domain_detail(
         snapshot,

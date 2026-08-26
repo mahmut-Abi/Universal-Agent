@@ -26,6 +26,7 @@ from universal_agent.service import (
     RuntimeService,
     SessionExplorerView,
     ToolView,
+    WorldNeighborhoodView,
 )
 
 
@@ -52,6 +53,7 @@ class RuntimeConsoleSnapshot:
     session_explorer: SessionExplorerView | None
     events: tuple[RuntimeEventView, ...]
     audit_records: tuple[AuditRecordView, ...]
+    world_neighborhood: WorldNeighborhoodView | None = None
     multi_agent: MultiAgentView = field(default_factory=lambda: MultiAgentView(False))
 
 
@@ -61,8 +63,13 @@ async def build_runtime_console_snapshot(
     session_id: SessionId | None = None,
     session_limit: int = 5,
     event_limit: int = 12,
+    world_entity_id: str | None = None,
+    world_relation: str | None = None,
 ) -> RuntimeConsoleSnapshot:
     """Build a read-only application snapshot from RuntimeService projections."""
+
+    if world_relation is not None and world_entity_id is None:
+        raise ValueError("world relation filter requires entity_id")
 
     session_batch = await service.stream_sessions(limit=session_limit)
     selected_session_id = session_id
@@ -71,11 +78,20 @@ async def build_runtime_console_snapshot(
 
     selected_session: SessionView | None = None
     session_explorer: SessionExplorerView | None = None
+    world_neighborhood: WorldNeighborhoodView | None = None
     events: tuple[RuntimeEventView, ...] = ()
     audit_records: tuple[AuditRecordView, ...] = ()
     if selected_session_id is not None:
         session_explorer = await service.session_explorer(selected_session_id)
         selected_session = session_explorer.session
+        if world_entity_id is not None:
+            world_neighborhood = (
+                await service.session_world(
+                    selected_session_id,
+                    entity_id=world_entity_id,
+                    relation=world_relation,
+                )
+            ).neighborhood
         events = (
             await service.stream_events(
                 selected_session_id,
@@ -106,6 +122,7 @@ async def build_runtime_console_snapshot(
         session_explorer=session_explorer,
         events=events,
         audit_records=audit_records,
+        world_neighborhood=world_neighborhood,
         multi_agent=service.multi_agent(),
     )
 
