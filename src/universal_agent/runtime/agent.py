@@ -288,6 +288,10 @@ class AgentRuntime:
                     session,
                     fail(session, ErrorCode.VALIDATION_ERROR, f"invalid decision: {exc}"),
                 )
+            context_error = self._validate_decision_context(decision, capabilities)
+            if context_error is not None:
+                error_code, reason = context_error
+                return await self._settle(session, fail(session, error_code, reason))
             result = await self._apply_decision(session, decision)
             if result is not None:
                 return result
@@ -583,6 +587,25 @@ class AgentRuntime:
                 )
             )
         return tuple(executable), tuple(contracts)
+
+    def _validate_decision_context(
+        self,
+        decision: Decision,
+        capabilities: tuple[CapabilityDefinition, ...],
+    ) -> tuple[ErrorCode, str] | None:
+        if decision.type is not DecisionType.EXECUTE:
+            return None
+        capability = decision.capability or ""
+        if capability in {item.name for item in capabilities}:
+            return None
+        try:
+            self._components.capabilities.resolve_registration(capability)
+        except UnknownCapabilityError as exc:
+            return ErrorCode.UNKNOWN_CAPABILITY, str(exc)
+        return (
+            ErrorCode.NO_CAPABILITY_TOOL,
+            f"capability is not executable in current context: {capability}",
+        )
 
     def _record_episodic(
         self,

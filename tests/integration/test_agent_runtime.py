@@ -334,6 +334,37 @@ async def test_decision_context_exposes_only_executable_capabilities() -> None:
 
 
 @pytest.mark.asyncio
+async def test_non_executable_context_capability_fails_before_action() -> None:
+    active = DomainLoader().load(PartiallyExecutableDomain())
+    components = RuntimeBuilder().build(active)
+    events = InMemoryEventSink()
+    runtime = AgentRuntime(
+        model=ScriptedModelAdapter(
+            [
+                Decision(
+                    DecisionType.EXECUTE,
+                    "try unavailable capability",
+                    capability="inspect_missing",
+                    expected_observations=("ready",),
+                )
+            ]
+        ),
+        state_store=InMemoryStateStore(),
+        components=components,
+        event_sink=events,
+    )
+
+    result = await runtime.run(
+        Goal("Verify ready capability", (SuccessCriterion("ready", True),)),
+        Task("Inspect ready", ("ready",)),
+    )
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error_code is ErrorCode.NO_CAPABILITY_TOOL
+    assert not any(event.type == "ActionStarted" for event in events.events)
+
+
+@pytest.mark.asyncio
 async def test_normal_loop_requires_evaluator_before_finish() -> None:
     runtime, model, store, events, backend = build_runtime(
         [execute_probe(), execute_probe(), finish()],
