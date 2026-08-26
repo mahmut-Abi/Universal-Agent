@@ -2188,6 +2188,59 @@ async def test_cli_scaffolds_domain_package(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_scaffolds_loadable_domain_runtime_stub(tmp_path: Path) -> None:
+    service, _ = build_cli_service([])
+    package_root = tmp_path / "widget-domain"
+    scaffold_output = StringIO()
+    load_output = StringIO()
+
+    scaffold_status = await run_cli(
+        [
+            "domain-packages",
+            "scaffold",
+            "widget",
+            "--description",
+            "Widget inspection domain package",
+            "--output",
+            str(package_root),
+            "--version",
+            "1.0.0",
+            "--ontology",
+            "Widget",
+            "--capability",
+            "inspect_widget",
+            "--tool",
+            "inspect_widget",
+            "--evaluator",
+            "criteria",
+            "--runtime-stub",
+        ],
+        service=service,
+        stdout=scaffold_output,
+    )
+    load_status = await run_cli(
+        ["domain-packages", "load-runtime", str(package_root)],
+        service=service,
+        stdout=load_output,
+    )
+
+    scaffold_payload = read_json(scaffold_output)
+    load_payload = read_json(load_output)
+    assert scaffold_status == 0
+    assert load_status == 0
+    assert str(package_root / "widget" / "__init__.py") in scaffold_payload["written_paths"]
+    assert str(package_root / "widget" / "domain.py") in scaffold_payload["written_paths"]
+    assert load_payload["status"] == "loaded"
+    assert load_payload["metadata_verified"] is True
+    assert load_payload["package"]["entrypoint"] == "widget.domain:build_domain"
+    assert load_payload["active_domain"]["name"] == "widget"
+    assert load_payload["active_domain"]["version"] == "1.0.0"
+    assert load_payload["active_domain"]["capability_names"] == ["inspect_widget"]
+    assert load_payload["active_domain"]["tool_names"] == ["inspect_widget"]
+    assert load_payload["active_domain"]["evaluator_names"] == ["criteria"]
+
+
+@pytest.mark.asyncio
 async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
