@@ -33,6 +33,7 @@ external package installation.
 
 - [Architecture Map](architecture-map.md): module ownership and runtime seams.
 - [Developer Guide](developer-guide.md): setup, tests, examples, and contribution workflow.
+- [Domain SDK](domain-sdk.md): Domain authoring interfaces, package metadata and validation.
 - [Runtime Operator Guide](runtime-operator-guide.md): running the local CLI/agentd/runtime surfaces.
 - [Revision Notes](revision/): dated status snapshots and implementation audits.
 

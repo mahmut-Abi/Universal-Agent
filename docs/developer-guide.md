@@ -73,6 +73,7 @@ Examples are organized by roadmap slice. Useful entry points:
 .venv/bin/python examples/p6_distributed_worker.py
 .venv/bin/python examples/p6_distributed_prune.py
 .venv/bin/python examples/p7_domain_package_runtime_loader.py
+.venv/bin/python examples/p7_domain_sdk_base_runtime.py
 .venv/bin/python examples/p7_domain_sdk_runtime_spec.py
 .venv/bin/python examples/p7_ecosystem_catalog.py
 ```
