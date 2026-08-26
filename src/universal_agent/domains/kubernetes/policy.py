@@ -49,6 +49,20 @@ class KubernetesScalePolicy:
                 "scale_workload requires a namespace",
                 self.name,
             )
+        expected_resource = _expected_criterion(context, "resource")
+        if expected_resource is not None and target != expected_resource:
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "scale_workload target is outside the requested workload scope",
+                self.name,
+            )
+        expected_namespace = _expected_criterion(context, "namespace")
+        if expected_namespace is not None and namespace != expected_namespace:
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "scale_workload namespace is outside the requested workload scope",
+                self.name,
+            )
         if not isinstance(replicas, int) or isinstance(replicas, bool):
             return PolicyResult(
                 PolicyEffect.DENY,
@@ -72,3 +86,12 @@ class KubernetesScalePolicy:
             "bounded Kubernetes workload scaling allowed",
             self.name,
         )
+
+
+def _expected_criterion(context: PolicyContext, key: str) -> str | None:
+    for criterion in context.goal_success_criteria:
+        if criterion.key == key and isinstance(criterion.expected, str):
+            expected = criterion.expected.strip()
+            if expected:
+                return expected
+    return None

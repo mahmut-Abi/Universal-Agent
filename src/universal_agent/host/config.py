@@ -273,9 +273,10 @@ class ModelConfig:
                 raise ValueError("openai_chat_completions model endpoint must not be empty")
             if self.api_key_secret is None or not self.api_key_secret.strip():
                 raise ValueError("openai_chat_completions model requires api_key_secret")
-            if self.response_format not in {None, "json_schema", "json_object"}:
+            if self.response_format not in {None, "json_schema", "json_object", "prompt_json"}:
                 raise ValueError(
-                    "openai_chat_completions response_format must be json_schema or json_object"
+                    "openai_chat_completions response_format must be "
+                    "json_schema, json_object, or prompt_json"
                 )
             return
         raise ValueError(f"unsupported model provider: {self.provider}")

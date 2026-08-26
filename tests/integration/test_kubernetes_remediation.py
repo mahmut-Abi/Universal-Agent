@@ -116,13 +116,22 @@ def inspect_decision(capability: str, *observations: str) -> Decision:
     )
 
 
-def scale_decision(*, replicas: int = 3) -> Decision:
+def scale_decision(
+    *,
+    replicas: int = 3,
+    name: str = "example",
+    namespace: str = "default",
+) -> Decision:
+    target = name if "/" in name else f"deployment/{name}"
+    workload_name = name.split("/", 1)[1] if "/" in name else name
     return Decision(
         DecisionType.EXECUTE,
         "Scale the under-replicated workload",
         capability="scale_workload",
-        target="deployment/example",
-        arguments=immutable_json({"name": "example", "namespace": "default", "replicas": replicas}),
+        target=target,
+        arguments=immutable_json(
+            {"name": workload_name, "namespace": namespace, "replicas": replicas}
+        ),
         expected_observations=("mutation_applied",),
     )
 
@@ -131,6 +140,19 @@ def goal_task() -> tuple[Goal, Task]:
     return (
         Goal("Restore workload health", (SuccessCriterion("healthy", True),)),
         Task("Inspect workload", ()),
+    )
+
+
+def scoped_goal_task() -> tuple[Goal, Task]:
+    return (
+        Goal(
+            "Restore scoped workload health",
+            (
+                SuccessCriterion("healthy", True),
+                SuccessCriterion("resource", "deployment/example"),
+            ),
+        ),
+        Task("Inspect scoped workload", ("healthy", "resource")),
     )
 
 
@@ -281,6 +303,28 @@ async def test_invalid_scale_is_denied_before_mutation() -> None:
     assert result.error_code is ErrorCode.POLICY_DENIED
     assert backend.mutation_calls == 0
     assert event_types.count("ActionStarted") == 2
+
+
+@pytest.mark.asyncio
+async def test_scale_outside_goal_resource_scope_is_denied_before_mutation() -> None:
+    backend = RemediationBackend()
+    runtime, _, events = build_runtime(
+        backend,
+        [
+            inspect_decision("inspect_workload", "healthy", "resource"),
+            inspect_decision("inspect_pod", "root_cause"),
+            scale_decision(name="other"),
+        ],
+    )
+
+    result = await runtime.run(*scoped_goal_task())
+    event_types = [event.type for event in events.events]
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error_code is ErrorCode.POLICY_DENIED
+    assert backend.mutation_calls == 0
+    assert event_types.count("ActionStarted") == 2
+    assert "GoalCompleted" not in event_types
 
 
 @pytest.mark.asyncio

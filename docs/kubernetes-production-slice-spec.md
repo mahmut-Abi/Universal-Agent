@@ -36,6 +36,9 @@ This slice adds:
 - `openai_chat_completions` as a first-class model provider.
 - A dependency-free `OpenAIChatCompletionsModelAdapter`.
 - Runtime config and CLI profile generation for Chat Completions endpoints.
+- `json_schema`, `json_object`, and explicit `prompt_json` modes so
+  legacy-compatible providers can omit `response_format` while still returning
+  locally validated Decision JSON.
 - `agent kubernetes preflight` for read-only profile/backend/capability checks
   before running a remediation goal.
 - Tests covering request shape, usage extraction, decision validation, config loading,
@@ -69,6 +72,11 @@ If the provider returns a tool/function call finish reason, content filtering,
 refusal, non-JSON content, or a decision outside the compiled context, the adapter
 must fail before the runtime acts.
 
+`prompt_json` is a compatibility mode for OpenAI-style Chat Completions providers
+that reject the `response_format` request field. It changes only the outbound
+provider request shape; the Runtime still decodes and validates a structured
+`Decision` before policy or action execution.
+
 ## Kubernetes Safety Contract
 
 For the initial production path:
@@ -83,10 +91,12 @@ For the initial production path:
 
 1. Add the Chat Completions model adapter and tests.
 2. Wire the adapter through `RuntimeConfig`, `RuntimeHost`, package exports, and CLI `init`.
-3. Add a Kubernetes Chat Completions example and operator guide updates.
-4. Add a read-only Kubernetes preflight command for cluster/workload inspection.
-5. Run focused tests and static checks.
-6. Commit each feature node before moving to live-cluster runbooks or further Kubernetes workflows.
+3. Add explicit legacy `prompt_json` compatibility for providers without
+   `response_format` support.
+4. Add a Kubernetes Chat Completions example and operator guide updates.
+5. Add a read-only Kubernetes preflight command for cluster/workload inspection.
+6. Run focused tests and static checks.
+7. Commit each feature node before moving to live-cluster runbooks or further Kubernetes workflows.
 
 ## Acceptance Criteria
 
@@ -101,6 +111,8 @@ For the initial production path:
   ```
 
 - `RuntimeHost` can construct the adapter without storing the secret value in config.
+- `prompt_json` Chat Completions profiles omit `response_format` from provider
+  requests but still reject invalid Decision JSON before execution.
 - Chat Completions responses decode `choices[0].message.content` into a validated
   runtime `Decision`.
 - OpenAI token usage is projected through the existing `ModelUsage` path.

@@ -41,7 +41,7 @@ from universal_agent import (
 )
 from universal_agent.agentd import AgentdHttpServer
 from universal_agent.cli import run_cli
-from universal_agent.core import DomainIdentity, JsonMapping, SessionId
+from universal_agent.core import DomainIdentity, JsonMapping, JsonValue, SessionId
 from universal_agent.domain import (
     DomainPackage,
     DomainPackageCompatibility,
@@ -65,39 +65,55 @@ class CliBackend:
     async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.inspect_calls += 1
         assert capability == "inspect_workload"
-        return immutable_json(
-            {
-                "resource": "deployment/example",
-                "healthy": True,
-                "kind": "Deployment",
-                "relation:owns": ["pod/example-1"],
-            }
-        )
+        name = str(arguments.get("name") or "example")
+        resource = name if "/" in name else f"deployment/{name}"
+        payload: dict[str, JsonValue] = {
+            "resource": resource,
+            "healthy": True,
+            "kind": "Deployment",
+            "relation:owns": [f"pod/{name}-1"],
+        }
+        if "namespace" in arguments:
+            payload["namespace"] = str(arguments["namespace"])
+        return immutable_json(payload)
 
     async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.mutation_calls += 1
         assert capability == "scale_workload"
-        return immutable_json({"resource": "deployment/example", "mutation_applied": True})
+        name = str(arguments.get("name") or "example")
+        resource = name if "/" in name else f"deployment/{name}"
+        return immutable_json({"resource": resource, "mutation_applied": True})
 
 
-def inspect_workload() -> Decision:
+def inspect_workload(
+    *,
+    name: str = "example",
+    namespace: str | None = None,
+    expected_observations: tuple[str, ...] = ("healthy",),
+) -> Decision:
+    arguments: dict[str, str] = {"name": name}
+    if namespace is not None:
+        arguments["namespace"] = namespace
+    resource = name if "/" in name else f"deployment/{name}"
     return Decision(
         DecisionType.EXECUTE,
         "Inspect workload through CLI test service",
         capability="inspect_workload",
-        target="deployment/example",
-        arguments=immutable_json({"name": "example"}),
-        expected_observations=("healthy",),
+        target=resource,
+        arguments=immutable_json(arguments),
+        expected_observations=expected_observations,
     )
 
 
-def scale_workload() -> Decision:
+def scale_workload(*, name: str = "example", namespace: str = "default") -> Decision:
+    resource = name if "/" in name else f"deployment/{name}"
+    workload_name = name.split("/", 1)[1] if "/" in name else name
     return Decision(
         DecisionType.EXECUTE,
         "Scale workload through CLI test service",
         capability="scale_workload",
-        target="deployment/example",
-        arguments=immutable_json({"name": "example", "namespace": "default", "replicas": 3}),
+        target=resource,
+        arguments=immutable_json({"name": workload_name, "namespace": namespace, "replicas": 3}),
         expected_observations=("mutation_applied",),
     )
 
@@ -898,6 +914,37 @@ async def test_cli_init_can_write_openai_chat_completions_kubectl_profile(
 
 
 @pytest.mark.asyncio
+async def test_cli_init_can_write_openai_chat_prompt_json_model_config(tmp_path: Path) -> None:
+    output = StringIO()
+    profile_path = tmp_path / "openai-chat-prompt-profile.json"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--model-provider",
+            "openai_chat_completions",
+            "--model-name",
+            "gpt-runtime",
+            "--model-api-key-env",
+            "OPENAI_API_KEY",
+            "--model-response-format",
+            "prompt_json",
+        ],
+        stdout=output,
+    )
+    profile = ProfileConfig.from_json_file(profile_path).to_profile()
+
+    assert status == 0
+    assert profile.runtime.model == ModelConfig.openai_chat_completions(
+        name="gpt-runtime",
+        api_key_secret="model_api_key",
+        response_format="prompt_json",
+    )
+
+
+@pytest.mark.asyncio
 async def test_cli_init_can_write_openai_responses_model_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "openai-profile.json"
@@ -1408,7 +1455,16 @@ async def test_cli_kubernetes_preflight_can_skip_cluster_inspection() -> None:
 
 @pytest.mark.asyncio
 async def test_cli_kubernetes_run_submits_production_workload_goal() -> None:
-    service, backend = build_cli_service([inspect_workload(), finish()])
+    service, backend = build_cli_service(
+        [
+            inspect_workload(
+                name="api",
+                namespace="prod",
+                expected_observations=("healthy", "resource", "namespace"),
+            ),
+            finish(),
+        ]
+    )
     output = StringIO()
 
     status = await run_cli(
@@ -1451,13 +1507,18 @@ async def test_cli_kubernetes_run_submits_production_workload_goal() -> None:
         "Inspect Kubernetes workload deployment/api in namespace prod and determine whether "
         "remediation is required."
     )
-    assert session["tasks"][0]["required_criteria"] == ["healthy"]
+    assert session["tasks"][0]["required_criteria"] == ["healthy", "resource", "namespace"]
+    assert session["satisfied_criteria"]["resource"] == "deployment/api"
+    assert session["satisfied_criteria"]["namespace"] == "prod"
     assert backend.inspect_calls == 1
 
 
 @pytest.mark.asyncio
 async def test_cli_kubernetes_run_reports_confirmation_next_step() -> None:
-    service, backend = build_cli_service([scale_workload()], environment="production")
+    service, backend = build_cli_service(
+        [scale_workload(namespace="prod")],
+        environment="production",
+    )
     output = StringIO()
 
     status = await run_cli(

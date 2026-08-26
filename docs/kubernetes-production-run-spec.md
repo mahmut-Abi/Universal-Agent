@@ -49,9 +49,12 @@ python -m universal_agent.cli --profile-config profile.json \
 The command must:
 
 - run Kubernetes preflight first unless `--skip-preflight` is explicit;
-- construct a Runtime-owned `Goal` with `healthy=true` success criteria;
+- construct a Runtime-owned `Goal` with `healthy=true`, `resource=<workload>`,
+  and optional `namespace=<namespace>` success criteria;
 - construct a `Task` that names the workload and namespace;
 - keep mutation authorization in deterministic policy code;
+- deny `scale_workload` before tool execution if the model proposes a resource
+  or namespace outside the requested workload scope;
 - keep production mutations paused for explicit confirmation;
 - return the normal runtime run body plus a focused operator `next_step`;
 - avoid storing or printing secret values.
@@ -72,6 +75,8 @@ This slice does not add:
 Tests target these public interfaces:
 
 - `OpenAIChatCompletionsModelAdapter.decide()` request/response contract;
+- `prompt_json` Chat Completions mode for legacy-compatible providers that do
+  not accept `response_format`;
 - `RuntimeConfig.from_mapping()` model configuration parsing and validation;
 - `RuntimeHost.build_configured_model_adapter()` host assembly with resolved secrets;
 - `agent init` profile generation;
@@ -80,20 +85,22 @@ Tests target these public interfaces:
 ## Implementation Plan
 
 1. Preserve Chat Completions as a Runtime-owned `Decision` adapter, including
-   `json_schema` and `json_object` response formats for OpenAI-compatible providers.
+   `json_schema`, `json_object`, and explicit `prompt_json` modes for
+   OpenAI-compatible providers.
 2. Add `agent kubernetes run` as the first production-oriented command over the
    existing RuntimeService and Kubernetes Domain Runtime.
 3. Run preflight before the runtime loop by default, and fail before goal
    submission if preflight checks fail.
-4. Return an explicit `confirm_pending_action` next step when production policy
+4. Enforce requested workload scope in deterministic Kubernetes mutation policy.
+5. Return an explicit `confirm_pending_action` next step when production policy
    pauses a remediation mutation.
-5. Document the operator flow and keep an offline example so the path remains
+6. Document the operator flow and keep an offline example so the path remains
    easy to verify without a live cluster.
 
 ## Acceptance Criteria
 
-- A profile can be initialized for `openai_chat_completions` with either
-  `json_schema` or `json_object` response format.
+- A profile can be initialized for `openai_chat_completions` with
+  `json_schema`, `json_object`, or `prompt_json` response format.
 - A Kubernetes profile can run:
 
   ```bash
@@ -104,6 +111,8 @@ Tests target these public interfaces:
   ```
 
 - Failed preflight returns status `failed` and no Runtime session is submitted.
+- The runtime denies scoped Kubernetes mutations whose target resource or
+  namespace differs from the `kubernetes run` request.
 - Production `scale_workload` decisions return status `waiting` with a
   confirmation command instead of mutating immediately.
 - Completed runs expose the normal session, evidence, world, and event surfaces

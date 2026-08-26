@@ -326,6 +326,33 @@ async def test_runtime_host_builds_openai_chat_completions_model_from_config_sec
 
 
 @pytest.mark.asyncio
+async def test_runtime_host_builds_openai_chat_prompt_json_model_from_config_secret_ref() -> None:
+    transport = OpenAIChatHostModelTransport()
+    config = RuntimeConfig(
+        secrets=(SecretRef.env("openai_api_key", "OPENAI_API_KEY"),),
+        model=ModelConfig.openai_chat_completions(
+            name="gpt-runtime",
+            api_key_secret="openai_api_key",
+            response_format="prompt_json",
+        ),
+    )
+    adapter = build_configured_model_adapter(
+        config,
+        secret_provider=EnvSecretProvider({"OPENAI_API_KEY": "secret-value"}),
+        json_http_transport=transport,
+    )
+
+    decision = await adapter.decide(model_context())
+
+    assert decision.reason == "openai chat host model completed"
+    assert transport.headers["Authorization"] == "Bearer secret-value"
+    assert transport.payloads[0]["model"] == "gpt-runtime"
+    assert "messages" in transport.payloads[0]
+    assert "response_format" not in transport.payloads[0]
+    assert "secret-value" not in str(config)
+
+
+@pytest.mark.asyncio
 async def test_runtime_host_builds_openai_responses_model_from_config_secret_ref() -> None:
     transport = OpenAIHostModelTransport()
     config = RuntimeConfig(

@@ -575,8 +575,11 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--model-timeout-seconds", type=float, default=30.0)
     init.add_argument(
         "--model-response-format",
-        choices=("json_schema", "json_object"),
-        help="Response format for openai_chat_completions profiles.",
+        choices=("json_schema", "json_object", "prompt_json"),
+        help=(
+            "Response format for openai_chat_completions profiles. "
+            "Use prompt_json for legacy-compatible providers without response_format support."
+        ),
     )
     init.add_argument("--model-header", action="append", default=[])
     init.add_argument("--force", action="store_true")
@@ -1506,13 +1509,14 @@ async def _run_kubernetes_remediation(
         raise ValueError(f"unknown profile: {profile}")
     workload = _kubernetes_workload_resource(cast(str, args.workload))
     namespace = _optional_kubernetes_namespace(cast(str | None, args.namespace))
+    criteria = _kubernetes_remediation_success_criteria(workload, namespace)
     goal = Goal(
         _kubernetes_remediation_goal_description(workload, namespace),
-        (SuccessCriterion("healthy", True),),
+        criteria,
     )
     task = Task(
         _kubernetes_remediation_task_description(workload, namespace),
-        ("healthy",),
+        tuple(item.key for item in criteria),
     )
     return await service.run_goal(goal, task)
 
@@ -1605,6 +1609,19 @@ def _optional_kubernetes_namespace(namespace: str | None) -> str | None:
     if not normalized:
         raise ValueError("kubernetes namespace must not be empty")
     return normalized
+
+
+def _kubernetes_remediation_success_criteria(
+    workload: str,
+    namespace: str | None,
+) -> tuple[SuccessCriterion, ...]:
+    criteria = [
+        SuccessCriterion("healthy", True),
+        SuccessCriterion("resource", workload),
+    ]
+    if namespace is not None:
+        criteria.append(SuccessCriterion("namespace", namespace))
+    return tuple(criteria)
 
 
 def _kubernetes_remediation_goal_description(workload: str, namespace: str | None) -> str:

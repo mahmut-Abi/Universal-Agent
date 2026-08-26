@@ -254,6 +254,8 @@ class ActionExecutor:
                 arguments=pending.arguments,
                 environment=self.environment,
                 confirmed=confirmed,
+                goal_success_criteria=state.goal.success_criteria,
+                task_required_criteria=state.current_task.required_criteria,
             )
         )
         await emit(

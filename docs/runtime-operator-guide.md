@@ -46,8 +46,11 @@ report and exits with status `1`.
 ```
 
 Use `kubernetes run` for the first production-oriented Kubernetes flow. It runs
-preflight by default, submits a health-remediation goal with `healthy=true`, and
-returns the normal runtime session body plus a focused `next_step` for operators.
+preflight by default, submits a health-remediation goal scoped to the requested
+workload and namespace, and returns the normal runtime session body plus a
+focused `next_step` for operators. If the model proposes `scale_workload`
+outside that requested scope, deterministic Kubernetes policy denies it before
+tool execution.
 
 ```bash
 .venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes run production-operator --workload deployment/api --namespace prod
@@ -172,7 +175,9 @@ goal completion.
 
 Direct OpenAI Chat Completions config uses the same secret reference model.
 `endpoint` is optional and defaults to the OpenAI Chat Completions endpoint when
-omitted.
+omitted. The default response format is `json_schema`; use `json_object` for
+providers that support JSON mode but not schemas, and `prompt_json` for legacy
+OpenAI-compatible providers that reject the `response_format` request field.
 
 ```json
 {
@@ -183,7 +188,8 @@ omitted.
     "provider": "openai_chat_completions",
     "name": "gpt-runtime",
     "api_key_secret": "openai_api_key",
-    "timeout_seconds": 30
+    "timeout_seconds": 30,
+    "response_format": "prompt_json"
   }
 }
 ```

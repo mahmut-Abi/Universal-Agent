@@ -184,6 +184,32 @@ def test_runtime_config_from_mapping_parses_openai_chat_completions_model_config
     assert config.model.provider is ModelProvider.OPENAI_CHAT_COMPLETIONS
 
 
+def test_runtime_config_from_mapping_parses_openai_chat_prompt_json_model_config() -> None:
+    config = RuntimeConfig.from_mapping(
+        {
+            "secrets": {
+                "openai_api_key": {
+                    "source": "env",
+                    "key": "OPENAI_API_KEY",
+                    "required": True,
+                }
+            },
+            "model": {
+                "provider": "openai_chat_completions",
+                "name": "gpt-runtime",
+                "api_key_secret": "openai_api_key",
+                "response_format": "prompt_json",
+            },
+        }
+    )
+
+    assert config.model == ModelConfig.openai_chat_completions(
+        name="gpt-runtime",
+        api_key_secret="openai_api_key",
+        response_format="prompt_json",
+    )
+
+
 def test_runtime_config_from_mapping_parses_openai_responses_model_config() -> None:
     config = RuntimeConfig.from_mapping(
         {

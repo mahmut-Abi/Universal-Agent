@@ -348,6 +348,8 @@ class PolicyContext:
     arguments: JsonMapping
     environment: JsonMapping = field(default_factory=immutable_json)
     confirmed: bool = False
+    goal_success_criteria: tuple[SuccessCriterion, ...] = ()
+    task_required_criteria: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

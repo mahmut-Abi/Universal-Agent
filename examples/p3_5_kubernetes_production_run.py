@@ -22,9 +22,7 @@ async def main() -> None:
             "run",
             LOCAL_PROFILE_NAME,
             "--workload",
-            "api",
-            "--namespace",
-            "prod",
+            "example",
         ],
         stdout=output,
     )
@@ -35,7 +33,7 @@ async def main() -> None:
 
     assert status == 0
     assert payload["status"] == "completed"
-    assert payload["operation"]["workload"] == "deployment/api"
+    assert payload["operation"]["workload"] == "deployment/example"
     assert result["status"] == "completed"
     print(
         json.dumps(
