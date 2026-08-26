@@ -1,3 +1,7 @@
+from universal_agent.core.arguments import (
+    ArgumentSchemaError,
+    validate_argument_contract,
+)
 from universal_agent.core.models import (
     ActionId,
     AgentState,
@@ -53,6 +57,7 @@ from universal_agent.core.models import (
 __all__ = [
     "ActionId",
     "AgentState",
+    "ArgumentSchemaError",
     "CapabilityCategory",
     "CapabilityDefinition",
     "CapabilityInputContract",
@@ -100,4 +105,5 @@ __all__ = [
     "new_session_id",
     "runtime_primitives",
     "utc_now",
+    "validate_argument_contract",
 ]

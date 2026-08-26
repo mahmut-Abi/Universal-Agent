@@ -18,6 +18,7 @@ from universal_agent.core import (
     Observation,
     SuccessCriterion,
     immutable_json,
+    validate_argument_contract,
 )
 from universal_agent.model.adapter import ModelUsage
 
@@ -134,6 +135,7 @@ class JsonHttpModelAdapter:
         try:
             decision = _decode_decision(decision_payload)
             decision.validate()
+            _validate_decision_against_context(decision, context)
         except ValueError as exc:
             raise JsonHttpModelError(f"invalid model decision: {exc}") from exc
         self._last_usage = _decode_usage(self._provider, self._model, response.get("usage"))
@@ -229,6 +231,7 @@ class OpenAIResponsesModelAdapter:
         try:
             decision = _decode_decision(decision_payload)
             decision.validate()
+            _validate_decision_against_context(decision, context)
         except ValueError as exc:
             raise JsonHttpModelError(f"invalid OpenAI model decision: {exc}") from exc
         self._last_usage = _decode_usage(
@@ -378,6 +381,23 @@ def _decode_decision(payload: JsonMapping) -> Decision:
         expected_observations=expected_observations,
         message=message,
     )
+
+
+def _validate_decision_against_context(decision: Decision, context: DecisionContext) -> None:
+    if decision.type is not DecisionType.EXECUTE:
+        return
+    capability = decision.capability or ""
+    available = {item.name: item for item in context.capabilities}
+    summary = available.get(capability)
+    if summary is None:
+        raise ValueError(f"capability is not available in context: {capability}")
+    argument_error = validate_argument_contract(
+        required_arguments=summary.required_arguments,
+        argument_schema=summary.argument_schema,
+        arguments=decision.arguments,
+    )
+    if argument_error is not None:
+        raise ValueError(f"arguments for capability {capability}: {argument_error}")
 
 
 def _decode_usage(provider: str, model: str, value: JsonValue) -> ModelUsage | None:

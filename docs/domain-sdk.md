@@ -19,13 +19,13 @@ class WidgetDomain(BaseDomainRuntime):
     manifest = DomainManifest(...)
 
     def capabilities(self) -> tuple[CapabilityDefinition, ...]:
-        return (...)
+        return ...
 
     def tools(self) -> tuple[Tool, ...]:
-        return (...)
+        return ...
 
     def evaluators(self) -> tuple[Evaluator, ...]:
-        return (...)
+        return ...
 ```
 
 Use `DomainRuntimeSpec` when the Domain can be described by declared runtime

@@ -27,6 +27,7 @@ from universal_agent.core import (
     TaskStatus,
     immutable_json,
     new_session_id,
+    validate_argument_contract,
 )
 from universal_agent.domain import RuntimeComponents
 from universal_agent.memory import MemoryKind, MemoryRecord, RetrievalRequest
@@ -288,7 +289,11 @@ class AgentRuntime:
                     session,
                     fail(session, ErrorCode.VALIDATION_ERROR, f"invalid decision: {exc}"),
                 )
-            context_error = self._validate_decision_context(decision, capabilities)
+            context_error = self._validate_decision_context(
+                decision,
+                capabilities,
+                input_contracts,
+            )
             if context_error is not None:
                 error_code, reason = context_error
                 return await self._settle(session, fail(session, error_code, reason))
@@ -592,11 +597,26 @@ class AgentRuntime:
         self,
         decision: Decision,
         capabilities: tuple[CapabilityDefinition, ...],
+        input_contracts: tuple[CapabilityInputContract, ...],
     ) -> tuple[ErrorCode, str] | None:
         if decision.type is not DecisionType.EXECUTE:
             return None
         capability = decision.capability or ""
         if capability in {item.name for item in capabilities}:
+            contracts = {item.capability: item for item in input_contracts}
+            contract = contracts.get(capability)
+            if contract is None:
+                return None
+            argument_error = validate_argument_contract(
+                required_arguments=contract.required_arguments,
+                argument_schema=contract.argument_schema,
+                arguments=decision.arguments,
+            )
+            if argument_error is not None:
+                return (
+                    ErrorCode.VALIDATION_ERROR,
+                    f"invalid decision arguments for capability {capability}: {argument_error}",
+                )
             return None
         try:
             self._components.capabilities.resolve_registration(capability)

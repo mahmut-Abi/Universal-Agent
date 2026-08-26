@@ -193,6 +193,54 @@ async def test_json_http_model_adapter_rejects_invalid_decision_contract() -> No
         await adapter.decide(context())
 
 
+@pytest.mark.asyncio
+async def test_json_http_model_adapter_rejects_decision_outside_context_capabilities() -> None:
+    adapter = JsonHttpModelAdapter(
+        "https://models.example.test/decide",
+        "runtime-model",
+        transport=RecordingTransport(
+            immutable_json(
+                {
+                    "decision": {
+                        "type": "execute",
+                        "reason": "Try unavailable capability.",
+                        "capability": "scale_workload",
+                        "arguments": {"name": "api"},
+                        "expected_observations": ["scaled"],
+                    }
+                }
+            )
+        ),
+    )
+
+    with pytest.raises(JsonHttpModelError, match="capability is not available in context"):
+        await adapter.decide(context())
+
+
+@pytest.mark.asyncio
+async def test_json_http_model_adapter_rejects_context_argument_contract_violation() -> None:
+    adapter = JsonHttpModelAdapter(
+        "https://models.example.test/decide",
+        "runtime-model",
+        transport=RecordingTransport(
+            immutable_json(
+                {
+                    "decision": {
+                        "type": "execute",
+                        "reason": "Missing required workload name.",
+                        "capability": "inspect_workload",
+                        "arguments": {},
+                        "expected_observations": ["healthy"],
+                    }
+                }
+            )
+        ),
+    )
+
+    with pytest.raises(JsonHttpModelError, match="missing required arguments: name"):
+        await adapter.decide(context())
+
+
 def test_json_http_model_adapter_validates_configuration() -> None:
     with pytest.raises(ValueError, match="endpoint"):
         JsonHttpModelAdapter("", "runtime-model")
@@ -333,6 +381,35 @@ async def test_openai_responses_model_adapter_rejects_incomplete_response() -> N
     )
 
     with pytest.raises(JsonHttpModelError, match="did not complete"):
+        await adapter.decide(context())
+
+
+@pytest.mark.asyncio
+async def test_openai_responses_model_adapter_rejects_context_argument_contract_violation() -> None:
+    adapter = OpenAIResponsesModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        transport=RecordingTransport(
+            immutable_json(
+                {
+                    "status": "completed",
+                    "output_text": json_text(
+                        {
+                            "type": "execute",
+                            "reason": "Empty workload name.",
+                            "capability": "inspect_workload",
+                            "target": "deployment/api",
+                            "arguments": {"name": ""},
+                            "expected_observations": ["healthy"],
+                            "message": None,
+                        }
+                    ),
+                }
+            )
+        ),
+    )
+
+    with pytest.raises(JsonHttpModelError, match="argument name length must be >= 1"):
         await adapter.decide(context())
 
 

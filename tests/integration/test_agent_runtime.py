@@ -365,6 +365,57 @@ async def test_non_executable_context_capability_fails_before_action() -> None:
 
 
 @pytest.mark.asyncio
+async def test_decision_arguments_are_validated_against_context_before_action() -> None:
+    runtime, _, _, events, backend = build_runtime(
+        [
+            Decision(
+                DecisionType.EXECUTE,
+                "missing required workload name",
+                capability="inspect_workload",
+                arguments=immutable_json({}),
+                expected_observations=("healthy",),
+            )
+        ],
+        [True],
+    )
+
+    result = await runtime.run(*health_goal_and_task())
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error_code is ErrorCode.VALIDATION_ERROR
+    assert "invalid decision arguments for capability inspect_workload" in result.reason
+    assert "missing required arguments: name" in result.reason
+    assert backend.calls == 0
+    assert not any(event.type == "PolicyChecked" for event in events.events)
+    assert not any(event.type == "ActionStarted" for event in events.events)
+
+
+@pytest.mark.asyncio
+async def test_decision_argument_schema_is_validated_against_context_before_action() -> None:
+    runtime, _, _, events, backend = build_runtime(
+        [
+            Decision(
+                DecisionType.EXECUTE,
+                "empty workload name",
+                capability="inspect_workload",
+                arguments=immutable_json({"name": ""}),
+                expected_observations=("healthy",),
+            )
+        ],
+        [True],
+    )
+
+    result = await runtime.run(*health_goal_and_task())
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error_code is ErrorCode.VALIDATION_ERROR
+    assert "argument name length must be >= 1" in result.reason
+    assert backend.calls == 0
+    assert not any(event.type == "PolicyChecked" for event in events.events)
+    assert not any(event.type == "ActionStarted" for event in events.events)
+
+
+@pytest.mark.asyncio
 async def test_normal_loop_requires_evaluator_before_finish() -> None:
     runtime, model, store, events, backend = build_runtime(
         [execute_probe(), execute_probe(), finish()],
