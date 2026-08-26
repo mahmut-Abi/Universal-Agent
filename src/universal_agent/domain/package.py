@@ -202,6 +202,7 @@ class DomainPackageScaffoldResult:
     package: DomainPackage
     created_paths: tuple[Path, ...]
     written_paths: tuple[Path, ...]
+    runtime_stub_paths: tuple[Path, ...] = ()
     overwritten: bool = False
 
 
@@ -525,10 +526,12 @@ def scaffold_domain_package(
             created_paths.append(resource_path)
 
     written_paths: list[Path] = []
+    runtime_stub_paths: tuple[Path, ...] = ()
     if spec.runtime_stub:
         runtime_stub_result = _write_runtime_stub(root, manifest, overwrite=overwrite)
         created_paths.extend(runtime_stub_result[0])
         written_paths.extend(runtime_stub_result[1])
+        runtime_stub_paths = tuple(runtime_stub_result[1])
 
     overwritten = manifest_path.exists()
     _write_json_manifest(manifest_path, encode_domain_package_manifest(manifest))
@@ -538,6 +541,7 @@ def scaffold_domain_package(
         package=package,
         created_paths=tuple(created_paths),
         written_paths=tuple(written_paths),
+        runtime_stub_paths=runtime_stub_paths,
         overwritten=overwritten,
     )
 

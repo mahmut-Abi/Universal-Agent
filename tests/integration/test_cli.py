@@ -2230,6 +2230,10 @@ async def test_cli_scaffolds_loadable_domain_runtime_stub(tmp_path: Path) -> Non
     assert load_status == 0
     assert str(package_root / "widget" / "__init__.py") in scaffold_payload["written_paths"]
     assert str(package_root / "widget" / "domain.py") in scaffold_payload["written_paths"]
+    assert scaffold_payload["runtime_stub_paths"] == [
+        str(package_root / "widget" / "__init__.py"),
+        str(package_root / "widget" / "domain.py"),
+    ]
     assert load_payload["status"] == "loaded"
     assert load_payload["metadata_verified"] is True
     assert load_payload["package"]["entrypoint"] == "widget.domain:build_domain"

@@ -1746,6 +1746,7 @@ def domain_package_scaffold_body(result: DomainPackageScaffoldResult) -> dict[st
         "manifest_path": str(package.manifest_path),
         "created_paths": [str(path) for path in result.created_paths],
         "written_paths": [str(path) for path in result.written_paths],
+        "runtime_stub_paths": [str(path) for path in result.runtime_stub_paths],
     }
 
 

@@ -510,6 +510,10 @@ def test_scaffold_domain_package_can_write_loadable_runtime_stub(tmp_path: Path)
     assert activation.active_domain.evaluators[0].name == "criteria"
     assert package_root / "widget" / "__init__.py" in result.written_paths
     assert package_root / "widget" / "domain.py" in result.written_paths
+    assert result.runtime_stub_paths == (
+        package_root / "widget" / "__init__.py",
+        package_root / "widget" / "domain.py",
+    )
     assert package_root / "manifest.json" in result.written_paths
 
 
