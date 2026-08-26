@@ -643,6 +643,11 @@ def build_parser() -> argparse.ArgumentParser:
     kubernetes_model_probe.add_argument("profile")
     kubernetes_model_probe.add_argument("--workload", required=True)
     kubernetes_model_probe.add_argument("--namespace")
+    kubernetes_check = kubernetes_commands.add_parser("check")
+    kubernetes_check.add_argument("profile")
+    kubernetes_check.add_argument("--workload", required=True)
+    kubernetes_check.add_argument("--namespace")
+    kubernetes_check.add_argument("--skip-cluster", action="store_true")
     kubernetes_run = kubernetes_commands.add_parser("run")
     kubernetes_run.add_argument("profile")
     kubernetes_run.add_argument("--workload", required=True)
@@ -923,7 +928,8 @@ def _service_from_args(args: argparse.Namespace) -> RuntimeService:
 def _is_kubernetes_model_probe(args: argparse.Namespace) -> bool:
     return (
         cast(str | None, getattr(args, "command", None)) == "kubernetes"
-        and cast(str | None, getattr(args, "kubernetes_command", None)) == "model-probe"
+        and cast(str | None, getattr(args, "kubernetes_command", None))
+        in {"model-probe", "check"}
     )
 
 
@@ -1284,6 +1290,12 @@ async def _dispatch_kubernetes(
         if model_probe["status"] == "failed":
             raise CliExit(1)
         return
+    if command == "check":
+        check = await _kubernetes_check_report(args, service)
+        _write_json(out, check)
+        if check["status"] == "failed":
+            raise CliExit(1)
+        return
     if command == "run":
         preflight_report: JsonMapping | None = None
         if not cast(bool, args.skip_preflight):
@@ -1433,6 +1445,57 @@ async def _kubernetes_model_probe_report(
             "next_step": {
                 "type": "run_kubernetes_preflight",
                 "message": "Model probe passed; run Kubernetes preflight before remediation.",
+            },
+        }
+    )
+
+
+async def _kubernetes_check_report(
+    args: argparse.Namespace,
+    service: RuntimeService,
+) -> JsonMapping:
+    profile = cast(str, args.profile)
+    workload = _kubernetes_workload_resource(cast(str, args.workload))
+    namespace = _optional_kubernetes_namespace(cast(str | None, args.namespace))
+    model_probe = await _kubernetes_model_probe_report(args, service)
+    if model_probe["status"] == "failed":
+        return immutable_json(
+            {
+                "status": "failed",
+                "operation": _kubernetes_operation_body(profile, workload, namespace),
+                "model_probe": dict(model_probe),
+                "preflight": None,
+                "next_step": {
+                    "type": "fix_model_provider",
+                    "message": (
+                        "Fix model probe failure before Kubernetes preflight or remediation."
+                    ),
+                },
+            }
+        )
+    preflight = await _kubernetes_preflight_report(args, service)
+    if preflight["status"] == "failed":
+        return immutable_json(
+            {
+                "status": "failed",
+                "operation": _kubernetes_operation_body(profile, workload, namespace),
+                "model_probe": dict(model_probe),
+                "preflight": dict(preflight),
+                "next_step": {
+                    "type": "fix_preflight",
+                    "message": "Resolve failed Kubernetes preflight checks before remediation.",
+                },
+            }
+        )
+    return immutable_json(
+        {
+            "status": "ok",
+            "operation": _kubernetes_operation_body(profile, workload, namespace),
+            "model_probe": dict(model_probe),
+            "preflight": dict(preflight),
+            "next_step": {
+                "type": "run_kubernetes_remediation",
+                "message": "Model and Kubernetes preflight checks passed; run remediation next.",
             },
         }
     )

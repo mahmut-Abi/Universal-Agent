@@ -11,8 +11,9 @@ The target workflow is:
 
 ```text
 profile config
-  -> model probe
-  -> Kubernetes preflight
+  -> Kubernetes check
+     -> model probe
+     -> Kubernetes preflight
   -> Chat Completions decision loop
   -> Kubernetes inspection / diagnosis
   -> policy-gated remediation
@@ -52,6 +53,8 @@ The command must:
 
 - support a model-only probe that calls the configured model once, validates the
   returned Decision, and executes no Kubernetes tools;
+- support a pre-run check that runs model probe before Kubernetes preflight and
+  stops before cluster inspection if the model contract fails;
 - run Kubernetes preflight first unless `--skip-preflight` is explicit;
 - construct a Runtime-owned `Goal` with `healthy=true`, `resource=<workload>`,
   and optional `namespace=<namespace>` success criteria;
@@ -85,6 +88,7 @@ Tests target these public interfaces:
 - `RuntimeHost.build_configured_model_adapter()` host assembly with resolved secrets;
 - `agent init` profile generation;
 - `agent kubernetes model-probe` model-only contract validation;
+- `agent kubernetes check` ordered model/preflight validation;
 - `agent kubernetes run` operator command output and confirmation path.
 
 ## Implementation Plan
@@ -96,12 +100,14 @@ Tests target these public interfaces:
    existing RuntimeService and Kubernetes Domain Runtime.
 3. Add `agent kubernetes model-probe` so operators can validate model endpoint,
    credentials, response format, and Decision JSON before cluster inspection.
-4. Run preflight before the runtime loop by default, and fail before goal
+4. Add `agent kubernetes check` as the single production pre-run gate over model
+   probe and Kubernetes preflight.
+5. Run preflight before the runtime loop by default, and fail before goal
    submission if preflight checks fail.
-5. Enforce requested workload scope in deterministic Kubernetes mutation policy.
-6. Return an explicit `confirm_pending_action` next step when production policy
+6. Enforce requested workload scope in deterministic Kubernetes mutation policy.
+7. Return an explicit `confirm_pending_action` next step when production policy
    pauses a remediation mutation.
-7. Document the operator flow and keep offline examples so the path remains
+8. Document the operator flow and keep offline examples so the path remains
    easy to verify without a live cluster.
 
 ## Acceptance Criteria
@@ -119,6 +125,17 @@ Tests target these public interfaces:
 
 - Model probe returns a validated Decision or a structured model failure without
   executing any Kubernetes backend action.
+- A Kubernetes profile can run:
+
+  ```bash
+  python -m universal_agent.cli --profile-config profile.json \
+    kubernetes check production-operator \
+    --workload deployment/api \
+    --namespace prod
+  ```
+
+- Check runs model probe first, skips preflight when the model contract fails,
+  and does not submit a Runtime session.
 - A Kubernetes profile can run:
 
   ```bash

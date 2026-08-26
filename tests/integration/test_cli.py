@@ -1552,6 +1552,88 @@ async def test_cli_kubernetes_model_probe_reports_missing_model_secret(
 
 
 @pytest.mark.asyncio
+async def test_cli_kubernetes_check_runs_model_probe_then_preflight() -> None:
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "kubernetes",
+            "check",
+            "local-kubernetes",
+            "--workload",
+            "api",
+            "--namespace",
+            "prod",
+        ],
+        stdout=output,
+    )
+    payload = read_json(output)
+    checks = {item["name"]: item for item in payload["preflight"]["checks"]}
+
+    assert status == 0
+    assert payload["status"] == "ok"
+    assert payload["operation"] == {
+        "profile": "local-kubernetes",
+        "workload": "deployment/api",
+        "namespace": "prod",
+    }
+    assert payload["model_probe"]["status"] == "ok"
+    assert payload["model_probe"]["decision"]["capability"] == "inspect_workload"
+    assert payload["preflight"]["status"] == "ok"
+    assert checks["cluster_inspection"]["status"] == "ok"
+    assert checks["workload_inspection"]["status"] == "ok"
+    assert payload["next_step"]["type"] == "run_kubernetes_remediation"
+
+
+@pytest.mark.asyncio
+async def test_cli_kubernetes_check_stops_before_preflight_when_model_probe_fails(
+    tmp_path: Path,
+) -> None:
+    profile_path = tmp_path / "profile.json"
+    init_output = StringIO()
+    check_output = StringIO()
+
+    init_status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--profile",
+            "production-operator",
+            "--model-provider",
+            "openai_chat_completions",
+            "--model-name",
+            "gpt-runtime",
+            "--model-api-key-env",
+            "UNIVERSAL_AGENT_TEST_MISSING_OPENAI_KEY",
+        ],
+        stdout=init_output,
+    )
+    check_status = await run_cli(
+        [
+            "--profile-config",
+            str(profile_path),
+            "kubernetes",
+            "check",
+            "production-operator",
+            "--workload",
+            "deployment/api",
+            "--namespace",
+            "prod",
+        ],
+        stdout=check_output,
+    )
+    payload = read_json(check_output)
+
+    assert init_status == 0
+    assert check_status == 1
+    assert payload["status"] == "failed"
+    assert payload["model_probe"]["status"] == "failed"
+    assert payload["preflight"] is None
+    assert payload["next_step"]["type"] == "fix_model_provider"
+
+
+@pytest.mark.asyncio
 async def test_cli_kubernetes_run_submits_production_workload_goal() -> None:
     service, backend = build_cli_service(
         [

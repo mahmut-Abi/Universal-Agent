@@ -49,6 +49,14 @@ executes Kubernetes tools.
 .venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes model-probe production-operator --workload deployment/api --namespace prod
 ```
 
+Use `kubernetes check` as the normal production pre-run gate. It runs
+`model-probe` first and only proceeds to Kubernetes preflight if the model
+contract is valid.
+
+```bash
+.venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes check production-operator --workload deployment/api --namespace prod
+```
+
 ```bash
 .venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes preflight --workload deployment/api --namespace prod
 .venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes preflight --skip-cluster
