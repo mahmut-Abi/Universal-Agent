@@ -77,6 +77,8 @@ class BasicContextCompiler:
                 CapabilitySummary(item.name, item.description, item.category, item.risk)
                 for item in capabilities
             ),
+            goal_success_criteria=state.goal.success_criteria,
+            current_task_required_criteria=state.current_task.required_criteria,
             domain_context=fragments,
             world_context=self._world_fragments(world),
             evidence_context=self._evidence_fragments(evidence),

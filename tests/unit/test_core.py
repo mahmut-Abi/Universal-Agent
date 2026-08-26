@@ -91,6 +91,8 @@ def test_basic_context_exposes_capabilities_not_tools() -> None:
     assert context.goal_id == state.goal.id
     assert context.satisfied_criteria == immutable_json({"healthy": False})
     assert context.capabilities[0].name == "inspect_service"
+    assert context.goal_success_criteria == (SuccessCriterion("healthy", True),)
+    assert context.current_task_required_criteria == ("healthy",)
     assert context.policy_summary == ("read-only",)
 
 

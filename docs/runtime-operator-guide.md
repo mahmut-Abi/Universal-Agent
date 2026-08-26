@@ -120,6 +120,11 @@ never returned by `config show` or `/v1/config`. Built-in secret references
 support `env` keys and local `file` paths; both are projected as availability
 metadata only.
 
+Model request context includes runtime-owned `goal_success_criteria` and
+`current_task_required_criteria` fields. Providers can use these explicit
+criteria to choose the next capability, but Runtime evaluation remains the only
+authority that decides task or goal completion.
+
 ```json
 {
   "secrets": {

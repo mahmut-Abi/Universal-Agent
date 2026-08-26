@@ -16,6 +16,7 @@ from universal_agent.core import (
     JsonValue,
     RiskLevel,
     SessionId,
+    SuccessCriterion,
     TaskId,
     immutable_json,
 )
@@ -71,6 +72,8 @@ def context() -> DecisionContext:
                 RiskLevel.LOW,
             ),
         ),
+        goal_success_criteria=(SuccessCriterion("healthy", True),),
+        current_task_required_criteria=("healthy",),
         policy_summary=("read-only",),
     )
 
@@ -131,6 +134,8 @@ async def test_json_http_model_adapter_posts_context_and_decodes_decision_usage(
     context_payload = cast(Mapping[str, JsonValue], request.payload["context"])
     assert context_payload["session_id"] == "session-1"
     assert context_payload["goal_description"] == "Verify workload health"
+    assert context_payload["goal_success_criteria"] == [{"key": "healthy", "expected": True}]
+    assert context_payload["current_task_required_criteria"] == ["healthy"]
     assert context_payload["iteration"] == 2
     capabilities = cast(list[JsonValue], context_payload["capabilities"])
     first_capability = cast(Mapping[str, JsonValue], capabilities[0])

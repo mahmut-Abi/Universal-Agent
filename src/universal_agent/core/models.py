@@ -317,6 +317,8 @@ class DecisionContext:
     satisfied_criteria: JsonMapping
     latest_observation: Observation | None
     capabilities: tuple[CapabilitySummary, ...]
+    goal_success_criteria: tuple[SuccessCriterion, ...] = ()
+    current_task_required_criteria: tuple[str, ...] = ()
     domain_context: tuple[ContextFragment, ...] = ()
     world_context: tuple[ContextFragment, ...] = ()
     evidence_context: tuple[ContextFragment, ...] = ()

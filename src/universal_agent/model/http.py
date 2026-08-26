@@ -16,6 +16,7 @@ from universal_agent.core import (
     JsonMapping,
     JsonValue,
     Observation,
+    SuccessCriterion,
     immutable_json,
 )
 from universal_agent.model.adapter import ModelUsage
@@ -289,8 +290,12 @@ def _decision_context_payload(context: DecisionContext) -> JsonMapping:
         "session_id": str(context.session_id),
         "goal_id": str(context.goal_id),
         "goal_description": context.goal_description,
+        "goal_success_criteria": [
+            _success_criterion_payload(item) for item in context.goal_success_criteria
+        ],
         "task_id": str(context.task_id),
         "task_description": context.task_description,
+        "current_task_required_criteria": list(context.current_task_required_criteria),
         "iteration": context.iteration,
         "satisfied_criteria": dict(context.satisfied_criteria),
         "latest_observation": _observation_payload(context.latest_observation),
@@ -303,6 +308,10 @@ def _decision_context_payload(context: DecisionContext) -> JsonMapping:
         "policy_summary": list(context.policy_summary),
     }
     return immutable_json(payload)
+
+
+def _success_criterion_payload(criterion: SuccessCriterion) -> dict[str, JsonValue]:
+    return {"key": criterion.key, "expected": criterion.expected}
 
 
 def _observation_payload(observation: Observation | None) -> dict[str, JsonValue] | None:
