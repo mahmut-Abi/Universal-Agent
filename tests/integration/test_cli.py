@@ -2182,6 +2182,7 @@ async def test_cli_scaffolds_domain_package(tmp_path: Path) -> None:
     assert manifest["resources"] == ["resources/runbook.md", "schemas/incident.json"]
     assert (package_root / "capabilities").is_dir()
     assert (package_root / "context_providers").is_dir()
+    assert (package_root / "tests").is_dir()
     assert (package_root / "resources" / "runbook.md").is_file()
     assert (package_root / "schemas" / "incident.json").is_file()
 

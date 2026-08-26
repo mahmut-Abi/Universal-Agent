@@ -409,6 +409,7 @@ def test_scaffold_domain_package_creates_registry_loadable_package(tmp_path: Pat
     assert (package_root / "ontology").is_dir()
     assert (package_root / "context_providers").is_dir()
     assert (package_root / "resources").is_dir()
+    assert (package_root / "tests").is_dir()
     assert (package_root / "resources" / "runbook.md").is_file()
     assert (package_root / "templates" / "remediation").is_dir()
     assert result.written_paths == (package_root / "manifest.json",)

@@ -68,6 +68,11 @@ scaffold_spec = domain_package_scaffold_spec_from_runtime_spec(
 scaffold_domain_package(Path(".tmp/widget-domain"), scaffold_spec)
 ```
 
+The scaffold creates the standard package directories from the architecture
+spec, including `ontology/`, `capabilities/`, `tools/`, `policies/`,
+`procedures/`, `knowledge/`, `evaluators/`, `context_providers/`, `prompts/`,
+`resources/` and `tests/`.
+
 Explicit runtime activation remains a separate seam:
 
 ```python

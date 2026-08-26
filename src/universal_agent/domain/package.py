@@ -30,6 +30,7 @@ DOMAIN_PACKAGE_DIRECTORIES = (
     "context_providers",
     "prompts",
     "resources",
+    "tests",
 )
 
 
