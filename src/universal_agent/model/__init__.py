@@ -6,6 +6,7 @@ from universal_agent.model.adapter import (
     model_usage,
 )
 from universal_agent.model.http import (
+    HttpxJsonHttpTransport,
     JsonHttpModelAdapter,
     JsonHttpModelError,
     JsonHttpModelTransport,
@@ -15,6 +16,7 @@ from universal_agent.model.http import (
 )
 
 __all__ = [
+    "HttpxJsonHttpTransport",
     "JsonHttpModelAdapter",
     "JsonHttpModelError",
     "JsonHttpModelTransport",

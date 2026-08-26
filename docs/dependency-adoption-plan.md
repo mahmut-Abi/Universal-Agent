@@ -18,12 +18,12 @@
 
 ## Tier 1 — 高收益，优先执行
 
-### 1. httpx → 替换线程包装的 urllib 传输层
+### 1. httpx → 替换线程包装的 urllib 传输层（已完成）
 
 | 项 | 说明 |
 |---|---|
-| 现状 | `model/http.py` 的 `StdlibJsonHttpTransport` 用 `asyncio.to_thread(urlopen)` 模拟异步；`domains/kubernetes/api.py` 同模式 |
-| 改动面 | 传输层已是 Protocol（`JsonHttpModelTransport` / `KubernetesApiTransport`），只换实现类 |
+| 现状 | 已引入 `HttpxJsonHttpTransport` / `HttpxKubernetesApiTransport` 作为默认实现；旧 `StdlibJsonHttpTransport` / `UrllibKubernetesApiTransport` 名称保留为兼容别名 |
+| 改动面 | 传输层已是 Protocol（`JsonHttpModelTransport` / `KubernetesApiTransport`），调用方仍可注入测试 adapter |
 | 收益 | 真 async + 连接池；原生流式读取（SSE / streaming LLM 前置条件）；重试、超时、代理语义标准化 |
 | 预估 | 改动 ~100 行，ROI 最高的单点改动 |
 | 风险 | 低 |

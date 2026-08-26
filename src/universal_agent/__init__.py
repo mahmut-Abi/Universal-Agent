@@ -170,6 +170,7 @@ from universal_agent.host import (
     build_configured_model_adapter,
 )
 from universal_agent.model import (
+    HttpxJsonHttpTransport,
     JsonHttpModelAdapter,
     JsonHttpModelError,
     JsonHttpModelTransport,
@@ -483,6 +484,7 @@ __all__ = [
     "FileWorkQueue",
     "FileWorkerRegistry",
     "Goal",
+    "HttpxJsonHttpTransport",
     "InMemoryDistributedLockRegistry",
     "InMemoryEventSink",
     "InMemoryStateStore",

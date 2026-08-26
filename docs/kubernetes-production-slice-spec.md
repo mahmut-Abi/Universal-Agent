@@ -34,7 +34,7 @@ Goal
 This slice adds:
 
 - `openai_chat_completions` as a first-class model provider.
-- A dependency-free `OpenAIChatCompletionsModelAdapter`.
+- An `httpx`-backed `OpenAIChatCompletionsModelAdapter`.
 - Runtime config and CLI profile generation for Chat Completions endpoints.
 - `json_schema`, `json_object`, and explicit `prompt_json` modes so
   legacy-compatible providers can omit `response_format` while still returning

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 
+import httpx
 import pytest
 
 from universal_agent.core import (
@@ -14,11 +15,13 @@ from universal_agent.core import (
     new_action_id,
 )
 from universal_agent.domains.kubernetes import (
+    HttpxKubernetesApiTransport,
     KubectlBackend,
     KubectlCommandError,
     KubectlResult,
     KubernetesApiBackend,
     KubernetesApiConflictError,
+    KubernetesApiError,
     KubernetesApiResponse,
 )
 from universal_agent.domains.kubernetes.tools import KubernetesScaleTool
@@ -94,6 +97,67 @@ class RecordingKubernetesApiTransport:
         if isinstance(response, KubernetesApiResponse):
             return response
         return KubernetesApiResponse(200, response)
+
+
+@pytest.mark.asyncio
+async def test_httpx_kubernetes_api_transport_builds_request_and_decodes_response() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={"ok": True},
+            headers={"x-kubernetes-test": "yes"},
+            request=request,
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        transport = HttpxKubernetesApiTransport(
+            "https://kube.example.test",
+            bearer_token="kube-token",
+            client=client,
+        )
+        response = await transport.request(
+            "PATCH",
+            "/apis/apps/v1/namespaces/default/deployments/api/scale",
+            query={"fieldManager": "universal-agent"},
+            body=immutable_json({"spec": {"replicas": 3}}),
+            headers={"content-type": "application/merge-patch+json"},
+            timeout_seconds=4.0,
+        )
+    finally:
+        await client.aclose()
+
+    assert response.status_code == 200
+    assert response.payload == {"ok": True}
+    assert response.headers["x-kubernetes-test"] == "yes"
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.method == "PATCH"
+    assert str(request.url) == (
+        "https://kube.example.test/apis/apps/v1/namespaces/default/deployments/"
+        "api/scale?fieldManager=universal-agent"
+    )
+    assert request.headers["authorization"] == "Bearer kube-token"
+    assert request.headers["accept"] == "application/json"
+    assert request.headers["content-type"] == "application/merge-patch+json"
+    assert json.loads(request.content.decode("utf-8")) == {"spec": {"replicas": 3}}
+
+
+@pytest.mark.asyncio
+async def test_httpx_kubernetes_api_transport_maps_request_errors() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        transport = HttpxKubernetesApiTransport("https://kube.example.test", client=client)
+        with pytest.raises(KubernetesApiError, match="Kubernetes API request failed"):
+            await transport.request("GET", "/api/v1/nodes")
+    finally:
+        await client.aclose()
 
 
 class RecordingScaleBackend:

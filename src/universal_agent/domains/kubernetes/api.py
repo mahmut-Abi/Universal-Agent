@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
-from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
+from urllib.parse import quote
+
+import httpx
 
 from universal_agent.core import JsonMapping, JsonValue, immutable_json
 from universal_agent.domains.kubernetes.kubectl import (
@@ -62,14 +61,21 @@ class KubernetesApiTransport(Protocol):
     ) -> KubernetesApiResponse: ...
 
 
-class UrllibKubernetesApiTransport:
-    """Small stdlib HTTP transport for Kubernetes API requests."""
+class HttpxKubernetesApiTransport:
+    """Async HTTP transport for Kubernetes API requests."""
 
-    def __init__(self, api_server: str, *, bearer_token: str | None = None) -> None:
+    def __init__(
+        self,
+        api_server: str,
+        *,
+        bearer_token: str | None = None,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
         if not api_server.strip():
             raise ValueError("Kubernetes API server must not be empty")
         self._api_server = api_server.rstrip("/")
         self._bearer_token = bearer_token
+        self._client = client
 
     async def request(
         self,
@@ -81,55 +87,64 @@ class UrllibKubernetesApiTransport:
         headers: Mapping[str, str] | None = None,
         timeout_seconds: float | None = None,
     ) -> KubernetesApiResponse:
-        return await asyncio.to_thread(
-            self._request_sync,
-            method,
-            path,
-            dict(query or {}),
-            None if body is None else dict(body),
-            dict(headers or {}),
-            timeout_seconds,
-        )
+        if self._client is not None:
+            return await self._request_with_client(
+                self._client,
+                method,
+                path,
+                query=dict(query or {}),
+                body=None if body is None else dict(body),
+                headers=dict(headers or {}),
+                timeout_seconds=timeout_seconds,
+            )
+        async with httpx.AsyncClient() as client:
+            return await self._request_with_client(
+                client,
+                method,
+                path,
+                query=dict(query or {}),
+                body=None if body is None else dict(body),
+                headers=dict(headers or {}),
+                timeout_seconds=timeout_seconds,
+            )
 
-    def _request_sync(
+    async def _request_with_client(
         self,
+        client: httpx.AsyncClient,
         method: str,
         path: str,
+        *,
         query: dict[str, str],
         body: dict[str, JsonValue] | None,
         headers: dict[str, str],
         timeout_seconds: float | None,
     ) -> KubernetesApiResponse:
         url = self._api_server + path
-        if query:
-            url += "?" + urlencode(query)
         request_headers = {"accept": "application/json", **headers}
         if self._bearer_token:
             request_headers["authorization"] = f"Bearer {self._bearer_token}"
-        data = None
-        if body is not None:
-            data = json.dumps(body, sort_keys=True).encode("utf-8")
-            request_headers.setdefault("content-type", "application/json")
-        request = Request(url, data=data, headers=request_headers, method=method)
         try:
-            with urlopen(request, timeout=timeout_seconds) as response:
-                text = response.read().decode("utf-8", errors="replace")
-                return KubernetesApiResponse(
-                    response.status,
-                    _decode_optional_json(text),
-                    text,
-                    dict(response.headers.items()),
-                )
-        except HTTPError as exc:
-            text = exc.read().decode("utf-8", errors="replace")
-            return KubernetesApiResponse(
-                exc.code,
-                _decode_optional_json(text),
-                text,
-                dict(exc.headers.items()),
+            response = await client.request(
+                method,
+                url,
+                params=query,
+                json=body,
+                headers=request_headers,
+                timeout=timeout_seconds,
             )
-        except URLError as exc:
+        except httpx.RequestError as exc:
             raise KubernetesApiError(f"Kubernetes API request failed: {exc}") from exc
+        text = response.text
+        return KubernetesApiResponse(
+            response.status_code,
+            _decode_optional_json(text),
+            text,
+            dict(response.headers.items()),
+        )
+
+
+class UrllibKubernetesApiTransport(HttpxKubernetesApiTransport):
+    """Backward-compatible name for the default async Kubernetes API transport."""
 
 
 class KubernetesApiBackend:
@@ -150,7 +165,7 @@ class KubernetesApiBackend:
             raise ValueError("default_namespace must not be empty")
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
-        self._transport = transport or UrllibKubernetesApiTransport(
+        self._transport = transport or HttpxKubernetesApiTransport(
             api_server,
             bearer_token=bearer_token,
         )

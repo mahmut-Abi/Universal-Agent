@@ -1,5 +1,5 @@
-from universal_agent.agentd.app import (
-    AgentdApp,
+from universal_agent.agentd.app import AgentdApp
+from universal_agent.agentd.http import (
     AgentdAuthPolicy,
     GoalSubmission,
     HttpRequest,

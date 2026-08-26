@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
+import httpx
 import pytest
 
 from universal_agent.core import (
@@ -21,6 +23,7 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.model import (
+    HttpxJsonHttpTransport,
     JsonHttpModelAdapter,
     JsonHttpModelError,
     ModelUsage,
@@ -53,6 +56,59 @@ class RecordingTransport:
     ) -> JsonMapping:
         self.requests.append(RequestRecord(url, dict(headers), payload, timeout_seconds))
         return self._response
+
+
+@pytest.mark.asyncio
+async def test_httpx_json_http_transport_posts_json_and_decodes_response() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={"decision": {"type": "finish", "reason": "done"}},
+            request=request,
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        transport = HttpxJsonHttpTransport(client)
+
+        response = await transport.post_json(
+            "https://models.example.test/decide",
+            headers={"Authorization": "Bearer token"},
+            payload=immutable_json({"model": "runtime-model"}),
+            timeout_seconds=2.5,
+        )
+    finally:
+        await client.aclose()
+
+    assert response["decision"] == {"type": "finish", "reason": "done"}
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.method == "POST"
+    assert str(request.url) == "https://models.example.test/decide"
+    assert request.headers["authorization"] == "Bearer token"
+    assert json.loads(request.content.decode("utf-8")) == {"model": "runtime-model"}
+
+
+@pytest.mark.asyncio
+async def test_httpx_json_http_transport_maps_http_errors() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, text="rate limited", request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        transport = HttpxJsonHttpTransport(client)
+        with pytest.raises(JsonHttpModelError, match="HTTP 429: rate limited"):
+            await transport.post_json(
+                "https://models.example.test/decide",
+                headers={},
+                payload=immutable_json({"model": "runtime-model"}),
+                timeout_seconds=2.5,
+            )
+    finally:
+        await client.aclose()
 
 
 def context() -> DecisionContext:

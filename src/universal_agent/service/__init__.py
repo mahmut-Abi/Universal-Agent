@@ -6,7 +6,8 @@ from universal_agent.operations import (
     RuntimeMetricsView,
     RuntimeTraceSpanView,
 )
-from universal_agent.service.runtime import (
+from universal_agent.service.runtime import RuntimeService
+from universal_agent.service.views import (
     CapabilityView,
     DistributedPendingActionSchedulingResult,
     DomainPackageView,
@@ -25,7 +26,6 @@ from universal_agent.service.runtime import (
     RuntimeConfigView,
     RuntimeModelConfigView,
     RuntimeSecretRefView,
-    RuntimeService,
     SessionExplorerView,
     SessionWorldView,
     StateEventRepairReport,

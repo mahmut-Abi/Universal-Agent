@@ -1,4 +1,5 @@
 from universal_agent.domains.kubernetes.api import (
+    HttpxKubernetesApiTransport,
     KubernetesApiBackend,
     KubernetesApiConflictError,
     KubernetesApiError,
@@ -24,6 +25,7 @@ from universal_agent.domains.kubernetes.kubectl import (
 )
 
 __all__ = [
+    "HttpxKubernetesApiTransport",
     "KubectlBackend",
     "KubectlCommandError",
     "KubectlCommandRunner",

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import Mapping
 from typing import Protocol
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+import httpx
 
 from universal_agent.core import (
     CapabilitySummary,
@@ -38,8 +37,11 @@ class JsonHttpModelTransport(Protocol):
     ) -> JsonMapping: ...
 
 
-class StdlibJsonHttpTransport:
-    """Small stdlib HTTP transport for JSON model providers."""
+class HttpxJsonHttpTransport:
+    """Async HTTP transport for JSON model providers."""
+
+    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
+        self._client = client
 
     async def post_json(
         self,
@@ -49,41 +51,59 @@ class StdlibJsonHttpTransport:
         payload: JsonMapping,
         timeout_seconds: float,
     ) -> JsonMapping:
-        return await asyncio.to_thread(
-            self._post_json_sync,
-            url,
-            headers,
-            payload,
-            timeout_seconds,
-        )
+        if self._client is not None:
+            response = await self._post_with_client(
+                self._client,
+                url,
+                headers=headers,
+                payload=payload,
+                timeout_seconds=timeout_seconds,
+            )
+        else:
+            async with httpx.AsyncClient() as client:
+                response = await self._post_with_client(
+                    client,
+                    url,
+                    headers=headers,
+                    payload=payload,
+                    timeout_seconds=timeout_seconds,
+                )
+        try:
+            decoded = response.json()
+        except ValueError as exc:
+            raise JsonHttpModelError(f"model provider returned invalid JSON: {exc}") from exc
+        return _json_mapping(decoded, "response")
 
-    def _post_json_sync(
+    async def _post_with_client(
         self,
+        client: httpx.AsyncClient,
         url: str,
+        *,
         headers: Mapping[str, str],
         payload: JsonMapping,
         timeout_seconds: float,
-    ) -> JsonMapping:
-        request = Request(
-            url,
-            data=json.dumps(payload, sort_keys=True).encode("utf-8"),
-            headers=dict(headers),
-            method="POST",
-        )
+    ) -> httpx.Response:
         try:
-            with urlopen(request, timeout=timeout_seconds) as response:
-                body = response.read().decode("utf-8")
-        except HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace").strip()
+            response = await client.post(
+                url,
+                headers=dict(headers),
+                json=dict(payload),
+                timeout=timeout_seconds,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text.strip()
             suffix = f": {detail}" if detail else ""
-            raise JsonHttpModelError(f"model provider returned HTTP {exc.code}{suffix}") from exc
-        except URLError as exc:
-            raise JsonHttpModelError(f"model provider request failed: {exc.reason}") from exc
-        try:
-            decoded = json.loads(body)
-        except json.JSONDecodeError as exc:
-            raise JsonHttpModelError(f"model provider returned invalid JSON: {exc}") from exc
-        return _json_mapping(decoded, "response")
+            raise JsonHttpModelError(
+                f"model provider returned HTTP {exc.response.status_code}{suffix}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise JsonHttpModelError(f"model provider request failed: {exc}") from exc
+        return response
+
+
+class StdlibJsonHttpTransport(HttpxJsonHttpTransport):
+    """Backward-compatible name for the default async JSON HTTP transport."""
 
 
 class JsonHttpModelAdapter:
@@ -121,7 +141,7 @@ class JsonHttpModelAdapter:
         self._api_key = api_key
         self._extra_headers = dict(extra_headers or {})
         self._timeout_seconds = timeout_seconds
-        self._transport = transport or StdlibJsonHttpTransport()
+        self._transport = transport or HttpxJsonHttpTransport()
         self._last_usage: ModelUsage | None = None
 
     async def decide(self, context: DecisionContext) -> Decision:
@@ -211,7 +231,7 @@ class OpenAIResponsesModelAdapter:
         self._endpoint = endpoint
         self._extra_headers = dict(extra_headers or {})
         self._timeout_seconds = timeout_seconds
-        self._transport = transport or StdlibJsonHttpTransport()
+        self._transport = transport or HttpxJsonHttpTransport()
         self._last_usage: ModelUsage | None = None
 
     async def decide(self, context: DecisionContext) -> Decision:
@@ -334,7 +354,7 @@ class OpenAIChatCompletionsModelAdapter:
         self._extra_headers = dict(extra_headers or {})
         self._timeout_seconds = timeout_seconds
         self._response_format = response_format
-        self._transport = transport or StdlibJsonHttpTransport()
+        self._transport = transport or HttpxJsonHttpTransport()
         self._last_usage: ModelUsage | None = None
 
     async def decide(self, context: DecisionContext) -> Decision:

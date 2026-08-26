@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import MappingProxyType
 
-from universal_agent.agentd.app import AgentdApp, HttpRequest, HttpResponse
+from universal_agent.agentd.app import AgentdApp
+from universal_agent.agentd.http import HttpRequest, HttpResponse
 from universal_agent.core import JsonMapping, JsonValue, immutable_json
 
 

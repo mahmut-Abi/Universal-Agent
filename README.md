@@ -274,13 +274,13 @@ detect accidental split state/event wiring. These adapters are local persistence
   Domain identity validation, multi-Domain composition activation, and CLI loading of generated
   Profile config files through `RuntimeHost`. `UniversalAgentRuntime` adds the first public
   embedding SDK facade with SDK-owned goal/task/result contracts over `RuntimeService`.
-  `JsonHttpModelAdapter` adds a dependency-free
+  `JsonHttpModelAdapter` adds an `httpx`-backed
   provider bridge for HTTP endpoints that accept compiled runtime context JSON, including structured
   goal success criteria, current task required criteria, and capability-level input contracts derived
   from deterministic tool resolution, then return structured `Decision` JSON plus optional
-  token/cost usage. `OpenAIChatCompletionsModelAdapter` adds a direct dependency-free
+  token/cost usage. `OpenAIChatCompletionsModelAdapter` adds a direct `httpx`-backed
   OpenAI-compatible Chat Completions path for older `/v1/chat/completions` deployments, and
-  `OpenAIResponsesModelAdapter` adds a direct dependency-free OpenAI Responses provider path. Both
+  `OpenAIResponsesModelAdapter` adds a direct `httpx`-backed OpenAI Responses provider path. Both
   request structured `Decision` JSON and still validate the decoded decision locally before the
   Runtime acts.
 - P3.6/P3.7 foundation: event-derived `metrics`, Prometheus metrics text export, `cost`, `logs`,

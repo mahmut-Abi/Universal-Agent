@@ -169,7 +169,7 @@ See `examples/p3_5_runtime_sdk.py` for a complete local embedding example.
 
 Profile runtime config can declare a model provider without storing credentials.
 The current built-in providers are `scripted` for deterministic local runs,
-`json_http` for dependency-free HTTP model bridges, `openai_chat_completions`
+`json_http` for `httpx`-backed HTTP model bridges, `openai_chat_completions`
 for OpenAI-compatible `/v1/chat/completions` providers, and `openai_responses`
 for direct OpenAI Responses structured decision output. Model config stores
 only endpoint/model metadata plus an optional `api_key_secret` reference; the

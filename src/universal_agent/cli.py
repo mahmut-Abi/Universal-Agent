@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import shlex
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
@@ -11,9 +10,9 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TextIO, cast
 
-from universal_agent.agentd.app import (
-    AgentdApp,
-    AgentdAuthPolicy,
+from universal_agent.agentd.app import AgentdApp
+from universal_agent.agentd.http import AgentdAuthPolicy
+from universal_agent.agentd.representations import (
     audit_records_body,
     capability_body,
     config_body,
@@ -44,50 +43,43 @@ from universal_agent.agentd.app import (
     ready_body,
     runtime_run_body,
     session_batch_body,
-    session_body,
-    session_evidence_body,
-    session_explorer_body,
-    session_world_body,
     sse_event_batch_text,
     state_event_repair_body,
     tool_body,
     trace_spans_body,
 )
 from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
+from universal_agent.agentd.session_representations import (
+    session_body,
+    session_evidence_body,
+    session_explorer_body,
+    session_world_body,
+)
 from universal_agent.core import (
     ActionId,
-    CapabilityCategory,
-    CapabilitySummary,
-    Decision,
-    DecisionContext,
-    DecisionType,
     DomainIdentity,
     ErrorCode,
     EventId,
     ExecutionStatus,
     Goal,
-    JsonMapping,
     JsonValue,
     SessionId,
     SuccessCriterion,
     Task,
     TaskId,
     immutable_json,
-    validate_argument_contract,
 )
 from universal_agent.distributed import (
     DistributedLockConflictError,
     DistributedLockLeaseId,
     DistributedLockLeaseLostError,
     DistributedLockOwnerId,
-    DistributedRuntimeCoordinator,
     WorkerId,
     WorkerNotFoundError,
     WorkItemId,
     WorkItemNotFoundError,
 )
 from universal_agent.domain import (
-    DomainLoader,
     DomainPackage,
     DomainPackageCompatibility,
     DomainPackageNotFoundError,
@@ -95,16 +87,26 @@ from universal_agent.domain import (
     DomainPackageScaffoldResult,
     DomainPackageScaffoldSpec,
     DomainPackageVerificationReport,
-    RuntimeBuilder,
     load_domain_package_runtime,
     scaffold_domain_package,
 )
-from universal_agent.domains.kubernetes import (
-    KubectlBackend,
-    KubernetesApiBackend,
-    KubernetesBackend,
-    KubernetesMutationBackend,
-    KubernetesRemediationDomain,
+from universal_agent.domains.kubernetes.cli import (
+    LOCAL_PROFILE_NAME,
+    add_kubernetes_command,
+    dispatch_kubernetes,
+    is_kubernetes_probe_service_command,
+)
+from universal_agent.domains.kubernetes.cli import (
+    build_configured_probe_service as build_kubernetes_configured_probe_service,
+)
+from universal_agent.domains.kubernetes.cli import (
+    build_configured_service as build_kubernetes_configured_service,
+)
+from universal_agent.domains.kubernetes.cli import (
+    build_default_service as build_kubernetes_default_service,
+)
+from universal_agent.domains.kubernetes.cli import (
+    profile_domain_config as kubernetes_profile_domain_config,
 )
 from universal_agent.ecosystem import (
     EcosystemCatalog,
@@ -173,43 +175,31 @@ from universal_agent.evaluation.scenario_config import (
     EvaluationSuiteConfig,
     load_evaluation_suite_config,
 )
-from universal_agent.host import (
-    DomainConfig,
-    RuntimeConfig,
-    RuntimeHost,
-    build_configured_model_adapter,
-)
-from universal_agent.model import ModelAdapter, ScriptedModelAdapter
+from universal_agent.host import build_configured_model_adapter
 from universal_agent.profile import (
-    AgentProfile,
     ProfileCatalogEntry,
     ProfileCatalogVerificationReport,
-    ProfileConfig,
     ProfileConfigNotFoundError,
     load_profile_catalog,
 )
 from universal_agent.runtime import (
-    AgentRuntime,
-    InMemoryEventSink,
-    RuntimeAPI,
     RuntimeEventBatch,
-    RuntimeRun,
 )
-from universal_agent.security import EnvSecretProvider, SecretProvider, resolve_secret_value
-from universal_agent.service import RuntimeConfigDomainView, RuntimeConfigView, RuntimeService
-from universal_agent.state import InMemoryStateStore, StateNotFoundError
+from universal_agent.security import EnvSecretProvider
+from universal_agent.service import RuntimeService
+from universal_agent.state import StateNotFoundError
 from universal_agent.tui import build_tui_snapshot, render_tui_snapshot
 
-LOCAL_PROFILE_NAME = "local-kubernetes"
+__all__ = [
+    "LOCAL_PROFILE_NAME",
+    "build_configured_probe_service",
+    "build_configured_service",
+    "build_default_service",
+    "main",
+    "run_cli",
+]
+
 ServerRunner = Callable[[AgentdHttpServer], None]
-_KUBERNETES_PREFLIGHT_CAPABILITIES = (
-    "inspect_cluster",
-    "inspect_workload",
-    "inspect_pod",
-    "inspect_logs",
-    "inspect_events",
-    "scale_workload",
-)
 
 
 class CliExit(Exception):
@@ -217,175 +207,21 @@ class CliExit(Exception):
         self.status = status
 
 
-def _local_domain() -> DomainConfig:
-    return DomainConfig("kubernetes", "0.2.0")
-
-
-def _default_decisions() -> tuple[Decision, ...]:
-    return (
-        Decision(
-            DecisionType.EXECUTE,
-            "Inspect workload from local CLI profile",
-            capability="inspect_workload",
-            target="deployment/example",
-            arguments=immutable_json({"name": "example"}),
-            expected_observations=("healthy",),
-        ),
-        Decision(DecisionType.FINISH, "Local CLI profile verified workload health"),
-        Decision(
-            DecisionType.EXECUTE,
-            "Attempt invalid scale from local CLI evaluation profile",
-            capability="scale_workload",
-            target="deployment/example",
-            arguments=immutable_json({"name": "example", "namespace": "default", "replicas": 0}),
-            expected_observations=("mutation_applied",),
-        ),
-    )
-
-
-def _default_profile() -> AgentProfile:
-    domain = _local_domain()
-    return AgentProfile(
-        LOCAL_PROFILE_NAME,
-        "0.1.0",
-        "Local fake-backed Kubernetes profile",
-        domain,
-        RuntimeConfig(environment=immutable_json({"environment": "local"}), domain=domain),
-        (domain,),
-    )
-
-
-class _DefaultCliBackend:
-    async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
-        resource = arguments.get("name", "example")
-        return immutable_json(
-            {
-                "resource": f"deployment/{resource}",
-                "healthy": True,
-                "capability": capability,
-            }
-        )
-
-    async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
-        resource = arguments.get("name", "example")
-        return immutable_json(
-            {
-                "resource": f"deployment/{resource}",
-                "mutation_applied": True,
-                "capability": capability,
-            }
-        )
-
-
 def build_default_service() -> RuntimeService:
-    backend = _DefaultCliBackend()
-    profile = _default_profile()
-    components = RuntimeBuilder().build(
-        DomainLoader().load(KubernetesRemediationDomain(backend, backend))
-    )
-    store = InMemoryStateStore()
-    events = InMemoryEventSink()
-    runtime = AgentRuntime(
-        model=ScriptedModelAdapter(_default_decisions()),
-        state_store=store,
-        components=components,
-        event_sink=events,
-        environment=immutable_json({"environment": "local"}),
-    )
-    return RuntimeService(
-        runtime_api=RuntimeAPI(runtime=runtime, session_store=store, event_reader=events),
-        components=components,
-        profiles=(profile,),
-        config=profile.runtime,
-        distributed_coordinator=DistributedRuntimeCoordinator(),
-    )
+    return build_kubernetes_default_service()
 
 
 def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
-    profile = ProfileConfig.from_json_file(profile_config_path).to_profile()
-    secret_provider = EnvSecretProvider()
-    backend = _configured_kubernetes_backend(
-        profile.runtime.configured_domains() or (profile.domain,),
-        config=profile.runtime,
-        secret_provider=secret_provider,
+    return build_kubernetes_configured_service(
+        profile_config_path,
+        model_adapter_builder=build_configured_model_adapter,
     )
-    host = RuntimeHost.from_profile(
-        profile=profile,
-        model=build_configured_model_adapter(
-            profile.runtime,
-            scripted_decisions=_default_decisions(),
-            secret_provider=secret_provider,
-        ),
-        domain=KubernetesRemediationDomain(
-            cast(KubernetesBackend, backend),
-            cast(KubernetesMutationBackend, backend),
-        ),
-        secret_provider=secret_provider,
-    )
-    return host.service
 
 
 def build_configured_probe_service(profile_config_path: str | Path) -> RuntimeService:
     """Build RuntimeService metadata without requiring the configured model to connect."""
 
-    profile = ProfileConfig.from_json_file(profile_config_path).to_profile()
-    secret_provider = EnvSecretProvider()
-    backend = _configured_kubernetes_backend(
-        profile.runtime.configured_domains() or (profile.domain,),
-        config=profile.runtime,
-        secret_provider=secret_provider,
-    )
-    host = RuntimeHost.from_profile(
-        profile=profile,
-        model=ScriptedModelAdapter(_default_decisions()),
-        domain=KubernetesRemediationDomain(
-            cast(KubernetesBackend, backend),
-            cast(KubernetesMutationBackend, backend),
-        ),
-        secret_provider=secret_provider,
-    )
-    return host.service
-
-
-def _configured_kubernetes_backend(
-    domains: tuple[DomainConfig, ...],
-    *,
-    config: RuntimeConfig | None = None,
-    secret_provider: SecretProvider | None = None,
-) -> object:
-    if not domains:
-        return _DefaultCliBackend()
-    primary = domains[0]
-    backend = primary.backend or "fake"
-    if backend == "fake":
-        return _DefaultCliBackend()
-    if backend == "kubectl":
-        return KubectlBackend(
-            default_namespace=_setting_string(
-                primary.settings,
-                "default_namespace",
-                default="default",
-            ),
-            context=_optional_setting_string(primary.settings, "context"),
-            kubeconfig=_optional_setting_string(primary.settings, "kubeconfig"),
-            timeout_seconds=_setting_float(primary.settings, "timeout_seconds", default=10.0),
-        )
-    if backend == "kubernetes_api":
-        return KubernetesApiBackend(
-            api_server=_setting_string(primary.settings, "api_server", default=""),
-            bearer_token=_configured_kubernetes_api_token(
-                primary.settings,
-                config=config,
-                secret_provider=secret_provider,
-            ),
-            default_namespace=_setting_string(
-                primary.settings,
-                "default_namespace",
-                default="default",
-            ),
-            timeout_seconds=_setting_float(primary.settings, "timeout_seconds", default=10.0),
-        )
-    raise ValueError(f"unsupported Kubernetes domain backend: {backend}")
+    return build_kubernetes_configured_probe_service(profile_config_path)
 
 
 async def run_cli(
@@ -634,28 +470,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Goal success criterion as KEY=JSON. Repeat for multiple criteria.",
     )
 
-    kubernetes = commands.add_parser("kubernetes")
-    kubernetes_commands = kubernetes.add_subparsers(dest="kubernetes_command", required=True)
-    kubernetes_preflight = kubernetes_commands.add_parser("preflight")
-    kubernetes_preflight.add_argument("--workload")
-    kubernetes_preflight.add_argument("--namespace")
-    kubernetes_preflight.add_argument("--skip-cluster", action="store_true")
-    kubernetes_model_probe = kubernetes_commands.add_parser("model-probe")
-    kubernetes_model_probe.add_argument("profile")
-    kubernetes_model_probe.add_argument("--workload", required=True)
-    kubernetes_model_probe.add_argument("--namespace")
-    kubernetes_check = kubernetes_commands.add_parser("check")
-    kubernetes_check.add_argument("profile")
-    kubernetes_check.add_argument("--workload", required=True)
-    kubernetes_check.add_argument("--namespace")
-    kubernetes_check.add_argument("--skip-cluster", action="store_true")
-    kubernetes_run = kubernetes_commands.add_parser("run")
-    kubernetes_run.add_argument("profile")
-    kubernetes_run.add_argument("--workload", required=True)
-    kubernetes_run.add_argument("--namespace")
-    kubernetes_run.add_argument("--skip-preflight", action="store_true")
-    kubernetes_run.add_argument("--skip-model-probe", action="store_true")
-    kubernetes_run.add_argument("--skip-cluster", action="store_true")
+    add_kubernetes_command(commands)
 
     tui = commands.add_parser("tui")
     tui.add_argument("--session-id")
@@ -922,17 +737,9 @@ def _service_from_args(args: argparse.Namespace) -> RuntimeService:
     profile_config = cast(str | None, args.profile_config)
     if profile_config is None:
         return build_default_service()
-    if _is_kubernetes_model_probe(args):
+    if is_kubernetes_probe_service_command(args):
         return build_configured_probe_service(profile_config)
     return build_configured_service(profile_config)
-
-
-def _is_kubernetes_model_probe(args: argparse.Namespace) -> bool:
-    return (
-        cast(str | None, getattr(args, "command", None)) == "kubernetes"
-        and cast(str | None, getattr(args, "kubernetes_command", None))
-        in {"model-probe", "check"}
-    )
 
 
 def _add_evaluation_selector_arguments(command: argparse.ArgumentParser) -> None:
@@ -1212,7 +1019,14 @@ async def _dispatch(
         await _dispatch_run(args, service, out)
         return
     if command == "kubernetes":
-        await _dispatch_kubernetes(args, service, out)
+        result = await dispatch_kubernetes(
+            args,
+            service,
+            model_adapter_builder=build_configured_model_adapter,
+        )
+        _write_json(out, result.payload)
+        if result.status != 0:
+            raise CliExit(result.status)
         return
     if command == "tui":
         await _dispatch_tui(args, service, out)
@@ -1272,771 +1086,6 @@ async def _dispatch_run(
     task = Task(cast(str, args.task), tuple(item.key for item in criteria))
     run = await service.run_goal(goal, task)
     _write_json(out, runtime_run_body(run))
-
-
-async def _dispatch_kubernetes(
-    args: argparse.Namespace,
-    service: RuntimeService,
-    out: TextIO,
-) -> None:
-    command = cast(str, args.kubernetes_command)
-    if command == "preflight":
-        standalone_preflight = await _kubernetes_preflight_report(args, service)
-        _write_json(out, standalone_preflight)
-        if standalone_preflight["status"] == "failed":
-            raise CliExit(1)
-        return
-    if command == "model-probe":
-        model_probe = await _kubernetes_model_probe_report(args, service)
-        _write_json(out, model_probe)
-        if model_probe["status"] == "failed":
-            raise CliExit(1)
-        return
-    if command == "check":
-        check = await _kubernetes_check_report(args, service)
-        _write_json(out, check)
-        if check["status"] == "failed":
-            raise CliExit(1)
-        return
-    if command == "run":
-        model_probe_report: JsonMapping | None = None
-        preflight_report: JsonMapping | None = None
-        if not cast(bool, args.skip_preflight):
-            if not cast(bool, args.skip_model_probe):
-                model_probe_report = await _kubernetes_model_probe_report(args, service)
-                if model_probe_report["status"] == "failed":
-                    _write_json(
-                        out,
-                        _kubernetes_run_model_probe_failed_body(args, model_probe_report),
-                    )
-                    raise CliExit(1)
-            preflight_report = await _kubernetes_preflight_report(args, service)
-            if preflight_report["status"] == "failed":
-                _write_json(
-                    out,
-                    _kubernetes_run_preflight_failed_body(
-                        args,
-                        preflight_report,
-                        model_probe_report,
-                    ),
-                )
-                raise CliExit(1)
-        run = await _run_kubernetes_remediation(args, service)
-        _write_json(out, _kubernetes_run_body(args, run, preflight_report, model_probe_report))
-        return
-    raise ValueError(f"unknown kubernetes command: {command}")
-
-
-async def _kubernetes_preflight_report(
-    args: argparse.Namespace,
-    service: RuntimeService,
-) -> JsonMapping:
-    config = service.config()
-    checks: list[JsonValue] = []
-    observations: dict[str, JsonValue] = {}
-    profile_config = cast(str | None, args.profile_config)
-    domain = _primary_kubernetes_config_domain(config.domains)
-    _append_preflight_check(
-        checks,
-        "kubernetes_domain",
-        "ok" if domain is not None else "failed",
-        "kubernetes domain is active" if domain is not None else "kubernetes domain is not active",
-    )
-    backend_name = "unknown" if domain is None else domain.backend or "fake"
-    if backend_name == "fake":
-        _append_preflight_check(
-            checks,
-            "kubernetes_backend",
-            "warn",
-            "fake backend is active; no real cluster will be contacted",
-            {"backend": backend_name},
-        )
-    else:
-        _append_preflight_check(
-            checks,
-            "kubernetes_backend",
-            "ok",
-            "real Kubernetes backend is configured",
-            {"backend": backend_name},
-        )
-    _append_model_secret_preflight_check(checks, config)
-    _append_capability_preflight_check(checks, service)
-
-    if domain is not None and not cast(bool, args.skip_cluster):
-        backend = _kubernetes_preflight_backend(profile_config)
-        await _append_backend_observation_check(
-            checks,
-            observations,
-            backend,
-            "cluster_inspection",
-            "inspect_cluster",
-            immutable_json(),
-        )
-        workload = cast(str | None, args.workload)
-        if workload is not None:
-            await _append_backend_observation_check(
-                checks,
-                observations,
-                backend,
-                "workload_inspection",
-                "inspect_workload",
-                _kubernetes_workload_arguments(workload, cast(str | None, args.namespace)),
-            )
-    elif cast(bool, args.skip_cluster):
-        _append_preflight_check(
-            checks,
-            "cluster_inspection",
-            "skipped",
-            "cluster inspection skipped by request",
-        )
-
-    status = "failed" if _preflight_failed(checks) else "ok"
-    domain_body: dict[str, JsonValue] | None = None
-    if domain is not None:
-        domain_body = {
-            "name": domain.name,
-            "version": domain.version,
-            "backend": domain.backend or "fake",
-            "settings": dict(domain.settings),
-        }
-    return immutable_json(
-        {
-            "status": status,
-            "profile_config": profile_config or "",
-            "domain": domain_body,
-            "model": {
-                "provider": config.model.provider,
-                "name": config.model.name,
-                "api_key_secret": config.model.api_key_secret or "",
-            },
-            "checks": checks,
-            "observations": observations,
-        }
-    )
-
-
-async def _kubernetes_model_probe_report(
-    args: argparse.Namespace,
-    service: RuntimeService,
-) -> JsonMapping:
-    profile = cast(str, args.profile)
-    if not service.accepts_profile(profile):
-        raise ValueError(f"unknown profile: {profile}")
-    workload = _kubernetes_workload_resource(cast(str, args.workload))
-    namespace = _optional_kubernetes_namespace(cast(str | None, args.namespace))
-    config = service.config()
-    context = _kubernetes_model_probe_context(service, workload, namespace)
-    try:
-        model = _kubernetes_model_probe_adapter(args, workload, namespace)
-        decision = await model.decide(context)
-        decision.validate()
-        validation_error = _validate_probe_decision(decision, context)
-        if validation_error is not None:
-            raise ValueError(validation_error)
-    except Exception as exc:
-        return immutable_json(
-            {
-                "status": "failed",
-                "operation": _kubernetes_operation_body(profile, workload, namespace),
-                "model": _kubernetes_model_config_body(config.model),
-                "capability_count": len(context.capabilities),
-                "error": {
-                    "type": exc.__class__.__name__,
-                    "message": str(exc),
-                },
-                "next_step": {
-                    "type": "fix_model_provider",
-                    "message": (
-                        "Fix the profile model provider, credentials, response_format, "
-                        "or returned Decision JSON before running Kubernetes remediation."
-                    ),
-                },
-            }
-        )
-    return immutable_json(
-        {
-            "status": "ok",
-            "operation": _kubernetes_operation_body(profile, workload, namespace),
-            "model": _kubernetes_model_config_body(config.model),
-            "capability_count": len(context.capabilities),
-            "decision": _decision_body(decision),
-            "next_step": {
-                "type": "run_kubernetes_preflight",
-                "message": "Model probe passed; run Kubernetes preflight before remediation.",
-            },
-        }
-    )
-
-
-async def _kubernetes_check_report(
-    args: argparse.Namespace,
-    service: RuntimeService,
-) -> JsonMapping:
-    profile = cast(str, args.profile)
-    workload = _kubernetes_workload_resource(cast(str, args.workload))
-    namespace = _optional_kubernetes_namespace(cast(str | None, args.namespace))
-    model_probe = await _kubernetes_model_probe_report(args, service)
-    if model_probe["status"] == "failed":
-        return immutable_json(
-            {
-                "status": "failed",
-                "operation": _kubernetes_operation_body(profile, workload, namespace),
-                "model_probe": dict(model_probe),
-                "preflight": None,
-                "next_step": {
-                    "type": "fix_model_provider",
-                    "message": (
-                        "Fix model probe failure before Kubernetes preflight or remediation."
-                    ),
-                },
-            }
-        )
-    preflight = await _kubernetes_preflight_report(args, service)
-    if preflight["status"] == "failed":
-        return immutable_json(
-            {
-                "status": "failed",
-                "operation": _kubernetes_operation_body(profile, workload, namespace),
-                "model_probe": dict(model_probe),
-                "preflight": dict(preflight),
-                "next_step": {
-                    "type": "fix_preflight",
-                    "message": "Resolve failed Kubernetes preflight checks before remediation.",
-                },
-            }
-        )
-    return immutable_json(
-        {
-            "status": "ok",
-            "operation": _kubernetes_operation_body(profile, workload, namespace),
-            "model_probe": dict(model_probe),
-            "preflight": dict(preflight),
-            "next_step": {
-                "type": "run_kubernetes_remediation",
-                "message": "Model and Kubernetes preflight checks passed; run remediation next.",
-            },
-        }
-    )
-
-
-def _kubernetes_model_probe_context(
-    service: RuntimeService,
-    workload: str,
-    namespace: str | None,
-) -> DecisionContext:
-    goal = Goal(
-        _kubernetes_remediation_goal_description(workload, namespace),
-        _kubernetes_remediation_success_criteria(workload, namespace),
-    )
-    task = Task(
-        _kubernetes_remediation_task_description(workload, namespace),
-        tuple(item.key for item in goal.success_criteria),
-    )
-    return DecisionContext(
-        session_id=SessionId("probe-session"),
-        goal_id=goal.id,
-        goal_description=goal.description,
-        task_id=task.id,
-        task_description=task.description,
-        iteration=1,
-        satisfied_criteria=immutable_json(),
-        latest_observation=None,
-        capabilities=_kubernetes_probe_capabilities(service),
-        goal_success_criteria=goal.success_criteria,
-        current_task_required_criteria=task.required_criteria,
-        policy_summary=tuple(policy.description for policy in service.policies()),
-    )
-
-
-def _kubernetes_probe_capabilities(service: RuntimeService) -> tuple[CapabilitySummary, ...]:
-    return tuple(
-        CapabilitySummary(
-            capability.name,
-            capability.description,
-            capability.category,
-            capability.risk,
-            required_arguments=capability.required_arguments,
-            argument_schema=capability.argument_schema,
-        )
-        for capability in service.capabilities()
-        if capability.domain_name == "kubernetes"
-    )
-
-
-def _kubernetes_model_probe_adapter(
-    args: argparse.Namespace,
-    workload: str,
-    namespace: str | None,
-) -> ModelAdapter:
-    profile_config = cast(str | None, args.profile_config)
-    scripted = (_kubernetes_probe_decision(workload, namespace),)
-    if profile_config is None:
-        return ScriptedModelAdapter(scripted)
-    profile = ProfileConfig.from_json_file(profile_config).to_profile()
-    return build_configured_model_adapter(
-        profile.runtime,
-        scripted_decisions=scripted,
-        secret_provider=EnvSecretProvider(),
-    )
-
-
-def _kubernetes_probe_decision(workload: str, namespace: str | None) -> Decision:
-    arguments: dict[str, JsonValue] = {"name": _kubernetes_workload_name(workload)}
-    expected_observations: list[str] = ["healthy", "resource"]
-    if namespace is not None:
-        arguments["namespace"] = namespace
-        expected_observations.append("namespace")
-    return Decision(
-        DecisionType.EXECUTE,
-        "Probe Kubernetes model decision contract with workload inspection.",
-        capability="inspect_workload",
-        target=workload,
-        arguments=immutable_json(arguments),
-        expected_observations=tuple(expected_observations),
-    )
-
-
-def _validate_probe_decision(decision: Decision, context: DecisionContext) -> str | None:
-    if decision.type is not DecisionType.EXECUTE:
-        return "Kubernetes model probe must return an execute Decision"
-    capability = decision.capability or ""
-    capabilities = {item.name: item for item in context.capabilities}
-    summary = capabilities.get(capability)
-    if summary is None:
-        return f"capability is not available in Kubernetes probe context: {capability}"
-    if summary.category is not CapabilityCategory.OBSERVATION:
-        return "Kubernetes model probe must use a read-only inspection capability"
-    if capability != "inspect_workload":
-        return "Kubernetes model probe must start with inspect_workload"
-    argument_error = validate_argument_contract(
-        required_arguments=summary.required_arguments,
-        argument_schema=summary.argument_schema,
-        arguments=decision.arguments,
-    )
-    if argument_error is not None:
-        return f"arguments for capability {capability}: {argument_error}"
-    expected_workload = _expected_success_criterion(context, "resource")
-    if expected_workload is not None:
-        target = decision.target
-        if isinstance(target, str) and target.strip():
-            target_resource = _normal_probe_workload(target, "target")
-            if target_resource != expected_workload:
-                return (
-                    "Kubernetes model probe target is outside the requested workload scope: "
-                    f"{target_resource}"
-                )
-        name = decision.arguments.get("name")
-        if not isinstance(name, str) or not name.strip():
-            return "Kubernetes model probe inspect_workload requires a name argument"
-        argument_resource = _normal_probe_workload(name, "arguments.name")
-        if argument_resource != expected_workload:
-            return (
-                "Kubernetes model probe name is outside the requested workload scope: "
-                f"{argument_resource}"
-            )
-    expected_namespace = _expected_success_criterion(context, "namespace")
-    if expected_namespace is not None:
-        namespace = decision.arguments.get("namespace")
-        if namespace != expected_namespace:
-            return (
-                "Kubernetes model probe namespace is outside the requested workload scope: "
-                f"{namespace}"
-            )
-    return None
-
-
-def _expected_success_criterion(context: DecisionContext, key: str) -> str | None:
-    for criterion in context.goal_success_criteria:
-        if criterion.key != key:
-            continue
-        if isinstance(criterion.expected, str) and criterion.expected.strip():
-            return criterion.expected.strip()
-    return None
-
-
-def _normal_probe_workload(value: str, field_name: str) -> str:
-    try:
-        return _kubernetes_workload_resource(value)
-    except ValueError as exc:
-        raise ValueError(f"Kubernetes model probe {field_name} is invalid: {exc}") from exc
-
-
-def _kubernetes_operation_body(
-    profile: str,
-    workload: str,
-    namespace: str | None,
-) -> dict[str, JsonValue]:
-    return {
-        "profile": profile,
-        "workload": workload,
-        "namespace": namespace or "",
-    }
-
-
-def _kubernetes_model_config_body(model: object) -> dict[str, JsonValue]:
-    provider = getattr(model, "provider", "scripted")
-    name = getattr(model, "name", "scripted")
-    endpoint = getattr(model, "endpoint", None)
-    api_key_secret = getattr(model, "api_key_secret", None)
-    timeout_seconds = getattr(model, "timeout_seconds", 30.0)
-    response_format = getattr(model, "response_format", None)
-    body: dict[str, JsonValue] = {
-        "provider": str(provider),
-        "name": str(name),
-        "endpoint": None if endpoint is None else str(endpoint),
-        "api_key_secret": None if api_key_secret is None else str(api_key_secret),
-        "timeout_seconds": (
-            float(timeout_seconds) if isinstance(timeout_seconds, int | float) else 30.0
-        ),
-    }
-    if response_format is not None:
-        body["response_format"] = str(response_format)
-    return body
-
-
-def _decision_body(decision: Decision) -> dict[str, JsonValue]:
-    return {
-        "type": decision.type.value,
-        "reason": decision.reason,
-        "capability": decision.capability,
-        "target": decision.target,
-        "arguments": dict(decision.arguments),
-        "expected_observations": list(decision.expected_observations),
-        "message": decision.message,
-    }
-
-
-def _primary_kubernetes_config_domain(
-    domains: tuple[RuntimeConfigDomainView, ...],
-) -> RuntimeConfigDomainView | None:
-    for domain in domains:
-        if domain.name == "kubernetes" and domain.primary:
-            return domain
-    for domain in domains:
-        if domain.name == "kubernetes":
-            return domain
-    return None
-
-
-def _append_model_secret_preflight_check(
-    checks: list[JsonValue],
-    config: RuntimeConfigView,
-) -> None:
-    secret_name = config.model.api_key_secret
-    if secret_name is None:
-        _append_preflight_check(
-            checks,
-            "model_secret",
-            "ok",
-            "model provider does not require an API key secret",
-            {"provider": config.model.provider},
-        )
-        return
-    secret = next((item for item in config.secrets if item.name == secret_name), None)
-    if secret is None:
-        _append_preflight_check(
-            checks,
-            "model_secret",
-            "failed",
-            "model api_key_secret is not declared",
-            {"secret": secret_name},
-        )
-        return
-    if secret.available is False or secret.status in {"missing_required", "missing_optional"}:
-        _append_preflight_check(
-            checks,
-            "model_secret",
-            "failed" if secret.required else "warn",
-            "model API key secret is unavailable",
-            {"secret": secret.name, "status": secret.status or "unknown"},
-        )
-        return
-    _append_preflight_check(
-        checks,
-        "model_secret",
-        "ok",
-        "model API key secret is available",
-        {"secret": secret.name, "source": secret.source},
-    )
-
-
-def _append_capability_preflight_check(
-    checks: list[JsonValue],
-    service: RuntimeService,
-) -> None:
-    available = {
-        capability.name
-        for capability in service.capabilities()
-        if capability.domain_name == "kubernetes"
-    }
-    missing = tuple(
-        capability
-        for capability in _KUBERNETES_PREFLIGHT_CAPABILITIES
-        if capability not in available
-    )
-    missing_values: list[JsonValue] = list(missing)
-    available_values: list[JsonValue] = list(sorted(available))
-    _append_preflight_check(
-        checks,
-        "kubernetes_capabilities",
-        "ok" if not missing else "failed",
-        "kubernetes runtime exposes expected capabilities"
-        if not missing
-        else "kubernetes runtime is missing expected capabilities",
-        {"missing": missing_values, "available": available_values},
-    )
-
-
-def _kubernetes_preflight_backend(profile_config: str | None) -> KubernetesBackend:
-    if profile_config is None:
-        return cast(KubernetesBackend, _DefaultCliBackend())
-    profile = ProfileConfig.from_json_file(profile_config).to_profile()
-    return cast(
-        KubernetesBackend,
-        _configured_kubernetes_backend(
-            profile.runtime.configured_domains() or (profile.domain,),
-            config=profile.runtime,
-            secret_provider=EnvSecretProvider(),
-        ),
-    )
-
-
-async def _append_backend_observation_check(
-    checks: list[JsonValue],
-    observations: dict[str, JsonValue],
-    backend: KubernetesBackend,
-    check_name: str,
-    capability: str,
-    arguments: JsonMapping,
-) -> None:
-    try:
-        observation = await backend.inspect(capability, arguments)
-    except Exception as exc:
-        _append_preflight_check(
-            checks,
-            check_name,
-            "failed",
-            f"{capability} failed",
-            {"error_type": exc.__class__.__name__, "error": str(exc)},
-        )
-        return
-    observations[check_name] = dict(observation)
-    _append_preflight_check(
-        checks,
-        check_name,
-        "ok",
-        f"{capability} succeeded",
-        {"resource": str(observation.get("resource", ""))},
-    )
-
-
-def _kubernetes_workload_arguments(workload: str, namespace: str | None) -> JsonMapping:
-    if not workload.strip():
-        raise ValueError("kubernetes preflight workload must not be empty")
-    arguments: dict[str, JsonValue] = {"name": workload}
-    if namespace is not None:
-        if not namespace.strip():
-            raise ValueError("kubernetes preflight namespace must not be empty")
-        arguments["namespace"] = namespace
-    return immutable_json(arguments)
-
-
-def _append_preflight_check(
-    checks: list[JsonValue],
-    name: str,
-    status: str,
-    message: str,
-    details: Mapping[str, JsonValue] | None = None,
-) -> None:
-    body: dict[str, JsonValue] = {
-        "name": name,
-        "status": status,
-        "message": message,
-    }
-    if details is not None:
-        body["details"] = dict(details)
-    checks.append(body)
-
-
-def _preflight_failed(checks: list[JsonValue]) -> bool:
-    for check in checks:
-        if isinstance(check, Mapping) and check.get("status") == "failed":
-            return True
-    return False
-
-
-async def _run_kubernetes_remediation(
-    args: argparse.Namespace,
-    service: RuntimeService,
-) -> RuntimeRun:
-    profile = cast(str, args.profile)
-    if not service.accepts_profile(profile):
-        raise ValueError(f"unknown profile: {profile}")
-    workload = _kubernetes_workload_resource(cast(str, args.workload))
-    namespace = _optional_kubernetes_namespace(cast(str | None, args.namespace))
-    criteria = _kubernetes_remediation_success_criteria(workload, namespace)
-    goal = Goal(
-        _kubernetes_remediation_goal_description(workload, namespace),
-        criteria,
-    )
-    task = Task(
-        _kubernetes_remediation_task_description(workload, namespace),
-        tuple(item.key for item in criteria),
-    )
-    return await service.run_goal(goal, task)
-
-
-def _kubernetes_run_body(
-    args: argparse.Namespace,
-    run: RuntimeRun,
-    preflight: JsonMapping | None,
-    model_probe: JsonMapping | None,
-) -> JsonMapping:
-    profile_config = cast(str | None, args.profile_config)
-    return immutable_json(
-        {
-            "status": run.result.status.value,
-            "operation": {
-                "profile": cast(str, args.profile),
-                "workload": _kubernetes_workload_resource(cast(str, args.workload)),
-                "namespace": _optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
-            },
-            "model_probe": None if model_probe is None else dict(model_probe),
-            "preflight": None if preflight is None else dict(preflight),
-            "run": dict(runtime_run_body(run)),
-            "next_step": _kubernetes_run_next_step(run, profile_config),
-        }
-    )
-
-
-def _kubernetes_run_model_probe_failed_body(
-    args: argparse.Namespace,
-    model_probe: JsonMapping,
-) -> JsonMapping:
-    return immutable_json(
-        {
-            "status": "failed",
-            "operation": {
-                "profile": cast(str, args.profile),
-                "workload": _kubernetes_workload_resource(cast(str, args.workload)),
-                "namespace": _optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
-            },
-            "model_probe": dict(model_probe),
-            "preflight": None,
-            "run": None,
-            "next_step": {
-                "type": "fix_model_provider",
-                "message": (
-                    "Fix model probe failure before Kubernetes preflight or remediation."
-                ),
-            },
-        }
-    )
-
-
-def _kubernetes_run_preflight_failed_body(
-    args: argparse.Namespace,
-    preflight: JsonMapping,
-    model_probe: JsonMapping | None,
-) -> JsonMapping:
-    return immutable_json(
-        {
-            "status": "failed",
-            "operation": {
-                "profile": cast(str, args.profile),
-                "workload": _kubernetes_workload_resource(cast(str, args.workload)),
-                "namespace": _optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
-            },
-            "model_probe": None if model_probe is None else dict(model_probe),
-            "preflight": dict(preflight),
-            "run": None,
-            "next_step": {
-                "type": "fix_preflight",
-                "message": "Resolve failed Kubernetes preflight checks before running remediation.",
-            },
-        }
-    )
-
-
-def _kubernetes_run_next_step(
-    run: RuntimeRun,
-    profile_config: str | None,
-) -> JsonValue:
-    if run.session.pending_action is not None:
-        command = ["python", "-m", "universal_agent.cli"]
-        if profile_config is not None:
-            command.extend(("--profile-config", profile_config))
-        command.extend(("session", "resume", str(run.result.session_id), "--confirmed", "true"))
-        return {
-            "type": "confirm_pending_action",
-            "message": (
-                "Review pending_action before confirming the policy-gated Kubernetes mutation."
-            ),
-            "command": shlex.join(command),
-        }
-    if run.result.status is ExecutionStatus.FAILED:
-        command = ["python", "-m", "universal_agent.cli"]
-        if profile_config is not None:
-            command.extend(("--profile-config", profile_config))
-        command.extend(("session", "diagnostics", str(run.result.session_id)))
-        return {
-            "type": "inspect_failure",
-            "message": "Inspect session diagnostics before retrying the Kubernetes operation.",
-            "command": shlex.join(command),
-        }
-    return None
-
-
-def _kubernetes_workload_resource(workload: str) -> str:
-    normalized = workload.strip()
-    if not normalized:
-        raise ValueError("kubernetes workload must not be empty")
-    if "/" in normalized:
-        return normalized
-    return f"deployment/{normalized}"
-
-
-def _kubernetes_workload_name(workload: str) -> str:
-    resource = _kubernetes_workload_resource(workload)
-    if "/" not in resource:
-        return resource
-    return resource.split("/", 1)[1]
-
-
-def _optional_kubernetes_namespace(namespace: str | None) -> str | None:
-    if namespace is None:
-        return None
-    normalized = namespace.strip()
-    if not normalized:
-        raise ValueError("kubernetes namespace must not be empty")
-    return normalized
-
-
-def _kubernetes_remediation_success_criteria(
-    workload: str,
-    namespace: str | None,
-) -> tuple[SuccessCriterion, ...]:
-    criteria = [
-        SuccessCriterion("healthy", True),
-        SuccessCriterion("resource", workload),
-    ]
-    if namespace is not None:
-        criteria.append(SuccessCriterion("namespace", namespace))
-    return tuple(criteria)
-
-
-def _kubernetes_remediation_goal_description(workload: str, namespace: str | None) -> str:
-    scope = workload if namespace is None else f"{workload} in namespace {namespace}"
-    return (
-        f"Restore Kubernetes workload {scope} to healthy state. "
-        "Inspect, diagnose, apply only policy-allowed safe remediation, "
-        "and verify fresh health evidence."
-    )
-
-
-def _kubernetes_remediation_task_description(workload: str, namespace: str | None) -> str:
-    scope = workload if namespace is None else f"{workload} in namespace {namespace}"
-    return f"Inspect Kubernetes workload {scope} and determine whether remediation is required."
 
 
 async def _dispatch_tui(
@@ -2756,7 +1805,7 @@ def _profile_config_payload(
         env_key=kubernetes_api_token_env,
         file_path=kubernetes_api_token_file,
     )
-    domain = _profile_domain_config(
+    domain = kubernetes_profile_domain_config(
         domain_backend=domain_backend,
         kubectl_namespace=kubectl_namespace,
         kubectl_context=kubectl_context,
@@ -2816,49 +1865,6 @@ def _profile_config_payload(
         "domain": domain,
         "runtime": runtime,
     }
-
-
-def _profile_domain_config(
-    *,
-    domain_backend: str,
-    kubectl_namespace: str,
-    kubectl_context: str | None,
-    kubectl_kubeconfig: str | None,
-    kubectl_timeout_seconds: float,
-    kubernetes_api_server: str | None,
-    kubernetes_api_namespace: str,
-    kubernetes_api_token_secret: str | None,
-    kubernetes_api_timeout_seconds: float,
-) -> dict[str, object]:
-    domain: dict[str, object] = {"name": "kubernetes", "version": "0.2.0"}
-    if domain_backend == "fake":
-        return domain
-    if domain_backend == "kubectl":
-        settings: dict[str, object] = {
-            "default_namespace": kubectl_namespace,
-            "timeout_seconds": kubectl_timeout_seconds,
-        }
-        if kubectl_context:
-            settings["context"] = kubectl_context
-        if kubectl_kubeconfig:
-            settings["kubeconfig"] = kubectl_kubeconfig
-        domain["backend"] = "kubectl"
-        domain["settings"] = settings
-        return domain
-    if domain_backend == "kubernetes_api":
-        if kubernetes_api_server is None or not kubernetes_api_server.strip():
-            raise ValueError("kubernetes_api backend requires --kubernetes-api-server")
-        settings = {
-            "api_server": kubernetes_api_server,
-            "default_namespace": kubernetes_api_namespace,
-            "timeout_seconds": kubernetes_api_timeout_seconds,
-        }
-        if kubernetes_api_token_secret is not None:
-            settings["bearer_token_secret"] = kubernetes_api_token_secret
-        domain["backend"] = "kubernetes_api"
-        domain["settings"] = settings
-        return domain
-    raise ValueError(f"unsupported domain backend: {domain_backend}")
 
 
 def _single_secret_source(
@@ -2993,46 +1999,6 @@ def _json_value(value: object, field: str) -> JsonValue:
             result[key] = _json_value(item, f"{field}.{key}")
         return result
     raise ValueError(f"{field} must be JSON-compatible")
-
-
-def _setting_string(settings: JsonMapping, key: str, *, default: str) -> str:
-    value = settings.get(key, default)
-    if isinstance(value, str) and value.strip():
-        return value
-    raise ValueError(f"domain setting {key} must be a non-empty string")
-
-
-def _optional_setting_string(settings: JsonMapping, key: str) -> str | None:
-    value = settings.get(key)
-    if value is None:
-        return None
-    if isinstance(value, str) and value.strip():
-        return value
-    raise ValueError(f"domain setting {key} must be a non-empty string")
-
-
-def _configured_kubernetes_api_token(
-    settings: JsonMapping,
-    *,
-    config: RuntimeConfig | None,
-    secret_provider: SecretProvider | None,
-) -> str | None:
-    secret_name = _optional_setting_string(settings, "bearer_token_secret")
-    if secret_name is None:
-        return None
-    if config is None:
-        raise ValueError("kubernetes_api bearer_token_secret requires runtime config")
-    for secret in config.secrets:
-        if secret.name == secret_name:
-            return resolve_secret_value(secret, provider=secret_provider)
-    raise ValueError(f"domain setting bearer_token_secret is not declared: {secret_name}")
-
-
-def _setting_float(settings: JsonMapping, key: str, *, default: float) -> float:
-    value: JsonValue = settings.get(key, default)
-    if isinstance(value, int | float) and not isinstance(value, bool) and value > 0:
-        return float(value)
-    raise ValueError(f"domain setting {key} must be a positive number")
 
 
 def _dispatch_serve(
