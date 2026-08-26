@@ -269,7 +269,11 @@ async def test_openai_responses_model_adapter_posts_structured_output_request() 
     content = cast(list[JsonValue], first_input["content"])
     input_text = cast(Mapping[str, JsonValue], content[0])
     assert input_text["type"] == "input_text"
-    assert "Verify workload health" in cast(str, input_text["text"])
+    prompt_text = cast(str, input_text["text"])
+    assert "Verify workload health" in prompt_text
+    assert "required_arguments" in prompt_text
+    assert "argument_schema" in prompt_text
+    assert "goal_success_criteria" in prompt_text
 
 
 @pytest.mark.asyncio

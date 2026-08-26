@@ -253,8 +253,12 @@ class OpenAIResponsesModelAdapter:
         prompt = {
             "runtime_contract": (
                 "Return exactly one Universal Agent Runtime Decision. "
-                "Use execute only for one available capability. "
-                "Use finish only when the runtime context shows required criteria are satisfied. "
+                "Use execute only for one capability listed in context.capabilities. "
+                "Construct execute arguments from that capability's required_arguments "
+                "and argument_schema. "
+                "Use expected_observations for the evidence claims the Runtime should observe. "
+                "Use finish only when goal_success_criteria and current_task_required_criteria "
+                "are already satisfied in the runtime context. "
                 "Do not claim tool execution or task completion in prose."
             ),
             "context": dict(context_payload),
