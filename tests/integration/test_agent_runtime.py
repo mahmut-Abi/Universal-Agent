@@ -177,6 +177,61 @@ class SyntheticDomain:
         return ()
 
 
+class PartiallyExecutableDomain:
+    def __init__(self) -> None:
+        self._evaluator = CriterionEvaluator("ready-evaluator", "ready")
+        self._tool = StaticTool(
+            "inspect_ready_tool",
+            "inspect_ready",
+            immutable_json({"ready": True}),
+        )
+        self.manifest = DomainManifest(
+            "agent.nantian.dev/v1alpha1",
+            "Domain",
+            DomainMetadata("partial", "1.0.0", "Partial executable surface"),
+            ("Thing",),
+            ("inspect_ready", "inspect_missing"),
+            (self._evaluator.name,),
+        )
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        return (
+            CapabilityDefinition("inspect_ready", "Inspect ready", CapabilityCategory.OBSERVATION),
+            CapabilityDefinition(
+                "inspect_missing",
+                "Inspect missing",
+                CapabilityCategory.OBSERVATION,
+            ),
+        )
+
+    def tools(self) -> tuple[Tool, ...]:
+        return (self._tool,)
+
+    def policies(self) -> tuple[Policy, ...]:
+        return ()
+
+    def evaluators(self) -> tuple[Evaluator, ...]:
+        return (self._evaluator,)
+
+    def context_providers(self) -> tuple[DomainContextProvider, ...]:
+        return ()
+
+    def evidence_extractors(self) -> tuple[EvidenceExtractor, ...]:
+        return ()
+
+    def world_updaters(self) -> tuple[WorldUpdater, ...]:
+        return ()
+
+    def task_expanders(self) -> tuple[TaskExpander, ...]:
+        return ()
+
+    def recovery_rules(self) -> tuple[RecoveryRule, ...]:
+        return ()
+
+    def memories(self) -> tuple[MemoryRecord, ...]:
+        return ()
+
+
 def execute_probe() -> Decision:
     return Decision(
         type=DecisionType.EXECUTE,
@@ -254,6 +309,28 @@ async def test_runtime_commits_state_events_through_store_seam() -> None:
         "StateUpdated",
         "StateUpdated",
     ]
+
+
+@pytest.mark.asyncio
+async def test_decision_context_exposes_only_executable_capabilities() -> None:
+    active = DomainLoader().load(PartiallyExecutableDomain())
+    components = RuntimeBuilder().build(active)
+    model = ScriptedModelAdapter([Decision(DecisionType.WAIT, "inspect context only")])
+    runtime = AgentRuntime(
+        model=model,
+        state_store=InMemoryStateStore(),
+        components=components,
+        event_sink=InMemoryEventSink(),
+    )
+
+    result = await runtime.run(
+        Goal("Verify ready capability", (SuccessCriterion("ready", True),)),
+        Task("Inspect ready", ("ready",)),
+    )
+
+    assert result.status is ExecutionStatus.WAITING
+    assert tuple(item.name for item in model.contexts[0].capabilities) == ("inspect_ready",)
+    assert model.contexts[0].capabilities[0].required_arguments == ()
 
 
 @pytest.mark.asyncio

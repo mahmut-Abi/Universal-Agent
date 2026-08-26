@@ -242,7 +242,7 @@ class AgentRuntime:
         while state.iteration < self._max_iterations:
             state.iteration += 1
             await self._save(session)
-            capabilities = self._components.capabilities.all()
+            capabilities, input_contracts = self._capability_context()
             context = self._context_compiler.compile(
                 state,
                 capabilities,
@@ -252,7 +252,7 @@ class AgentRuntime:
                 session.query(limit=8),
                 session.tasks,
                 self._recall(session),
-                self._capability_input_contracts(capabilities),
+                input_contracts,
             )
             try:
                 decision = await self._model.decide(context)
@@ -563,17 +563,18 @@ class AgentRuntime:
         candidates = self._components.memory_retriever.retrieve(request)
         return self._components.memory_filter.filter(candidates, request)
 
-    def _capability_input_contracts(
+    def _capability_context(
         self,
-        capabilities: tuple[CapabilityDefinition, ...],
-    ) -> tuple[CapabilityInputContract, ...]:
+    ) -> tuple[tuple[CapabilityDefinition, ...], tuple[CapabilityInputContract, ...]]:
+        executable: list[CapabilityDefinition] = []
         contracts: list[CapabilityInputContract] = []
-        for capability in capabilities:
+        for capability in self._components.capabilities.all():
             try:
                 resolution = self._components.resolver.resolve_registration(capability.name)
             except (UnknownCapabilityError, CapabilityUnavailableError):
                 continue
             tool = resolution.tool.definition
+            executable.append(capability)
             contracts.append(
                 CapabilityInputContract(
                     capability.name,
@@ -581,7 +582,7 @@ class AgentRuntime:
                     argument_schema=tool.argument_schema,
                 )
             )
-        return tuple(contracts)
+        return tuple(executable), tuple(contracts)
 
     def _record_episodic(
         self,
