@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from universal_agent import DomainLoader, DomainRuntimeSpec, RuntimeBuilder, build_domain_runtime
+from universal_agent import (
+    DomainLoader,
+    DomainRuntimeSpec,
+    RuntimeBuilder,
+    build_domain_runtime,
+    domain_package_scaffold_spec_from_runtime_spec,
+)
 from universal_agent.core import (
     CapabilityCategory,
     CapabilityDefinition,
@@ -19,23 +25,23 @@ class InspectWidgetTool:
 
 
 def main() -> None:
-    runtime = build_domain_runtime(
-        DomainRuntimeSpec(
-            name="widget",
-            version="1.0.0",
-            description="Widget inspection Domain",
-            ontology=("Widget",),
-            capabilities=(
-                CapabilityDefinition(
-                    "inspect_widget",
-                    "Inspect widget health",
-                    CapabilityCategory.OBSERVATION,
-                ),
+    spec = DomainRuntimeSpec(
+        name="widget",
+        version="1.0.0",
+        description="Widget inspection Domain",
+        ontology=("Widget",),
+        capabilities=(
+            CapabilityDefinition(
+                "inspect_widget",
+                "Inspect widget health",
+                CapabilityCategory.OBSERVATION,
             ),
-            tools=(InspectWidgetTool(),),
-            evaluators=(CriteriaEvaluator(),),
-        )
+        ),
+        tools=(InspectWidgetTool(),),
+        evaluators=(CriteriaEvaluator(),),
     )
+    runtime = build_domain_runtime(spec)
+    scaffold = domain_package_scaffold_spec_from_runtime_spec(spec, author="Runtime Team")
     domain = DomainLoader().load(runtime)
     components = RuntimeBuilder().build(domain)
 
@@ -44,6 +50,7 @@ def main() -> None:
     print(f"tools={len(domain.tools)}")
     print(f"evaluators={len(domain.evaluators)}")
     print(f"registered_tools={len(components.tools.all())}")
+    print(f"package_capabilities={','.join(scaffold.capabilities)}")
 
 
 if __name__ == "__main__":

@@ -11,7 +11,12 @@ from types import ModuleType
 from typing import Any, cast
 
 from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
-from universal_agent.domain.runtime import ActiveDomain, DomainLoader, DomainRuntime
+from universal_agent.domain.runtime import (
+    ActiveDomain,
+    DomainLoader,
+    DomainRuntime,
+    DomainRuntimeSpec,
+)
 
 DOMAIN_PACKAGE_MANIFEST = "manifest.json"
 DOMAIN_PACKAGE_DIRECTORIES = (
@@ -365,6 +370,56 @@ def build_domain_package_manifest(spec: DomainPackageScaffoldSpec) -> DomainPack
         compatibility=spec.compatibility,
         security=immutable_json(spec.security),
         tags=spec.tags,
+        metadata=immutable_json(metadata),
+    )
+
+
+def domain_package_scaffold_spec_from_runtime_spec(
+    spec: DomainRuntimeSpec,
+    *,
+    author: str | None = None,
+    entrypoint: str | None = None,
+    procedures: tuple[str, ...] = (),
+    knowledge: tuple[str, ...] = (),
+    prompts: tuple[str, ...] = (),
+    resources: tuple[str, ...] = (),
+    dependencies: tuple[DomainIdentity, ...] = (),
+    required_tools: tuple[str, ...] = (),
+    compatibility: DomainPackageCompatibility | None = None,
+    security: JsonMapping | None = None,
+    tags: tuple[str, ...] = (),
+    metadata: JsonMapping | None = None,
+) -> DomainPackageScaffoldSpec:
+    """Project a declarative Domain runtime spec into package scaffold metadata.
+
+    The package manifest remains metadata-only and does not import or activate
+    Domain code. This helper only keeps the manifest's declared capability,
+    tool, policy, evaluator and context-provider names aligned with the runtime
+    objects already declared by Domain authors.
+    """
+
+    return DomainPackageScaffoldSpec(
+        name=spec.name,
+        version=spec.version,
+        description=spec.description,
+        api_version=spec.api_version,
+        author=author,
+        entrypoint=entrypoint,
+        ontology=spec.ontology,
+        capabilities=spec.capability_names,
+        tools=spec.tool_names,
+        policies=tuple(policy.name for policy in spec.policies),
+        procedures=procedures,
+        knowledge=knowledge,
+        evaluators=spec.evaluator_names,
+        context_providers=tuple(provider.name for provider in spec.context_providers),
+        prompts=prompts,
+        resources=resources,
+        dependencies=dependencies,
+        required_tools=required_tools,
+        compatibility=compatibility or DomainPackageCompatibility(),
+        security=immutable_json(security),
+        tags=tags,
         metadata=immutable_json(metadata),
     )
 

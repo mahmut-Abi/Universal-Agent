@@ -365,9 +365,11 @@ detect accidental split state/event wiring. These adapters are local persistence
   drift between package metadata and runtime code; registry install/discovery still never imports
   Domain code. `agent domain-packages load-runtime <path>` exposes the same explicit runtime
   activation check for CLI/CI without changing metadata-only install semantics.
-  `DomainPackageScaffoldSpec` and `scaffold_domain_package` provide the first Domain SDK surface for
-  generating a standard package layout and validated manifest from typed metadata, including
-  package-local resource parents for runbooks, schemas, templates and other declarative assets.
+  `DomainPackageScaffoldSpec`, `domain_package_scaffold_spec_from_runtime_spec` and
+  `scaffold_domain_package` provide the first Domain SDK surface for generating a standard package
+  layout and validated manifest from typed metadata, including package-local resource parents for
+  runbooks, schemas, templates and other declarative assets, without importing Domain code during
+  metadata-only package work.
 - P7 Evaluation Dataset foundation: `EvaluationDatasetManifest` groups reusable evaluation suite
   files into discoverable datasets with Domain, tag, suite and author metadata. `EvaluationDatasetRegistry`
   validates referenced suite configs and lists or retrieves datasets without executing scenarios or

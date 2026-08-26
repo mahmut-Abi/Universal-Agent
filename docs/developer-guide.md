@@ -89,7 +89,9 @@ Examples are organized by roadmap slice. Useful entry points:
   `src/universal_agent/ecosystem/`.
 - New Domain implementations can subclass `BaseDomainRuntime` or use
   `DomainRuntimeSpec` plus `build_domain_runtime` to derive manifest references
-  from declared capabilities, tools and evaluators.
+  from declared capabilities, tools and evaluators. Use
+  `domain_package_scaffold_spec_from_runtime_spec` when package scaffold metadata
+  should stay aligned with that runtime spec.
 - Domain package runtime activation should go through `load_domain_package_runtime`.
   That seam imports the declared entrypoint only when explicitly called, validates
   the result through `DomainLoader`, and rejects package metadata drift. Registry
