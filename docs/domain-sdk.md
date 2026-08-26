@@ -73,6 +73,11 @@ spec, including `ontology/`, `capabilities/`, `tools/`, `policies/`,
 `procedures/`, `knowledge/`, `evaluators/`, `context_providers/`, `prompts/`,
 `resources/` and `tests/`.
 
+Set `DomainPackageScaffoldSpec.runtime_stub=True`, or pass CLI
+`--runtime-stub`, only when the scaffold should also write starter Python
+Domain code at the declared entrypoint. The stub is still inert metadata until
+`load_domain_package_runtime` is called explicitly.
+
 Explicit runtime activation remains a separate seam:
 
 ```python
@@ -90,7 +95,7 @@ Useful local commands:
 ```bash
 .venv/bin/python examples/p7_domain_sdk_base_runtime.py
 .venv/bin/python examples/p7_domain_sdk_runtime_spec.py
-.venv/bin/python -m universal_agent.cli domain-packages scaffold widget --description "Widget Domain" --output .tmp/widget-domain --capability inspect_widget --tool inspect_widget --evaluator criteria
+.venv/bin/python -m universal_agent.cli domain-packages scaffold widget --description "Widget Domain" --output .tmp/widget-domain --capability inspect_widget --tool inspect_widget --evaluator criteria --runtime-stub
 .venv/bin/python -m universal_agent.cli domain-packages verify --local-paths
 .venv/bin/python -m universal_agent.cli domain-packages load-runtime .tmp/widget-domain
 ```

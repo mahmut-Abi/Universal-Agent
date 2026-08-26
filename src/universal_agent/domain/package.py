@@ -168,6 +168,7 @@ class DomainPackageScaffoldSpec:
     security: JsonMapping = field(default_factory=immutable_json)
     tags: tuple[str, ...] = ()
     metadata: JsonMapping = field(default_factory=immutable_json)
+    runtime_stub: bool = False
 
     def __post_init__(self) -> None:
         _require_non_empty(self.name, "name")
@@ -390,6 +391,7 @@ def domain_package_scaffold_spec_from_runtime_spec(
     security: JsonMapping | None = None,
     tags: tuple[str, ...] = (),
     metadata: JsonMapping | None = None,
+    runtime_stub: bool = False,
 ) -> DomainPackageScaffoldSpec:
     """Project a declarative Domain runtime spec into package scaffold metadata.
 
@@ -422,6 +424,7 @@ def domain_package_scaffold_spec_from_runtime_spec(
         security=immutable_json(security),
         tags=tags,
         metadata=immutable_json(metadata),
+        runtime_stub=runtime_stub,
     )
 
 
@@ -521,13 +524,20 @@ def scaffold_domain_package(
             resource_path.touch()
             created_paths.append(resource_path)
 
+    written_paths: list[Path] = []
+    if spec.runtime_stub:
+        runtime_stub_result = _write_runtime_stub(root, manifest, overwrite=overwrite)
+        created_paths.extend(runtime_stub_result[0])
+        written_paths.extend(runtime_stub_result[1])
+
     overwritten = manifest_path.exists()
     _write_json_manifest(manifest_path, encode_domain_package_manifest(manifest))
+    written_paths.append(manifest_path)
     package = load_domain_package(root)
     return DomainPackageScaffoldResult(
         package=package,
         created_paths=tuple(created_paths),
-        written_paths=(manifest_path,),
+        written_paths=tuple(written_paths),
         overwritten=overwritten,
     )
 
@@ -940,6 +950,193 @@ def _write_json_manifest(path: Path, payload: JsonMapping) -> None:
         json.dump(payload, handle, indent=2, sort_keys=True)
         handle.write("\n")
     tmp_path.replace(path)
+
+
+def _write_runtime_stub(
+    root: Path,
+    manifest: DomainPackageManifest,
+    *,
+    overwrite: bool,
+) -> tuple[list[Path], list[Path]]:
+    if not manifest.evaluators:
+        raise DomainPackageValidationError("runtime stub requires at least one evaluator")
+    if manifest.tools and not manifest.capabilities:
+        raise DomainPackageValidationError("runtime stub tools require at least one capability")
+    if manifest.entrypoint is None:
+        raise DomainPackageValidationError("runtime stub requires an entrypoint")
+
+    try:
+        module_name, attribute_path = _parse_entrypoint(manifest.entrypoint)
+    except DomainPackageRuntimeLoadError as exc:
+        raise DomainPackageValidationError(f"invalid runtime stub entrypoint: {exc}") from exc
+    if len(attribute_path) != 1:
+        raise DomainPackageValidationError("runtime stub entrypoint must name one factory function")
+    if not all(part.isidentifier() for part in module_name.split(".")):
+        raise DomainPackageValidationError(
+            f"runtime stub entrypoint module is not a valid Python module: {module_name}"
+        )
+    factory_name = attribute_path[0]
+    if not factory_name.isidentifier():
+        raise DomainPackageValidationError(
+            f"runtime stub entrypoint factory is not a valid Python identifier: {factory_name}"
+        )
+
+    created_paths: list[Path] = []
+    written_paths: list[Path] = []
+    module_parts = module_name.split(".")
+    if len(module_parts) == 1:
+        module_path = root / f"{module_parts[0]}.py"
+    else:
+        package_dir = root
+        for package_part in module_parts[:-1]:
+            package_dir = package_dir / package_part
+            if not package_dir.exists():
+                package_dir.mkdir()
+                created_paths.append(package_dir)
+            elif not package_dir.is_dir():
+                raise DomainPackageValidationError(
+                    f"runtime stub package path must be a directory: {package_dir}"
+                )
+            init_path = package_dir / "__init__.py"
+            if not init_path.exists():
+                init_path.write_text("", encoding="utf-8")
+                written_paths.append(init_path)
+        module_path = package_dir / f"{module_parts[-1]}.py"
+
+    if module_path.exists() and not overwrite:
+        raise DomainPackageValidationError(
+            f"domain package runtime stub already exists: {module_path}"
+        )
+    module_path.write_text(
+        _runtime_stub_source(manifest, factory_name),
+        encoding="utf-8",
+    )
+    written_paths.append(module_path)
+    return created_paths, written_paths
+
+
+def _runtime_stub_source(manifest: DomainPackageManifest, factory_name: str) -> str:
+    return f"""from __future__ import annotations
+
+from universal_agent import BaseDomainRuntime, immutable_json
+from universal_agent.core import (
+    CapabilityCategory,
+    CapabilityDefinition,
+    DomainManifest,
+    DomainMetadata,
+    EvaluationContext,
+    EvaluationResult,
+    EvaluationStatus,
+    JsonMapping,
+    ToolDefinition,
+)
+from universal_agent.evaluation import Evaluator
+from universal_agent.tools import Tool
+
+
+class _ScaffoldTool:
+    def __init__(self, definition: ToolDefinition) -> None:
+        self.definition = definition
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        return immutable_json({{"scaffold": True, "arguments": dict(arguments)}})
+
+
+class _ScaffoldEvaluator:
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    def evaluate(self, context: EvaluationContext) -> EvaluationResult:
+        return EvaluationResult(
+            EvaluationStatus.INCOMPLETE,
+            "scaffold evaluator requires implementation",
+            self._name,
+            immutable_json(),
+            False,
+            False,
+        )
+
+
+class ScaffoldDomain(BaseDomainRuntime):
+    manifest = DomainManifest(
+        {_py_string(manifest.api_version)},
+        "Domain",
+        DomainMetadata(
+            {_py_string(manifest.name)},
+            {_py_string(manifest.version)},
+            {_py_string(manifest.description)},
+        ),
+        {_py_string_tuple(manifest.ontology)},
+        {_py_string_tuple(manifest.capabilities)},
+        {_py_string_tuple(manifest.evaluators)},
+    )
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        return (
+{_runtime_stub_capabilities(manifest)}
+        )
+
+    def tools(self) -> tuple[Tool, ...]:
+        return (
+{_runtime_stub_tools(manifest)}
+        )
+
+    def evaluators(self) -> tuple[Evaluator, ...]:
+        return (
+{_runtime_stub_evaluators(manifest)}
+        )
+
+
+def {factory_name}() -> ScaffoldDomain:
+    return ScaffoldDomain()
+"""
+
+
+def _runtime_stub_capabilities(manifest: DomainPackageManifest) -> str:
+    return "\n".join(
+        (
+            "            CapabilityDefinition("
+            f"{_py_string(capability)}, "
+            f"{_py_string(f'Scaffold capability: {capability}')}, "
+            "CapabilityCategory.OBSERVATION),"
+        )
+        for capability in manifest.capabilities
+    )
+
+
+def _runtime_stub_tools(manifest: DomainPackageManifest) -> str:
+    return "\n".join(
+        (
+            "            _ScaffoldTool(ToolDefinition("
+            f"{_py_string(tool)}, "
+            f"{_py_string(f'Scaffold tool: {tool}')}, "
+            f"{_py_string_tuple(manifest.capabilities)})),"
+        )
+        for tool in manifest.tools
+    )
+
+
+def _runtime_stub_evaluators(manifest: DomainPackageManifest) -> str:
+    return "\n".join(
+        f"            _ScaffoldEvaluator({_py_string(evaluator)}),"
+        for evaluator in manifest.evaluators
+    )
+
+
+def _py_string(value: str) -> str:
+    return json.dumps(value)
+
+
+def _py_string_tuple(values: Sequence[str]) -> str:
+    if not values:
+        return "()"
+    if len(values) == 1:
+        return f"({_py_string(values[0])},)"
+    return "(" + ", ".join(_py_string(value) for value in values) + ")"
 
 
 def _mapping(payload: JsonMapping, key: str) -> JsonMapping:

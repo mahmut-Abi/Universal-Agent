@@ -267,10 +267,12 @@ P7 ecosystem commands validate and register local metadata:
 - Ecosystem registry manifests
 
 Domain package scaffolding can declare package-local resources for runbooks,
-schemas, templates and other non-code assets:
+schemas, templates and other non-code assets. Add `--runtime-stub` only when
+you want the scaffold command to write starter Python Domain code for later
+explicit activation checks:
 
 ```bash
-.venv/bin/python -m universal_agent.cli domain-packages scaffold ai-ops --description "AI ops domain" --output .tmp/ai-ops-domain --resource resources/runbook.md --resource schemas/incident.json
+.venv/bin/python -m universal_agent.cli domain-packages scaffold ai-ops --description "AI ops domain" --output .tmp/ai-ops-domain --capability inspect_incident --tool incident_api_get --evaluator incident_status --resource resources/runbook.md --resource schemas/incident.json --runtime-stub
 ```
 
 They do not import Domain entrypoints, install external dependencies or activate

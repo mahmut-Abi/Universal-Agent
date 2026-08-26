@@ -369,7 +369,8 @@ detect accidental split state/event wiring. These adapters are local persistence
   `scaffold_domain_package` provide the first Domain SDK surface for generating a standard package
   layout and validated manifest from typed metadata, including package-local resource parents for
   runbooks, schemas, templates, tests and other declarative assets, without importing Domain code
-  during metadata-only package work.
+  during metadata-only package work. Runtime stub generation is explicit opt-in and still requires
+  `load_domain_package_runtime` for activation.
 - P7 Evaluation Dataset foundation: `EvaluationDatasetManifest` groups reusable evaluation suite
   files into discoverable datasets with Domain, tag, suite and author metadata. `EvaluationDatasetRegistry`
   validates referenced suite configs and lists or retrieves datasets without executing scenarios or

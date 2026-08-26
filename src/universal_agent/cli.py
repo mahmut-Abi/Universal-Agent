@@ -738,6 +738,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     domain_package_scaffold.add_argument("--requires-confirmation", action="store_true")
     domain_package_scaffold.add_argument("--tag", action="append", default=[])
+    domain_package_scaffold.add_argument("--runtime-stub", action="store_true")
     domain_package_scaffold.add_argument("--force", action="store_true")
 
     profile = commands.add_parser("profile")
@@ -1722,6 +1723,7 @@ def _domain_package_scaffold_spec(args: argparse.Namespace) -> DomainPackageScaf
             }
         ),
         tags=tuple(cast(list[str], args.tag)),
+        runtime_stub=cast(bool, args.runtime_stub),
     )
 
 

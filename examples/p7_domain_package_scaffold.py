@@ -7,6 +7,7 @@ from universal_agent import (
     DomainPackageCompatibility,
     DomainPackageRegistry,
     DomainPackageScaffoldSpec,
+    load_domain_package_runtime,
     scaffold_domain_package,
 )
 from universal_agent.core import DomainIdentity, immutable_json
@@ -39,13 +40,17 @@ def main() -> None:
                 ),
                 security=immutable_json({"side_effects": "reversible"}),
                 tags=("ops", "ai"),
+                runtime_stub=True,
             ),
         )
         package = DomainPackageRegistry().install(package_root)
+        activation = load_domain_package_runtime(package)
 
         print(f"created={result.package.identity.name}@{result.package.identity.version}")
         print(f"manifest={result.package.manifest_path}")
         print(f"registered={package.identity.name}@{package.identity.version}")
+        loaded = activation.active_domain.identity
+        print(f"loaded={loaded.name}@{loaded.version}")
         print(f"directories={len(result.created_paths) - 1}")
         print(f"resources={','.join(package.manifest.resources)}")
 

@@ -486,6 +486,47 @@ def test_scaffold_domain_package_requires_force_to_overwrite_manifest(tmp_path: 
     assert result.package.identity == DomainIdentity("database", "2.0.0")
 
 
+def test_scaffold_domain_package_can_write_loadable_runtime_stub(tmp_path: Path) -> None:
+    package_root = tmp_path / "widget-domain"
+
+    result = scaffold_domain_package(
+        package_root,
+        DomainPackageScaffoldSpec(
+            name="widget",
+            version="1.0.0",
+            description="Widget inspection domain package",
+            ontology=("Widget",),
+            capabilities=("inspect_widget",),
+            tools=("inspect_widget",),
+            evaluators=("criteria",),
+            runtime_stub=True,
+        ),
+    )
+    activation = load_domain_package_runtime(result.package)
+
+    assert activation.active_domain.identity == DomainIdentity("widget", "1.0.0")
+    assert activation.active_domain.manifest.capability_names == ("inspect_widget",)
+    assert activation.active_domain.tools[0].definition.capabilities == ("inspect_widget",)
+    assert activation.active_domain.evaluators[0].name == "criteria"
+    assert package_root / "widget" / "__init__.py" in result.written_paths
+    assert package_root / "widget" / "domain.py" in result.written_paths
+    assert package_root / "manifest.json" in result.written_paths
+
+
+def test_scaffold_domain_package_runtime_stub_requires_evaluator(tmp_path: Path) -> None:
+    with pytest.raises(DomainPackageValidationError, match="requires at least one evaluator"):
+        scaffold_domain_package(
+            tmp_path / "widget-domain",
+            DomainPackageScaffoldSpec(
+                name="widget",
+                description="Widget inspection domain package",
+                capabilities=("inspect_widget",),
+                tools=("inspect_widget",),
+                runtime_stub=True,
+            ),
+        )
+
+
 def test_domain_package_runtime_loader_imports_explicit_entrypoint(tmp_path: Path) -> None:
     root = tmp_path / "widget-domain"
     module_name = "widget_domain_runtime_loader"
