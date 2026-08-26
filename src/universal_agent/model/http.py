@@ -292,6 +292,125 @@ class OpenAIResponsesModelAdapter:
         return immutable_json(payload)
 
 
+class OpenAIChatCompletionsModelAdapter:
+    """OpenAI Chat Completions adapter that returns runtime-owned Decisions.
+
+    This adapter targets OpenAI-compatible `/v1/chat/completions` providers for
+    deployments that have not moved to the Responses API. The model still only
+    proposes a structured Decision; Runtime-owned validation, policy, tool
+    execution and evaluation remain unchanged.
+    """
+
+    DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions"
+
+    def __init__(
+        self,
+        model: str,
+        *,
+        api_key: str,
+        endpoint: str = DEFAULT_ENDPOINT,
+        extra_headers: Mapping[str, str] | None = None,
+        timeout_seconds: float = 30.0,
+        transport: JsonHttpModelTransport | None = None,
+    ) -> None:
+        if not model.strip():
+            raise ValueError("model name must not be empty")
+        if not api_key.strip():
+            raise ValueError("OpenAI API key must not be empty")
+        if not endpoint.strip():
+            raise ValueError("OpenAI chat completions endpoint must not be empty")
+        if timeout_seconds <= 0:
+            raise ValueError("model timeout_seconds must be positive")
+        _validate_headers(extra_headers or {})
+        self._model = model
+        self._api_key = api_key
+        self._endpoint = endpoint
+        self._extra_headers = dict(extra_headers or {})
+        self._timeout_seconds = timeout_seconds
+        self._transport = transport or StdlibJsonHttpTransport()
+        self._last_usage: ModelUsage | None = None
+
+    async def decide(self, context: DecisionContext) -> Decision:
+        response = await self._transport.post_json(
+            self._endpoint,
+            headers=self._headers(),
+            payload=self._request_payload(context),
+            timeout_seconds=self._timeout_seconds,
+        )
+        output_text = _openai_chat_completion_content(response)
+        try:
+            decoded = json.loads(output_text)
+        except json.JSONDecodeError as exc:
+            raise JsonHttpModelError(
+                f"OpenAI chat completion message content was not JSON: {exc}"
+            ) from exc
+        decision_payload = _decision_payload(_json_mapping(decoded, "message.content"))
+        try:
+            decision = _decode_decision(decision_payload)
+            decision.validate()
+            _validate_decision_against_context(decision, context)
+        except ValueError as exc:
+            raise JsonHttpModelError(f"invalid OpenAI chat completion decision: {exc}") from exc
+        self._last_usage = _decode_usage(
+            "openai_chat_completions",
+            self._model,
+            response.get("usage"),
+        )
+        return decision
+
+    def model_usage(self) -> ModelUsage | None:
+        return self._last_usage
+
+    def _headers(self) -> Mapping[str, str]:
+        return {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self._api_key}",
+            **self._extra_headers,
+        }
+
+    def _request_payload(self, context: DecisionContext) -> JsonMapping:
+        prompt = {
+            "runtime_contract": (
+                "Return exactly one Universal Agent Runtime Decision as JSON. "
+                "Use execute only for one capability listed in context.capabilities. "
+                "Construct execute arguments from that capability's required_arguments "
+                "and argument_schema. "
+                "Use expected_observations for the evidence claims the Runtime should observe. "
+                "Use finish only when goal_success_criteria and current_task_required_criteria "
+                "are already satisfied in the runtime context. "
+                "Do not claim tool execution or task completion in prose."
+            ),
+            "context": dict(_decision_context_payload(context)),
+        }
+        payload: dict[str, JsonValue] = {
+            "model": self._model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a decision component inside Universal Agent Runtime. "
+                        "Return only valid JSON matching the requested schema. "
+                        "Do not call tools, invent unavailable capabilities, or decide "
+                        "that runtime state has changed."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(prompt, sort_keys=True, separators=(",", ":")),
+                },
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "universal_agent_decision",
+                    "strict": True,
+                    "schema": _openai_decision_json_schema(),
+                },
+            },
+        }
+        return immutable_json(payload)
+
+
 def _decision_context_payload(context: DecisionContext) -> JsonMapping:
     payload: dict[str, JsonValue] = {
         "session_id": str(context.session_id),
@@ -466,6 +585,46 @@ def _openai_output_text(response: JsonMapping) -> str:
     if not output_text:
         raise JsonHttpModelError("OpenAI response missing output_text")
     return output_text
+
+
+def _openai_chat_completion_content(response: JsonMapping) -> str:
+    choices = response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise JsonHttpModelError("OpenAI chat completion response missing choices")
+    first = choices[0]
+    if not isinstance(first, Mapping):
+        raise JsonHttpModelError("OpenAI chat completion choice must be an object")
+    choice = _json_mapping(first, "choices[0]")
+    finish_reason = choice.get("finish_reason")
+    if finish_reason is not None and not isinstance(finish_reason, str):
+        raise JsonHttpModelError("OpenAI chat completion finish_reason must be a string")
+    if finish_reason in {"length", "content_filter", "tool_calls", "function_call"}:
+        raise JsonHttpModelError(
+            f"OpenAI chat completion did not return final JSON content: {finish_reason}"
+        )
+    message = choice.get("message")
+    if not isinstance(message, Mapping):
+        raise JsonHttpModelError("OpenAI chat completion choice missing message")
+    message_payload = _json_mapping(message, "choices[0].message")
+    refusal = message_payload.get("refusal")
+    if isinstance(refusal, str) and refusal.strip():
+        raise JsonHttpModelError("OpenAI chat completion refused the decision request")
+    content = message_payload.get("content")
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if not isinstance(item, Mapping):
+                continue
+            content_item = _json_mapping(item, "choices[0].message.content[]")
+            text = content_item.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+        joined = "".join(parts).strip()
+        if joined:
+            return joined
+    raise JsonHttpModelError("OpenAI chat completion message missing content")
 
 
 def _openai_decision_json_schema() -> dict[str, JsonValue]:

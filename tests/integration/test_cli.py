@@ -831,6 +831,66 @@ async def test_cli_init_can_write_json_http_model_file_secret_config(tmp_path: P
 
 
 @pytest.mark.asyncio
+async def test_cli_init_can_write_openai_chat_completions_kubectl_profile(
+    tmp_path: Path,
+) -> None:
+    output = StringIO()
+    profile_path = tmp_path / "kubernetes-chat-profile.json"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--environment",
+            "production",
+            "--domain-backend",
+            "kubectl",
+            "--kubectl-namespace",
+            "prod",
+            "--kubectl-context",
+            "prod-cluster",
+            "--model-provider",
+            "openai_chat_completions",
+            "--model-name",
+            "gpt-runtime",
+            "--model-api-key-env",
+            "OPENAI_API_KEY",
+            "--model-api-key-secret",
+            "openai_api_key",
+            "--model-timeout-seconds",
+            "4.5",
+            "--model-header",
+            "OpenAI-Organization=org-test",
+        ],
+        stdout=output,
+    )
+    profile = ProfileConfig.from_json_file(profile_path).to_profile()
+
+    assert status == 0
+    assert profile.runtime.environment == {"environment": "production"}
+    assert profile.runtime.secrets == (SecretRef.env("openai_api_key", "OPENAI_API_KEY"),)
+    assert profile.runtime.domain == DomainConfig(
+        "kubernetes",
+        "0.2.0",
+        "kubectl",
+        immutable_json(
+            {
+                "default_namespace": "prod",
+                "context": "prod-cluster",
+                "timeout_seconds": 10.0,
+            }
+        ),
+    )
+    assert profile.runtime.model == ModelConfig.openai_chat_completions(
+        name="gpt-runtime",
+        api_key_secret="openai_api_key",
+        timeout_seconds=4.5,
+        headers={"OpenAI-Organization": "org-test"},
+    )
+
+
+@pytest.mark.asyncio
 async def test_cli_init_can_write_openai_responses_model_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "openai-profile.json"

@@ -24,6 +24,7 @@ from universal_agent.model import (
     JsonHttpModelAdapter,
     JsonHttpModelError,
     ModelUsage,
+    OpenAIChatCompletionsModelAdapter,
     OpenAIResponsesModelAdapter,
     model_usage,
 )
@@ -253,6 +254,152 @@ def test_json_http_model_adapter_validates_configuration() -> None:
             "https://models.example.test/decide",
             "runtime-model",
             extra_headers={"X-Test\n": "bad"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completions_model_adapter_posts_structured_request() -> None:
+    transport = RecordingTransport(
+        immutable_json(
+            {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": json_text(
+                                {
+                                    "type": "execute",
+                                    "reason": "Need current workload health.",
+                                    "capability": "inspect_workload",
+                                    "target": "deployment/api",
+                                    "arguments": {"name": "api", "namespace": "prod"},
+                                    "expected_observations": ["healthy", "ready_replicas"],
+                                    "message": None,
+                                }
+                            ),
+                        },
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 130,
+                    "completion_tokens": 35,
+                },
+            }
+        )
+    )
+    adapter = OpenAIChatCompletionsModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        endpoint="https://api.openai.example.test/v1/chat/completions",
+        extra_headers={"OpenAI-Organization": "org-test"},
+        timeout_seconds=5.0,
+        transport=transport,
+    )
+
+    decision = await adapter.decide(context())
+
+    assert decision.type is DecisionType.EXECUTE
+    assert decision.capability == "inspect_workload"
+    assert decision.arguments == {"name": "api", "namespace": "prod"}
+    assert model_usage(adapter) == ModelUsage(
+        "openai_chat_completions",
+        "gpt-runtime",
+        input_tokens=130,
+        output_tokens=35,
+    )
+    request = transport.requests[0]
+    assert request.url == "https://api.openai.example.test/v1/chat/completions"
+    assert request.headers["Authorization"] == "Bearer openai-secret"
+    assert request.headers["OpenAI-Organization"] == "org-test"
+    assert request.payload["model"] == "gpt-runtime"
+    messages = cast(list[JsonValue], request.payload["messages"])
+    assert len(messages) == 2
+    user_message = cast(Mapping[str, JsonValue], messages[1])
+    prompt_text = cast(str, user_message["content"])
+    assert "Verify workload health" in prompt_text
+    assert "required_arguments" in prompt_text
+    assert "argument_schema" in prompt_text
+    assert "goal_success_criteria" in prompt_text
+    response_format = cast(Mapping[str, JsonValue], request.payload["response_format"])
+    assert response_format["type"] == "json_schema"
+    schema_payload = cast(Mapping[str, JsonValue], response_format["json_schema"])
+    assert schema_payload["strict"] is True
+    schema = cast(Mapping[str, JsonValue], schema_payload["schema"])
+    assert schema["additionalProperties"] is False
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completions_model_adapter_rejects_tool_call_finish() -> None:
+    adapter = OpenAIChatCompletionsModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        transport=RecordingTransport(
+            immutable_json(
+                {
+                    "choices": [
+                        {
+                            "finish_reason": "tool_calls",
+                            "message": {"role": "assistant", "content": ""},
+                        }
+                    ]
+                }
+            )
+        ),
+    )
+
+    with pytest.raises(JsonHttpModelError, match="did not return final JSON content"):
+        await adapter.decide(context())
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completions_model_adapter_rejects_context_argument_violation() -> None:
+    adapter = OpenAIChatCompletionsModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        transport=RecordingTransport(
+            immutable_json(
+                {
+                    "choices": [
+                        {
+                            "finish_reason": "stop",
+                            "message": {
+                                "role": "assistant",
+                                "content": json_text(
+                                    {
+                                        "type": "execute",
+                                        "reason": "Empty workload name.",
+                                        "capability": "inspect_workload",
+                                        "target": "deployment/api",
+                                        "arguments": {"name": ""},
+                                        "expected_observations": ["healthy"],
+                                        "message": None,
+                                    }
+                                ),
+                            },
+                        }
+                    ]
+                }
+            )
+        ),
+    )
+
+    with pytest.raises(JsonHttpModelError, match="argument name length must be >= 1"):
+        await adapter.decide(context())
+
+
+def test_openai_chat_completions_model_adapter_validates_configuration() -> None:
+    with pytest.raises(ValueError, match="model name"):
+        OpenAIChatCompletionsModelAdapter("", api_key="secret")
+    with pytest.raises(ValueError, match="API key"):
+        OpenAIChatCompletionsModelAdapter("gpt-runtime", api_key=" ")
+    with pytest.raises(ValueError, match="endpoint"):
+        OpenAIChatCompletionsModelAdapter("gpt-runtime", api_key="secret", endpoint="")
+    with pytest.raises(ValueError, match="headers"):
+        OpenAIChatCompletionsModelAdapter(
+            "gpt-runtime",
+            api_key="secret",
+            extra_headers={"X-Test": "bad\n"},
         )
 
 

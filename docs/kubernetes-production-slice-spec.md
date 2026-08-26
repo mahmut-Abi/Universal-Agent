@@ -1,0 +1,101 @@
+# Kubernetes Production Slice Spec
+
+Status: implementation plan for the next production-oriented slice.
+
+## Problem
+
+The runtime already has a tested Kubernetes remediation domain, kubectl/API backends,
+policy-gated scale mutations, evidence, world model updates, and verification. The
+current production blocker is that the direct OpenAI adapter only targets the
+Responses API, while the intended deployment will use the older OpenAI-compatible
+Chat Completions API shape.
+
+The development order is therefore adjusted away from broad platform expansion and
+toward one practical Kubernetes flow:
+
+```text
+Goal
+  -> Chat Completions Decision
+  -> Runtime validation
+  -> Kubernetes capability
+  -> Policy
+  -> kubectl / Kubernetes API backend
+  -> Observation
+  -> Evidence / World
+  -> Evaluator
+  -> Continue / Confirm / Finish
+```
+
+## Scope
+
+This slice adds:
+
+- `openai_chat_completions` as a first-class model provider.
+- A dependency-free `OpenAIChatCompletionsModelAdapter`.
+- Runtime config and CLI profile generation for Chat Completions endpoints.
+- Tests covering request shape, usage extraction, decision validation, config loading,
+  host construction, and CLI init.
+- Operator docs and an example for a kubectl-backed Kubernetes remediation run.
+
+This slice does not add:
+
+- model-owned tool calls;
+- model-owned runtime state;
+- unattended production mutations;
+- new multi-agent routing;
+- new UI requirements.
+
+## Runtime Contract
+
+The Chat Completions adapter must return a runtime `Decision` only. It must not
+expose OpenAI tools or function calls to the model. The prompt can describe
+available runtime capabilities, but execution remains:
+
+```text
+Decision JSON
+  -> local decode
+  -> Decision.validate()
+  -> capability and argument contract validation
+  -> PolicyEngine
+  -> ToolRuntime
+```
+
+If the provider returns a tool/function call finish reason, content filtering,
+refusal, non-JSON content, or a decision outside the compiled context, the adapter
+must fail before the runtime acts.
+
+## Kubernetes Safety Contract
+
+For the initial production path:
+
+- `kubectl` and `kubernetes_api` remain Domain-owned backend adapters.
+- `scale_workload` remains policy-gated.
+- `production` still requires confirmation before mutation.
+- mutation receipts never satisfy the goal; fresh workload verification is required.
+- mutation retries remain bounded and must not blindly retry uncertain side effects.
+
+## Implementation Plan
+
+1. Add the Chat Completions model adapter and tests.
+2. Wire the adapter through `RuntimeConfig`, `RuntimeHost`, package exports, and CLI `init`.
+3. Add a Kubernetes Chat Completions example and operator guide updates.
+4. Run focused tests and static checks.
+5. Commit this feature node before moving to live-cluster runbooks or further Kubernetes workflows.
+
+## Acceptance Criteria
+
+- A profile can be generated with:
+
+  ```bash
+  python -m universal_agent.cli init \
+    --domain-backend kubectl \
+    --model-provider openai_chat_completions \
+    --model-name <model> \
+    --model-api-key-env OPENAI_API_KEY
+  ```
+
+- `RuntimeHost` can construct the adapter without storing the secret value in config.
+- Chat Completions responses decode `choices[0].message.content` into a validated
+  runtime `Decision`.
+- OpenAI token usage is projected through the existing `ModelUsage` path.
+- Invalid model output is rejected before policy/action execution.

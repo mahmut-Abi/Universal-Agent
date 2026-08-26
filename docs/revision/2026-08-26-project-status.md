@@ -84,6 +84,8 @@ argument schema、Goal success criteria 和当前 Task criteria 提供给模型�
 当前提供：
 
 - provider-agnostic `JsonHttpModelAdapter`；
+- `OpenAIChatCompletionsModelAdapter`，面向 OpenAI-compatible `/v1/chat/completions`
+  旧接口请求 Decision JSON；
 - `OpenAIResponsesModelAdapter`，使用 Structured Output 请求 Decision JSON；
 - 本地 Decision/context/input-contract 校验；
 - `KubectlBackend`，通过受控 subprocess 调用 `kubectl`；
@@ -224,25 +226,31 @@ Runtime-owned Queue/Action semantics。
 ## 今日验证结果
 
 ```text
-pytest --disable-warnings -r a   683 passed, 10 skipped
+pytest --disable-warnings -r a   700 passed
 ruff check                      passed
-ruff format --check             passed (267 files)
-mypy strict                     passed (267 source files)
+ruff format --check             passed (268 files)
+mypy strict                     passed (268 source files)
 ```
 
-10 个跳过测试都因当前执行环境禁止本地 socket bind。测试仍有较多 Python 3.14 /
-pytest-asyncio event loop 弃用警告；它们未影响本次结果。
+测试仍有较多 Python 3.14 / pytest-asyncio event loop 弃用警告；它们未影响本次结果。
 
 ## 推荐下一步
 
-### P0：稳定质量与边界
+### P0：Kubernetes 生产切片
+
+- 优先跑通 kubectl/Kubernetes API backend + OpenAI Chat Completions provider 的端到端诊断路径；
+- 保持 production mutation confirmation，先验证 inspect/diagnose，再逐步启用 policy-gated remediation；
+- 为 live-like Kubernetes/OpenAI provider 增加 contract test harness 和 operator runbook；
+- 以 [`docs/kubernetes-production-slice-spec.md`](../kubernetes-production-slice-spec.md) 作为当前顺序调整依据。
+
+### P1：稳定质量与边界
 
 - 拆分 `cli.py`、`agentd/app.py`、`web.py`、`ecosystem/catalog.py` 等大型模块；
 - 为当前自研 schema/codec/queue/lock 增加 property-based invariant tests；
 - 增加 live-like HTTP/Kubernetes/OpenAI contract test harness；
 - 明确并记录 `RuntimeHost`、Profile、AgentdApp 和 Multi-Agent 的 activation/selection 语义。
 
-### P1：生产可靠性
+### P2：生产可靠性
 
 - 引入 Postgres/SQLAlchemy adapter 和 Alembic migration；
 - 设计 State/Event outbox、重试、幂等 publish 和 replay repair；

@@ -549,7 +549,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--kubernetes-api-timeout-seconds", type=float, default=10.0)
     init.add_argument(
         "--model-provider",
-        choices=("scripted", "json_http", "openai_responses"),
+        choices=("scripted", "json_http", "openai_chat_completions", "openai_responses"),
         default="scripted",
     )
     init.add_argument("--model-name", default="scripted")
@@ -2065,14 +2065,14 @@ def _profile_model_config(
         if model_endpoint is None or not model_endpoint.strip():
             raise ValueError("json_http model requires --model-endpoint")
         model["endpoint"] = model_endpoint
-    elif model_provider == "openai_responses":
+    elif model_provider in {"openai_chat_completions", "openai_responses"}:
         if model_name == "scripted":
-            raise ValueError("openai_responses model requires --model-name")
+            raise ValueError(f"{model_provider} model requires --model-name")
         if model_api_key_source is None:
-            raise ValueError("openai_responses model requires model API key secret")
+            raise ValueError(f"{model_provider} model requires model API key secret")
         if model_endpoint is not None:
             if not model_endpoint.strip():
-                raise ValueError("openai_responses model endpoint must not be empty")
+                raise ValueError(f"{model_provider} model endpoint must not be empty")
             model["endpoint"] = model_endpoint
     else:
         raise ValueError(f"unsupported model provider: {model_provider}")

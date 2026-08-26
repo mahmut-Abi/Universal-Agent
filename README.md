@@ -278,9 +278,11 @@ detect accidental split state/event wiring. These adapters are local persistence
   provider bridge for HTTP endpoints that accept compiled runtime context JSON, including structured
   goal success criteria, current task required criteria, and capability-level input contracts derived
   from deterministic tool resolution, then return structured `Decision` JSON plus optional
-  token/cost usage. `OpenAIResponsesModelAdapter` adds a direct dependency-free OpenAI Responses
-  provider path that requests structured `Decision` JSON and still validates the decoded decision
-  locally before the Runtime acts.
+  token/cost usage. `OpenAIChatCompletionsModelAdapter` adds a direct dependency-free
+  OpenAI-compatible Chat Completions path for older `/v1/chat/completions` deployments, and
+  `OpenAIResponsesModelAdapter` adds a direct dependency-free OpenAI Responses provider path. Both
+  request structured `Decision` JSON and still validate the decoded decision locally before the
+  Runtime acts.
 - P3.6/P3.7 foundation: event-derived `metrics`, Prometheus metrics text export, `cost`, `logs`,
   `traces`, OTLP trace export, `doctor` and `audit` projections exposed through RuntimeService,
   agentd-shaped routes and CLI commands, plus optional
@@ -477,6 +479,8 @@ usage stays in this README.
 
 For the latest dated implementation assessment, current limitations, verification snapshot, and
 recommended next steps, see [`docs/revision/2026-08-26-project-status.md`](docs/revision/2026-08-26-project-status.md).
+The current Kubernetes-first production slice spec is
+[`docs/kubernetes-production-slice-spec.md`](docs/kubernetes-production-slice-spec.md).
 Previous snapshots remain at [`docs/revision/2026-08-24-project-status.md`](docs/revision/2026-08-24-project-status.md)
 and [`docs/revision/2026-08-23-project-status.md`](docs/revision/2026-08-23-project-status.md).
 
@@ -503,6 +507,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_runtime_service.py
 .venv/bin/python examples/p3_5_runtime_sdk.py
 .venv/bin/python examples/p3_5_json_http_model_adapter.py
+.venv/bin/python examples/p3_5_openai_chat_completions_model.py
 .venv/bin/python examples/p3_5_openai_responses_model.py
 .venv/bin/python examples/p3_5_agentd_routes.py
 .venv/bin/python examples/p3_5_agentd_auth.py

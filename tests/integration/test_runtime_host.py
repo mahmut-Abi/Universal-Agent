@@ -95,6 +95,42 @@ class OpenAIHostModelTransport:
         )
 
 
+class OpenAIChatHostModelTransport:
+    def __init__(self) -> None:
+        self.headers: dict[str, str] = {}
+        self.payloads: list[JsonMapping] = []
+
+    async def post_json(
+        self,
+        url: str,
+        *,
+        headers: JsonMapping,
+        payload: JsonMapping,
+        timeout_seconds: float,
+    ) -> JsonMapping:
+        self.headers = {key: str(value) for key, value in headers.items()}
+        self.payloads.append(payload)
+        return immutable_json(
+            {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": (
+                                '{"arguments":{},"capability":null,'
+                                '"expected_observations":[],"message":null,'
+                                '"reason":"openai chat host model completed",'
+                                '"target":null,"type":"finish"}'
+                            ),
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 8, "completion_tokens": 4},
+            }
+        )
+
+
 def model_context() -> DecisionContext:
     return DecisionContext(
         session_id=SessionId("session-model"),
@@ -256,6 +292,36 @@ async def test_runtime_host_builds_json_http_model_from_file_secret_ref(
     assert decision.reason == "host model completed"
     assert transport.headers["Authorization"] == "Bearer file-secret-value"
     assert "file-secret-value" not in str(config)
+
+
+@pytest.mark.asyncio
+async def test_runtime_host_builds_openai_chat_completions_model_from_config_secret_ref() -> None:
+    transport = OpenAIChatHostModelTransport()
+    config = RuntimeConfig(
+        secrets=(SecretRef.env("openai_api_key", "OPENAI_API_KEY"),),
+        model=ModelConfig.openai_chat_completions(
+            name="gpt-runtime",
+            api_key_secret="openai_api_key",
+            timeout_seconds=4.5,
+            headers={"OpenAI-Organization": "org-test"},
+        ),
+    )
+    adapter = build_configured_model_adapter(
+        config,
+        secret_provider=EnvSecretProvider({"OPENAI_API_KEY": "secret-value"}),
+        json_http_transport=transport,
+    )
+
+    decision = await adapter.decide(model_context())
+
+    assert decision.reason == "openai chat host model completed"
+    assert transport.headers["Authorization"] == "Bearer secret-value"
+    assert transport.headers["OpenAI-Organization"] == "org-test"
+    assert transport.payloads[0]["model"] == "gpt-runtime"
+    assert "messages" in transport.payloads[0]
+    assert "response_format" in transport.payloads[0]
+    assert "store" not in transport.payloads[0]
+    assert "secret-value" not in str(config)
 
 
 @pytest.mark.asyncio

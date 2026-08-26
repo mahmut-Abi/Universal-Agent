@@ -9,6 +9,7 @@ from universal_agent.model.http import (
     JsonHttpModelAdapter,
     JsonHttpModelError,
     JsonHttpModelTransport,
+    OpenAIChatCompletionsModelAdapter,
     OpenAIResponsesModelAdapter,
     StdlibJsonHttpTransport,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "ModelAdapter",
     "ModelUsage",
     "ModelUsageProvider",
+    "OpenAIChatCompletionsModelAdapter",
     "OpenAIResponsesModelAdapter",
     "ScriptedModelAdapter",
     "StdlibJsonHttpTransport",

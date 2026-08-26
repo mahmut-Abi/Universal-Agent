@@ -23,6 +23,7 @@ class SecretSource(StrEnum):
 class ModelProvider(StrEnum):
     SCRIPTED = "scripted"
     JSON_HTTP = "json_http"
+    OPENAI_CHAT_COMPLETIONS = "openai_chat_completions"
     OPENAI_RESPONSES = "openai_responses"
 
 
@@ -198,6 +199,25 @@ class ModelConfig:
         )
 
     @classmethod
+    def openai_chat_completions(
+        cls,
+        *,
+        name: str,
+        api_key_secret: str,
+        endpoint: str | None = None,
+        timeout_seconds: float = 30.0,
+        headers: Mapping[str, str] | None = None,
+    ) -> ModelConfig:
+        return cls(
+            ModelProvider.OPENAI_CHAT_COMPLETIONS,
+            name,
+            endpoint,
+            api_key_secret,
+            timeout_seconds,
+            immutable_json(dict(headers or {})),
+        )
+
+    @classmethod
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> ModelConfig:
         config = cls(
             provider=ModelProvider(
@@ -235,6 +255,12 @@ class ModelConfig:
                 raise ValueError("openai_responses model endpoint must not be empty")
             if self.api_key_secret is None or not self.api_key_secret.strip():
                 raise ValueError("openai_responses model requires api_key_secret")
+            return
+        if self.provider is ModelProvider.OPENAI_CHAT_COMPLETIONS:
+            if self.endpoint is not None and not self.endpoint.strip():
+                raise ValueError("openai_chat_completions model endpoint must not be empty")
+            if self.api_key_secret is None or not self.api_key_secret.strip():
+                raise ValueError("openai_chat_completions model requires api_key_secret")
             return
         raise ValueError(f"unsupported model provider: {self.provider}")
 

@@ -153,6 +153,35 @@ def test_runtime_config_from_mapping_parses_json_http_model_config() -> None:
     assert config.model.provider is ModelProvider.JSON_HTTP
 
 
+def test_runtime_config_from_mapping_parses_openai_chat_completions_model_config() -> None:
+    config = RuntimeConfig.from_mapping(
+        {
+            "secrets": {
+                "openai_api_key": {
+                    "source": "env",
+                    "key": "OPENAI_API_KEY",
+                    "required": True,
+                }
+            },
+            "model": {
+                "provider": "openai_chat_completions",
+                "name": "gpt-runtime",
+                "api_key_secret": "openai_api_key",
+                "timeout_seconds": 4.5,
+                "headers": {"OpenAI-Organization": "org-test"},
+            },
+        }
+    )
+
+    assert config.model == ModelConfig.openai_chat_completions(
+        name="gpt-runtime",
+        api_key_secret="openai_api_key",
+        timeout_seconds=4.5,
+        headers={"OpenAI-Organization": "org-test"},
+    )
+    assert config.model.provider is ModelProvider.OPENAI_CHAT_COMPLETIONS
+
+
 def test_runtime_config_from_mapping_parses_openai_responses_model_config() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -213,6 +242,11 @@ def test_runtime_config_rejects_invalid_model_config() -> None:
     with pytest.raises(ValueError, match="openai_responses model requires api_key_secret"):
         RuntimeConfig.from_mapping(
             {"model": {"provider": "openai_responses", "name": "gpt-runtime"}}
+        )
+
+    with pytest.raises(ValueError, match="openai_chat_completions model requires api_key_secret"):
+        RuntimeConfig.from_mapping(
+            {"model": {"provider": "openai_chat_completions", "name": "gpt-runtime"}}
         )
 
 
