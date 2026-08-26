@@ -112,6 +112,9 @@ def sample_report_recording(name: str = "nightly behavior suite") -> EvaluationR
                     resource_lock_released_count=1,
                     resource_conflict_count=1,
                     active_resource_lock_count=0,
+                    decision_generated_count=1,
+                    decision_validated_count=0,
+                    decision_rejected_count=1,
                     model_call_count=1,
                     model_total_token_count=90,
                     model_estimated_cost_micros=15,
@@ -151,6 +154,7 @@ def test_evaluation_report_codec_round_trips_stable_report() -> None:
     assert restored.scenarios[1].kind is EvaluationScenarioKind.POLICY
     assert restored.scenarios[1].audit_capabilities == ("scale_workload",)
     assert restored.scenarios[1].metrics.resource_conflict_count == 1
+    assert restored.scenarios[1].metrics.decision_rejected_count == 1
     assert restored.gate is not None
     assert not restored.gate.passed
     assert restored.gate.checks[0].name == "pass_rate"
@@ -336,6 +340,9 @@ def sample_recording(name: str = "policy regression") -> ReplayRecording:
             resource_lock_released_count=1,
             resource_conflict_count=1,
             active_resource_lock_count=0,
+            decision_generated_count=2,
+            decision_validated_count=1,
+            decision_rejected_count=1,
             model_call_count=2,
             model_total_token_count=150,
             model_estimated_cost_micros=25,
@@ -362,16 +369,22 @@ def test_replay_recording_rejects_empty_scenario_key() -> None:
         sample_recording(" ")
 
 
-def test_replay_recording_codec_defaults_missing_model_metrics() -> None:
+def test_replay_recording_codec_defaults_missing_optional_metrics() -> None:
     payload = encode_replay_recording(sample_recording())
     metrics = payload["metrics"]
     assert isinstance(metrics, dict)
+    del metrics["decision_generated_count"]
+    del metrics["decision_validated_count"]
+    del metrics["decision_rejected_count"]
     del metrics["model_call_count"]
     del metrics["model_total_token_count"]
     del metrics["model_estimated_cost_micros"]
 
     restored = decode_replay_recording(payload)
 
+    assert restored.metrics.decision_generated_count == 0
+    assert restored.metrics.decision_validated_count == 0
+    assert restored.metrics.decision_rejected_count == 0
     assert restored.metrics.model_call_count == 0
     assert restored.metrics.model_total_token_count == 0
     assert restored.metrics.model_estimated_cost_micros == 0

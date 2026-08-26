@@ -132,6 +132,9 @@ class ReplayMetrics:
     resource_lock_released_count: int = 0
     resource_conflict_count: int = 0
     active_resource_lock_count: int = 0
+    decision_generated_count: int = 0
+    decision_validated_count: int = 0
+    decision_rejected_count: int = 0
     model_call_count: int = 0
     model_total_token_count: int = 0
     model_estimated_cost_micros: int = 0
@@ -329,6 +332,9 @@ def record_report(report: ScenarioReport) -> ReplayRecording:
             resource_lock_released_count=report.metrics.resource_lock_released_count,
             resource_conflict_count=report.metrics.resource_conflict_count,
             active_resource_lock_count=report.metrics.active_resource_lock_count,
+            decision_generated_count=report.metrics.decision_generated_count,
+            decision_validated_count=report.metrics.decision_validated_count,
+            decision_rejected_count=report.metrics.decision_rejected_count,
             model_call_count=report.metrics.model_call_count,
             model_total_token_count=report.metrics.model_total_token_count,
             model_estimated_cost_micros=report.metrics.model_estimated_cost_micros,
