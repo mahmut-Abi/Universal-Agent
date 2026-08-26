@@ -356,7 +356,10 @@ detect accidental split state/event wiring. These adapters are local persistence
   activation; `agent domain-packages verify --local-paths` additionally re-checks local package
   root, manifest integrity and declared resource existence when callers need to detect path drift.
   `BaseDomainRuntime` provides a lightweight Domain SDK base class with default empty optional
-  hooks while keeping manifest/capability/tool/evaluator contracts explicit.
+  hooks while keeping manifest/capability/tool/evaluator contracts explicit; `DomainRuntimeSpec` and
+  `build_domain_runtime` add a declarative SDK adapter for package authors who want the manifest
+  capability/evaluator references derived from the concrete runtime declarations. See
+  `examples/p7_domain_sdk_base_runtime.py` and `examples/p7_domain_sdk_runtime_spec.py`.
   `load_domain_package_runtime` is the explicit SDK activation seam for importing a package
   entrypoint, validating it through `DomainLoader`, and rejecting identity/capability/tool/evaluator
   drift between package metadata and runtime code; registry install/discovery still never imports
@@ -555,6 +558,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p7_domain_package_registry.py
 .venv/bin/python examples/p7_domain_package_scaffold.py
 .venv/bin/python examples/p7_domain_sdk_base_runtime.py
+.venv/bin/python examples/p7_domain_sdk_runtime_spec.py
 .venv/bin/python examples/p7_evaluation_dataset.py
 .venv/bin/python -m universal_agent.cli eval datasets --dataset-dir .tmp/evaluation-datasets --verify
 .venv/bin/python examples/p7_profile_catalog.py

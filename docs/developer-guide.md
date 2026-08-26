@@ -73,6 +73,7 @@ Examples are organized by roadmap slice. Useful entry points:
 .venv/bin/python examples/p6_distributed_worker.py
 .venv/bin/python examples/p6_distributed_prune.py
 .venv/bin/python examples/p7_domain_package_runtime_loader.py
+.venv/bin/python examples/p7_domain_sdk_runtime_spec.py
 .venv/bin/python examples/p7_ecosystem_catalog.py
 ```
 
@@ -86,8 +87,9 @@ Examples are organized by roadmap slice. Useful entry points:
 - Read-only TUI: `src/universal_agent/tui.py`.
 - Domain metadata/package behavior: `src/universal_agent/domain/` or
   `src/universal_agent/ecosystem/`.
-- New Domain implementations can subclass `BaseDomainRuntime` to inherit empty
-  optional hooks while explicitly implementing manifest, capabilities, tools and evaluators.
+- New Domain implementations can subclass `BaseDomainRuntime` or use
+  `DomainRuntimeSpec` plus `build_domain_runtime` to derive manifest references
+  from declared capabilities, tools and evaluators.
 - Domain package runtime activation should go through `load_domain_package_runtime`.
   That seam imports the declared entrypoint only when explicitly called, validates
   the result through `DomainLoader`, and rejects package metadata drift. Registry

@@ -117,6 +117,9 @@ class BaseDomainRuntime:
     def recovery_rules(self) -> tuple[RecoveryRule, ...]:
         return ()
 
+    def action_argument_providers(self) -> tuple[ActionArgumentProvider, ...]:
+        return ()
+
     def memories(self) -> tuple[MemoryRecord, ...]:
         return ()
 
@@ -316,6 +319,198 @@ class _NamespacedContextProvider:
 
 class DomainValidationError(ValueError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class DomainRuntimeSpec:
+    """Declarative Domain SDK input for assembling a DomainRuntime.
+
+    This gives package authors one small interface for the common case: declare
+    the manifest identity and the runtime extension objects once, then let the
+    SDK derive the manifest's capability/evaluator references from those
+    concrete declarations.
+    """
+
+    name: str
+    version: str
+    description: str
+    capabilities: tuple[CapabilityDefinition, ...]
+    tools: tuple[Tool, ...]
+    evaluators: tuple[Evaluator, ...]
+    api_version: str = "agent.nantian.dev/v1alpha1"
+    kind: str = "Domain"
+    ontology: tuple[str, ...] = ()
+    policies: tuple[Policy, ...] = ()
+    context_providers: tuple[DomainContextProvider, ...] = ()
+    evidence_extractors: tuple[EvidenceExtractor, ...] = ()
+    world_updaters: tuple[WorldUpdater, ...] = ()
+    task_expanders: tuple[TaskExpander, ...] = ()
+    recovery_rules: tuple[RecoveryRule, ...] = ()
+    action_argument_providers: tuple[ActionArgumentProvider, ...] = ()
+    memories: tuple[MemoryRecord, ...] = ()
+
+    def __post_init__(self) -> None:
+        _require_domain_spec_value(self.name, "name")
+        _require_domain_spec_value(self.version, "version")
+        _require_domain_spec_value(self.description, "description")
+        _require_domain_spec_value(self.api_version, "api_version")
+        _require_domain_spec_value(self.kind, "kind")
+        _validate_domain_spec_names("ontology", self.ontology)
+        _require_domain_spec_items("capabilities", self.capabilities)
+        _require_domain_spec_items("tools", self.tools)
+        _require_domain_spec_items("evaluators", self.evaluators)
+        _validate_unique_domain_spec_names(
+            "capabilities",
+            tuple(capability.name for capability in self.capabilities),
+        )
+        _validate_unique_domain_spec_names(
+            "tools",
+            tuple(tool.definition.name for tool in self.tools),
+        )
+        _validate_unique_domain_spec_names(
+            "evaluators",
+            tuple(evaluator.name for evaluator in self.evaluators),
+        )
+        _validate_domain_spec_names("policies", tuple(policy.name for policy in self.policies))
+        _validate_domain_spec_names(
+            "context_providers",
+            tuple(provider.name for provider in self.context_providers),
+        )
+        _validate_domain_spec_names(
+            "evidence_extractors",
+            tuple(extractor.name for extractor in self.evidence_extractors),
+        )
+        _validate_domain_spec_names(
+            "world_updaters",
+            tuple(updater.name for updater in self.world_updaters),
+        )
+        _validate_domain_spec_names(
+            "task_expanders",
+            tuple(expander.name for expander in self.task_expanders),
+        )
+        _validate_domain_spec_names(
+            "recovery_rules",
+            tuple(rule.name for rule in self.recovery_rules),
+        )
+        _validate_domain_spec_names(
+            "action_argument_providers",
+            tuple(provider.name for provider in self.action_argument_providers),
+        )
+        _validate_domain_spec_names(
+            "memories",
+            tuple(memory.subject for memory in self.memories),
+        )
+
+    @property
+    def identity(self) -> DomainIdentity:
+        return DomainIdentity(self.name, self.version)
+
+    @property
+    def capability_names(self) -> tuple[str, ...]:
+        return tuple(capability.name for capability in self.capabilities)
+
+    @property
+    def tool_names(self) -> tuple[str, ...]:
+        return tuple(tool.definition.name for tool in self.tools)
+
+    @property
+    def evaluator_names(self) -> tuple[str, ...]:
+        return tuple(evaluator.name for evaluator in self.evaluators)
+
+    @property
+    def manifest(self) -> DomainManifest:
+        return DomainManifest(
+            self.api_version,
+            self.kind,
+            DomainMetadata(self.name, self.version, self.description),
+            self.ontology,
+            self.capability_names,
+            self.evaluator_names,
+        )
+
+
+class DeclarativeDomainRuntime(BaseDomainRuntime):
+    """DomainRuntime adapter backed by a DomainRuntimeSpec."""
+
+    def __init__(self, spec: DomainRuntimeSpec) -> None:
+        self._spec = spec
+
+    @property
+    def spec(self) -> DomainRuntimeSpec:
+        return self._spec
+
+    @property
+    def manifest(self) -> DomainManifest:
+        return self._spec.manifest
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        return self._spec.capabilities
+
+    def tools(self) -> tuple[Tool, ...]:
+        return self._spec.tools
+
+    def policies(self) -> tuple[Policy, ...]:
+        return self._spec.policies
+
+    def evaluators(self) -> tuple[Evaluator, ...]:
+        return self._spec.evaluators
+
+    def context_providers(self) -> tuple[DomainContextProvider, ...]:
+        return self._spec.context_providers
+
+    def evidence_extractors(self) -> tuple[EvidenceExtractor, ...]:
+        return self._spec.evidence_extractors
+
+    def world_updaters(self) -> tuple[WorldUpdater, ...]:
+        return self._spec.world_updaters
+
+    def task_expanders(self) -> tuple[TaskExpander, ...]:
+        return self._spec.task_expanders
+
+    def recovery_rules(self) -> tuple[RecoveryRule, ...]:
+        return self._spec.recovery_rules
+
+    def action_argument_providers(self) -> tuple[ActionArgumentProvider, ...]:
+        return self._spec.action_argument_providers
+
+    def memories(self) -> tuple[MemoryRecord, ...]:
+        return self._spec.memories
+
+
+def build_domain_runtime(spec: DomainRuntimeSpec) -> DeclarativeDomainRuntime:
+    return DeclarativeDomainRuntime(spec)
+
+
+def _require_domain_spec_value(value: str, field_name: str) -> None:
+    if not value.strip():
+        raise DomainValidationError(f"domain runtime spec {field_name} must not be empty")
+
+
+def _require_domain_spec_items(label: str, values: tuple[object, ...]) -> None:
+    if not values:
+        raise DomainValidationError(
+            f"domain runtime spec requires at least one {label} declaration"
+        )
+
+
+def _validate_domain_spec_names(label: str, names: tuple[str, ...]) -> None:
+    for name in names:
+        if not name.strip():
+            raise DomainValidationError(f"domain runtime spec {label} must not include empty names")
+    _validate_unique_domain_spec_names(label, names)
+
+
+def _validate_unique_domain_spec_names(label: str, names: tuple[str, ...]) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for name in names:
+        if name in seen:
+            duplicates.add(name)
+        seen.add(name)
+    if duplicates:
+        raise DomainValidationError(
+            f"domain runtime spec contains duplicate {label}: " + ", ".join(sorted(duplicates))
+        )
 
 
 class DomainLoader:

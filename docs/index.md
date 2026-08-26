@@ -22,7 +22,7 @@ across the roadmap layers below:
 | P4 | Structured Multi-Agent task/result contracts, registry, delegation, conflict resolution, merge/evaluation foundations |
 | P5 | Read-only TUI, Web Console, Session/Evidence/World/Domain/Doctor/Distributed/Evaluation views |
 | P6 | Local queue, worker registry, worker, leased locks, scheduler, coordinator, health, snapshot and retention maintenance primitives |
-| P7 | Domain Package registry/scaffold/runtime activation, Evaluation Dataset catalog, Profile Catalog, Ecosystem Registry metadata/install planning |
+| P7 | Domain SDK, Domain Package registry/scaffold/runtime activation, Evaluation Dataset catalog, Profile Catalog, Ecosystem Registry metadata/install planning |
 
 The project is not yet a production cluster control plane. It does not provide
 cross-node high availability, production database migrations, a real model
