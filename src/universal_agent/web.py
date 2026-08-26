@@ -91,6 +91,7 @@ def render_web_console(snapshot: WebConsoleSnapshot) -> str:
             _sessions(snapshot.sessions),
             _selected_session(snapshot.selected_session),
             _world_facts(snapshot.session_explorer),
+            _world_fact_history(snapshot.session_explorer),
             _world_entities(snapshot.session_explorer),
             _world_relations(snapshot.session_explorer),
             _evidence(snapshot.session_explorer),
@@ -130,6 +131,7 @@ def render_web_session_detail(snapshot: WebConsoleSnapshot) -> str:
             _selected_session(snapshot.selected_session),
             _task_timeline(snapshot.selected_session),
             _world_facts(snapshot.session_explorer),
+            _world_fact_history(snapshot.session_explorer),
             _world_entities(snapshot.session_explorer),
             _world_relations(snapshot.session_explorer),
             _evidence(snapshot.session_explorer),
@@ -309,6 +311,7 @@ def render_web_evidence_explorer(snapshot: WebConsoleSnapshot) -> str:
             _selected_session(snapshot.selected_session),
             _evidence(snapshot.session_explorer),
             _world_facts(snapshot.session_explorer),
+            _world_fact_history(snapshot.session_explorer),
             _world_entities(snapshot.session_explorer),
             _world_relations(snapshot.session_explorer),
             _events(snapshot.events),
@@ -336,6 +339,9 @@ def render_web_world_model_explorer(snapshot: WebConsoleSnapshot) -> str:
             _session_scoped_hero(snapshot, "World Model Explorer"),
             '<section class="grid cards" aria-label="World model summary">',
             _metric_card("World Facts", _selected_world_fact_count(snapshot.session_explorer)),
+            _metric_card(
+                "Conflicts", _selected_conflicting_world_fact_count(snapshot.session_explorer)
+            ),
             _metric_card("World Entities", _selected_world_entity_count(snapshot.session_explorer)),
             _metric_card(
                 "World Relations", _selected_world_relation_count(snapshot.session_explorer)
@@ -346,6 +352,7 @@ def render_web_world_model_explorer(snapshot: WebConsoleSnapshot) -> str:
             "</section>",
             _selected_session(snapshot.selected_session),
             _world_facts(snapshot.session_explorer),
+            _world_fact_history(snapshot.session_explorer),
             _world_entities(snapshot.session_explorer),
             _world_relations(snapshot.session_explorer),
             _evidence(snapshot.session_explorer),
@@ -1789,6 +1796,31 @@ def _world_facts(explorer: SessionExplorerView | None) -> str:
     )
 
 
+def _world_fact_history(explorer: SessionExplorerView | None) -> str:
+    rows = []
+    if explorer is not None:
+        rows = [
+            "\n".join(
+                (
+                    "<tr>",
+                    f"<td>{_html(history.subject)}</td>",
+                    f"<td>{_html(history.claim)}</td>",
+                    f"<td>{_html(_value_text(history.current.value))}</td>",
+                    f"<td>{'yes' if history.conflicting else 'no'}</td>",
+                    f"<td>{_html(_fact_history_candidates_text(history.candidates))}</td>",
+                    "</tr>",
+                )
+            )
+            for history in explorer.world_fact_histories
+        ]
+    if not rows:
+        rows.append('<tr><td colspan="5">No world fact history</td></tr>')
+    return _section(
+        "World Fact History",
+        _table(("Subject", "Claim", "Current", "Conflicting", "Candidates"), tuple(rows)),
+    )
+
+
 def _world_entities(explorer: SessionExplorerView | None) -> str:
     rows = []
     if explorer is not None:
@@ -2003,6 +2035,12 @@ def _selected_world_fact_count(explorer: SessionExplorerView | None) -> int:
     if explorer is None:
         return 0
     return len(explorer.world_facts)
+
+
+def _selected_conflicting_world_fact_count(explorer: SessionExplorerView | None) -> int:
+    if explorer is None:
+        return 0
+    return sum(1 for history in explorer.world_fact_histories if history.conflicting)
 
 
 def _selected_world_entity_count(explorer: SessionExplorerView | None) -> int:
@@ -2440,6 +2478,20 @@ def _value_text(value: object) -> str:
     if isinstance(value, list):
         return json.dumps(value, sort_keys=True)
     return str(value)
+
+
+def _fact_history_candidates_text(candidates: tuple[Any, ...]) -> str:
+    if not candidates:
+        return "none"
+    return "; ".join(
+        (
+            f"{candidate.evidence_id}:"
+            f"value={_value_text(candidate.value)}"
+            f" confidence={candidate.confidence:.2f}"
+            f" source={candidate.source}"
+        )
+        for candidate in candidates
+    )
 
 
 def _secret_status_text(available: bool | None, status: str | None) -> str:

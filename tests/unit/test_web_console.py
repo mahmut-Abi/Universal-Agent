@@ -55,6 +55,8 @@ from universal_agent.service import (
     SessionExplorerView,
     ToolView,
     WorldEntityView,
+    WorldFactEvidenceView,
+    WorldFactHistoryView,
     WorldFactView,
     WorldRelationView,
 )
@@ -332,6 +334,37 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
                     ("evidence-3",),
                 ),
             ),
+            (
+                WorldFactHistoryView(
+                    "deployment/example",
+                    "healthy",
+                    WorldFactView(
+                        "deployment/example",
+                        "healthy",
+                        True,
+                        0.99,
+                        timestamp,
+                        ("evidence-1", "evidence-4"),
+                    ),
+                    (
+                        WorldFactEvidenceView(
+                            "evidence-1",
+                            True,
+                            0.99,
+                            timestamp,
+                            "inspect_workload:kubernetes_inspect_workload",
+                        ),
+                        WorldFactEvidenceView(
+                            "evidence-4",
+                            False,
+                            0.51,
+                            timestamp,
+                            "stale_health_probe",
+                        ),
+                    ),
+                    True,
+                ),
+            ),
         ),
         events=(
             RuntimeEventView(
@@ -395,6 +428,8 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert 'href="/console/settings"' in rendered
     assert 'href="/console/sessions/session-1"' in rendered
     assert "World Facts" in rendered
+    assert "World Fact History" in rendered
+    assert "stale_health_probe" in rendered
     assert "World Entities" in rendered
     assert "World Relations" in rendered
     assert "Session Evidence" in rendered
@@ -523,6 +558,7 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "task-1" in session_detail
     assert "healthy" in session_detail
     assert "World Facts" in session_detail
+    assert "World Fact History" in session_detail
     assert "World Entities" in session_detail
     assert "World Relations" in session_detail
     assert "Session Evidence" in session_detail
@@ -542,6 +578,7 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "evidence-1" in evidence_explorer
     assert "deployment/example" in evidence_explorer
     assert "World Facts" in evidence_explorer
+    assert "World Fact History" in evidence_explorer
     assert "World Entities" in evidence_explorer
     assert "World Relations" in evidence_explorer
 
@@ -554,6 +591,9 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "<script>alert(1)</script>" not in world_explorer
     assert 'href="/console/sessions/session-1/evidence"' in world_explorer
     assert "World Facts" in world_explorer
+    assert "World Fact History" in world_explorer
+    assert "<span>Conflicts</span>\n<strong>1</strong>" in world_explorer
+    assert "evidence-4:value=False confidence=0.51 source=stale_health_probe" in world_explorer
     assert "World Entities" in world_explorer
     assert "World Relations" in world_explorer
     assert "deployment/example" in world_explorer

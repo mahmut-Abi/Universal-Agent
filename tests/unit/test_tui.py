@@ -50,6 +50,8 @@ from universal_agent.service import (
     SessionExplorerView,
     ToolView,
     WorldEntityView,
+    WorldFactEvidenceView,
+    WorldFactHistoryView,
     WorldFactView,
     WorldRelationView,
 )
@@ -320,6 +322,37 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
                     ("evidence-3",),
                 ),
             ),
+            (
+                WorldFactHistoryView(
+                    "deployment/example",
+                    "healthy",
+                    WorldFactView(
+                        "deployment/example",
+                        "healthy",
+                        True,
+                        0.99,
+                        timestamp,
+                        ("evidence-1", "evidence-4"),
+                    ),
+                    (
+                        WorldFactEvidenceView(
+                            "evidence-1",
+                            True,
+                            0.99,
+                            timestamp,
+                            "inspect_workload:kubernetes_inspect_workload",
+                        ),
+                        WorldFactEvidenceView(
+                            "evidence-4",
+                            False,
+                            0.51,
+                            timestamp,
+                            "stale_health_probe",
+                        ),
+                    ),
+                    True,
+                ),
+            ),
         ),
         events=(
             RuntimeEventView(
@@ -399,6 +432,13 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
     )
     assert "World Facts" in rendered
     assert "deployment/example healthy=True confidence=0.99 evidence=evidence-1" in rendered
+    assert "World Fact History" in rendered
+    assert (
+        "deployment/example healthy current=True conflicting=yes "
+        "candidates=evidence-1:value=True confidence=0.99 "
+        "source=inspect_workload:kubernetes_inspect_workload; "
+        "evidence-4:value=False confidence=0.51 source=stale_health_probe"
+    ) in rendered
     assert "World Entities" in rendered
     assert 'deployment/example kind=Deployment attributes={"healthy": true}' in rendered
     assert "World Relations" in rendered

@@ -117,6 +117,8 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
     lines.extend(_task_timeline_lines(snapshot.selected_session))
     lines.extend(("", "World Facts", _rule()))
     lines.extend(_world_fact_lines(snapshot.session_explorer))
+    lines.extend(("", "World Fact History", _rule()))
+    lines.extend(_world_fact_history_lines(snapshot.session_explorer))
     lines.extend(("", "World Entities", _rule()))
     lines.extend(_world_entity_lines(snapshot.session_explorer))
     lines.extend(("", "World Relations", _rule()))
@@ -485,6 +487,20 @@ def _world_fact_lines(explorer: SessionExplorerView | None) -> list[str]:
     ]
 
 
+def _world_fact_history_lines(explorer: SessionExplorerView | None) -> list[str]:
+    if explorer is None or not explorer.world_fact_histories:
+        return ["- none"]
+    return [
+        (
+            f"- {history.subject} {history.claim}"
+            f" current={_value_text(history.current.value)}"
+            f" conflicting={'yes' if history.conflicting else 'no'}"
+            f" candidates={_fact_history_candidates_text(history.candidates)}"
+        )
+        for history in explorer.world_fact_histories
+    ]
+
+
 def _world_entity_lines(explorer: SessionExplorerView | None) -> list[str]:
     if explorer is None or not explorer.world_entities:
         return ["- none"]
@@ -640,6 +656,20 @@ def _value_text(value: object) -> str:
     if isinstance(value, list):
         return json.dumps(value, sort_keys=True)
     return str(value)
+
+
+def _fact_history_candidates_text(candidates: tuple[Any, ...]) -> str:
+    if not candidates:
+        return "none"
+    return "; ".join(
+        (
+            f"{candidate.evidence_id}:"
+            f"value={_value_text(candidate.value)}"
+            f" confidence={candidate.confidence:.2f}"
+            f" source={candidate.source}"
+        )
+        for candidate in candidates
+    )
 
 
 def _ready_text(ready: ReadyView) -> str:
