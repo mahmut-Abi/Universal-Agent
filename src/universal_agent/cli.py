@@ -432,6 +432,12 @@ def build_parser() -> argparse.ArgumentParser:
     distributed_schedule_goal.add_argument("profile")
     distributed_schedule_goal.add_argument("goal")
     distributed_schedule_goal.add_argument("--task", default="Run goal")
+    distributed_schedule_goal.add_argument(
+        "--success",
+        action="append",
+        default=[],
+        help="Goal success criterion as KEY=JSON. Repeat for multiple criteria.",
+    )
     distributed_schedule_goal.add_argument("--priority", type=int, default=0)
     distributed_schedule_goal.add_argument("--max-attempts", type=int, default=3)
     distributed_schedule_task = distributed_commands.add_parser("schedule-task")
@@ -572,6 +578,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("profile")
     run.add_argument("goal")
     run.add_argument("--task", default="Run goal")
+    run.add_argument(
+        "--success",
+        action="append",
+        default=[],
+        help="Goal success criterion as KEY=JSON. Repeat for multiple criteria.",
+    )
 
     tui = commands.add_parser("tui")
     tui.add_argument("--session-id")
@@ -939,8 +951,9 @@ async def _dispatch(
             profile_error = service.profile_selection_error(profile)
             if profile_error is not None:
                 raise ValueError(profile_error)
-            goal = Goal(cast(str, args.goal), (SuccessCriterion("healthy", True),))
-            task = Task(cast(str, args.task), ("healthy",))
+            criteria = _success_criteria(cast(list[str], args.success))
+            goal = Goal(cast(str, args.goal), criteria)
+            task = Task(cast(str, args.task), tuple(item.key for item in criteria))
             scheduling = service.distributed_schedule_goal(
                 goal,
                 task,
@@ -1169,8 +1182,9 @@ async def _dispatch_run(
     profile = cast(str, args.profile)
     if not service.accepts_profile(profile):
         raise ValueError(f"unknown profile: {profile}")
-    goal = Goal(cast(str, args.goal), (SuccessCriterion("healthy", True),))
-    task = Task(cast(str, args.task), ("healthy",))
+    criteria = _success_criteria(cast(list[str], args.success))
+    goal = Goal(cast(str, args.goal), criteria)
+    task = Task(cast(str, args.task), tuple(item.key for item in criteria))
     run = await service.run_goal(goal, task)
     _write_json(out, runtime_run_body(run))
 
@@ -2077,6 +2091,44 @@ def _parse_key_value_options(values: Sequence[str], label: str) -> dict[str, str
             raise ValueError(f"duplicate {label}: {key}")
         parsed[key] = option_value
     return parsed
+
+
+def _success_criteria(values: Sequence[str]) -> tuple[SuccessCriterion, ...]:
+    if not values:
+        return (SuccessCriterion("healthy", True),)
+    parsed: dict[str, JsonValue] = {}
+    for value in values:
+        key, separator, raw_expected = value.partition("=")
+        if not separator or not key.strip() or not raw_expected.strip():
+            raise ValueError("success criterion must be KEY=JSON")
+        key = key.strip()
+        if key in parsed:
+            raise ValueError(f"duplicate success criterion: {key}")
+        parsed[key] = _parse_success_json_value(raw_expected, key)
+    return tuple(SuccessCriterion(key, expected) for key, expected in parsed.items())
+
+
+def _parse_success_json_value(value: str, key: str) -> JsonValue:
+    try:
+        loaded: object = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"success criterion {key} must be valid JSON") from exc
+    return _json_value(loaded, f"success.{key}")
+
+
+def _json_value(value: object, field: str) -> JsonValue:
+    if value is None or isinstance(value, bool | int | float | str):
+        return value
+    if isinstance(value, list):
+        return [_json_value(item, f"{field}[]") for item in value]
+    if isinstance(value, Mapping):
+        result: dict[str, JsonValue] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{field} keys must be strings")
+            result[key] = _json_value(item, f"{field}.{key}")
+        return result
+    raise ValueError(f"{field} must be JSON-compatible")
 
 
 def _setting_string(settings: JsonMapping, key: str, *, default: str) -> str:

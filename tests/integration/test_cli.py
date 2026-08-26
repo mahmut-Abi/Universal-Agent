@@ -1250,6 +1250,32 @@ async def test_cli_run_submits_goal_through_service() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_run_accepts_custom_success_criteria() -> None:
+    service, backend = build_cli_service([inspect_workload(), finish()])
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "run",
+            "production-operator",
+            "Verify workload resource identity",
+            "--success",
+            'resource="deployment/example"',
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+    session = payload["session"]
+
+    assert status == 0
+    assert payload["result"]["status"] == "completed"
+    assert session["satisfied_criteria"]["resource"] == "deployment/example"
+    assert session["tasks"][0]["required_criteria"] == ["resource"]
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_cli_tui_renders_runtime_service_snapshot() -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     run_output = StringIO()
@@ -1843,6 +1869,30 @@ async def test_cli_run_rejects_unknown_profile() -> None:
     assert status == 2
     assert output.getvalue() == ""
     assert "unknown profile: missing-profile" in error.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_cli_run_rejects_invalid_success_criterion_json() -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+    error = StringIO()
+
+    status = await run_cli(
+        [
+            "run",
+            "production-operator",
+            "Verify workload health",
+            "--success",
+            "healthy=yes",
+        ],
+        service=service,
+        stdout=output,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert output.getvalue() == ""
+    assert "success criterion healthy must be valid JSON" in error.getvalue()
 
 
 @pytest.mark.asyncio
@@ -2677,6 +2727,8 @@ async def test_cli_distributed_schedule_goal_command_runs_from_worker() -> None:
             "Verify workload from scheduled goal",
             "--task",
             "Inspect workload",
+            "--success",
+            'resource="deployment/example"',
             "--priority",
             "4",
         ],
@@ -2701,6 +2753,9 @@ async def test_cli_distributed_schedule_goal_command_runs_from_worker() -> None:
     assert len(sessions) == 1
     assert sessions[0].goal_description == "Verify workload from scheduled goal"
     assert sessions[0].goal_status.value == "completed"
+    completed = await service.get_session(sessions[0].session_id)
+    assert completed.satisfied_criteria["resource"] == "deployment/example"
+    assert completed.tasks[0].required_criteria == ("resource",)
 
 
 @pytest.mark.asyncio

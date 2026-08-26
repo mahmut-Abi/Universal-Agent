@@ -34,6 +34,16 @@ references:
 .venv/bin/python -m universal_agent.cli init --domain-backend kubernetes_api --kubernetes-api-server https://cluster.example.test --kubernetes-api-token-file /run/secrets/kubernetes-token
 ```
 
+`agent run` defaults to the historical `healthy=true` success criterion. Use
+`--success KEY=JSON` to run other concrete goals without changing code. Repeat
+the flag for multiple required criteria; `distributed schedule-goal` accepts the
+same option.
+
+```bash
+.venv/bin/python -m universal_agent.cli run local-kubernetes "Verify workload resource identity" --success 'resource="deployment/example"'
+.venv/bin/python -m universal_agent.cli distributed schedule-goal local-kubernetes "Verify workload resource identity" --success 'resource="deployment/example"'
+```
+
 Session event reads support cursor semantics:
 
 ```bash
@@ -261,6 +271,7 @@ Useful scheduling and worker commands:
 
 ```bash
 .venv/bin/python -m universal_agent.cli distributed schedule-session session-1 --priority 5 --max-attempts 2
+.venv/bin/python -m universal_agent.cli distributed schedule-goal local-kubernetes "Verify workload health" --success healthy=true
 .venv/bin/python -m universal_agent.cli distributed schedule-pending-actions --confirmed true
 .venv/bin/python -m universal_agent.cli distributed worker-register worker-a --capability agent_session
 .venv/bin/python -m universal_agent.cli distributed worker-run-once worker-a

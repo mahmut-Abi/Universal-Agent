@@ -17,7 +17,13 @@ def read_json(raw: str) -> dict[str, Any]:
 async def main() -> None:
     output = StringIO()
     status = await run_cli(
-        ["run", LOCAL_PROFILE_NAME, "Verify the local example workload is healthy"],
+        [
+            "run",
+            LOCAL_PROFILE_NAME,
+            "Verify the local example workload resource identity",
+            "--success",
+            'resource="deployment/example"',
+        ],
         stdout=output,
     )
     payload = read_json(output.getvalue())
@@ -26,7 +32,8 @@ async def main() -> None:
 
     assert status == 0
     assert result["status"] == "completed"
-    assert session["goal_description"] == "Verify the local example workload is healthy"
+    assert session["goal_description"] == "Verify the local example workload resource identity"
+    assert session["satisfied_criteria"]["resource"] == "deployment/example"
     print(json.dumps({"status": result["status"], "session_id": session["session_id"]}, indent=2))
 
 
