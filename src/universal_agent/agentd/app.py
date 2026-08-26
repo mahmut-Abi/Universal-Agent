@@ -2055,6 +2055,8 @@ def capability_body(view: CapabilityView) -> dict[str, JsonValue]:
         "domain_name": view.domain_name,
         "domain_version": view.domain_version,
         "tool_names": list(view.tool_names),
+        "required_arguments": list(view.required_arguments),
+        "argument_schema": dict(view.argument_schema),
     }
 
 

@@ -18,7 +18,7 @@ Frequently used commands:
 ```bash
 .venv/bin/python -m universal_agent.cli ready
 .venv/bin/python -m universal_agent.cli config show
-.venv/bin/python -m universal_agent.cli capabilities list
+.venv/bin/python -m universal_agent.cli capabilities list   # includes required_arguments and argument_schema
 .venv/bin/python -m universal_agent.cli tools list
 .venv/bin/python -m universal_agent.cli policies list
 .venv/bin/python -m universal_agent.cli profiles list

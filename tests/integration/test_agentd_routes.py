@@ -645,6 +645,9 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     scale = find_named(capabilities.body["capabilities"], "scale_workload")
     assert scale["risk"] == "medium"
     assert scale["tool_names"] == ["kubernetes_scale_workload"]
+    assert scale["required_arguments"] == ["name", "namespace", "replicas"]
+    scale_schema = scale["argument_schema"]
+    assert isinstance(scale_schema, dict)
 
     scale_tool = find_named(tools.body["tools"], "kubernetes_scale_workload")
     assert scale_tool["side_effect"] == "reversible"

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
+from universal_agent.capability import CapabilityUnavailableError, UnknownCapabilityError
 from universal_agent.core import (
     ActionId,
     CapabilityCategory,
@@ -187,6 +188,8 @@ class CapabilityView:
     domain_name: str
     domain_version: str
     tool_names: tuple[str, ...]
+    required_arguments: tuple[str, ...] = ()
+    argument_schema: JsonMapping = field(default_factory=immutable_json)
 
 
 @dataclass(frozen=True, slots=True)
@@ -582,9 +585,27 @@ class RuntimeService:
                         domain_name=domain.identity.name,
                         domain_version=domain.identity.version,
                         tool_names=tool_names,
+                        required_arguments=self._capability_required_arguments(capability.name),
+                        argument_schema=self._capability_argument_schema(capability.name),
                     )
                 )
         return tuple(sorted(views, key=lambda item: item.name))
+
+    def _capability_required_arguments(self, capability: str) -> tuple[str, ...]:
+        try:
+            return self._components.resolver.resolve_registration(
+                capability
+            ).tool.definition.required_arguments
+        except (UnknownCapabilityError, CapabilityUnavailableError):
+            return ()
+
+    def _capability_argument_schema(self, capability: str) -> JsonMapping:
+        try:
+            return self._components.resolver.resolve_registration(
+                capability
+            ).tool.definition.argument_schema
+        except (UnknownCapabilityError, CapabilityUnavailableError):
+            return immutable_json()
 
     def tools(self) -> tuple[ToolView, ...]:
         views: list[ToolView] = []

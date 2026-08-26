@@ -2049,6 +2049,11 @@ async def test_cli_exposes_service_catalog_commands() -> None:
     assert multi_agent_status == 0
     capabilities = payload["capabilities"]
     assert isinstance(capabilities, list)
+    scale = next(
+        item for item in capabilities if isinstance(item, dict) and item["name"] == "scale_workload"
+    )
+    assert scale["required_arguments"] == ["name", "namespace", "replicas"]
+    assert isinstance(scale["argument_schema"], dict)
     assert {item["name"] for item in capabilities if isinstance(item, dict)} >= {
         "inspect_workload",
         "scale_workload",

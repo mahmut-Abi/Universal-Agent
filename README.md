@@ -105,7 +105,7 @@ P3.5 work built on this interface, not replacements for it.
 
 `RuntimeService` is the first framework-free `agentd` foundation. It delegates execution, session and
 event reads to `RuntimeAPI`, and adds service-level health, readiness, Domain, Capability and Tool
-catalog views, plus a typed runtime configuration projection for HTTP and CLI adapters. It does not
+catalog views, including capability-level required arguments and argument schemas derived from the default resolved Tool, plus a typed runtime configuration projection for HTTP and CLI adapters. It does not
 access Kernel internals directly. `RuntimeHost` is the typed application assembly boundary for Runtime
 Configuration: it validates the configured Domain identity, resolves environment-backed and
 file-backed secret references into non-value availability reports, builds memory or file-backed stores, applies runtime
