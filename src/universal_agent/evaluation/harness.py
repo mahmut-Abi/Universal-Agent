@@ -43,6 +43,7 @@ class ScenarioExpectations:
     required_capabilities: tuple[str, ...] = ()
     allowed_capabilities: tuple[str, ...] | None = None
     required_audit_capabilities: tuple[str, ...] = ()
+    decision_rejected_count: int | None = None
     policy_denial_count: int | None = None
     recovery_planned_count: int | None = None
     resource_conflict_count: int | None = None
@@ -685,6 +686,17 @@ def _evaluate_expectations(
                 metrics.policy_denial_count == expectations.policy_denial_count,
                 f"policy_denial_count={metrics.policy_denial_count}",
                 f"expected {expectations.policy_denial_count}, got {metrics.policy_denial_count}",
+            )
+        )
+
+    if expectations.decision_rejected_count is not None:
+        checks.append(
+            _check(
+                "decision_rejected_count",
+                metrics.decision_rejected_count == expectations.decision_rejected_count,
+                f"decision_rejected_count={metrics.decision_rejected_count}",
+                "expected "
+                f"{expectations.decision_rejected_count}, got {metrics.decision_rejected_count}",
             )
         )
 

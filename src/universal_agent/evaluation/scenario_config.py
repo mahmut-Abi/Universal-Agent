@@ -132,6 +132,9 @@ def _expectations_from_mapping(values: Mapping[str, JsonValue]) -> ScenarioExpec
             values.get("required_audit_capabilities", []),
             "expectations.required_audit_capabilities",
         ),
+        decision_rejected_count=_optional_int(
+            values.get("decision_rejected_count"), "expectations.decision_rejected_count"
+        ),
         policy_denial_count=_optional_int(
             values.get("policy_denial_count"), "expectations.policy_denial_count"
         ),

@@ -63,6 +63,7 @@ def test_evaluation_suite_config_parses_typed_scenarios() -> None:
                         "expected_error_code": "policy_denied",
                         "forbidden_events": ["ActionStarted"],
                         "required_audit_capabilities": ["scale_workload"],
+                        "decision_rejected_count": 0,
                         "policy_denial_count": 1,
                         "resource_conflict_count": 0,
                         "active_resource_lock_count": 0,
@@ -89,6 +90,7 @@ def test_evaluation_suite_config_parses_typed_scenarios() -> None:
     assert policy.expectations.expected_status is ExecutionStatus.FAILED
     assert policy.expectations.expected_error_code is ErrorCode.POLICY_DENIED
     assert policy.expectations.required_audit_capabilities == ("scale_workload",)
+    assert policy.expectations.decision_rejected_count == 0
     assert policy.expectations.policy_denial_count == 1
 
 

@@ -91,6 +91,17 @@ def scale_workload(*, replicas: int = 3) -> Decision:
     )
 
 
+def inspect_without_required_name() -> Decision:
+    return Decision(
+        DecisionType.EXECUTE,
+        "Inspect workload with invalid arguments",
+        capability="inspect_workload",
+        target="deployment/example",
+        arguments=immutable_json({}),
+        expected_observations=("healthy",),
+    )
+
+
 def finish() -> Decision:
     return Decision(DecisionType.FINISH, "Required evidence is present")
 
@@ -527,6 +538,34 @@ async def test_evaluation_harness_reports_policy_regression_checks() -> None:
     assert len(report.audit_records) == 1
     assert report.audit_records[0].status == "denied"
     assert backend.mutation_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_evaluation_harness_reports_decision_rejection_regression_checks() -> None:
+    backend = HarnessBackend()
+    service = build_service(backend, [inspect_without_required_name()])
+    goal, task = goal_task()
+    scenario = EvaluationScenario(
+        "invalid model decision is rejected",
+        goal,
+        task,
+        ScenarioExpectations(
+            expected_status=ExecutionStatus.FAILED,
+            expected_error_code=ErrorCode.VALIDATION_ERROR,
+            required_events=("DecisionRejected",),
+            forbidden_events=("PolicyChecked", "ActionStarted"),
+            decision_rejected_count=1,
+            max_actions=0,
+        ),
+    )
+
+    report = await EvaluationHarness(service).run(scenario)
+
+    assert report.passed
+    assert report.metrics.decision_generated_count == 1
+    assert report.metrics.decision_validated_count == 0
+    assert report.metrics.decision_rejected_count == 1
+    assert backend.inspect_calls == []
 
 
 @pytest.mark.asyncio
