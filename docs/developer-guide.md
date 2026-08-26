@@ -65,6 +65,7 @@ Examples are organized by roadmap slice. Useful entry points:
 .venv/bin/python examples/p3_5_openai_chat_prompt_json_model.py
 .venv/bin/python examples/p3_5_kubernetes_model_probe.py
 .venv/bin/python examples/p3_5_kubernetes_check.py
+.venv/bin/python examples/p3_5_kubernetes_production_run.py
 .venv/bin/python examples/p3_5_agentd_routes.py
 .venv/bin/python examples/p3_5_cli_event_stream.py
 .venv/bin/python examples/p3_6_state_event_commit.py

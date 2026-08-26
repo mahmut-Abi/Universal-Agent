@@ -35,6 +35,9 @@ references:
 .venv/bin/python -m universal_agent.cli init --domain-backend kubernetes_api --kubernetes-api-server https://cluster.example.test --kubernetes-api-token-file /run/secrets/kubernetes-token
 ```
 
+For an end-to-end production-style Kubernetes profile and run sequence, follow
+[`kubernetes-live-operator-runbook.md`](kubernetes-live-operator-runbook.md).
+
 Use Kubernetes preflight before running a production profile. It validates the
 active Kubernetes domain, model secret availability, expected capability set and
 optional read-only cluster/workload inspection. A failed inspection writes a JSON

@@ -509,6 +509,9 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_json_http_model_adapter.py
 .venv/bin/python examples/p3_5_openai_chat_completions_model.py
 .venv/bin/python examples/p3_5_openai_responses_model.py
+.venv/bin/python examples/p3_5_kubernetes_model_probe.py
+.venv/bin/python examples/p3_5_kubernetes_check.py
+.venv/bin/python examples/p3_5_kubernetes_production_run.py
 .venv/bin/python examples/p3_5_agentd_routes.py
 .venv/bin/python examples/p3_5_agentd_auth.py
 .venv/bin/python examples/p3_5_persistence.py

@@ -1801,6 +1801,48 @@ async def test_cli_kubernetes_run_reports_confirmation_next_step() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_kubernetes_run_can_skip_model_probe_but_still_run_preflight() -> None:
+    service, backend = build_cli_service(
+        [
+            inspect_workload(
+                name="api",
+                namespace="prod",
+                expected_observations=("healthy", "resource", "namespace"),
+            ),
+            finish(),
+        ]
+    )
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "kubernetes",
+            "run",
+            "production-operator",
+            "--workload",
+            "api",
+            "--namespace",
+            "prod",
+            "--skip-model-probe",
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+    preflight = payload["preflight"]
+    assert isinstance(preflight, dict)
+    run = payload["run"]
+    assert isinstance(run, dict)
+
+    assert status == 0
+    assert payload["status"] == "completed"
+    assert payload["model_probe"] is None
+    assert preflight["status"] == "ok"
+    assert run["result"]["status"] == "completed"
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_cli_kubernetes_run_stops_before_runtime_when_preflight_fails() -> None:
     config = RuntimeConfig(
         environment=immutable_json({"environment": "staging"}),
