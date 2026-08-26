@@ -40,6 +40,15 @@ active Kubernetes domain, model secret availability, expected capability set and
 optional read-only cluster/workload inspection. A failed inspection writes a JSON
 report and exits with status `1`.
 
+Use `kubernetes model-probe` first when validating a new OpenAI-compatible model
+endpoint. It calls the configured model once with a Kubernetes remediation
+Decision context, validates the returned structured Decision locally, and never
+executes Kubernetes tools.
+
+```bash
+.venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes model-probe production-operator --workload deployment/api --namespace prod
+```
+
 ```bash
 .venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes preflight --workload deployment/api --namespace prod
 .venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes preflight --skip-cluster

@@ -1454,6 +1454,49 @@ async def test_cli_kubernetes_preflight_can_skip_cluster_inspection() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_kubernetes_model_probe_validates_decision_without_cluster_actions() -> None:
+    service, backend = build_cli_service([])
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "kubernetes",
+            "model-probe",
+            "production-operator",
+            "--workload",
+            "api",
+            "--namespace",
+            "prod",
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["status"] == "ok"
+    assert payload["operation"] == {
+        "profile": "production-operator",
+        "workload": "deployment/api",
+        "namespace": "prod",
+    }
+    assert payload["model"]["provider"] == "scripted"
+    assert payload["capability_count"] >= 6
+    assert payload["decision"] == {
+        "type": "execute",
+        "reason": "Probe Kubernetes model decision contract with workload inspection.",
+        "capability": "inspect_workload",
+        "target": "deployment/api",
+        "arguments": {"name": "api", "namespace": "prod"},
+        "expected_observations": ["healthy", "resource", "namespace"],
+        "message": None,
+    }
+    assert payload["next_step"]["type"] == "run_kubernetes_preflight"
+    assert backend.inspect_calls == 0
+    assert backend.mutation_calls == 0
+
+
+@pytest.mark.asyncio
 async def test_cli_kubernetes_run_submits_production_workload_goal() -> None:
     service, backend = build_cli_service(
         [

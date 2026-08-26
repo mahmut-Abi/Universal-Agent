@@ -11,6 +11,7 @@ The target workflow is:
 
 ```text
 profile config
+  -> model probe
   -> Kubernetes preflight
   -> Chat Completions decision loop
   -> Kubernetes inspection / diagnosis
@@ -30,6 +31,7 @@ goal string and success criteria manually through `agent run`.
 That makes first production use too easy to mis-shape:
 
 - workload target and namespace can be underspecified;
+- model-provider incompatibility may only appear after an operator starts a run;
 - preflight can be skipped accidentally;
 - production confirmation instructions are not obvious from the first run output;
 - the generic command does not communicate that fresh health verification remains
@@ -48,6 +50,8 @@ python -m universal_agent.cli --profile-config profile.json \
 
 The command must:
 
+- support a model-only probe that calls the configured model once, validates the
+  returned Decision, and executes no Kubernetes tools;
 - run Kubernetes preflight first unless `--skip-preflight` is explicit;
 - construct a Runtime-owned `Goal` with `healthy=true`, `resource=<workload>`,
   and optional `namespace=<namespace>` success criteria;
@@ -80,6 +84,7 @@ Tests target these public interfaces:
 - `RuntimeConfig.from_mapping()` model configuration parsing and validation;
 - `RuntimeHost.build_configured_model_adapter()` host assembly with resolved secrets;
 - `agent init` profile generation;
+- `agent kubernetes model-probe` model-only contract validation;
 - `agent kubernetes run` operator command output and confirmation path.
 
 ## Implementation Plan
@@ -89,18 +94,31 @@ Tests target these public interfaces:
    OpenAI-compatible providers.
 2. Add `agent kubernetes run` as the first production-oriented command over the
    existing RuntimeService and Kubernetes Domain Runtime.
-3. Run preflight before the runtime loop by default, and fail before goal
+3. Add `agent kubernetes model-probe` so operators can validate model endpoint,
+   credentials, response format, and Decision JSON before cluster inspection.
+4. Run preflight before the runtime loop by default, and fail before goal
    submission if preflight checks fail.
-4. Enforce requested workload scope in deterministic Kubernetes mutation policy.
-5. Return an explicit `confirm_pending_action` next step when production policy
+5. Enforce requested workload scope in deterministic Kubernetes mutation policy.
+6. Return an explicit `confirm_pending_action` next step when production policy
    pauses a remediation mutation.
-6. Document the operator flow and keep an offline example so the path remains
+7. Document the operator flow and keep offline examples so the path remains
    easy to verify without a live cluster.
 
 ## Acceptance Criteria
 
 - A profile can be initialized for `openai_chat_completions` with
   `json_schema`, `json_object`, or `prompt_json` response format.
+- A Kubernetes profile can run:
+
+  ```bash
+  python -m universal_agent.cli --profile-config profile.json \
+    kubernetes model-probe production-operator \
+    --workload deployment/api \
+    --namespace prod
+  ```
+
+- Model probe returns a validated Decision or a structured model failure without
+  executing any Kubernetes backend action.
 - A Kubernetes profile can run:
 
   ```bash
