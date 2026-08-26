@@ -35,6 +35,16 @@ references:
 .venv/bin/python -m universal_agent.cli init --domain-backend kubernetes_api --kubernetes-api-server https://cluster.example.test --kubernetes-api-token-file /run/secrets/kubernetes-token
 ```
 
+Use Kubernetes preflight before running a production profile. It validates the
+active Kubernetes domain, model secret availability, expected capability set and
+optional read-only cluster/workload inspection. A failed inspection writes a JSON
+report and exits with status `1`.
+
+```bash
+.venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes preflight --workload deployment/api --namespace prod
+.venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes preflight --skip-cluster
+```
+
 `agent run` defaults to the historical `healthy=true` success criterion. Use
 `--success KEY=JSON` to run other concrete goals without changing code. Repeat
 the flag for multiple required criteria; `distributed schedule-goal` accepts the

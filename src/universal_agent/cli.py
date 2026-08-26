@@ -185,12 +185,20 @@ from universal_agent.profile import (
 )
 from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI, RuntimeEventBatch
 from universal_agent.security import EnvSecretProvider, SecretProvider, resolve_secret_value
-from universal_agent.service import RuntimeService
+from universal_agent.service import RuntimeConfigDomainView, RuntimeConfigView, RuntimeService
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
 from universal_agent.tui import build_tui_snapshot, render_tui_snapshot
 
 LOCAL_PROFILE_NAME = "local-kubernetes"
 ServerRunner = Callable[[AgentdHttpServer], None]
+_KUBERNETES_PREFLIGHT_CAPABILITIES = (
+    "inspect_cluster",
+    "inspect_workload",
+    "inspect_pod",
+    "inspect_logs",
+    "inspect_events",
+    "scale_workload",
+)
 
 
 class CliExit(Exception):
@@ -584,6 +592,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Goal success criterion as KEY=JSON. Repeat for multiple criteria.",
     )
+
+    kubernetes = commands.add_parser("kubernetes")
+    kubernetes_commands = kubernetes.add_subparsers(dest="kubernetes_command", required=True)
+    kubernetes_preflight = kubernetes_commands.add_parser("preflight")
+    kubernetes_preflight.add_argument("--workload")
+    kubernetes_preflight.add_argument("--namespace")
+    kubernetes_preflight.add_argument("--skip-cluster", action="store_true")
 
     tui = commands.add_parser("tui")
     tui.add_argument("--session-id")
@@ -1129,6 +1144,9 @@ async def _dispatch(
     if command == "run":
         await _dispatch_run(args, service, out)
         return
+    if command == "kubernetes":
+        await _dispatch_kubernetes(args, service, out)
+        return
     if command == "tui":
         await _dispatch_tui(args, service, out)
         return
@@ -1187,6 +1205,268 @@ async def _dispatch_run(
     task = Task(cast(str, args.task), tuple(item.key for item in criteria))
     run = await service.run_goal(goal, task)
     _write_json(out, runtime_run_body(run))
+
+
+async def _dispatch_kubernetes(
+    args: argparse.Namespace,
+    service: RuntimeService,
+    out: TextIO,
+) -> None:
+    command = cast(str, args.kubernetes_command)
+    if command == "preflight":
+        report = await _kubernetes_preflight_report(args, service)
+        _write_json(out, report)
+        if report["status"] == "failed":
+            raise CliExit(1)
+        return
+    raise ValueError(f"unknown kubernetes command: {command}")
+
+
+async def _kubernetes_preflight_report(
+    args: argparse.Namespace,
+    service: RuntimeService,
+) -> JsonMapping:
+    config = service.config()
+    checks: list[JsonValue] = []
+    observations: dict[str, JsonValue] = {}
+    profile_config = cast(str | None, args.profile_config)
+    domain = _primary_kubernetes_config_domain(config.domains)
+    _append_preflight_check(
+        checks,
+        "kubernetes_domain",
+        "ok" if domain is not None else "failed",
+        "kubernetes domain is active" if domain is not None else "kubernetes domain is not active",
+    )
+    backend_name = "unknown" if domain is None else domain.backend or "fake"
+    if backend_name == "fake":
+        _append_preflight_check(
+            checks,
+            "kubernetes_backend",
+            "warn",
+            "fake backend is active; no real cluster will be contacted",
+            {"backend": backend_name},
+        )
+    else:
+        _append_preflight_check(
+            checks,
+            "kubernetes_backend",
+            "ok",
+            "real Kubernetes backend is configured",
+            {"backend": backend_name},
+        )
+    _append_model_secret_preflight_check(checks, config)
+    _append_capability_preflight_check(checks, service)
+
+    if domain is not None and not cast(bool, args.skip_cluster):
+        backend = _kubernetes_preflight_backend(profile_config)
+        await _append_backend_observation_check(
+            checks,
+            observations,
+            backend,
+            "cluster_inspection",
+            "inspect_cluster",
+            immutable_json(),
+        )
+        workload = cast(str | None, args.workload)
+        if workload is not None:
+            await _append_backend_observation_check(
+                checks,
+                observations,
+                backend,
+                "workload_inspection",
+                "inspect_workload",
+                _kubernetes_workload_arguments(workload, cast(str | None, args.namespace)),
+            )
+    elif cast(bool, args.skip_cluster):
+        _append_preflight_check(
+            checks,
+            "cluster_inspection",
+            "skipped",
+            "cluster inspection skipped by request",
+        )
+
+    status = "failed" if _preflight_failed(checks) else "ok"
+    domain_body: dict[str, JsonValue] | None = None
+    if domain is not None:
+        domain_body = {
+            "name": domain.name,
+            "version": domain.version,
+            "backend": domain.backend or "fake",
+            "settings": dict(domain.settings),
+        }
+    return immutable_json(
+        {
+            "status": status,
+            "profile_config": profile_config or "",
+            "domain": domain_body,
+            "model": {
+                "provider": config.model.provider,
+                "name": config.model.name,
+                "api_key_secret": config.model.api_key_secret or "",
+            },
+            "checks": checks,
+            "observations": observations,
+        }
+    )
+
+
+def _primary_kubernetes_config_domain(
+    domains: tuple[RuntimeConfigDomainView, ...],
+) -> RuntimeConfigDomainView | None:
+    for domain in domains:
+        if domain.name == "kubernetes" and domain.primary:
+            return domain
+    for domain in domains:
+        if domain.name == "kubernetes":
+            return domain
+    return None
+
+
+def _append_model_secret_preflight_check(
+    checks: list[JsonValue],
+    config: RuntimeConfigView,
+) -> None:
+    secret_name = config.model.api_key_secret
+    if secret_name is None:
+        _append_preflight_check(
+            checks,
+            "model_secret",
+            "ok",
+            "model provider does not require an API key secret",
+            {"provider": config.model.provider},
+        )
+        return
+    secret = next((item for item in config.secrets if item.name == secret_name), None)
+    if secret is None:
+        _append_preflight_check(
+            checks,
+            "model_secret",
+            "failed",
+            "model api_key_secret is not declared",
+            {"secret": secret_name},
+        )
+        return
+    if secret.available is False or secret.status in {"missing_required", "missing_optional"}:
+        _append_preflight_check(
+            checks,
+            "model_secret",
+            "failed" if secret.required else "warn",
+            "model API key secret is unavailable",
+            {"secret": secret.name, "status": secret.status or "unknown"},
+        )
+        return
+    _append_preflight_check(
+        checks,
+        "model_secret",
+        "ok",
+        "model API key secret is available",
+        {"secret": secret.name, "source": secret.source},
+    )
+
+
+def _append_capability_preflight_check(
+    checks: list[JsonValue],
+    service: RuntimeService,
+) -> None:
+    available = {
+        capability.name
+        for capability in service.capabilities()
+        if capability.domain_name == "kubernetes"
+    }
+    missing = tuple(
+        capability
+        for capability in _KUBERNETES_PREFLIGHT_CAPABILITIES
+        if capability not in available
+    )
+    missing_values: list[JsonValue] = list(missing)
+    available_values: list[JsonValue] = list(sorted(available))
+    _append_preflight_check(
+        checks,
+        "kubernetes_capabilities",
+        "ok" if not missing else "failed",
+        "kubernetes runtime exposes expected capabilities"
+        if not missing
+        else "kubernetes runtime is missing expected capabilities",
+        {"missing": missing_values, "available": available_values},
+    )
+
+
+def _kubernetes_preflight_backend(profile_config: str | None) -> KubernetesBackend:
+    if profile_config is None:
+        return cast(KubernetesBackend, _DefaultCliBackend())
+    profile = ProfileConfig.from_json_file(profile_config).to_profile()
+    return cast(
+        KubernetesBackend,
+        _configured_kubernetes_backend(
+            profile.runtime.configured_domains() or (profile.domain,),
+            config=profile.runtime,
+            secret_provider=EnvSecretProvider(),
+        ),
+    )
+
+
+async def _append_backend_observation_check(
+    checks: list[JsonValue],
+    observations: dict[str, JsonValue],
+    backend: KubernetesBackend,
+    check_name: str,
+    capability: str,
+    arguments: JsonMapping,
+) -> None:
+    try:
+        observation = await backend.inspect(capability, arguments)
+    except Exception as exc:
+        _append_preflight_check(
+            checks,
+            check_name,
+            "failed",
+            f"{capability} failed",
+            {"error_type": exc.__class__.__name__, "error": str(exc)},
+        )
+        return
+    observations[check_name] = dict(observation)
+    _append_preflight_check(
+        checks,
+        check_name,
+        "ok",
+        f"{capability} succeeded",
+        {"resource": str(observation.get("resource", ""))},
+    )
+
+
+def _kubernetes_workload_arguments(workload: str, namespace: str | None) -> JsonMapping:
+    if not workload.strip():
+        raise ValueError("kubernetes preflight workload must not be empty")
+    arguments: dict[str, JsonValue] = {"name": workload}
+    if namespace is not None:
+        if not namespace.strip():
+            raise ValueError("kubernetes preflight namespace must not be empty")
+        arguments["namespace"] = namespace
+    return immutable_json(arguments)
+
+
+def _append_preflight_check(
+    checks: list[JsonValue],
+    name: str,
+    status: str,
+    message: str,
+    details: Mapping[str, JsonValue] | None = None,
+) -> None:
+    body: dict[str, JsonValue] = {
+        "name": name,
+        "status": status,
+        "message": message,
+    }
+    if details is not None:
+        body["details"] = dict(details)
+    checks.append(body)
+
+
+def _preflight_failed(checks: list[JsonValue]) -> bool:
+    for check in checks:
+        if isinstance(check, Mapping) and check.get("status") == "failed":
+            return True
+    return False
 
 
 async def _dispatch_tui(

@@ -33,8 +33,10 @@ This slice adds:
 - `openai_chat_completions` as a first-class model provider.
 - A dependency-free `OpenAIChatCompletionsModelAdapter`.
 - Runtime config and CLI profile generation for Chat Completions endpoints.
+- `agent kubernetes preflight` for read-only profile/backend/capability checks
+  before running a remediation goal.
 - Tests covering request shape, usage extraction, decision validation, config loading,
-  host construction, and CLI init.
+  host construction, CLI init, and Kubernetes preflight output.
 - Operator docs and an example for a kubectl-backed Kubernetes remediation run.
 
 This slice does not add:
@@ -79,8 +81,9 @@ For the initial production path:
 1. Add the Chat Completions model adapter and tests.
 2. Wire the adapter through `RuntimeConfig`, `RuntimeHost`, package exports, and CLI `init`.
 3. Add a Kubernetes Chat Completions example and operator guide updates.
-4. Run focused tests and static checks.
-5. Commit this feature node before moving to live-cluster runbooks or further Kubernetes workflows.
+4. Add a read-only Kubernetes preflight command for cluster/workload inspection.
+5. Run focused tests and static checks.
+6. Commit each feature node before moving to live-cluster runbooks or further Kubernetes workflows.
 
 ## Acceptance Criteria
 
@@ -99,3 +102,12 @@ For the initial production path:
   runtime `Decision`.
 - OpenAI token usage is projected through the existing `ModelUsage` path.
 - Invalid model output is rejected before policy/action execution.
+- A configured profile can be preflighted with:
+
+  ```bash
+  python -m universal_agent.cli --profile-config profile.json \
+    kubernetes preflight --workload deployment/api --namespace prod
+  ```
+
+- Preflight performs only inspection capabilities and reports failed checks before
+  any remediation goal is run.

@@ -226,7 +226,7 @@ Runtime-owned Queue/Action semantics。
 ## 今日验证结果
 
 ```text
-pytest --disable-warnings -r a   700 passed
+pytest --disable-warnings -r a   702 passed
 ruff check                      passed
 ruff format --check             passed (268 files)
 mypy strict                     passed (268 source files)
@@ -238,7 +238,8 @@ mypy strict                     passed (268 source files)
 
 ### P0：Kubernetes 生产切片
 
-- 优先跑通 kubectl/Kubernetes API backend + OpenAI Chat Completions provider 的端到端诊断路径；
+- 优先跑通 kubectl/Kubernetes API backend + OpenAI Chat Completions provider 的 preflight
+  和端到端诊断路径；
 - 保持 production mutation confirmation，先验证 inspect/diagnose，再逐步启用 policy-gated remediation；
 - 为 live-like Kubernetes/OpenAI provider 增加 contract test harness 和 operator runbook；
 - 以 [`docs/kubernetes-production-slice-spec.md`](../kubernetes-production-slice-spec.md) 作为当前顺序调整依据。

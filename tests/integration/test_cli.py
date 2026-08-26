@@ -1362,6 +1362,44 @@ async def test_cli_run_accepts_custom_success_criteria() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_kubernetes_preflight_runs_read_only_checks() -> None:
+    output = StringIO()
+
+    status = await run_cli(
+        ["kubernetes", "preflight", "--workload", "api", "--namespace", "prod"],
+        stdout=output,
+    )
+    payload = read_json(output)
+    checks = {item["name"]: item for item in payload["checks"]}
+
+    assert status == 0
+    assert payload["status"] == "ok"
+    assert payload["model"]["provider"] == "scripted"
+    assert payload["domain"]["name"] == "kubernetes"
+    assert checks["kubernetes_domain"]["status"] == "ok"
+    assert checks["kubernetes_backend"]["status"] == "warn"
+    assert checks["kubernetes_capabilities"]["status"] == "ok"
+    assert checks["cluster_inspection"]["status"] == "ok"
+    assert checks["workload_inspection"]["status"] == "ok"
+    assert payload["observations"]["cluster_inspection"]["capability"] == "inspect_cluster"
+    assert payload["observations"]["workload_inspection"]["resource"] == "deployment/api"
+
+
+@pytest.mark.asyncio
+async def test_cli_kubernetes_preflight_can_skip_cluster_inspection() -> None:
+    output = StringIO()
+
+    status = await run_cli(["kubernetes", "preflight", "--skip-cluster"], stdout=output)
+    payload = read_json(output)
+    checks = {item["name"]: item for item in payload["checks"]}
+
+    assert status == 0
+    assert payload["status"] == "ok"
+    assert checks["cluster_inspection"]["status"] == "skipped"
+    assert payload["observations"] == {}
+
+
+@pytest.mark.asyncio
 async def test_cli_tui_renders_runtime_service_snapshot() -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     run_output = StringIO()
