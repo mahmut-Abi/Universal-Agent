@@ -56,6 +56,7 @@ from universal_agent.agentd.app import (
 from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
 from universal_agent.core import (
     ActionId,
+    CapabilityCategory,
     CapabilitySummary,
     Decision,
     DecisionContext,
@@ -653,6 +654,7 @@ def build_parser() -> argparse.ArgumentParser:
     kubernetes_run.add_argument("--workload", required=True)
     kubernetes_run.add_argument("--namespace")
     kubernetes_run.add_argument("--skip-preflight", action="store_true")
+    kubernetes_run.add_argument("--skip-model-probe", action="store_true")
     kubernetes_run.add_argument("--skip-cluster", action="store_true")
 
     tui = commands.add_parser("tui")
@@ -1297,14 +1299,30 @@ async def _dispatch_kubernetes(
             raise CliExit(1)
         return
     if command == "run":
+        model_probe_report: JsonMapping | None = None
         preflight_report: JsonMapping | None = None
         if not cast(bool, args.skip_preflight):
+            if not cast(bool, args.skip_model_probe):
+                model_probe_report = await _kubernetes_model_probe_report(args, service)
+                if model_probe_report["status"] == "failed":
+                    _write_json(
+                        out,
+                        _kubernetes_run_model_probe_failed_body(args, model_probe_report),
+                    )
+                    raise CliExit(1)
             preflight_report = await _kubernetes_preflight_report(args, service)
             if preflight_report["status"] == "failed":
-                _write_json(out, _kubernetes_run_preflight_failed_body(args, preflight_report))
+                _write_json(
+                    out,
+                    _kubernetes_run_preflight_failed_body(
+                        args,
+                        preflight_report,
+                        model_probe_report,
+                    ),
+                )
                 raise CliExit(1)
         run = await _run_kubernetes_remediation(args, service)
-        _write_json(out, _kubernetes_run_body(args, run, preflight_report))
+        _write_json(out, _kubernetes_run_body(args, run, preflight_report, model_probe_report))
         return
     raise ValueError(f"unknown kubernetes command: {command}")
 
@@ -1580,12 +1598,16 @@ def _kubernetes_probe_decision(workload: str, namespace: str | None) -> Decision
 
 def _validate_probe_decision(decision: Decision, context: DecisionContext) -> str | None:
     if decision.type is not DecisionType.EXECUTE:
-        return None
+        return "Kubernetes model probe must return an execute Decision"
     capability = decision.capability or ""
     capabilities = {item.name: item for item in context.capabilities}
     summary = capabilities.get(capability)
     if summary is None:
         return f"capability is not available in Kubernetes probe context: {capability}"
+    if summary.category is not CapabilityCategory.OBSERVATION:
+        return "Kubernetes model probe must use a read-only inspection capability"
+    if capability != "inspect_workload":
+        return "Kubernetes model probe must start with inspect_workload"
     argument_error = validate_argument_contract(
         required_arguments=summary.required_arguments,
         argument_schema=summary.argument_schema,
@@ -1593,7 +1615,50 @@ def _validate_probe_decision(decision: Decision, context: DecisionContext) -> st
     )
     if argument_error is not None:
         return f"arguments for capability {capability}: {argument_error}"
+    expected_workload = _expected_success_criterion(context, "resource")
+    if expected_workload is not None:
+        target = decision.target
+        if isinstance(target, str) and target.strip():
+            target_resource = _normal_probe_workload(target, "target")
+            if target_resource != expected_workload:
+                return (
+                    "Kubernetes model probe target is outside the requested workload scope: "
+                    f"{target_resource}"
+                )
+        name = decision.arguments.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return "Kubernetes model probe inspect_workload requires a name argument"
+        argument_resource = _normal_probe_workload(name, "arguments.name")
+        if argument_resource != expected_workload:
+            return (
+                "Kubernetes model probe name is outside the requested workload scope: "
+                f"{argument_resource}"
+            )
+    expected_namespace = _expected_success_criterion(context, "namespace")
+    if expected_namespace is not None:
+        namespace = decision.arguments.get("namespace")
+        if namespace != expected_namespace:
+            return (
+                "Kubernetes model probe namespace is outside the requested workload scope: "
+                f"{namespace}"
+            )
     return None
+
+
+def _expected_success_criterion(context: DecisionContext, key: str) -> str | None:
+    for criterion in context.goal_success_criteria:
+        if criterion.key != key:
+            continue
+        if isinstance(criterion.expected, str) and criterion.expected.strip():
+            return criterion.expected.strip()
+    return None
+
+
+def _normal_probe_workload(value: str, field_name: str) -> str:
+    try:
+        return _kubernetes_workload_resource(value)
+    except ValueError as exc:
+        raise ValueError(f"Kubernetes model probe {field_name} is invalid: {exc}") from exc
 
 
 def _kubernetes_operation_body(
@@ -1825,6 +1890,7 @@ def _kubernetes_run_body(
     args: argparse.Namespace,
     run: RuntimeRun,
     preflight: JsonMapping | None,
+    model_probe: JsonMapping | None,
 ) -> JsonMapping:
     profile_config = cast(str | None, args.profile_config)
     return immutable_json(
@@ -1835,6 +1901,7 @@ def _kubernetes_run_body(
                 "workload": _kubernetes_workload_resource(cast(str, args.workload)),
                 "namespace": _optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
             },
+            "model_probe": None if model_probe is None else dict(model_probe),
             "preflight": None if preflight is None else dict(preflight),
             "run": dict(runtime_run_body(run)),
             "next_step": _kubernetes_run_next_step(run, profile_config),
@@ -1842,9 +1909,9 @@ def _kubernetes_run_body(
     )
 
 
-def _kubernetes_run_preflight_failed_body(
+def _kubernetes_run_model_probe_failed_body(
     args: argparse.Namespace,
-    preflight: JsonMapping,
+    model_probe: JsonMapping,
 ) -> JsonMapping:
     return immutable_json(
         {
@@ -1854,6 +1921,33 @@ def _kubernetes_run_preflight_failed_body(
                 "workload": _kubernetes_workload_resource(cast(str, args.workload)),
                 "namespace": _optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
             },
+            "model_probe": dict(model_probe),
+            "preflight": None,
+            "run": None,
+            "next_step": {
+                "type": "fix_model_provider",
+                "message": (
+                    "Fix model probe failure before Kubernetes preflight or remediation."
+                ),
+            },
+        }
+    )
+
+
+def _kubernetes_run_preflight_failed_body(
+    args: argparse.Namespace,
+    preflight: JsonMapping,
+    model_probe: JsonMapping | None,
+) -> JsonMapping:
+    return immutable_json(
+        {
+            "status": "failed",
+            "operation": {
+                "profile": cast(str, args.profile),
+                "workload": _kubernetes_workload_resource(cast(str, args.workload)),
+                "namespace": _optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
+            },
+            "model_probe": None if model_probe is None else dict(model_probe),
             "preflight": dict(preflight),
             "run": None,
             "next_step": {

@@ -43,7 +43,10 @@ report and exits with status `1`.
 Use `kubernetes model-probe` first when validating a new OpenAI-compatible model
 endpoint. It calls the configured model once with a Kubernetes remediation
 Decision context, validates the returned structured Decision locally, and never
-executes Kubernetes tools.
+executes Kubernetes tools. The probe requires a first `inspect_workload`
+Decision scoped to the requested workload and namespace; syntactically valid
+Decisions that try to finish, mutate, or inspect a different workload fail before
+cluster preflight.
 
 ```bash
 .venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes model-probe production-operator --workload deployment/api --namespace prod
@@ -63,14 +66,18 @@ contract is valid.
 ```
 
 Use `kubernetes run` for the first production-oriented Kubernetes flow. It runs
-preflight by default, submits a health-remediation goal scoped to the requested
-workload and namespace, and returns the normal runtime session body plus a
-focused `next_step` for operators. If the model proposes `scale_workload`
-outside that requested scope, deterministic Kubernetes policy denies it before
-tool execution.
+model probe and preflight by default, submits a health-remediation goal scoped
+to the requested workload and namespace, and returns the normal runtime session
+body plus a focused `next_step` for operators. Use `--skip-model-probe` only
+when intentionally reusing a recently validated model endpoint while still
+running Kubernetes preflight. Use `--skip-preflight` only when intentionally
+skipping all pre-run checks. If the model proposes `scale_workload` outside that
+requested scope during the Runtime run, deterministic Kubernetes policy denies
+it before tool execution.
 
 ```bash
 .venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes run production-operator --workload deployment/api --namespace prod
+.venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes run production-operator --workload deployment/api --namespace prod --skip-model-probe
 .venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes run production-operator --workload deployment/api --namespace prod --skip-preflight
 ```
 

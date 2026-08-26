@@ -53,9 +53,12 @@ The command must:
 
 - support a model-only probe that calls the configured model once, validates the
   returned Decision, and executes no Kubernetes tools;
+- require the model probe Decision to be a scoped read-only `inspect_workload`
+  action for the requested workload and namespace;
 - support a pre-run check that runs model probe before Kubernetes preflight and
   stops before cluster inspection if the model contract fails;
-- run Kubernetes preflight first unless `--skip-preflight` is explicit;
+- run model probe and Kubernetes preflight before Runtime submission unless
+  `--skip-preflight` is explicit;
 - construct a Runtime-owned `Goal` with `healthy=true`, `resource=<workload>`,
   and optional `namespace=<namespace>` success criteria;
 - construct a `Task` that names the workload and namespace;
@@ -63,7 +66,8 @@ The command must:
 - deny `scale_workload` before tool execution if the model proposes a resource
   or namespace outside the requested workload scope;
 - keep production mutations paused for explicit confirmation;
-- return the normal runtime run body plus a focused operator `next_step`;
+- return the normal runtime run body plus model probe, preflight, and a focused
+  operator `next_step`;
 - avoid storing or printing secret values.
 
 ## Non-Scope
@@ -102,8 +106,8 @@ Tests target these public interfaces:
    credentials, response format, and Decision JSON before cluster inspection.
 4. Add `agent kubernetes check` as the single production pre-run gate over model
    probe and Kubernetes preflight.
-5. Run preflight before the runtime loop by default, and fail before goal
-   submission if preflight checks fail.
+5. Run model probe and preflight before the runtime loop by default, and fail
+   before goal submission if either gate fails.
 6. Enforce requested workload scope in deterministic Kubernetes mutation policy.
 7. Return an explicit `confirm_pending_action` next step when production policy
    pauses a remediation mutation.
@@ -123,8 +127,8 @@ Tests target these public interfaces:
     --namespace prod
   ```
 
-- Model probe returns a validated Decision or a structured model failure without
-  executing any Kubernetes backend action.
+- Model probe returns a validated scoped `inspect_workload` Decision or a
+  structured model failure without executing any Kubernetes backend action.
 - A Kubernetes profile can run:
 
   ```bash
@@ -145,6 +149,8 @@ Tests target these public interfaces:
     --namespace prod
   ```
 
+- Failed model probe returns status `failed`, skips preflight, and submits no
+  Runtime session.
 - Failed preflight returns status `failed` and no Runtime session is submitted.
 - The runtime denies scoped Kubernetes mutations whose target resource or
   namespace differs from the `kubernetes run` request.

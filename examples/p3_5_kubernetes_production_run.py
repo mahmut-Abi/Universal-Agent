@@ -27,6 +27,7 @@ async def main() -> None:
         stdout=output,
     )
     payload = read_json(output.getvalue())
+    model_probe = cast(dict[str, Any], payload["model_probe"])
     run = cast(dict[str, Any], payload["run"])
     result = cast(dict[str, Any], run["result"])
     session = cast(dict[str, Any], run["session"])
@@ -34,11 +35,13 @@ async def main() -> None:
     assert status == 0
     assert payload["status"] == "completed"
     assert payload["operation"]["workload"] == "deployment/example"
+    assert model_probe["status"] == "ok"
     assert result["status"] == "completed"
     print(
         json.dumps(
             {
                 "status": payload["status"],
+                "model_probe": model_probe["status"],
                 "session_id": session["session_id"],
                 "goal": session["goal_description"],
             },

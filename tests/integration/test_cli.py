@@ -11,6 +11,7 @@ from xml.etree.ElementTree import fromstring
 
 import pytest
 
+import universal_agent.cli as cli_module
 from universal_agent import (
     AgentProfile,
     AgentRuntime,
@@ -1497,6 +1498,70 @@ async def test_cli_kubernetes_model_probe_validates_decision_without_cluster_act
 
 
 @pytest.mark.asyncio
+async def test_cli_kubernetes_model_probe_rejects_out_of_scope_workload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile_path = tmp_path / "profile.json"
+    init_output = StringIO()
+    probe_output = StringIO()
+    bad_decision = Decision(
+        DecisionType.EXECUTE,
+        "Return a valid but out-of-scope workload inspection.",
+        capability="inspect_workload",
+        target="deployment/other",
+        arguments=immutable_json({"name": "other", "namespace": "prod"}),
+        expected_observations=("healthy", "resource", "namespace"),
+    )
+
+    def fake_build_configured_model_adapter(*args: Any, **kwargs: Any) -> ScriptedModelAdapter:
+        return ScriptedModelAdapter([bad_decision])
+
+    monkeypatch.setattr(
+        cli_module,
+        "build_configured_model_adapter",
+        fake_build_configured_model_adapter,
+    )
+    init_status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--profile",
+            "production-operator",
+        ],
+        stdout=init_output,
+    )
+    probe_status = await run_cli(
+        [
+            "--profile-config",
+            str(profile_path),
+            "kubernetes",
+            "model-probe",
+            "production-operator",
+            "--workload",
+            "deployment/api",
+            "--namespace",
+            "prod",
+        ],
+        stdout=probe_output,
+    )
+    payload = read_json(probe_output)
+
+    assert init_status == 0
+    assert probe_status == 1
+    assert payload["status"] == "failed"
+    assert payload["operation"] == {
+        "profile": "production-operator",
+        "workload": "deployment/api",
+        "namespace": "prod",
+    }
+    assert payload["error"]["type"] == "ValueError"
+    assert "target is outside the requested workload scope" in payload["error"]["message"]
+    assert payload["next_step"]["type"] == "fix_model_provider"
+
+
+@pytest.mark.asyncio
 async def test_cli_kubernetes_model_probe_reports_missing_model_secret(
     tmp_path: Path,
 ) -> None:
@@ -1775,10 +1840,71 @@ async def test_cli_kubernetes_run_stops_before_runtime_when_preflight_fails() ->
 
     assert status == 1
     assert payload["status"] == "failed"
+    assert payload["model_probe"]["status"] == "ok"
     assert payload["run"] is None
     assert payload["next_step"]["type"] == "fix_preflight"
     assert checks["model_secret"]["status"] == "failed"
     assert backend.inspect_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_cli_kubernetes_run_stops_before_preflight_when_model_probe_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile_path = tmp_path / "profile.json"
+    init_output = StringIO()
+    run_output = StringIO()
+    bad_decision = Decision(
+        DecisionType.EXECUTE,
+        "Return a valid but out-of-scope workload inspection.",
+        capability="inspect_workload",
+        target="deployment/other",
+        arguments=immutable_json({"name": "other", "namespace": "prod"}),
+        expected_observations=("healthy", "resource", "namespace"),
+    )
+
+    def fake_build_configured_model_adapter(*args: Any, **kwargs: Any) -> ScriptedModelAdapter:
+        return ScriptedModelAdapter([bad_decision])
+
+    monkeypatch.setattr(
+        cli_module,
+        "build_configured_model_adapter",
+        fake_build_configured_model_adapter,
+    )
+    init_status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--profile",
+            "production-operator",
+        ],
+        stdout=init_output,
+    )
+    run_status = await run_cli(
+        [
+            "--profile-config",
+            str(profile_path),
+            "kubernetes",
+            "run",
+            "production-operator",
+            "--workload",
+            "deployment/api",
+            "--namespace",
+            "prod",
+        ],
+        stdout=run_output,
+    )
+    payload = read_json(run_output)
+
+    assert init_status == 0
+    assert run_status == 1
+    assert payload["status"] == "failed"
+    assert payload["model_probe"]["status"] == "failed"
+    assert payload["preflight"] is None
+    assert payload["run"] is None
+    assert payload["next_step"]["type"] == "fix_model_provider"
 
 
 @pytest.mark.asyncio
