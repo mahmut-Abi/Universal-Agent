@@ -173,6 +173,117 @@ class JsonHttpModelAdapter:
         return immutable_json(payload)
 
 
+class OpenAIResponsesModelAdapter:
+    """OpenAI Responses API adapter that returns runtime-owned Decisions.
+
+    The adapter uses Responses structured output to ask the provider for a
+    JSON Decision payload, then still validates the decoded Decision locally.
+    It does not expose OpenAI tools to the model; Runtime capability selection,
+    policy and Tool execution remain owned by the Universal Agent Runtime.
+    """
+
+    DEFAULT_ENDPOINT = "https://api.openai.com/v1/responses"
+
+    def __init__(
+        self,
+        model: str,
+        *,
+        api_key: str,
+        endpoint: str = DEFAULT_ENDPOINT,
+        extra_headers: Mapping[str, str] | None = None,
+        timeout_seconds: float = 30.0,
+        transport: JsonHttpModelTransport | None = None,
+    ) -> None:
+        if not model.strip():
+            raise ValueError("model name must not be empty")
+        if not api_key.strip():
+            raise ValueError("OpenAI API key must not be empty")
+        if not endpoint.strip():
+            raise ValueError("OpenAI responses endpoint must not be empty")
+        if timeout_seconds <= 0:
+            raise ValueError("model timeout_seconds must be positive")
+        _validate_headers(extra_headers or {})
+        self._model = model
+        self._api_key = api_key
+        self._endpoint = endpoint
+        self._extra_headers = dict(extra_headers or {})
+        self._timeout_seconds = timeout_seconds
+        self._transport = transport or StdlibJsonHttpTransport()
+        self._last_usage: ModelUsage | None = None
+
+    async def decide(self, context: DecisionContext) -> Decision:
+        response = await self._transport.post_json(
+            self._endpoint,
+            headers=self._headers(),
+            payload=self._request_payload(context),
+            timeout_seconds=self._timeout_seconds,
+        )
+        _raise_for_openai_response_status(response)
+        output_text = _openai_output_text(response)
+        try:
+            decoded = json.loads(output_text)
+        except json.JSONDecodeError as exc:
+            raise JsonHttpModelError(f"OpenAI response output_text was not JSON: {exc}") from exc
+        decision_payload = _decision_payload(_json_mapping(decoded, "output_text"))
+        try:
+            decision = _decode_decision(decision_payload)
+            decision.validate()
+        except ValueError as exc:
+            raise JsonHttpModelError(f"invalid OpenAI model decision: {exc}") from exc
+        self._last_usage = _decode_usage(
+            "openai_responses",
+            self._model,
+            response.get("usage"),
+        )
+        return decision
+
+    def model_usage(self) -> ModelUsage | None:
+        return self._last_usage
+
+    def _headers(self) -> Mapping[str, str]:
+        return {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self._api_key}",
+            **self._extra_headers,
+        }
+
+    def _request_payload(self, context: DecisionContext) -> JsonMapping:
+        context_payload = _decision_context_payload(context)
+        prompt = {
+            "runtime_contract": (
+                "Return exactly one Universal Agent Runtime Decision. "
+                "Use execute only for one available capability. "
+                "Use finish only when the runtime context shows required criteria are satisfied. "
+                "Do not claim tool execution or task completion in prose."
+            ),
+            "context": dict(context_payload),
+        }
+        payload: dict[str, JsonValue] = {
+            "model": self._model,
+            "store": False,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": json.dumps(prompt, sort_keys=True, separators=(",", ":")),
+                        }
+                    ],
+                }
+            ],
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "universal_agent_decision",
+                    "strict": True,
+                    "schema": _openai_decision_json_schema(),
+                }
+            },
+        }
+        return immutable_json(payload)
+
+
 def _decision_context_payload(context: DecisionContext) -> JsonMapping:
     payload: dict[str, JsonValue] = {
         "session_id": str(context.session_id),
@@ -281,6 +392,73 @@ def _decode_usage(provider: str, model: str, value: JsonValue) -> ModelUsage | N
         estimated_cost_micros=estimated_cost_micros,
         currency=currency,
     )
+
+
+def _raise_for_openai_response_status(response: JsonMapping) -> None:
+    status = response.get("status")
+    if status is None or status == "completed":
+        return
+    if not isinstance(status, str):
+        raise JsonHttpModelError("OpenAI response status must be a string")
+    detail = response.get("error") or response.get("incomplete_details")
+    suffix = f": {detail}" if detail is not None else ""
+    raise JsonHttpModelError(f"OpenAI response did not complete: {status}{suffix}")
+
+
+def _openai_output_text(response: JsonMapping) -> str:
+    direct = response.get("output_text")
+    if isinstance(direct, str) and direct.strip():
+        return direct
+    output = response.get("output")
+    if not isinstance(output, list):
+        raise JsonHttpModelError("OpenAI response missing output_text")
+    parts: list[str] = []
+    for item in output:
+        if not isinstance(item, Mapping):
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for content_item in content:
+            if not isinstance(content_item, Mapping):
+                continue
+            if content_item.get("type") != "output_text":
+                continue
+            text = content_item.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+    output_text = "".join(parts).strip()
+    if not output_text:
+        raise JsonHttpModelError("OpenAI response missing output_text")
+    return output_text
+
+
+def _openai_decision_json_schema() -> dict[str, JsonValue]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "type",
+            "reason",
+            "capability",
+            "target",
+            "arguments",
+            "expected_observations",
+            "message",
+        ],
+        "properties": {
+            "type": {"type": "string", "enum": [item.value for item in DecisionType]},
+            "reason": {"type": "string", "minLength": 1},
+            "capability": {"type": ["string", "null"]},
+            "target": {"type": ["string", "null"]},
+            "arguments": {"type": "object", "additionalProperties": True},
+            "expected_observations": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+            },
+            "message": {"type": ["string", "null"]},
+        },
+    }
 
 
 def _required_string(payload: JsonMapping, field_name: str) -> str:

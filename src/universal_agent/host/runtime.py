@@ -31,6 +31,7 @@ from universal_agent.model import (
     JsonHttpModelTransport,
     ModelAdapter,
     ModelUsage,
+    OpenAIResponsesModelAdapter,
     ScriptedModelAdapter,
 )
 from universal_agent.persistence import FileRuntimeStore, SQLiteRuntimeStore
@@ -81,6 +82,18 @@ def build_configured_model_adapter(
             config.model.name,
             provider=config.model.provider.value,
             api_key=_configured_model_api_key(config, secret_provider),
+            extra_headers=_configured_model_headers(config),
+            timeout_seconds=config.model.timeout_seconds,
+            transport=json_http_transport,
+        )
+    if config.model.provider is ModelProvider.OPENAI_RESPONSES:
+        api_key = _configured_model_api_key(config, secret_provider)
+        if api_key is None:
+            raise ValueError("openai_responses model requires resolved api_key_secret")
+        return OpenAIResponsesModelAdapter(
+            config.model.name,
+            api_key=api_key,
+            endpoint=config.model.endpoint or OpenAIResponsesModelAdapter.DEFAULT_ENDPOINT,
             extra_headers=_configured_model_headers(config),
             timeout_seconds=config.model.timeout_seconds,
             transport=json_http_transport,

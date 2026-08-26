@@ -23,6 +23,7 @@ from universal_agent.model import (
     JsonHttpModelAdapter,
     JsonHttpModelError,
     ModelUsage,
+    OpenAIResponsesModelAdapter,
     model_usage,
 )
 
@@ -188,3 +189,148 @@ def test_json_http_model_adapter_validates_configuration() -> None:
             "runtime-model",
             extra_headers={"X-Test\n": "bad"},
         )
+
+
+@pytest.mark.asyncio
+async def test_openai_responses_model_adapter_posts_structured_output_request() -> None:
+    transport = RecordingTransport(
+        immutable_json(
+            {
+                "status": "completed",
+                "output_text": json_text(
+                    {
+                        "type": "execute",
+                        "reason": "Need current workload health.",
+                        "capability": "inspect_workload",
+                        "target": "deployment/api",
+                        "arguments": {"name": "api", "namespace": "prod"},
+                        "expected_observations": ["healthy", "ready_replicas"],
+                        "message": None,
+                    }
+                ),
+                "usage": {
+                    "input_tokens": 120,
+                    "output_tokens": 30,
+                },
+            }
+        )
+    )
+    adapter = OpenAIResponsesModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        endpoint="https://api.openai.example.test/v1/responses",
+        extra_headers={"OpenAI-Organization": "org-test"},
+        timeout_seconds=5.0,
+        transport=transport,
+    )
+
+    decision = await adapter.decide(context())
+
+    assert decision.type is DecisionType.EXECUTE
+    assert decision.capability == "inspect_workload"
+    assert decision.arguments == {"name": "api", "namespace": "prod"}
+    assert model_usage(adapter) == ModelUsage(
+        "openai_responses",
+        "gpt-runtime",
+        input_tokens=120,
+        output_tokens=30,
+    )
+    request = transport.requests[0]
+    assert request.url == "https://api.openai.example.test/v1/responses"
+    assert request.headers["Authorization"] == "Bearer openai-secret"
+    assert request.headers["OpenAI-Organization"] == "org-test"
+    assert request.payload["model"] == "gpt-runtime"
+    assert request.payload["store"] is False
+    text = cast(Mapping[str, JsonValue], request.payload["text"])
+    text_format = cast(Mapping[str, JsonValue], text["format"])
+    assert text_format["type"] == "json_schema"
+    assert text_format["strict"] is True
+    schema = cast(Mapping[str, JsonValue], text_format["schema"])
+    assert schema["additionalProperties"] is False
+    input_items = cast(list[JsonValue], request.payload["input"])
+    first_input = cast(Mapping[str, JsonValue], input_items[0])
+    content = cast(list[JsonValue], first_input["content"])
+    input_text = cast(Mapping[str, JsonValue], content[0])
+    assert input_text["type"] == "input_text"
+    assert "Verify workload health" in cast(str, input_text["text"])
+
+
+@pytest.mark.asyncio
+async def test_openai_responses_model_adapter_reads_output_array_text() -> None:
+    adapter = OpenAIResponsesModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        transport=RecordingTransport(
+            immutable_json(
+                {
+                    "status": "completed",
+                    "output": [
+                        {
+                            "type": "message",
+                            "content": [
+                                {
+                                    "type": "output_text",
+                                    "text": json_text(
+                                        {
+                                            "type": "finish",
+                                            "reason": "All criteria satisfied.",
+                                            "capability": None,
+                                            "target": None,
+                                            "arguments": {},
+                                            "expected_observations": [],
+                                            "message": None,
+                                        }
+                                    ),
+                                }
+                            ],
+                        }
+                    ],
+                }
+            )
+        ),
+    )
+
+    decision = await adapter.decide(context())
+
+    assert decision.type is DecisionType.FINISH
+    assert decision.reason == "All criteria satisfied."
+
+
+@pytest.mark.asyncio
+async def test_openai_responses_model_adapter_rejects_incomplete_response() -> None:
+    adapter = OpenAIResponsesModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        transport=RecordingTransport(
+            immutable_json(
+                {
+                    "status": "incomplete",
+                    "incomplete_details": {"reason": "max_output_tokens"},
+                }
+            )
+        ),
+    )
+
+    with pytest.raises(JsonHttpModelError, match="did not complete"):
+        await adapter.decide(context())
+
+
+def test_openai_responses_model_adapter_validates_configuration() -> None:
+    with pytest.raises(ValueError, match="model name"):
+        OpenAIResponsesModelAdapter("", api_key="secret")
+    with pytest.raises(ValueError, match="API key"):
+        OpenAIResponsesModelAdapter("gpt-runtime", api_key=" ")
+    with pytest.raises(ValueError, match="endpoint"):
+        OpenAIResponsesModelAdapter("gpt-runtime", api_key="secret", endpoint="")
+    with pytest.raises(ValueError, match="headers"):
+        OpenAIResponsesModelAdapter(
+            "gpt-runtime",
+            api_key="secret",
+            extra_headers={"X-Test": "bad\n"},
+        )
+
+
+def json_text(payload: Mapping[str, object]) -> str:
+    import json
+
+    return json.dumps(payload, sort_keys=True)

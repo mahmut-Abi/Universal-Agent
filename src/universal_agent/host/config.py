@@ -23,6 +23,7 @@ class SecretSource(StrEnum):
 class ModelProvider(StrEnum):
     SCRIPTED = "scripted"
     JSON_HTTP = "json_http"
+    OPENAI_RESPONSES = "openai_responses"
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +179,25 @@ class ModelConfig:
         )
 
     @classmethod
+    def openai_responses(
+        cls,
+        *,
+        name: str,
+        api_key_secret: str,
+        endpoint: str | None = None,
+        timeout_seconds: float = 30.0,
+        headers: Mapping[str, str] | None = None,
+    ) -> ModelConfig:
+        return cls(
+            ModelProvider.OPENAI_RESPONSES,
+            name,
+            endpoint,
+            api_key_secret,
+            timeout_seconds,
+            immutable_json(dict(headers or {})),
+        )
+
+    @classmethod
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> ModelConfig:
         config = cls(
             provider=ModelProvider(
@@ -209,6 +229,12 @@ class ModelConfig:
                 raise ValueError("json_http model requires endpoint")
             if self.api_key_secret is not None and not self.api_key_secret.strip():
                 raise ValueError("model api_key_secret must not be empty")
+            return
+        if self.provider is ModelProvider.OPENAI_RESPONSES:
+            if self.endpoint is not None and not self.endpoint.strip():
+                raise ValueError("openai_responses model endpoint must not be empty")
+            if self.api_key_secret is None or not self.api_key_secret.strip():
+                raise ValueError("openai_responses model requires api_key_secret")
             return
         raise ValueError(f"unsupported model provider: {self.provider}")
 

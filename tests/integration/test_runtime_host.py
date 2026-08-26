@@ -67,6 +67,34 @@ class HostModelTransport:
         )
 
 
+class OpenAIHostModelTransport:
+    def __init__(self) -> None:
+        self.headers: dict[str, str] = {}
+        self.payloads: list[JsonMapping] = []
+
+    async def post_json(
+        self,
+        url: str,
+        *,
+        headers: JsonMapping,
+        payload: JsonMapping,
+        timeout_seconds: float,
+    ) -> JsonMapping:
+        self.headers = {key: str(value) for key, value in headers.items()}
+        self.payloads.append(payload)
+        return immutable_json(
+            {
+                "status": "completed",
+                "output_text": (
+                    '{"arguments":{},"capability":null,"expected_observations":[],'
+                    '"message":null,"reason":"openai host model completed",'
+                    '"target":null,"type":"finish"}'
+                ),
+                "usage": {"input_tokens": 7, "output_tokens": 3},
+            }
+        )
+
+
 def model_context() -> DecisionContext:
     return DecisionContext(
         session_id=SessionId("session-model"),
@@ -228,6 +256,34 @@ async def test_runtime_host_builds_json_http_model_from_file_secret_ref(
     assert decision.reason == "host model completed"
     assert transport.headers["Authorization"] == "Bearer file-secret-value"
     assert "file-secret-value" not in str(config)
+
+
+@pytest.mark.asyncio
+async def test_runtime_host_builds_openai_responses_model_from_config_secret_ref() -> None:
+    transport = OpenAIHostModelTransport()
+    config = RuntimeConfig(
+        secrets=(SecretRef.env("openai_api_key", "OPENAI_API_KEY"),),
+        model=ModelConfig.openai_responses(
+            name="gpt-runtime",
+            api_key_secret="openai_api_key",
+            timeout_seconds=4.5,
+            headers={"OpenAI-Organization": "org-test"},
+        ),
+    )
+    adapter = build_configured_model_adapter(
+        config,
+        secret_provider=EnvSecretProvider({"OPENAI_API_KEY": "secret-value"}),
+        json_http_transport=transport,
+    )
+
+    decision = await adapter.decide(model_context())
+
+    assert decision.reason == "openai host model completed"
+    assert transport.headers["Authorization"] == "Bearer secret-value"
+    assert transport.headers["OpenAI-Organization"] == "org-test"
+    assert transport.payloads[0]["model"] == "gpt-runtime"
+    assert transport.payloads[0]["store"] is False
+    assert "secret-value" not in str(config)
 
 
 def test_runtime_host_builds_scripted_model_from_default_config() -> None:

@@ -274,7 +274,9 @@ detect accidental split state/event wiring. These adapters are local persistence
   embedding SDK facade with SDK-owned goal/task/result contracts over `RuntimeService`.
   `JsonHttpModelAdapter` adds a dependency-free
   provider bridge for HTTP endpoints that accept compiled runtime context JSON and return structured
-  `Decision` JSON plus optional token/cost usage.
+  `Decision` JSON plus optional token/cost usage. `OpenAIResponsesModelAdapter` adds a direct
+  dependency-free OpenAI Responses provider path that requests structured `Decision` JSON and still
+  validates the decoded decision locally before the Runtime acts.
 - P3.6/P3.7 foundation: event-derived `metrics`, Prometheus metrics text export, `cost`, `logs`,
   `traces`, OTLP trace export, `doctor` and `audit` projections exposed through RuntimeService,
   agentd-shaped routes and CLI commands, plus optional
@@ -495,6 +497,8 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_5_runtime_api.py
 .venv/bin/python examples/p3_5_runtime_service.py
 .venv/bin/python examples/p3_5_runtime_sdk.py
+.venv/bin/python examples/p3_5_json_http_model_adapter.py
+.venv/bin/python examples/p3_5_openai_responses_model.py
 .venv/bin/python examples/p3_5_agentd_routes.py
 .venv/bin/python examples/p3_5_agentd_auth.py
 .venv/bin/python examples/p3_5_persistence.py

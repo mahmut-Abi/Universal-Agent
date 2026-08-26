@@ -30,6 +30,7 @@ references:
 
 ```bash
 .venv/bin/python -m universal_agent.cli init --model-provider json_http --model-endpoint https://model-bridge.example/decide --model-api-key-file /run/secrets/model-api-key
+.venv/bin/python -m universal_agent.cli init --model-provider openai_responses --model-name gpt-runtime --model-api-key-env OPENAI_API_KEY
 .venv/bin/python -m universal_agent.cli init --domain-backend kubernetes_api --kubernetes-api-server https://cluster.example.test --kubernetes-api-token-file /run/secrets/kubernetes-token
 ```
 
@@ -100,11 +101,12 @@ See `examples/p3_5_runtime_sdk.py` for a complete local embedding example.
 ## Runtime Configuration
 
 Profile runtime config can declare a model provider without storing credentials.
-The current built-in providers are `scripted` for deterministic local runs and
-`json_http` for dependency-free HTTP model bridges. JSON HTTP model config stores
-only endpoint/model metadata plus an optional `api_key_secret` reference; the
-secret value is resolved by `RuntimeHost` from the declared `secrets` block and
-is never returned by `config show` or `/v1/config`. Built-in secret references
+The current built-in providers are `scripted` for deterministic local runs,
+`json_http` for dependency-free HTTP model bridges, and `openai_responses` for
+direct OpenAI Responses structured decision output. Model config stores only
+endpoint/model metadata plus an optional `api_key_secret` reference; the secret
+value is resolved by `RuntimeHost` from the declared `secrets` block and is
+never returned by `config show` or `/v1/config`. Built-in secret references
 support `env` keys and local `file` paths; both are projected as availability
 metadata only.
 
@@ -117,6 +119,23 @@ metadata only.
     "provider": "json_http",
     "name": "runtime-decider",
     "endpoint": "https://model-bridge.example/decide",
+    "api_key_secret": "openai_api_key",
+    "timeout_seconds": 30
+  }
+}
+```
+
+Direct OpenAI Responses config uses the same secret reference model. `endpoint`
+is optional and defaults to the OpenAI Responses endpoint when omitted.
+
+```json
+{
+  "secrets": {
+    "openai_api_key": {"source": "env", "key": "OPENAI_API_KEY", "required": true}
+  },
+  "model": {
+    "provider": "openai_responses",
+    "name": "gpt-runtime",
     "api_key_secret": "openai_api_key",
     "timeout_seconds": 30
   }

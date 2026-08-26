@@ -831,6 +831,69 @@ async def test_cli_init_can_write_json_http_model_file_secret_config(tmp_path: P
 
 
 @pytest.mark.asyncio
+async def test_cli_init_can_write_openai_responses_model_config(tmp_path: Path) -> None:
+    output = StringIO()
+    profile_path = tmp_path / "openai-profile.json"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--model-provider",
+            "openai_responses",
+            "--model-name",
+            "gpt-runtime",
+            "--model-api-key-env",
+            "OPENAI_API_KEY",
+            "--model-api-key-secret",
+            "openai_api_key",
+            "--model-timeout-seconds",
+            "4.5",
+            "--model-header",
+            "OpenAI-Organization=org-test",
+        ],
+        stdout=output,
+    )
+    profile = ProfileConfig.from_json_file(profile_path).to_profile()
+
+    assert status == 0
+    assert profile.runtime.secrets == (SecretRef.env("openai_api_key", "OPENAI_API_KEY"),)
+    assert profile.runtime.model == ModelConfig.openai_responses(
+        name="gpt-runtime",
+        api_key_secret="openai_api_key",
+        timeout_seconds=4.5,
+        headers={"OpenAI-Organization": "org-test"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_cli_init_openai_responses_requires_api_key_secret(tmp_path: Path) -> None:
+    output = StringIO()
+    error = StringIO()
+    profile_path = tmp_path / "openai-profile.json"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--model-provider",
+            "openai_responses",
+            "--model-name",
+            "gpt-runtime",
+        ],
+        stdout=output,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert output.getvalue() == ""
+    assert "openai_responses model requires model API key secret" in error.getvalue()
+    assert not profile_path.exists()
+
+
+@pytest.mark.asyncio
 async def test_cli_init_rejects_secret_env_and_file_together(tmp_path: Path) -> None:
     output = StringIO()
     error = StringIO()

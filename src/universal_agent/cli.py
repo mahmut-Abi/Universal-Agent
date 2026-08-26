@@ -541,7 +541,11 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--kubernetes-api-token-file")
     init.add_argument("--kubernetes-api-token-secret", default="kubernetes_api_token")
     init.add_argument("--kubernetes-api-timeout-seconds", type=float, default=10.0)
-    init.add_argument("--model-provider", choices=("scripted", "json_http"), default="scripted")
+    init.add_argument(
+        "--model-provider",
+        choices=("scripted", "json_http", "openai_responses"),
+        default="scripted",
+    )
     init.add_argument("--model-name", default="scripted")
     init.add_argument("--model-endpoint")
     init.add_argument("--model-api-key-env")
@@ -2043,11 +2047,19 @@ def _profile_model_config(
         if model_headers:
             raise ValueError("scripted model does not accept --model-header")
         return model
-    if model_provider != "json_http":
+    if model_provider == "json_http":
+        if model_endpoint is None or not model_endpoint.strip():
+            raise ValueError("json_http model requires --model-endpoint")
+        model["endpoint"] = model_endpoint
+    elif model_provider == "openai_responses":
+        if model_api_key_source is None:
+            raise ValueError("openai_responses model requires model API key secret")
+        if model_endpoint is not None:
+            if not model_endpoint.strip():
+                raise ValueError("openai_responses model endpoint must not be empty")
+            model["endpoint"] = model_endpoint
+    else:
         raise ValueError(f"unsupported model provider: {model_provider}")
-    if model_endpoint is None or not model_endpoint.strip():
-        raise ValueError("json_http model requires --model-endpoint")
-    model["endpoint"] = model_endpoint
     if model_api_key_source is not None:
         model["api_key_secret"] = model_api_key_secret
     if model_headers:

@@ -9,6 +9,7 @@ from universal_agent.model.http import (
     JsonHttpModelAdapter,
     JsonHttpModelError,
     JsonHttpModelTransport,
+    OpenAIResponsesModelAdapter,
     StdlibJsonHttpTransport,
 )
 
@@ -19,6 +20,7 @@ __all__ = [
     "ModelAdapter",
     "ModelUsage",
     "ModelUsageProvider",
+    "OpenAIResponsesModelAdapter",
     "ScriptedModelAdapter",
     "StdlibJsonHttpTransport",
     "model_usage",

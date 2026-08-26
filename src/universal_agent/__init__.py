@@ -176,6 +176,7 @@ from universal_agent.model import (
     ModelAdapter,
     ModelUsage,
     ModelUsageProvider,
+    OpenAIResponsesModelAdapter,
     ScriptedModelAdapter,
     StdlibJsonHttpTransport,
 )
@@ -502,6 +503,7 @@ __all__ = [
     "MultiAgentMergeEvaluator",
     "NoEligibleAgentError",
     "NoWorkAvailable",
+    "OpenAIResponsesModelAdapter",
     "ProfileCatalog",
     "ProfileCatalogCheck",
     "ProfileCatalogEntry",
