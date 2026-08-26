@@ -25,9 +25,9 @@ across the roadmap layers below:
 | P7 | Domain SDK, Domain Package registry/scaffold/runtime activation, Evaluation Dataset catalog, Profile Catalog, Ecosystem Registry metadata/install planning |
 
 The project is not yet a production cluster control plane. It does not provide
-cross-node high availability, production database migrations, a real model
-provider binding, real Kubernetes API remediation by default, or automatic
-external package installation.
+cross-node high availability, production database migrations, live provider CI,
+production credential management, real Kubernetes API remediation by default,
+or automatic external package installation.
 
 ## Documentation Map
 
@@ -35,6 +35,7 @@ external package installation.
 - [Developer Guide](developer-guide.md): setup, tests, examples, and contribution workflow.
 - [Domain SDK](domain-sdk.md): Domain authoring interfaces, package metadata and validation.
 - [Runtime Operator Guide](runtime-operator-guide.md): running the local CLI/agentd/runtime surfaces.
+- [Dependency Adoption Plan](dependency-adoption-plan.md): third-party library introduction plan, tiers, and roadmap.
 - [Revision Notes](revision/): dated status snapshots and implementation audits.
 
 ## Primary Commands
