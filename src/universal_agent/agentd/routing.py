@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from functools import cache
+from re import Pattern
 from urllib.parse import parse_qs, urlsplit
 
 from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
+from starlette.routing import compile_path
 
 from universal_agent.core import ActionId, EventId, JsonMapping, SessionId, TaskId
 from universal_agent.core.config_validation import ConfigPayload, PydanticJsonValue, json_mapping
@@ -244,77 +247,109 @@ def _optional_query_value(path: str, key: str) -> str | None:
     return value
 
 
+@cache
+def _compiled_route_path(template: str) -> Pattern[str]:
+    regex, _, _ = compile_path(template)
+    return regex
+
+
+def _match_path(path: str, template: str) -> Mapping[str, str] | None:
+    route_path = _route_path(path)
+    match = _compiled_route_path(template).match(route_path)
+    if match is None:
+        return None
+    return match.groupdict()
+
+
+def _route_path(path: str) -> str:
+    parsed_path = urlsplit(path).path
+    if not parsed_path.startswith("/"):
+        parsed_path = "/" + parsed_path
+    return "/" + "/".join(segment for segment in parsed_path.split("/") if segment)
+
+
+def _non_blank_path_param(params: Mapping[str, str], key: str) -> str | None:
+    value = params.get(key)
+    if value is None or not value.strip():
+        return None
+    return value
+
+
 def _session_route(path: str) -> tuple[SessionId | None, str]:
-    segments = tuple(segment for segment in path.split("/") if segment)
-    if len(segments) == 3 and segments[:2] == ("v1", "sessions"):
-        return SessionId(segments[2]), ""
-    if len(segments) == 4 and segments[:2] == ("v1", "sessions"):
-        return SessionId(segments[2]), segments[3]
-    if len(segments) == 5 and segments[:2] == ("v1", "sessions"):
-        return SessionId(segments[2]), f"{segments[3]}/{segments[4]}"
+    params = _match_path(path, "/v1/sessions/{session_id}")
+    if params is not None:
+        return SessionId(params["session_id"]), ""
+    params = _match_path(path, "/v1/sessions/{session_id}/{suffix}")
+    if params is not None:
+        return SessionId(params["session_id"]), params["suffix"]
+    params = _match_path(path, "/v1/sessions/{session_id}/{first_suffix}/{second_suffix}")
+    if params is not None:
+        suffix = f"{params['first_suffix']}/{params['second_suffix']}"
+        return SessionId(params["session_id"]), suffix
     return None, ""
 
 
 def _console_session_route(path: str) -> tuple[SessionId | None, str]:
-    segments = tuple(segment for segment in path.split("/") if segment)
-    if len(segments) == 3 and segments[:2] == ("console", "sessions") and segments[2].strip():
-        return SessionId(segments[2]), ""
-    if len(segments) == 4 and segments[:2] == ("console", "sessions") and segments[2].strip():
-        return SessionId(segments[2]), segments[3]
+    params = _match_path(path, "/console/sessions/{session_id}")
+    if params is not None:
+        session_id = _non_blank_path_param(params, "session_id")
+        if session_id is not None:
+            return SessionId(session_id), ""
+    params = _match_path(path, "/console/sessions/{session_id}/{suffix}")
+    if params is not None:
+        session_id = _non_blank_path_param(params, "session_id")
+        if session_id is not None:
+            return SessionId(session_id), params["suffix"]
     return None, ""
 
 
 def _console_catalog_route(path: str) -> WebCatalogPage | None:
-    segments = tuple(segment for segment in path.split("/") if segment)
-    if len(segments) != 2 or segments[0] != "console":
+    params = _match_path(path, "/console/{page}")
+    if params is None:
         return None
     try:
-        return WebCatalogPage(segments[1])
+        return WebCatalogPage(params["page"])
     except ValueError:
         return None
 
 
 def _console_domain_route(path: str) -> tuple[str | None, str | None]:
-    segments = tuple(segment for segment in path.split("/") if segment)
-    if len(segments) == 3 and segments[:2] == ("console", "domains") and segments[2].strip():
-        return segments[2], None
-    if (
-        len(segments) == 4
-        and segments[:2] == ("console", "domains")
-        and segments[2].strip()
-        and segments[3].strip()
-    ):
-        return segments[2], segments[3]
+    params = _match_path(path, "/console/domains/{name}")
+    if params is not None:
+        name = _non_blank_path_param(params, "name")
+        if name is not None:
+            return name, None
+    params = _match_path(path, "/console/domains/{name}/{version}")
+    if params is not None:
+        name = _non_blank_path_param(params, "name")
+        version = _non_blank_path_param(params, "version")
+        if name is not None and version is not None:
+            return name, version
     return None, None
 
 
 def _console_domain_package_route(path: str) -> tuple[str | None, str | None]:
-    segments = tuple(segment for segment in path.split("/") if segment)
-    if (
-        len(segments) == 3
-        and segments[:2] == ("console", "domain-packages")
-        and segments[2].strip()
-    ):
-        return segments[2], None
-    if (
-        len(segments) == 4
-        and segments[:2] == ("console", "domain-packages")
-        and segments[2].strip()
-        and segments[3].strip()
-    ):
-        return segments[2], segments[3]
+    params = _match_path(path, "/console/domain-packages/{name}")
+    if params is not None:
+        name = _non_blank_path_param(params, "name")
+        if name is not None:
+            return name, None
+    params = _match_path(path, "/console/domain-packages/{name}/{version}")
+    if params is not None:
+        name = _non_blank_path_param(params, "name")
+        version = _non_blank_path_param(params, "version")
+        if name is not None and version is not None:
+            return name, version
     return None, None
 
 
 def _distributed_lock_lease_route(path: str) -> tuple[DistributedLockLeaseId | None, str]:
-    segments = tuple(segment for segment in path.split("/") if segment)
-    if (
-        len(segments) == 5
-        and segments[:3] == ("v1", "distributed", "lock-leases")
-        and segments[3].strip()
-        and segments[4].strip()
-    ):
-        return DistributedLockLeaseId(segments[3]), segments[4]
+    params = _match_path(path, "/v1/distributed/lock-leases/{lease_id}/{action}")
+    if params is not None:
+        lease_id = _non_blank_path_param(params, "lease_id")
+        action = _non_blank_path_param(params, "action")
+        if lease_id is not None and action is not None:
+            return DistributedLockLeaseId(lease_id), action
     return None, ""
 
 
@@ -396,14 +431,12 @@ def _distributed_worker_ttl_seconds(body: JsonMapping) -> float:
 
 
 def _distributed_worker_action_route(path: str) -> tuple[WorkerId | None, str]:
-    segments = tuple(segment for segment in path.split("/") if segment)
-    if (
-        len(segments) == 5
-        and segments[:3] == ("v1", "distributed", "workers")
-        and segments[3].strip()
-        and segments[4].strip()
-    ):
-        return WorkerId(segments[3]), segments[4]
+    params = _match_path(path, "/v1/distributed/workers/{worker_id}/{action}")
+    if params is not None:
+        worker_id = _non_blank_path_param(params, "worker_id")
+        action = _non_blank_path_param(params, "action")
+        if worker_id is not None and action is not None:
+            return WorkerId(worker_id), action
     return None, ""
 
 
@@ -594,59 +627,52 @@ def _non_empty_string(value: str, field_name: str, *, empty_message: str | None 
 
 
 def _distributed_schedule_session_route(path: str) -> SessionId | None:
-    segments = tuple(segment for segment in path.split("/") if segment)
-    if (
-        len(segments) == 5
-        and segments[:3] == ("v1", "distributed", "sessions")
-        and segments[3].strip()
-        and segments[4] == "schedule"
-    ):
-        return SessionId(segments[3])
-    return None
+    params = _match_path(path, "/v1/distributed/sessions/{session_id}/schedule")
+    if params is None:
+        return None
+    session_id = _non_blank_path_param(params, "session_id")
+    if session_id is None:
+        return None
+    return SessionId(session_id)
 
 
 def _distributed_schedule_task_route(path: str) -> tuple[SessionId | None, TaskId | None]:
-    segments = tuple(segment for segment in path.split("/") if segment)
-    if (
-        len(segments) == 7
-        and segments[:3] == ("v1", "distributed", "sessions")
-        and segments[3].strip()
-        and segments[4] == "tasks"
-        and segments[5].strip()
-        and segments[6] == "schedule"
-    ):
-        return SessionId(segments[3]), TaskId(segments[5])
+    params = _match_path(
+        path,
+        "/v1/distributed/sessions/{session_id}/tasks/{task_id}/schedule",
+    )
+    if params is not None:
+        session_id = _non_blank_path_param(params, "session_id")
+        task_id = _non_blank_path_param(params, "task_id")
+        if session_id is not None and task_id is not None:
+            return SessionId(session_id), TaskId(task_id)
     return None, None
 
 
 def _distributed_schedule_action_route(
     path: str,
 ) -> tuple[SessionId | None, TaskId | None, ActionId | None]:
-    segments = tuple(segment for segment in path.split("/") if segment)
-    if (
-        len(segments) == 9
-        and segments[:3] == ("v1", "distributed", "sessions")
-        and segments[3].strip()
-        and segments[4] == "tasks"
-        and segments[5].strip()
-        and segments[6] == "actions"
-        and segments[7].strip()
-        and segments[8] == "schedule"
-    ):
-        return SessionId(segments[3]), TaskId(segments[5]), ActionId(segments[7])
+    params = _match_path(
+        path,
+        "/v1/distributed/sessions/{session_id}/tasks/{task_id}/actions/{action_id}/schedule",
+    )
+    if params is not None:
+        session_id = _non_blank_path_param(params, "session_id")
+        task_id = _non_blank_path_param(params, "task_id")
+        action_id = _non_blank_path_param(params, "action_id")
+        if session_id is not None and task_id is not None and action_id is not None:
+            return SessionId(session_id), TaskId(task_id), ActionId(action_id)
     return None, None, None
 
 
 def _distributed_cancel_route(path: str) -> WorkItemId | None:
-    segments = tuple(segment for segment in path.split("/") if segment)
-    if (
-        len(segments) == 5
-        and segments[:3] == ("v1", "distributed", "work-items")
-        and segments[3].strip()
-        and segments[4] == "cancel"
-    ):
-        return WorkItemId(segments[3])
-    return None
+    params = _match_path(path, "/v1/distributed/work-items/{work_item_id}/cancel")
+    if params is None:
+        return None
+    work_item_id = _non_blank_path_param(params, "work_item_id")
+    if work_item_id is None:
+        return None
+    return WorkItemId(work_item_id)
 
 
 def _console_domain_view(
@@ -714,21 +740,22 @@ def _console_session_renderer(
 
 
 def _profile_route(path: str) -> str | None:
-    segments = tuple(segment for segment in path.split("/") if segment)
-    if len(segments) == 3 and segments[:2] == ("v1", "profiles") and segments[2].strip():
-        return segments[2]
-    return None
+    params = _match_path(path, "/v1/profiles/{profile}")
+    if params is None:
+        return None
+    return _non_blank_path_param(params, "profile")
 
 
 def _domain_package_route(path: str) -> tuple[str | None, str | None]:
-    segments = tuple(segment for segment in path.split("/") if segment)
-    if len(segments) == 3 and segments[:2] == ("v1", "domain-packages") and segments[2].strip():
-        return segments[2], None
-    if (
-        len(segments) == 4
-        and segments[:2] == ("v1", "domain-packages")
-        and segments[2].strip()
-        and segments[3].strip()
-    ):
-        return segments[2], segments[3]
+    params = _match_path(path, "/v1/domain-packages/{name}")
+    if params is not None:
+        name = _non_blank_path_param(params, "name")
+        if name is not None:
+            return name, None
+    params = _match_path(path, "/v1/domain-packages/{name}/{version}")
+    if params is not None:
+        name = _non_blank_path_param(params, "name")
+        version = _non_blank_path_param(params, "version")
+        if name is not None and version is not None:
+            return name, version
     return None, None

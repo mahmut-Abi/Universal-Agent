@@ -39,13 +39,13 @@
 | 剩余 | 可继续评估 agentd 其他请求体是否值得按模块迁移；当前不建议一次性替换核心 runtime contracts |
 | 风险 | 低；建议继续按模块迁移，避免一次性替换所有 dataclass 构造契约 |
 
-### 3. Starlette + uvicorn → 替换 agentd socket/server 适配层（第一批已完成）
+### 3. Starlette + uvicorn → 替换 agentd socket/server / routing 适配层（持续推进）
 
 | 项 | 说明 |
 |---|---|
-| 现状 | `AgentdHttpServer` 已从 stdlib `http.server` 切到 Starlette ASGI + uvicorn；`AgentdApp.handle()` 仍作为稳定 Runtime API 路由契约保留 |
-| 收益 | 生产服务边界获得 ASGI/uvicorn 生命周期、并发和 socket 处理；CLI/server 注入测试契约保持兼容 |
-| 剩余 | 后续再按路由族逐步把 `agentd/app.py` 手写路由迁入 Starlette/FastAPI primitives，并在稳定 schema 后补 OpenAPI |
+| 现状 | `AgentdHttpServer` 已从 stdlib `http.server` 切到 Starlette ASGI + uvicorn；`agentd/routing.py` 的动态 path helper 已用 Starlette `compile_path()` 接管模板匹配；`AgentdApp.handle()` 仍作为稳定 Runtime API 路由契约保留 |
+| 收益 | 生产服务边界获得 ASGI/uvicorn 生命周期、并发、socket 处理和标准 path matching；CLI/server 注入测试契约保持兼容 |
+| 剩余 | 后续再按路由族逐步把 `agentd/app.py` 手写分派迁入 Starlette route primitives，并在稳定 schema 后补 OpenAPI |
 | 风险 | 中：依赖树变大；需持续保证 Runtime API 行为不变（现有 test_agentd_routes / test_agentd_server 兜底） |
 
 ### 4. prometheus-client → 替换手写 Prometheus text exposition（已完成）
