@@ -1,35 +1,24 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
-from contextlib import suppress
-from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, cast
+from datetime import datetime
+from typing import TYPE_CHECKING
 
 from universal_agent.capability import CapabilityUnavailableError, UnknownCapabilityError
 from universal_agent.core import (
     ActionId,
     DomainIdentity,
     EventId,
-    ExecutionStatus,
     Goal,
-    GoalId,
-    GoalStatus,
     JsonMapping,
-    JsonValue,
-    RuntimeEvent,
     SessionId,
-    SuccessCriterion,
     Task,
     TaskId,
     immutable_json,
-    utc_now,
 )
 from universal_agent.distributed import (
     DistributedCancellationResult,
     DistributedHealthReport,
-    DistributedLockConflictError,
     DistributedLockLeaseId,
-    DistributedLockLeaseLostError,
     DistributedLockLifecycleResult,
     DistributedLockOwnerId,
     DistributedMaintenanceResult,
@@ -40,26 +29,15 @@ from universal_agent.distributed import (
     DistributedWorkerLifecycleResult,
     WorkerId,
     WorkerRunResult,
-    WorkHandler,
-    WorkHandlerResult,
-    WorkItem,
     WorkItemId,
-    WorkKind,
-    WorkQueueWorker,
 )
 from universal_agent.domain import (
-    ActiveDomain,
-    DomainPackage,
     DomainPackageRegistry,
     DomainPackageVerificationReport,
     RuntimeComponents,
 )
-from universal_agent.evidence import Evidence
-from universal_agent.memory import MemoryRecord
 from universal_agent.multi_agent import (
     AgentDelegationState,
-    AgentInstanceRecord,
-    AgentProfileRecord,
     AgentRegistry,
 )
 from universal_agent.operations import (
@@ -78,7 +56,6 @@ from universal_agent.operations import (
     build_runtime_metrics,
     build_runtime_trace_spans,
 )
-from universal_agent.policy import Policy, PolicyRule
 from universal_agent.profile import AgentProfile, ProfileNotFoundError, ProfileRegistry
 from universal_agent.runtime import (
     EvidenceView,
@@ -89,15 +66,39 @@ from universal_agent.runtime import (
     RuntimeSessionBatch,
     SessionSummaryView,
     SessionView,
-    event_view,
 )
-from universal_agent.security import (
-    SecretResolution,
-    SecretResolutionReport,
-    redact_sensitive_mapping,
+from universal_agent.security import SecretResolutionReport
+from universal_agent.service.config_views import (
+    format_identities,
+    not_ready_reason,
+    redact_environment,
+    runtime_config_domain_views,
+    runtime_model_config_view,
+    runtime_secret_ref_views,
+    secret_readiness_failure,
+    secret_scan_payload,
+)
+from universal_agent.service.distributed_runtime import DistributedRuntimeController
+from universal_agent.service.projections import (
+    domain_package_view,
+    domain_view,
+    evaluator_view,
+    evidence_from_view,
+    memory_view,
+    multi_agent_instance_view,
+    multi_agent_profile_view,
+    policy_view,
+    profile_view,
+    world_neighborhood_view,
+    world_projection_views_from_snapshot,
+)
+from universal_agent.service.state_event_repair import (
+    missing_terminal_state_events,
+    planned_state_event_repair_view,
+    state_event_repair_view,
+    unrepairable_state_event_items,
 )
 from universal_agent.service.views import (
-    REDACTED_ENVIRONMENT_VALUE,
     CapabilityView,
     DistributedPendingActionSchedulingResult,
     DomainPackageView,
@@ -106,53 +107,26 @@ from universal_agent.service.views import (
     HealthView,
     MemoryView,
     MultiAgentDelegationTaskView,
-    MultiAgentInstanceView,
-    MultiAgentProfileView,
     MultiAgentView,
     PolicyView,
     ProfileView,
     ReadyView,
-    RuntimeConfigDomainView,
     RuntimeConfigView,
-    RuntimeModelConfigView,
-    RuntimeSecretRefView,
     SessionExplorerView,
     SessionWorldView,
     StateEventRepairReport,
-    StateEventRepairSkipView,
-    StateEventRepairView,
     ToolView,
     WorldEntityView,
-    WorldFactEvidenceView,
-    WorldFactHistoryView,
     WorldFactView,
-    WorldNeighborhoodView,
     WorldRelationView,
 )
-from universal_agent.state import StateNotFoundError
 from universal_agent.world import (
     InMemoryWorldModel,
-    WorldEntity,
-    WorldFact,
-    WorldFactEvidence,
-    WorldFactHistory,
-    WorldNeighborhood,
-    WorldRelation,
     WorldSnapshot,
 )
 
 if TYPE_CHECKING:
-    from universal_agent.host.config import DomainConfig, ModelConfig, RuntimeConfig, SecretRef
-
-
-_DISTRIBUTED_SESSION_LOCK_TTL_SECONDS = 300.0
-_TERMINAL_EVENT_BY_GOAL_STATUS = {
-    GoalStatus.COMPLETED: "GoalCompleted",
-    GoalStatus.FAILED: "GoalFailed",
-    GoalStatus.CANCELLED: "GoalCancelled",
-}
-
-
+    from universal_agent.host.config import RuntimeConfig
 
 
 class RuntimeService:
@@ -184,6 +158,11 @@ class RuntimeService:
         self._domain_packages = domain_packages or DomainPackageRegistry()
         self._agent_registry = agent_registry
         self._agent_delegation_state = agent_delegation_state or AgentDelegationState()
+        self._distributed_runtime = DistributedRuntimeController(
+            runtime_api=runtime_api,
+            coordinator=distributed_coordinator,
+            config=config,
+        )
 
     def health(self) -> HealthView:
         return HealthView(status="ok", service="universal-agent-runtime")
@@ -198,11 +177,11 @@ class RuntimeService:
             if not self._components.tools.registrations_for_capability(capability.name)
         )
         catalog_ready = bool(domains) and bool(capabilities) and bool(tools) and not missing_tools
-        secret_failure = _secret_readiness_failure(self._secret_resolution)
+        secret_failure = secret_readiness_failure(self._secret_resolution)
         ready = catalog_ready and secret_failure is None
         reason = "ready"
         if not catalog_ready:
-            reason = _not_ready_reason(
+            reason = not_ready_reason(
                 has_domains=bool(domains),
                 has_capabilities=bool(capabilities),
                 has_tools=bool(tools),
@@ -361,8 +340,8 @@ class RuntimeService:
         if profile_domains != active_domains:
             return (
                 f"profile {name} is not bound to this RuntimeService: profile domains "
-                f"{_format_identities(profile_domains)} do not match active runtime domains "
-                f"{_format_identities(active_domains)}"
+                f"{format_identities(profile_domains)} do not match active runtime domains "
+                f"{format_identities(active_domains)}"
             )
         return None
 
@@ -419,14 +398,10 @@ class RuntimeService:
         )
 
     def distributed_snapshot(self) -> DistributedRuntimeSnapshot | None:
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.snapshot()
+        return self._distributed_runtime.snapshot()
 
     def distributed_health(self, *, now: datetime | None = None) -> DistributedHealthReport | None:
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.health(now=now)
+        return self._distributed_runtime.health(now=now)
 
     def distributed_schedule_session(
         self,
@@ -437,14 +412,11 @@ class RuntimeService:
         max_attempts: int = 3,
         now: datetime | None = None,
     ) -> DistributedSchedulingResult | None:
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.schedule_session(
+        return self._distributed_runtime.schedule_session(
             session_id,
             payload=payload,
             priority=priority,
             max_attempts=max_attempts,
-            available_at=now,
             now=now,
         )
 
@@ -458,14 +430,12 @@ class RuntimeService:
         idempotency_key: str | None = None,
         now: datetime | None = None,
     ) -> DistributedSchedulingResult | None:
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.schedule_goal(
-            payload=_goal_work_payload(goal, task),
-            idempotency_key=idempotency_key or _goal_work_idempotency_key(goal, task),
+        return self._distributed_runtime.schedule_goal(
+            goal,
+            task,
             priority=priority,
             max_attempts=max_attempts,
-            available_at=now,
+            idempotency_key=idempotency_key,
             now=now,
         )
 
@@ -479,15 +449,12 @@ class RuntimeService:
         max_attempts: int = 3,
         now: datetime | None = None,
     ) -> DistributedSchedulingResult | None:
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.schedule_task(
+        return self._distributed_runtime.schedule_task(
             session_id,
             task_id,
             payload=payload,
             priority=priority,
             max_attempts=max_attempts,
-            available_at=now,
             now=now,
         )
 
@@ -502,18 +469,13 @@ class RuntimeService:
         max_attempts: int = 3,
         now: datetime | None = None,
     ) -> DistributedSchedulingResult | None:
-        if not confirmed:
-            raise ValueError("distributed schedule-action requires confirmed=true")
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.schedule_action(
+        return self._distributed_runtime.schedule_action(
             session_id,
             task_id,
             action_id,
-            payload=immutable_json({"confirmed": confirmed}),
+            confirmed=confirmed,
             priority=priority,
             max_attempts=max_attempts,
-            available_at=now,
             now=now,
         )
 
@@ -525,35 +487,11 @@ class RuntimeService:
         max_attempts: int = 3,
         now: datetime | None = None,
     ) -> DistributedPendingActionSchedulingResult | None:
-        if not confirmed:
-            raise ValueError("distributed pending-action schedule requires confirmed=true")
-        if self._distributed_coordinator is None:
-            return None
-
-        scheduled: list[WorkItem] = []
-        for summary in await self.list_sessions():
-            if summary.goal_status is not GoalStatus.WAITING or not summary.pending_action:
-                continue
-            session = await self.get_session(summary.session_id)
-            pending = session.pending_action
-            if pending is None or session.goal_status is not GoalStatus.WAITING:
-                continue
-            result = self._distributed_coordinator.schedule_action(
-                session.session_id,
-                session.current_task_id,
-                pending.action_id,
-                payload=immutable_json({"confirmed": confirmed}),
-                priority=priority,
-                max_attempts=max_attempts,
-                available_at=now,
-                now=now,
-            )
-            scheduled.append(result.scheduled_work_item)
-
-        return DistributedPendingActionSchedulingResult(
-            scheduled_work_items=tuple(scheduled),
-            snapshot=self._distributed_coordinator.snapshot(),
-            health=self._distributed_coordinator.health(now=now),
+        return await self._distributed_runtime.schedule_pending_actions(
+            confirmed=confirmed,
+            priority=priority,
+            max_attempts=max_attempts,
+            now=now,
         )
 
     def distributed_register_worker(
@@ -565,9 +503,7 @@ class RuntimeService:
         ttl_seconds: float = 30.0,
         now: datetime | None = None,
     ) -> DistributedWorkerLifecycleResult | None:
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.register_worker(
+        return self._distributed_runtime.register_worker(
             worker_id,
             capabilities=capabilities,
             metadata=metadata,
@@ -582,9 +518,7 @@ class RuntimeService:
         ttl_seconds: float = 30.0,
         now: datetime | None = None,
     ) -> DistributedWorkerLifecycleResult | None:
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.heartbeat_worker(
+        return self._distributed_runtime.heartbeat_worker(
             worker_id,
             ttl_seconds=ttl_seconds,
             now=now,
@@ -597,9 +531,7 @@ class RuntimeService:
         reason: str = "worker draining",
         now: datetime | None = None,
     ) -> DistributedWorkerLifecycleResult | None:
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.drain_worker(
+        return self._distributed_runtime.drain_worker(
             worker_id,
             reason=reason,
             now=now,
@@ -612,9 +544,7 @@ class RuntimeService:
         reason: str = "worker offline",
         now: datetime | None = None,
     ) -> DistributedWorkerLifecycleResult | None:
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.mark_worker_offline(
+        return self._distributed_runtime.mark_worker_offline(
             worker_id,
             reason=reason,
             now=now,
@@ -629,9 +559,7 @@ class RuntimeService:
         metadata: JsonMapping | None = None,
         now: datetime | None = None,
     ) -> DistributedLockLifecycleResult | None:
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.acquire_lock(
+        return self._distributed_runtime.acquire_lock(
             lock_key=lock_key,
             owner_id=owner_id,
             ttl_seconds=ttl_seconds,
@@ -647,9 +575,7 @@ class RuntimeService:
         ttl_seconds: float = 30.0,
         now: datetime | None = None,
     ) -> DistributedLockLifecycleResult | None:
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.heartbeat_lock(
+        return self._distributed_runtime.heartbeat_lock(
             lease_id,
             owner_id=owner_id,
             ttl_seconds=ttl_seconds,
@@ -663,9 +589,7 @@ class RuntimeService:
         owner_id: DistributedLockOwnerId,
         now: datetime | None = None,
     ) -> DistributedLockLifecycleResult | None:
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.release_lock(
+        return self._distributed_runtime.release_lock(
             lease_id,
             owner_id=owner_id,
             now=now,
@@ -676,9 +600,7 @@ class RuntimeService:
         *,
         now: datetime | None = None,
     ) -> DistributedMaintenanceResult | None:
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.expire(now=now)
+        return self._distributed_runtime.expire(now=now)
 
     def distributed_prune_terminal_work_items(
         self,
@@ -686,21 +608,7 @@ class RuntimeService:
         before: datetime | None = None,
         now: datetime | None = None,
     ) -> DistributedPruneResult | None:
-        if self._distributed_coordinator is None:
-            return None
-        timestamp = now or utc_now()
-        retention_seconds = (
-            None if self._config is None else self._config.distributed_terminal_retention_seconds
-        )
-        retention_before = (
-            timestamp - timedelta(seconds=retention_seconds)
-            if before is None and retention_seconds is not None
-            else before
-        )
-        return self._distributed_coordinator.prune_terminal_work_items(
-            before=retention_before,
-            now=timestamp,
-        )
+        return self._distributed_runtime.prune_terminal_work_items(before=before, now=now)
 
     def distributed_cancel_work_item(
         self,
@@ -709,9 +617,7 @@ class RuntimeService:
         reason: str = "distributed work item cancelled",
         now: datetime | None = None,
     ) -> DistributedCancellationResult | None:
-        if self._distributed_coordinator is None:
-            return None
-        return self._distributed_coordinator.cancel_work_item(
+        return self._distributed_runtime.cancel_work_item(
             work_item_id,
             reason=reason,
             now=now,
@@ -725,18 +631,12 @@ class RuntimeService:
         worker_ttl_seconds: float = 30.0,
         heartbeat_interval_seconds: float | None = None,
     ) -> WorkerRunResult | None:
-        if self._distributed_coordinator is None:
-            return None
-        worker = WorkQueueWorker(
-            queue=self._distributed_coordinator.queue,
-            worker_id=worker_id,
-            handlers=self._distributed_work_handlers(),
+        return await self._distributed_runtime.run_worker_once(
+            worker_id,
             lease_ttl_seconds=lease_ttl_seconds,
-            worker_registry=self._distributed_coordinator.workers,
             worker_ttl_seconds=worker_ttl_seconds,
             heartbeat_interval_seconds=heartbeat_interval_seconds,
         )
-        return await worker.run_once()
 
     async def distributed_run_worker_until_idle(
         self,
@@ -747,243 +647,13 @@ class RuntimeService:
         worker_ttl_seconds: float = 30.0,
         heartbeat_interval_seconds: float | None = None,
     ) -> tuple[WorkerRunResult, ...] | None:
-        if self._distributed_coordinator is None:
-            return None
-        worker = WorkQueueWorker(
-            queue=self._distributed_coordinator.queue,
-            worker_id=worker_id,
-            handlers=self._distributed_work_handlers(),
+        return await self._distributed_runtime.run_worker_until_idle(
+            worker_id,
+            max_items=max_items,
             lease_ttl_seconds=lease_ttl_seconds,
-            worker_registry=self._distributed_coordinator.workers,
             worker_ttl_seconds=worker_ttl_seconds,
             heartbeat_interval_seconds=heartbeat_interval_seconds,
         )
-        return await worker.run_until_idle(max_items=max_items)
-
-    def _distributed_work_handlers(self) -> Mapping[str, WorkHandler]:
-        return {
-            WorkKind.AGENT_SESSION.value: self._handle_distributed_session_work,
-            WorkKind.AGENT_GOAL.value: self._handle_distributed_goal_work,
-            WorkKind.TASK.value: self._handle_distributed_task_work,
-            WorkKind.TOOL_ACTION.value: self._handle_distributed_action_work,
-        }
-
-    async def _handle_distributed_session_work(self, item: WorkItem) -> WorkHandlerResult:
-        if item.session_id is None:
-            return WorkHandlerResult.failed(
-                "agent_session work item missing session_id", retry=False
-            )
-        try:
-            session = await self.get_session(item.session_id)
-        except StateNotFoundError as exc:
-            return WorkHandlerResult.failed(f"session not found: {exc}", retry=False)
-        if session.pending_action is not None:
-            return WorkHandlerResult.failed(
-                "session requires explicit confirmation before distributed resume",
-                retry=False,
-            )
-        if session.goal_status in {
-            GoalStatus.COMPLETED,
-            GoalStatus.FAILED,
-            GoalStatus.CANCELLED,
-        }:
-            return WorkHandlerResult.completed(
-                f"session already terminal: {session.goal_status.value}"
-            )
-        if session.goal_status is not GoalStatus.WAITING:
-            return WorkHandlerResult.failed(
-                f"session is not resumable: {session.goal_status.value}",
-                retry=True,
-            )
-        return await self._resume_distributed_session_under_lock(
-            item,
-            confirmed=None,
-            completed_reason_prefix="distributed session resume settled as",
-            failure_reason_prefix="distributed session resume failed",
-        )
-
-    async def _handle_distributed_goal_work(self, item: WorkItem) -> WorkHandlerResult:
-        try:
-            goal, task = _goal_task_from_work_payload(item.payload)
-        except ValueError as exc:
-            return WorkHandlerResult.failed(f"invalid agent_goal work payload: {exc}", retry=False)
-        run = await self.run_goal(goal, task)
-        if run.result.status is ExecutionStatus.COMPLETED:
-            return WorkHandlerResult.completed(f"session completed: {run.result.session_id}")
-        if run.result.status is ExecutionStatus.WAITING:
-            return WorkHandlerResult.completed(f"session waiting: {run.result.session_id}")
-        if run.result.status is ExecutionStatus.CANCELLED:
-            return WorkHandlerResult.completed(f"session cancelled: {run.result.session_id}")
-        return WorkHandlerResult.failed(
-            f"distributed goal run failed: {run.result.reason}",
-            retry=False,
-        )
-
-    async def _handle_distributed_task_work(self, item: WorkItem) -> WorkHandlerResult:
-        if item.session_id is None:
-            return WorkHandlerResult.failed("task work item missing session_id", retry=False)
-        if item.task_id is None:
-            return WorkHandlerResult.failed("task work item missing task_id", retry=False)
-        try:
-            session = await self.get_session(item.session_id)
-        except StateNotFoundError as exc:
-            return WorkHandlerResult.failed(f"session not found: {exc}", retry=False)
-        if session.current_task_id != item.task_id:
-            return WorkHandlerResult.failed(
-                "task work item does not match current session task: "
-                f"{item.task_id} != {session.current_task_id}",
-                retry=False,
-            )
-        if session.pending_action is not None:
-            return WorkHandlerResult.failed(
-                "task requires explicit confirmation before distributed resume",
-                retry=False,
-            )
-        if session.goal_status in {
-            GoalStatus.COMPLETED,
-            GoalStatus.FAILED,
-            GoalStatus.CANCELLED,
-        }:
-            return WorkHandlerResult.completed(
-                f"session already terminal: {session.goal_status.value}"
-            )
-        if session.goal_status is not GoalStatus.WAITING:
-            return WorkHandlerResult.failed(
-                f"session task is not resumable: {session.goal_status.value}",
-                retry=True,
-            )
-        return await self._resume_distributed_session_under_lock(
-            item,
-            confirmed=None,
-            completed_reason_prefix="distributed task resume settled as",
-            failure_reason_prefix="distributed task resume failed",
-        )
-
-    async def _handle_distributed_action_work(self, item: WorkItem) -> WorkHandlerResult:
-        if item.session_id is None:
-            return WorkHandlerResult.failed("tool_action work item missing session_id", retry=False)
-        if item.task_id is None:
-            return WorkHandlerResult.failed("tool_action work item missing task_id", retry=False)
-        if item.action_id is None:
-            return WorkHandlerResult.failed("tool_action work item missing action_id", retry=False)
-        if item.payload.get("confirmed") is not True:
-            return WorkHandlerResult.failed(
-                "tool_action work item requires confirmed=true",
-                retry=False,
-            )
-        try:
-            session = await self.get_session(item.session_id)
-        except StateNotFoundError as exc:
-            return WorkHandlerResult.failed(f"session not found: {exc}", retry=False)
-        pending = session.pending_action
-        if pending is None:
-            return WorkHandlerResult.failed(
-                "tool_action work item requires a pending action",
-                retry=False,
-            )
-        if session.current_task_id != item.task_id:
-            return WorkHandlerResult.failed(
-                "tool_action work item does not match current session task: "
-                f"{item.task_id} != {session.current_task_id}",
-                retry=False,
-            )
-        if pending.action_id != item.action_id:
-            return WorkHandlerResult.failed(
-                "tool_action work item does not match pending action: "
-                f"{item.action_id} != {pending.action_id}",
-                retry=False,
-            )
-        if session.goal_status is not GoalStatus.WAITING:
-            return WorkHandlerResult.failed(
-                f"session action is not confirmable: {session.goal_status.value}",
-                retry=True,
-            )
-        return await self._resume_distributed_session_under_lock(
-            item,
-            confirmed=True,
-            completed_reason_prefix="distributed action resume settled as",
-            failure_reason_prefix="distributed action resume failed",
-        )
-
-    async def _resume_distributed_session_under_lock(
-        self,
-        item: WorkItem,
-        *,
-        confirmed: bool | None,
-        completed_reason_prefix: str,
-        failure_reason_prefix: str,
-    ) -> WorkHandlerResult:
-        if item.session_id is None:
-            return WorkHandlerResult.failed(
-                "distributed session work item missing session_id",
-                retry=False,
-            )
-        session_id = item.session_id
-
-        async def resume() -> WorkHandlerResult:
-            run = await self.resume_session(session_id, confirmed=confirmed)
-            if run.result.status in {
-                ExecutionStatus.COMPLETED,
-                ExecutionStatus.WAITING,
-                ExecutionStatus.CANCELLED,
-            }:
-                return WorkHandlerResult.completed(
-                    f"{completed_reason_prefix} {run.result.status.value}"
-                )
-            return WorkHandlerResult.failed(
-                f"{failure_reason_prefix}: {run.result.reason}",
-                retry=False,
-            )
-
-        return await self._with_distributed_session_lock(item, resume)
-
-    async def _with_distributed_session_lock(
-        self,
-        item: WorkItem,
-        operation: Callable[[], Awaitable[WorkHandlerResult]],
-    ) -> WorkHandlerResult:
-        if self._distributed_coordinator is None:
-            return await operation()
-        if item.session_id is None:
-            return WorkHandlerResult.failed(
-                "distributed session lock requires session_id",
-                retry=False,
-            )
-        if item.lease is None:
-            return WorkHandlerResult.failed(
-                "distributed session lock requires queue lease metadata",
-                retry=False,
-            )
-
-        owner_id = _distributed_session_lock_owner(item)
-        lock_key = _distributed_session_lock_key(item.session_id)
-        try:
-            lock = self._distributed_coordinator.locks.acquire(
-                lock_key=lock_key,
-                owner_id=owner_id,
-                ttl_seconds=_DISTRIBUTED_SESSION_LOCK_TTL_SECONDS,
-                metadata=immutable_json(
-                    {
-                        "work_item_id": str(item.work_item_id),
-                        "work_kind": item.kind,
-                        "queue_lease_id": str(item.lease.lease_id),
-                    }
-                ),
-            )
-        except DistributedLockConflictError as exc:
-            return WorkHandlerResult.failed(
-                f"session execution lock conflict: {exc}",
-                retry=True,
-            )
-
-        try:
-            return await operation()
-        finally:
-            with suppress(DistributedLockLeaseLostError):
-                self._distributed_coordinator.locks.release(
-                    lock.lease_id,
-                    owner_id=owner_id,
-                )
 
     async def run_goal(self, goal: Goal, task: Task) -> RuntimeRun:
         return await self._runtime_api.run_goal(goal, task)
@@ -1022,7 +692,7 @@ class RuntimeService:
             world_fact_histories,
             world_entities,
             world_relations,
-        ) = _world_projection_views_from_snapshot(
+        ) = world_projection_views_from_snapshot(
             self._world_snapshot(session_id, diagnostics.evidence)
         )
         return SessionExplorerView(
@@ -1050,7 +720,7 @@ class RuntimeService:
             world_fact_histories,
             world_entities,
             world_relations,
-        ) = _world_projection_views_from_snapshot(snapshot)
+        ) = world_projection_views_from_snapshot(snapshot)
         neighborhood = (
             None
             if entity_id is None
@@ -1171,15 +841,15 @@ class RuntimeService:
             else len(distributed_health.recommendations),
             distributed_invalid_session_work_item_count=None
             if distributed_snapshot is None
-            else await self._distributed_invalid_session_work_item_count(
+            else await self._distributed_runtime.invalid_session_work_item_count(
                 sessions,
                 distributed_snapshot,
             ),
             distributed_terminal_work_item_count=None
             if distributed_snapshot is None
-            else self._distributed_terminal_work_item_count(distributed_snapshot),
+            else self._distributed_runtime.terminal_work_item_count(distributed_snapshot),
             secret_resolution=self._secret_resolution,
-            secret_scan_payload=_secret_scan_payload(config, events),
+            secret_scan_payload=secret_scan_payload(config, events),
         )
 
     async def repair_state_event_consistency(
@@ -1197,11 +867,11 @@ class RuntimeService:
 
         sessions = await self.list_sessions()
         events = await self._list_all_events(sessions)
-        skipped = _unrepairable_state_event_items(sessions, events)
+        skipped = unrepairable_state_event_items(sessions, events)
         if skipped:
             return StateEventRepairReport("blocked", (), skipped)
 
-        repair_events = _missing_terminal_state_events(sessions, events)
+        repair_events = missing_terminal_state_events(sessions, events)
         if not repair_events:
             return StateEventRepairReport("clean", (), ())
 
@@ -1209,10 +879,7 @@ class RuntimeService:
             return StateEventRepairReport(
                 "planned",
                 tuple(
-                    StateEventRepairView(
-                        event_view(event),
-                        "would synthesize missing terminal event from authoritative session state",
-                    )
+                    planned_state_event_repair_view(event)
                     for event in repair_events
                 ),
                 (),
@@ -1221,13 +888,7 @@ class RuntimeService:
         repaired = await self._runtime_api.record_repair_events(repair_events)
         return StateEventRepairReport(
             "repaired",
-            tuple(
-                StateEventRepairView(
-                    event,
-                    "synthesized missing terminal event from authoritative session state",
-                )
-                for event in repaired
-            ),
+            tuple(state_event_repair_view(event) for event in repaired),
             (),
         )
 
@@ -1270,54 +931,6 @@ class RuntimeService:
             events.extend(await self.list_events(session.session_id))
         return tuple(sorted(events, key=lambda event: event.occurred_at))
 
-    async def _distributed_invalid_session_work_item_count(
-        self,
-        sessions: tuple[SessionSummaryView, ...],
-        snapshot: DistributedRuntimeSnapshot,
-    ) -> int:
-        current_task_by_session = {
-            session.session_id: session.current_task_id for session in sessions
-        }
-        full_session_by_id: dict[SessionId, SessionView] = {}
-        invalid_count = 0
-        for item in snapshot.work_queue.items:
-            if item.kind == WorkKind.AGENT_SESSION.value:
-                if item.session_id is None or item.session_id not in current_task_by_session:
-                    invalid_count += 1
-                continue
-            if item.kind not in {WorkKind.TASK.value, WorkKind.TOOL_ACTION.value}:
-                continue
-            if item.session_id is None:
-                invalid_count += 1
-                continue
-            expected_task_id = current_task_by_session.get(item.session_id)
-            if expected_task_id is None or item.task_id is None or item.task_id != expected_task_id:
-                invalid_count += 1
-                continue
-            if item.kind == WorkKind.TOOL_ACTION.value:
-                if item.action_id is None:
-                    invalid_count += 1
-                    continue
-                session = full_session_by_id.get(item.session_id)
-                if session is None:
-                    try:
-                        session = await self.get_session(item.session_id)
-                    except StateNotFoundError:
-                        invalid_count += 1
-                        continue
-                    full_session_by_id[item.session_id] = session
-                pending = session.pending_action
-                if pending is None or pending.action_id != item.action_id:
-                    invalid_count += 1
-        return invalid_count
-
-    def _distributed_terminal_work_item_count(
-        self,
-        snapshot: DistributedRuntimeSnapshot,
-    ) -> int:
-        queue = snapshot.work_queue
-        return queue.completed_count + queue.failed_count + queue.cancelled_count
-
     def _world_projection_views(
         self,
         session_id: SessionId,
@@ -1325,7 +938,7 @@ class RuntimeService:
     ) -> tuple[
         tuple[WorldFactView, ...], tuple[WorldEntityView, ...], tuple[WorldRelationView, ...]
     ]:
-        world_facts, _, world_entities, world_relations = _world_projection_views_from_snapshot(
+        world_facts, _, world_entities, world_relations = world_projection_views_from_snapshot(
             self._world_snapshot(session_id, evidence)
         )
         return world_facts, world_entities, world_relations
@@ -1340,580 +953,7 @@ class RuntimeService:
         world_model = InMemoryWorldModel()
         world_model.rebuild(
             session_id,
-            tuple(_evidence_from_view(item) for item in evidence),
+            tuple(evidence_from_view(item) for item in evidence),
             self._components.world_updaters,
         )
         return world_model.snapshot(session_id)
-
-
-def domain_view(domain: ActiveDomain, *, primary: bool) -> DomainView:
-    metadata = domain.manifest.metadata
-    return DomainView(
-        name=metadata.name,
-        version=metadata.version,
-        description=metadata.description,
-        primary=primary,
-        ontology=domain.manifest.ontology,
-        capability_names=domain.manifest.capability_names,
-        evaluator_names=domain.manifest.evaluator_names,
-    )
-
-
-def domain_package_view(package: DomainPackage) -> DomainPackageView:
-    manifest = package.manifest
-    return DomainPackageView(
-        name=manifest.name,
-        version=manifest.version,
-        description=manifest.description,
-        author=manifest.author,
-        entrypoint=manifest.entrypoint,
-        tags=manifest.tags,
-        ontology=manifest.ontology,
-        capability_names=manifest.capabilities,
-        tool_names=manifest.tools,
-        policy_names=manifest.policies,
-        procedure_names=manifest.procedures,
-        knowledge_names=manifest.knowledge,
-        evaluator_names=manifest.evaluators,
-        context_provider_names=manifest.context_providers,
-        prompt_names=manifest.prompts,
-        dependencies=manifest.dependencies,
-        required_tools=manifest.required_tools,
-        runtime_api_compatibility=manifest.compatibility.runtime_api,
-        domain_api_compatibility=manifest.compatibility.domain_api,
-        security=manifest.security,
-        root_path=str(package.root_path),
-        manifest_path=str(package.manifest_path),
-        resource_names=manifest.resources,
-    )
-
-
-def profile_view(profile: AgentProfile) -> ProfileView:
-    assert profile.domain.name is not None
-    assert profile.domain.version is not None
-    return ProfileView(
-        name=profile.name,
-        version=profile.version,
-        description=profile.description,
-        domain_name=profile.domain.name,
-        domain_version=profile.domain.version,
-        domains=tuple(domain.identity() for domain in profile.configured_domains()),
-    )
-
-
-def multi_agent_profile_view(profile: AgentProfileRecord) -> MultiAgentProfileView:
-    return MultiAgentProfileView(
-        name=profile.name,
-        version=profile.version,
-        domains=profile.domains,
-        permissions=profile.permissions,
-        capabilities=profile.capabilities,
-        description=profile.description,
-    )
-
-
-def multi_agent_instance_view(instance: AgentInstanceRecord) -> MultiAgentInstanceView:
-    return MultiAgentInstanceView(
-        agent_id=str(instance.agent_id),
-        profile_name=instance.profile_name,
-        profile_version=instance.profile_version,
-        status=instance.status,
-        session_id=instance.session_id,
-        endpoint=instance.endpoint,
-    )
-
-
-
-
-def policy_view(policy: Policy, domain: ActiveDomain) -> PolicyView:
-    if isinstance(policy, PolicyRule):
-        return PolicyView(
-            name=policy.name,
-            description=policy.reason,
-            policy_type=type(policy).__name__,
-            effect=policy.effect,
-            capability_names=policy.capabilities,
-            categories=policy.categories,
-            risks=policy.risks,
-            domain_name=domain.identity.name,
-            domain_version=domain.identity.version,
-        )
-    description = getattr(policy, "description", "")
-    if not isinstance(description, str):
-        description = ""
-    return PolicyView(
-        name=policy.name,
-        description=description,
-        policy_type=type(policy).__name__,
-        effect=None,
-        capability_names=(),
-        categories=(),
-        risks=(),
-        domain_name=domain.identity.name,
-        domain_version=domain.identity.version,
-    )
-
-
-def evaluator_view(evaluator: object, domain: ActiveDomain) -> EvaluatorView:
-    name = getattr(evaluator, "name", "")
-    return EvaluatorView(
-        name=name if isinstance(name, str) else "",
-        evaluator_type=type(evaluator).__name__,
-        domain_name=domain.identity.name,
-        domain_version=domain.identity.version,
-    )
-
-
-def memory_view(record: MemoryRecord) -> MemoryView:
-    return MemoryView(
-        memory_id=str(record.id),
-        kind=record.kind,
-        subject=record.subject,
-        content=record.content,
-        scope=record.scope,
-        confidence=record.confidence,
-        source_session_id=record.source_session_id,
-        created_at=record.created_at,
-    )
-
-
-def _secret_scan_payload(
-    config: RuntimeConfigView,
-    events: tuple[RuntimeEventView, ...],
-) -> dict[str, object]:
-    return {
-        "config": {
-            "environment": config.environment,
-            "domains": [
-                {
-                    "name": domain.name,
-                    "version": domain.version,
-                    "settings": domain.settings,
-                }
-                for domain in config.domains
-            ],
-            "secrets": [
-                {
-                    "name": secret.name,
-                    "source": secret.source,
-                    "key": secret.key,
-                    "required": secret.required,
-                }
-                for secret in config.secrets
-            ],
-        },
-        "events": [dict(event.data) for event in events],
-    }
-
-
-def _distributed_session_lock_key(session_id: SessionId) -> str:
-    return f"session/{session_id}"
-
-
-def _distributed_session_lock_owner(item: WorkItem) -> DistributedLockOwnerId:
-    lease = item.lease
-    if lease is None:
-        return DistributedLockOwnerId(f"worker:unknown:work:{item.work_item_id}")
-    return DistributedLockOwnerId(
-        f"worker:{lease.worker_id}:work:{item.work_item_id}:lease:{lease.lease_id}"
-    )
-
-
-def _format_identities(identities: tuple[DomainIdentity, ...]) -> str:
-    return ", ".join(f"{identity.name}@{identity.version}" for identity in identities) or "<none>"
-
-
-def redact_environment(environment: JsonMapping) -> JsonMapping:
-    return redact_sensitive_mapping(
-        environment,
-        replacement=REDACTED_ENVIRONMENT_VALUE,
-    )
-
-
-def runtime_config_domain_views(
-    identities: tuple[DomainIdentity, ...],
-    configs: tuple[DomainConfig, ...] = (),
-) -> tuple[RuntimeConfigDomainView, ...]:
-    config_by_identity = {
-        DomainIdentity(config.name, config.version): config
-        for config in configs
-        if config.name is not None and config.version is not None
-    }
-    return tuple(
-        RuntimeConfigDomainView(
-            identity.name,
-            identity.version,
-            index == 0,
-            backend=config.backend if (config := config_by_identity.get(identity)) else None,
-            settings=(
-                redact_environment(config.settings)
-                if (config := config_by_identity.get(identity))
-                else immutable_json()
-            ),
-        )
-        for index, identity in enumerate(identities)
-    )
-
-
-def runtime_model_config_view(model: ModelConfig) -> RuntimeModelConfigView:
-    return RuntimeModelConfigView(
-        model.provider.value,
-        model.name,
-        model.endpoint,
-        model.api_key_secret,
-        model.timeout_seconds,
-        redact_environment(model.headers),
-        model.response_format,
-    )
-
-
-def runtime_secret_ref_views(
-    secrets: tuple[SecretRef, ...],
-    resolution: SecretResolutionReport | None = None,
-) -> tuple[RuntimeSecretRefView, ...]:
-    return tuple(_runtime_secret_ref_view(secret, resolution) for secret in secrets)
-
-
-def _runtime_secret_ref_view(
-    secret: SecretRef,
-    resolution: SecretResolutionReport | None,
-) -> RuntimeSecretRefView:
-    resolved = _resolved_secret(resolution, secret.name)
-    return RuntimeSecretRefView(
-        secret.name,
-        secret.source.value,
-        secret.key,
-        secret.required,
-        available=None if resolved is None else resolved.available,
-        status=None if resolved is None else resolved.status.value,
-    )
-
-
-def _secret_readiness_failure(report: SecretResolutionReport | None) -> str | None:
-    if report is None or report.passed:
-        return None
-    return "missing required secrets: " + ", ".join(report.missing_required_names)
-
-
-def _resolved_secret(
-    report: SecretResolutionReport | None,
-    name: str,
-) -> SecretResolution | None:
-    if report is None:
-        return None
-    return report.get(name)
-
-
-def world_fact_view(fact: WorldFact) -> WorldFactView:
-    return WorldFactView(
-        fact.subject,
-        fact.claim,
-        _copy_json_value(fact.value),
-        fact.confidence,
-        fact.observed_at,
-        tuple(str(item) for item in fact.evidence_ids),
-    )
-
-
-def world_fact_evidence_view(evidence: WorldFactEvidence) -> WorldFactEvidenceView:
-    return WorldFactEvidenceView(
-        str(evidence.evidence_id),
-        _copy_json_value(evidence.value),
-        evidence.confidence,
-        evidence.observed_at,
-        evidence.source,
-    )
-
-
-def world_fact_history_view(history: WorldFactHistory) -> WorldFactHistoryView:
-    return WorldFactHistoryView(
-        history.subject,
-        history.claim,
-        world_fact_view(history.current),
-        tuple(world_fact_evidence_view(item) for item in history.candidates),
-        history.conflicting,
-    )
-
-
-def world_entity_view(entity: WorldEntity) -> WorldEntityView:
-    return WorldEntityView(
-        str(entity.id),
-        entity.kind,
-        immutable_json({key: _copy_json_value(value) for key, value in entity.attributes.items()}),
-        tuple(str(item) for item in entity.evidence_ids),
-    )
-
-
-def world_relation_view(relation: WorldRelation) -> WorldRelationView:
-    return WorldRelationView(
-        str(relation.source),
-        relation.relation,
-        str(relation.target),
-        tuple(str(item) for item in relation.evidence_ids),
-    )
-
-
-def world_neighborhood_view(neighborhood: WorldNeighborhood) -> WorldNeighborhoodView:
-    return WorldNeighborhoodView(
-        None if neighborhood.root is None else world_entity_view(neighborhood.root),
-        tuple(world_fact_view(item) for item in neighborhood.facts),
-        tuple(world_relation_view(item) for item in neighborhood.outgoing_relations),
-        tuple(world_relation_view(item) for item in neighborhood.incoming_relations),
-        tuple(world_entity_view(item) for item in neighborhood.related_entities),
-    )
-
-
-def _world_projection_views_from_snapshot(
-    snapshot: WorldSnapshot,
-) -> tuple[
-    tuple[WorldFactView, ...],
-    tuple[WorldFactHistoryView, ...],
-    tuple[WorldEntityView, ...],
-    tuple[WorldRelationView, ...],
-]:
-    return (
-        tuple(world_fact_view(item) for item in snapshot.facts),
-        tuple(world_fact_history_view(item) for item in snapshot.fact_histories),
-        tuple(world_entity_view(item) for item in snapshot.entities),
-        tuple(world_relation_view(item) for item in snapshot.relations),
-    )
-
-
-def _evidence_from_view(view: EvidenceView) -> Evidence:
-    return Evidence(
-        view.session_id,
-        view.task_id,
-        view.action_id,
-        view.observation_id,
-        view.subject,
-        view.claim,
-        _copy_json_value(view.value),
-        view.source,
-        view.confidence,
-        view.evidence_id,
-        view.observed_at,
-    )
-
-
-def _copy_json_value(value: JsonValue) -> JsonValue:
-    if isinstance(value, list):
-        return [_copy_json_value(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _copy_json_value(item) for key, item in value.items()}
-    return value
-
-
-def _goal_work_payload(goal: Goal, task: Task) -> JsonMapping:
-    criteria: list[JsonValue] = []
-    for criterion in goal.success_criteria:
-        criteria.append(
-            {
-                "key": criterion.key,
-                "expected": _copy_json_value(criterion.expected),
-            }
-        )
-    payload: dict[str, JsonValue] = {
-        "goal": {
-            "id": str(goal.id),
-            "description": goal.description,
-            "success_criteria": criteria,
-            "created_at": goal.created_at.isoformat(),
-        },
-        "task": {
-            "id": str(task.id),
-            "description": task.description,
-            "required_criteria": list(task.required_criteria),
-            "created_at": task.created_at.isoformat(),
-        },
-    }
-    return immutable_json(payload)
-
-
-def _goal_work_idempotency_key(goal: Goal, task: Task) -> str:
-    return f"goal:{goal.id}:{task.id}"
-
-
-def _goal_task_from_work_payload(payload: Mapping[str, JsonValue]) -> tuple[Goal, Task]:
-    goal_payload = _object_payload_field(payload, "goal", "goal")
-    task_payload = _object_payload_field(payload, "task", "task")
-    return (
-        Goal(
-            _required_string_payload_field(goal_payload, "description", "goal.description"),
-            _success_criteria_from_payload(goal_payload),
-            id=GoalId(_required_string_payload_field(goal_payload, "id", "goal.id")),
-            created_at=_datetime_payload_field(goal_payload, "created_at", "goal.created_at"),
-        ),
-        Task(
-            _required_string_payload_field(task_payload, "description", "task.description"),
-            _string_tuple_payload_field(
-                task_payload,
-                "required_criteria",
-                "task.required_criteria",
-            ),
-            id=TaskId(_required_string_payload_field(task_payload, "id", "task.id")),
-            created_at=_datetime_payload_field(task_payload, "created_at", "task.created_at"),
-        ),
-    )
-
-
-def _object_payload_field(
-    payload: Mapping[str, JsonValue],
-    key: str,
-    field: str,
-) -> Mapping[str, JsonValue]:
-    value = payload.get(key)
-    if not isinstance(value, dict):
-        raise ValueError(f"{field} must be an object")
-    return cast(Mapping[str, JsonValue], value)
-
-
-def _success_criteria_from_payload(
-    payload: Mapping[str, JsonValue],
-) -> tuple[SuccessCriterion, ...]:
-    value = payload.get("success_criteria")
-    if not isinstance(value, list):
-        raise ValueError("goal.success_criteria must be a list")
-    if not value:
-        raise ValueError("goal.success_criteria must not be empty")
-    criteria: list[SuccessCriterion] = []
-    for index, item in enumerate(value):
-        field = f"goal.success_criteria[{index}]"
-        if not isinstance(item, dict):
-            raise ValueError(f"{field} must be an object")
-        item_payload = cast(Mapping[str, JsonValue], item)
-        criteria.append(
-            SuccessCriterion(
-                _required_string_payload_field(item_payload, "key", f"{field}.key"),
-                _required_json_payload_field(item_payload, "expected", f"{field}.expected"),
-            )
-        )
-    return tuple(criteria)
-
-
-def _string_tuple_payload_field(
-    payload: Mapping[str, JsonValue],
-    key: str,
-    field: str,
-) -> tuple[str, ...]:
-    value = payload.get(key)
-    if not isinstance(value, list):
-        raise ValueError(f"{field} must be a list")
-    values: list[str] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, str):
-            raise ValueError(f"{field}[{index}] must be a string")
-        if not item.strip():
-            raise ValueError(f"{field}[{index}] must not be empty")
-        values.append(item)
-    return tuple(values)
-
-
-def _required_string_payload_field(
-    payload: Mapping[str, JsonValue],
-    key: str,
-    field: str,
-) -> str:
-    value = payload.get(key)
-    if not isinstance(value, str):
-        raise ValueError(f"{field} must be a string")
-    if not value.strip():
-        raise ValueError(f"{field} must not be empty")
-    return value
-
-
-def _required_json_payload_field(
-    payload: Mapping[str, JsonValue],
-    key: str,
-    field: str,
-) -> JsonValue:
-    if key not in payload:
-        raise ValueError(f"{field} is required")
-    return _copy_json_value(payload[key])
-
-
-def _datetime_payload_field(
-    payload: Mapping[str, JsonValue],
-    key: str,
-    field: str,
-) -> datetime:
-    value = payload.get(key)
-    if value is None:
-        return utc_now()
-    if not isinstance(value, str):
-        raise ValueError(f"{field} must be an ISO datetime string")
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError as exc:
-        raise ValueError(f"{field} must be an ISO datetime string") from exc
-
-
-def _unrepairable_state_event_items(
-    sessions: tuple[SessionSummaryView, ...],
-    events: tuple[RuntimeEventView, ...],
-) -> tuple[StateEventRepairSkipView, ...]:
-    session_ids = frozenset(session.session_id for session in sessions)
-    return tuple(
-        StateEventRepairSkipView(
-            event.session_id,
-            event.event_id,
-            f"orphan event cannot be repaired automatically: {event.event_id}",
-        )
-        for event in events
-        if event.session_id not in session_ids
-    )
-
-
-def _missing_terminal_state_events(
-    sessions: tuple[SessionSummaryView, ...],
-    events: tuple[RuntimeEventView, ...],
-) -> tuple[RuntimeEvent, ...]:
-    events_by_session: dict[SessionId, set[str]] = {}
-    for event in events:
-        events_by_session.setdefault(event.session_id, set()).add(event.type)
-
-    repairs: list[RuntimeEvent] = []
-    for session in sessions:
-        expected = _TERMINAL_EVENT_BY_GOAL_STATUS.get(session.goal_status)
-        if expected is None:
-            continue
-        if expected in events_by_session.get(session.session_id, set()):
-            continue
-        repairs.append(_terminal_repair_event(session, expected))
-    return tuple(repairs)
-
-
-def _terminal_repair_event(
-    session: SessionSummaryView,
-    event_type: str,
-) -> RuntimeEvent:
-    return RuntimeEvent(
-        event_type,
-        session.session_id,
-        session.goal_id,
-        session.current_task_id,
-        data={
-            "repair_source": "state_event_consistency",
-            "repair_reason": "missing_terminal_event",
-            "goal_status": session.goal_status.value,
-            "termination_reason": session.termination_reason,
-            "error_code": None if session.error_code is None else session.error_code.value,
-        },
-    )
-
-
-def _not_ready_reason(
-    *,
-    has_domains: bool,
-    has_capabilities: bool,
-    has_tools: bool,
-    missing_tools: tuple[str, ...],
-) -> str:
-    if not has_domains:
-        return "no domains loaded"
-    if not has_capabilities:
-        return "no capabilities registered"
-    if not has_tools:
-        return "no tools registered"
-    if missing_tools:
-        return "capabilities without tools: " + ", ".join(missing_tools)
-    return "not ready"
