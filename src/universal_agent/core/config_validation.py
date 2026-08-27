@@ -15,6 +15,7 @@ __all__ = [
     "enum_value",
     "json_mapping",
     "parse_json_object",
+    "parse_json_value",
     "parse_payload",
     "pydantic_error_message",
     "string_mapping",
@@ -28,6 +29,7 @@ class ConfigPayload(BaseModel):
 _JSON_OBJECT_ADAPTER: TypeAdapter[dict[str, PydanticJsonValue]] = TypeAdapter(
     dict[str, PydanticJsonValue]
 )
+_JSON_VALUE_ADAPTER: TypeAdapter[PydanticJsonValue] = TypeAdapter(PydanticJsonValue)
 _STRING_MAPPING_ADAPTER: TypeAdapter[dict[str, str]] = TypeAdapter(dict[str, str])
 
 
@@ -44,6 +46,13 @@ def parse_json_object(value: object, field: str) -> JsonMapping:
     except PydanticValidationError as exc:
         raise ValueError(pydantic_error_message(exc, field)) from exc
     return json_mapping(parsed)
+
+
+def parse_json_value(value: object, field: str) -> JsonValue:
+    try:
+        return _JSON_VALUE_ADAPTER.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        raise ValueError(pydantic_error_message(exc, field)) from exc
 
 
 def json_mapping(value: Mapping[str, PydanticJsonValue]) -> JsonMapping:

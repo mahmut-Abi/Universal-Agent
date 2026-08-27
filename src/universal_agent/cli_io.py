@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import TextIO
 
 from universal_agent.core import DomainIdentity, JsonValue, SuccessCriterion
+from universal_agent.core.config_validation import parse_json_value
 
 
 class CliExit(Exception):
@@ -45,22 +46,7 @@ def _parse_success_json_value(value: str, key: str) -> JsonValue:
         loaded: object = json.loads(value)
     except json.JSONDecodeError as exc:
         raise ValueError(f"success criterion {key} must be valid JSON") from exc
-    return _json_value(loaded, f"success.{key}")
-
-
-def _json_value(value: object, field: str) -> JsonValue:
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, list):
-        return [_json_value(item, f"{field}[]") for item in value]
-    if isinstance(value, Mapping):
-        result: dict[str, JsonValue] = {}
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise ValueError(f"{field} keys must be strings")
-            result[key] = _json_value(item, f"{field}.{key}")
-        return result
-    raise ValueError(f"{field} must be JSON-compatible")
+    return parse_json_value(loaded, f"success.{key}")
 
 
 def _parse_domain_identity(value: str) -> DomainIdentity:
