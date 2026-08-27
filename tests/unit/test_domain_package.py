@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from universal_agent.core import DomainIdentity, JsonMapping, JsonValue
 from universal_agent.domain import (
@@ -18,6 +19,7 @@ from universal_agent.domain import (
     build_domain_package_manifest,
     decode_domain_package_manifest,
     encode_domain_package_manifest,
+    load_domain_package,
     load_domain_package_runtime,
     scaffold_domain_package,
     verify_domain_package,
@@ -79,6 +81,13 @@ def write_manifest(root: Path, payload: JsonMapping) -> Path:
                 resource_path.mkdir(parents=True, exist_ok=True)
     manifest_path = root / "manifest.json"
     manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return manifest_path
+
+
+def write_yaml_manifest(root: Path, payload: JsonMapping) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    manifest_path = root / "manifest.yaml"
+    manifest_path.write_text(yaml.safe_dump(dict(payload), sort_keys=True), encoding="utf-8")
     return manifest_path
 
 
@@ -240,18 +249,43 @@ def test_domain_package_registry_installs_validated_package(tmp_path: Path) -> N
     assert registry.list(tag="database") == ()
 
 
+def test_load_domain_package_accepts_yaml_manifest(tmp_path: Path) -> None:
+    root = tmp_path / "kubernetes-domain"
+    manifest_path = write_yaml_manifest(root, package_payload())
+
+    package = load_domain_package(root)
+
+    assert package.root_path == root
+    assert package.manifest_path == manifest_path
+    assert package.identity == DomainIdentity("kubernetes", "1.0.0")
+    assert package.manifest.capabilities == ("inspect_workload",)
+
+
 def test_domain_package_registry_discovers_manifests_in_stable_order(tmp_path: Path) -> None:
     write_manifest(tmp_path / "beta-domain", package_payload("beta", tags=("database",)))
     write_manifest(tmp_path / "alpha-domain", package_payload("alpha", tags=("ops",)))
+    write_yaml_manifest(tmp_path / "gamma-domain", package_payload("gamma", tags=("ops",)))
 
     registry = DomainPackageRegistry()
     packages = registry.discover(tmp_path)
 
-    assert [package.identity.name for package in packages] == ["alpha", "beta"]
+    assert [package.identity.name for package in packages] == ["alpha", "beta", "gamma"]
     assert registry.identities() == (
         DomainIdentity("alpha", "1.0.0"),
         DomainIdentity("beta", "1.0.0"),
+        DomainIdentity("gamma", "1.0.0"),
     )
+
+
+def test_domain_package_registry_rejects_multiple_manifests_in_one_package(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "kubernetes-domain"
+    write_manifest(root, package_payload())
+    write_yaml_manifest(root, package_payload())
+
+    with pytest.raises(DomainPackageValidationError, match="multiple domain package manifests"):
+        DomainPackageRegistry().install(root)
 
 
 def test_domain_package_registry_reports_duplicate_missing_and_ambiguous_packages(

@@ -8,6 +8,11 @@ from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
 from universal_agent.domain.runtime import ActiveDomain, DomainRuntime
 
 DOMAIN_PACKAGE_MANIFEST = "manifest.json"
+DOMAIN_PACKAGE_MANIFESTS = (
+    DOMAIN_PACKAGE_MANIFEST,
+    "manifest.yaml",
+    "manifest.yml",
+)
 DOMAIN_PACKAGE_DIRECTORIES = (
     "ontology",
     "capabilities",

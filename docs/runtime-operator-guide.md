@@ -381,7 +381,7 @@ Useful lock and cancellation commands:
 
 P7 ecosystem commands validate and register local metadata:
 
-- Domain package manifests
+- Domain package manifests (`manifest.json`, `manifest.yaml` or `manifest.yml`)
 - Evaluation dataset manifests
 - Profile configs
 - Ecosystem registry manifests

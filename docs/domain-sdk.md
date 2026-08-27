@@ -52,7 +52,9 @@ validation, including tool capability references and evaluator registration.
 ## Package Metadata
 
 Domain package registry operations are metadata-only. Installing or discovering
-a package must not import Domain code or mutate Kernel runtime state.
+a package must not import Domain code or mutate Kernel runtime state. Package
+roots may use `manifest.json`, `manifest.yaml` or `manifest.yml`; scaffolding
+continues to write `manifest.json` by default for backward compatibility.
 
 Use `domain_package_scaffold_spec_from_runtime_spec` when a package scaffold
 should stay aligned with a declarative runtime spec:

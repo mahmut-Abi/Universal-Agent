@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import yaml
 from pydantic import Field
+from yaml import YAMLError
 
 from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
 from universal_agent.core.config_validation import (
@@ -16,6 +17,7 @@ from universal_agent.core.config_validation import (
 )
 from universal_agent.domain.package_models import (
     DOMAIN_PACKAGE_MANIFEST,
+    DOMAIN_PACKAGE_MANIFESTS,
     DomainPackage,
     DomainPackageCompatibility,
     DomainPackageManifest,
@@ -70,7 +72,7 @@ class _DomainPackageManifestPayload(ConfigPayload):
 
 def load_domain_package(path: Path) -> DomainPackage:
     manifest_path = _manifest_path(path)
-    payload = _load_json_object(manifest_path)
+    payload = _load_manifest_object(manifest_path)
     manifest = decode_domain_package_manifest(payload)
     return DomainPackage(
         manifest=manifest,
@@ -278,24 +280,44 @@ def _manifest_paths(root: Path) -> tuple[Path, ...]:
         return (_manifest_path(root),)
     if not root.exists():
         raise DomainPackageNotFoundError(f"domain package root not found: {root}")
-    return tuple(sorted(root.rglob(DOMAIN_PACKAGE_MANIFEST)))
+    return tuple(
+        sorted(
+            path
+            for manifest_name in DOMAIN_PACKAGE_MANIFESTS
+            for path in root.rglob(manifest_name)
+        )
+    )
 
 
 def _manifest_path(path: Path) -> Path:
     if path.is_dir():
+        manifests = tuple(
+            candidate
+            for name in DOMAIN_PACKAGE_MANIFESTS
+            if (candidate := path / name).exists()
+        )
+        if len(manifests) > 1:
+            names = ", ".join(item.name for item in manifests)
+            raise DomainPackageValidationError(
+                f"multiple domain package manifests found in {path}: {names}"
+            )
+        if manifests:
+            return manifests[0]
         return path / DOMAIN_PACKAGE_MANIFEST
     return path
 
 
-def _load_json_object(path: Path) -> JsonMapping:
+def _load_manifest_object(path: Path) -> JsonMapping:
     if not path.exists():
         raise DomainPackageNotFoundError(f"domain package manifest not found: {path}")
     try:
-        loaded: Any = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise DomainPackageValidationError(f"invalid domain package manifest JSON: {path}") from exc
+        loaded: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except YAMLError as exc:
+        raise DomainPackageValidationError(
+            f"invalid domain package manifest document: {path}"
+        ) from exc
     if not isinstance(loaded, dict):
-        raise DomainPackageValidationError("domain package manifest must be a JSON object")
+        raise DomainPackageValidationError("domain package manifest must be an object")
     return immutable_json(loaded)
 
 

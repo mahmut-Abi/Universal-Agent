@@ -56,6 +56,14 @@
 | 收益 | 指标格式交给官方库维护，避免手写 HELP/TYPE/sample 行细节；Runtime 仍只负责从事件投影 metrics view |
 | 风险 | 低：输出数值使用 prometheus-client 的 float 表达，相关 CLI/agentd 测试已覆盖 |
 
+### 5. PyYAML → 替换 Domain manifest 的 JSON-only loader（已完成）
+
+| 项 | 说明 |
+|---|---|
+| 现状 | Domain package loader/registry 已使用 `yaml.safe_load` 读取 manifest，并兼容 `manifest.json`、`manifest.yaml`、`manifest.yml` |
+| 收益 | 对齐设计文档的 `manifest.yaml` 目标，同时保留 scaffold 默认写 `manifest.json` 的兼容契约 |
+| 风险 | 低：同目录存在多个 manifest 时显式报错，避免 registry 静默选错 |
+
 ---
 
 ## Tier 2 — 明确收益，按需排期
@@ -73,7 +81,6 @@
 |---|---|---|
 | Redis 或 PostgreSQL | P6 分布式超过本地原语 | 文件轮询队列 → `FOR UPDATE SKIP LOCKED` / Redis TTL 锁的生产级语义 |
 | Jinja2 | `web.py` 继续膨胀 | 2728 行 f-string 拼 HTML + escape → 模板化，预计省一半 |
-| PyYAML | Domain manifest 从 json 迁 yaml | 设计文档 §11 写的是 manifest.yaml，k8s 风格创作更友好 |
 
 ---
 
@@ -103,6 +110,7 @@
 第三批（体验与观测）
     Textual TUI + Typer/Rich CLI
     opentelemetry-sdk exporter（推送 Tempo）
+    PyYAML(Domain Package manifest YAML 兼容，已完成)
 
 第四批（触发式）
     Redis/PostgreSQL 分布式后端
