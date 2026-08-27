@@ -21,6 +21,23 @@ _PAGE_TEMPLATE = _WEB_ENV.from_string(
 </body>
 </html>"""
 )
+_SECTION_TEMPLATE = _WEB_ENV.from_string(
+    """<section class="panel">
+<h2>{{ title }}</h2>
+{{ body|safe }}
+</section>"""
+)
+_METRIC_CARD_TEMPLATE = _WEB_ENV.from_string(
+    """<article class="card">
+<span>{{ label }}</span>
+<strong>{{ value }}</strong>
+</article>"""
+)
+_TABLE_TEMPLATE = _WEB_ENV.from_string(
+    '<div class="table-wrap"><table><thead><tr>'
+    "{% for header in headers %}<th>{{ header }}</th>{% endfor %}"
+    "</tr></thead><tbody>{{ rows|join|safe }}</tbody></table></div>"
+)
 
 
 def _page(title: str, sections: tuple[str, ...], *, stylesheet: str | None = None) -> str:
@@ -32,36 +49,15 @@ def _page(title: str, sections: tuple[str, ...], *, stylesheet: str | None = Non
 
 
 def _section(title: str, body: str) -> str:
-    return "\n".join(
-        (
-            '<section class="panel">',
-            f"<h2>{_html(title)}</h2>",
-            body,
-            "</section>",
-        )
-    )
+    return _SECTION_TEMPLATE.render(title=title, body=body)
 
 
 def _metric_card(label: str, value: object) -> str:
-    return "\n".join(
-        (
-            '<article class="card">',
-            f"<span>{_html(label)}</span>",
-            f"<strong>{_html(value)}</strong>",
-            "</article>",
-        )
-    )
+    return _METRIC_CARD_TEMPLATE.render(label=label, value=value)
 
 
 def _table(headers: tuple[str, ...], rows: tuple[str, ...]) -> str:
-    header = "".join(f"<th>{_html(item)}</th>" for item in headers)
-    return (
-        '<div class="table-wrap"><table><thead><tr>'
-        + header
-        + "</tr></thead><tbody>"
-        + "".join(rows)
-        + "</tbody></table></div>"
-    )
+    return _TABLE_TEMPLATE.render(headers=headers, rows=rows)
 
 
 def _html(value: object) -> str:

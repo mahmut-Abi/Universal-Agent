@@ -15,7 +15,7 @@ from universal_agent.evaluation.recording import (
     EvaluationScenarioRecording,
     FileEvaluationReportStore,
 )
-from universal_agent.web_ui import _page
+from universal_agent.web_ui import _metric_card, _page, _section, _table
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,39 +293,6 @@ def _gate_checks(reports: tuple[EvaluationReportRecording, ...]) -> str:
     return _section(
         "Quality Gate Checks",
         _table(("Suite", "Check", "Status", "Message"), tuple(rows)),
-    )
-
-
-def _section(title: str, body: str) -> str:
-    return "\n".join(
-        (
-            '<section class="panel">',
-            f"<h2>{_html(title)}</h2>",
-            body,
-            "</section>",
-        )
-    )
-
-
-def _metric_card(label: str, value: object) -> str:
-    return "\n".join(
-        (
-            '<article class="card">',
-            f"<span>{_html(label)}</span>",
-            f"<strong>{_html(value)}</strong>",
-            "</article>",
-        )
-    )
-
-
-def _table(headers: tuple[str, ...], rows: tuple[str, ...]) -> str:
-    header = "".join(f"<th>{_html(item)}</th>" for item in headers)
-    return (
-        '<div class="table-wrap"><table><thead><tr>'
-        + header
-        + "</tr></thead><tbody>"
-        + "".join(rows)
-        + "</tbody></table></div>"
     )
 
 

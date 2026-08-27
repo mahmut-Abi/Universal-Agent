@@ -86,9 +86,9 @@
 
 | 项 | 说明 |
 |---|---|
-| 现状 | `web_ui._page()` 已用 Jinja2 接管 Web Console 与 Evaluation Console 的 doctype/head/body/main 页面骨架；页面内部 section/table 渲染暂保留现有 helper，避免一次性大迁移 |
-| 收益 | 去除十余处重复 HTML 外壳拼接，统一标题转义和 body 注入边界，为后续 section/table 模板化建立单一入口 |
-| 风险 | 低：渲染内容顺序和现有 URL/section helper 不变，Web/Evaluation 测试覆盖 escaping 与关键页面文本 |
+| 现状 | `web_ui._page()`、`_section()`、`_metric_card()`、`_table()` 已用 Jinja2 接管 Web Console 与 Evaluation Console 的页面骨架和公共 section/card/table 片段；Evaluation Console 已复用公共 helper，去除一份重复手写 HTML helper |
+| 收益 | HTML 外壳与高频片段渲染统一到模板 seam，减少重复拼接和 escaping 漏洞面；后续可按页面族迁移 row/detail/hero 模板，不必一次性重写全部 UI |
+| 风险 | 低：渲染内容顺序和现有 URL/section helper 不变，Web/Evaluation/agentd route 测试覆盖 escaping 与关键页面文本 |
 
 ### 9. python-dateutil → 替换手写 ISO datetime 兼容解析（已完成）
 
