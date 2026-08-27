@@ -72,7 +72,7 @@
 |---|---|---|---|
 | Textual | `tui.py` | 683 行一次性静态打印 → 真 TUI（现状无 curses/事件循环/刷新，见 cli.py:1192 仅"建快照→渲染→退出"） | headless 测试模式保住可测性；现有 `build_tui_snapshot` 直接复用为数据层 |
 | jsonschema | `core/arguments.py` / `tools/runtime.py:181` | 已由 `Draft202012Validator` 接管 capability/tool argument schema 校验；`tools/runtime.py` 继续通过统一 contract 入口调用 | 后续可补充 `oneOf/pattern` 等覆盖用例 |
-| opentelemetry-sdk | `operations/runtime.py:544+` | OTel 形状投影（span/OTLP JSON）变真 span 推送，对接已有 Tempo/Grafana 监控栈 | 观测闭环；README 列 "OpenTelemetry exporters" 为未来工作 |
+| opentelemetry-proto | `operations/otlp.py` | 已用官方 OTLP protobuf schema 类型接管 trace export payload 生成，保留现有 JSON/hex ID Runtime API 契约 | 后续若需要直接推送 Tempo/Collector，再引入 `opentelemetry-sdk` / OTLP exporter |
 | Typer + Rich | `cli.py` | argparse 样板约 -30%；内省命令表格化输出 | 与 Textual 同批做体验统一 |
 
 ## Tier 3 — 场景触发再引入
@@ -109,7 +109,7 @@
 
 第三批（体验与观测）
     Textual TUI + Typer/Rich CLI
-    opentelemetry-sdk exporter（推送 Tempo）
+    opentelemetry-proto OTLP payload（已完成）；opentelemetry-sdk exporter（按部署需要再接入）
     PyYAML(Domain Package manifest YAML 兼容，已完成)
 
 第四批（触发式）

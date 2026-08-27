@@ -604,6 +604,20 @@ def test_opentelemetry_trace_export_projects_otlp_json_payload() -> None:
     } in attributes
 
 
+def test_opentelemetry_trace_export_keeps_empty_span_list() -> None:
+    payload = build_opentelemetry_trace_export(())
+
+    resource_spans = payload["resourceSpans"]
+    assert isinstance(resource_spans, list)
+    resource_span = resource_spans[0]
+    assert isinstance(resource_span, dict)
+    scope_spans = resource_span["scopeSpans"]
+    assert isinstance(scope_spans, list)
+    scope_span = scope_spans[0]
+    assert isinstance(scope_span, dict)
+    assert scope_span["spans"] == []
+
+
 def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
     report = build_doctor_report(
         health_status="ok",

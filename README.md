@@ -296,8 +296,9 @@ detect accidental split state/event wiring. These adapters are local persistence
   data for CLI/agentd consumers. Trace span projections derive session/action trees plus decision,
   model usage, policy, observation, resource lock, resource conflict and evaluation phase spans from
   the same event stream with redacted attributes for OpenTelemetry-shaped consumers, and the OTLP
-  adapter projects those spans into dependency-free collector payloads. Resource lock metrics and
-  doctor checks report acquired/released locks, conflicts and active locks derived from runtime
+  adapter projects those spans through official OTLP protobuf schema types while preserving the
+  existing JSON endpoint contract. Resource lock metrics and doctor checks report
+  acquired/released locks, conflicts and active locks derived from runtime
   events; Doctor also validates state/event consistency by detecting orphan events and terminal
   sessions missing matching terminal events. The Evaluation Harness can assert status, error
   codes, events, Evidence claims, executed capabilities, audit coverage, policy denials, recovery plans, criteria,
