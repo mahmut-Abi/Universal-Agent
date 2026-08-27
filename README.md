@@ -249,7 +249,9 @@ detect accidental split state/event wiring. These adapters are local persistence
   API inspection/mutation behind the existing injected backend protocols plus explicit Profile/CLI
   opt-in. A Domain-owned action argument provider can enrich scale mutations with observed
   `current_replicas` and `resource_version` guards before policy/tool execution. Mutation receipts
-  never substitute for verification evidence.
+  never substitute for verification evidence. Selector-backed workload observations now project
+  matching Pods into first-class Evidence/World facts plus workload-to-Pod relations, so downstream
+  model context can identify the failing Pod without Kernel-specific Kubernetes branches.
 - P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
   projections, lightweight cursor-aware `SessionSummaryView` listing, cursor-aware `EventReader`,
   `RuntimeSessionBatch` / `RuntimeEventBatch`, action idempotency metadata (`idempotency_key`,
@@ -506,6 +508,7 @@ Python 3.12 or newer is required.
 .venv/bin/python examples/p3_memory.py
 .venv/bin/python examples/p3_multi_domain_evaluator_routing.py
 .venv/bin/python examples/p3_2_kubernetes_remediation.py
+.venv/bin/python examples/p3_2_kubernetes_pod_evidence.py
 .venv/bin/python examples/p3_2_kubectl_backend.py
 .venv/bin/python examples/p3_2_kubernetes_api_backend.py
 .venv/bin/python examples/p3_5_runtime_api.py

@@ -14,7 +14,6 @@ from universal_agent.core import (
     EvaluationStatus,
     JsonMapping,
     JsonValue,
-    ObservationStatus,
     PolicyEffect,
     RiskLevel,
     ToolDefinition,
@@ -22,11 +21,12 @@ from universal_agent.core import (
 )
 from universal_agent.domain import ActionArgumentContext, ActionArgumentProvider
 from universal_agent.domains.kubernetes.backend import KubernetesBackend, KubernetesMutationBackend
+from universal_agent.domains.kubernetes.evidence import KubernetesEvidenceExtractor
 from universal_agent.domains.kubernetes.policy import KubernetesScalePolicy
 from universal_agent.domains.kubernetes.tools import KubernetesScaleTool
 from universal_agent.domains.kubernetes.workflow import KubernetesRemediationExpander
 from universal_agent.evaluation import Evaluator
-from universal_agent.evidence import Evidence, EvidenceContext, EvidenceExtractor
+from universal_agent.evidence import EvidenceExtractor
 from universal_agent.memory import MemoryKind, MemoryRecord
 from universal_agent.policy import Policy, PolicyRule
 from universal_agent.recovery import (
@@ -74,30 +74,6 @@ class KubernetesContextProvider:
                 "Operate on Kubernetes resources using read-only inspection capabilities.",
                 10,
             ),
-        )
-
-
-class KubernetesEvidenceExtractor:
-    name = "kubernetes-evidence"
-
-    def extract(self, context: EvidenceContext) -> tuple[Evidence, ...]:
-        if context.observation.status is not ObservationStatus.SUCCEEDED:
-            return ()
-        subject = str(context.observation.data.get("resource") or context.observation.source)
-        return tuple(
-            Evidence(
-                context.session_id,
-                context.task.id,
-                context.observation.action_id,
-                context.observation.id,
-                subject,
-                key,
-                value,
-                context.observation.source,
-                0.99,
-                observed_at=context.observation.observed_at,
-            )
-            for key, value in context.observation.data.items()
         )
 
 

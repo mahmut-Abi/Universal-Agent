@@ -62,6 +62,9 @@ The command must:
 - include matching Pod summaries in workload inspection observations when the
   workload exposes selector labels, so container readiness and CrashLoopBackOff
   evidence can influence diagnosis before a separate Pod/log action;
+- project those matching Pod summaries into Evidence and the shared World Model
+  as Pod facts plus workload-to-Pod `owns` relations, without adding
+  Kubernetes-specific logic to the Kernel;
 - construct a Runtime-owned `Goal` with `healthy=true`, `resource=<workload>`,
   and optional `namespace=<namespace>` success criteria;
 - construct a `Task` that names the workload and namespace;
@@ -165,6 +168,8 @@ Tests target these public interfaces:
   namespace differs from the `kubernetes run` request.
 - `inspect_workload` observations for selector-backed workloads include
   `selector_labels`, `pod_count`, `ready_pod_count`, and `pods` summary fields.
+- Selector-backed workload observations produce Pod-level Evidence/World facts
+  and workload-to-Pod relations from the Kubernetes Domain extractor.
 - Production `scale_workload` decisions return status `waiting` with a
   confirmation command instead of mutating immediately, while
   `contract.checks.confirmation_boundary` remains `ok`.
