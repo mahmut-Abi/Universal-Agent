@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from universal_agent.core import (
     ActionId,
     AgentState,
@@ -303,3 +305,43 @@ def test_runtime_event_codec_preserves_json_safe_event_data() -> None:
     assert restored.data["domains"] == ["kubernetes@0.2.0", "observability@0.1.0"]
     assert restored.data["emitted_at"] == "2026-08-22T10:31:00+00:00"
     assert restored.occurred_at == event.occurred_at
+
+
+def test_persistence_codec_rejects_invalid_persisted_types_without_coercion() -> None:
+    observed_at = datetime(2026, 8, 22, 10, 30, tzinfo=UTC)
+    task = Task("Inspect", (), TaskId("task-invalid"), TaskStatus.WAITING, observed_at)
+    snapshot = SessionSnapshot(
+        AgentState(
+            session_id=SessionId("session-invalid"),
+            goal=Goal("Invalid", (), GoalId("goal-invalid"), GoalStatus.WAITING, observed_at),
+            current_task=task,
+            tasks=[task],
+        ),
+        TaskGraphSnapshot((TaskNodeSnapshot("task-invalid", task),), task.id),
+        (),
+        "kubernetes",
+        "0.2.0",
+    )
+    encoded = encode_session_snapshot(snapshot)
+    state = encoded["state"]
+    assert isinstance(state, dict)
+    state["iteration"] = "1"
+
+    with pytest.raises(ValueError, match=r"state\.iteration must be an integer"):
+        decode_session_snapshot(encoded)
+
+    event = RuntimeEvent(
+        type="InvalidEvent",
+        session_id=SessionId("session-invalid"),
+        goal_id=GoalId("goal-invalid"),
+        task_id=TaskId("task-invalid"),
+        id=EventId("event-invalid"),
+        action_id=None,
+        data={},
+        occurred_at=observed_at,
+    )
+    event_payload = encode_runtime_event(event)
+    event_payload["data"] = []
+
+    with pytest.raises(ValueError, match="data must be an object"):
+        decode_runtime_event(event_payload)

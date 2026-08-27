@@ -5,12 +5,12 @@ from pathlib import Path
 from urllib.parse import quote
 
 from universal_agent.core import AgentState, EventId, RuntimeEvent, SessionId
+from universal_agent.core.config_validation import json_mapping
 from universal_agent.persistence.codec import (
     decode_runtime_event,
     decode_session_snapshot,
     encode_runtime_event,
     encode_session_snapshot,
-    json_mapping,
 )
 from universal_agent.runtime.events import filter_events
 from universal_agent.state import (

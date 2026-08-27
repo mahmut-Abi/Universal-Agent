@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from enum import Enum
-from typing import cast
 
 from universal_agent.core import (
     ActionId,
@@ -16,7 +15,6 @@ from universal_agent.core import (
     Goal,
     GoalId,
     GoalStatus,
-    JsonMapping,
     JsonValue,
     Observation,
     ObservationId,
@@ -30,12 +28,144 @@ from universal_agent.core import (
     TaskStatus,
     immutable_json,
 )
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    PydanticJsonValue,
+    json_mapping,
+    parse_payload,
+)
 from universal_agent.evidence import Evidence, EvidenceId
 from universal_agent.state import SessionSnapshot
 from universal_agent.tasks import TaskGraphSnapshot, TaskNodeSnapshot
 
 SCHEMA_VERSION = 1
 JsonObject = dict[str, JsonValue]
+
+
+class _DomainIdentityPayload(ConfigPayload):
+    name: str
+    version: str
+
+
+class _SuccessCriterionPayload(ConfigPayload):
+    key: str
+    expected: PydanticJsonValue
+
+
+class _GoalPayload(ConfigPayload):
+    description: str
+    success_criteria: list[_SuccessCriterionPayload]
+    id: str
+    status: str
+    created_at: str
+
+
+class _TaskPayload(ConfigPayload):
+    description: str
+    required_criteria: list[str]
+    id: str
+    status: str
+    created_at: str
+
+
+class _TaskNodePayload(ConfigPayload):
+    key: str
+    task: _TaskPayload
+    depends_on: list[str]
+
+
+class _TaskGraphPayload(ConfigPayload):
+    nodes: list[_TaskNodePayload]
+    current_task_id: str
+
+
+class _ObservationPayload(ConfigPayload):
+    id: str
+    action_id: str
+    task_id: str
+    source: str
+    status: str
+    data: dict[str, PydanticJsonValue]
+    observed_at: str
+    error: str | None
+    error_code: str | None
+
+
+class _EvaluationPayload(ConfigPayload):
+    status: str
+    reason: str
+    evaluator_name: str
+    matched_criteria: dict[str, PydanticJsonValue]
+    task_completed: bool
+    goal_completed: bool
+
+
+class _PendingActionPayload(ConfigPayload):
+    action_id: str
+    capability: str
+    tool_name: str
+    target: str | None
+    arguments: dict[str, PydanticJsonValue]
+    domain_name: str
+    domain_version: str
+    idempotency_key: str = ""
+    parameters_hash: str = ""
+    attempt: int = 1
+    resource_key: str = ""
+    resource_version: str | None = None
+
+
+class _AgentStatePayload(ConfigPayload):
+    session_id: str
+    goal: _GoalPayload
+    current_task_id: str
+    iteration: int
+    satisfied_criteria: dict[str, PydanticJsonValue]
+    observations: list[_ObservationPayload]
+    latest_evaluation: _EvaluationPayload | None
+    pending_action: _PendingActionPayload | None
+    task_ids: list[str]
+    recovery_attempts: dict[str, int]
+    termination_reason: str | None
+    error_code: str | None
+
+
+class _EvidencePayload(ConfigPayload):
+    session_id: str
+    task_id: str
+    action_id: str
+    observation_id: str
+    subject: str
+    claim: str
+    value: PydanticJsonValue
+    source: str
+    confidence: float
+    id: str
+    observed_at: str
+    domain_name: str = ""
+    domain_version: str = ""
+
+
+class _SessionSnapshotPayload(ConfigPayload):
+    schema_version: int
+    domain: _DomainIdentityPayload
+    domains: list[_DomainIdentityPayload] | None = None
+    version: int = 0
+    task_graph: _TaskGraphPayload
+    state: _AgentStatePayload
+    evidence: list[_EvidencePayload]
+
+
+class _RuntimeEventPayload(ConfigPayload):
+    schema_version: int
+    event_id: str
+    type: str
+    session_id: str
+    goal_id: str
+    task_id: str
+    action_id: str | None
+    data: dict[str, PydanticJsonValue]
+    occurred_at: str
 
 
 def encode_session_snapshot(snapshot: SessionSnapshot) -> JsonObject:
@@ -56,26 +186,24 @@ def encode_session_snapshot(snapshot: SessionSnapshot) -> JsonObject:
 
 
 def decode_session_snapshot(payload: Mapping[str, JsonValue]) -> SessionSnapshot:
-    version = _int(_required(payload, "schema_version"), "schema_version")
-    if version != SCHEMA_VERSION:
-        raise ValueError(f"unsupported session snapshot schema version: {version}")
-    graph, tasks = _decode_task_graph(_object(_required(payload, "task_graph"), "task_graph"))
-    state = _decode_agent_state(_object(_required(payload, "state"), "state"), tasks)
-    evidence = tuple(
-        _decode_evidence(_object(item, "evidence[]"))
-        for item in _list(_required(payload, "evidence"), "evidence")
-    )
-    domain = _object(_required(payload, "domain"), "domain")
-    domain_name = _string(_required(domain, "name"), "domain.name")
-    domain_version = _string(_required(domain, "version"), "domain.version")
+    snapshot = _parse_codec_payload(_SessionSnapshotPayload, payload)
+    if snapshot.schema_version != SCHEMA_VERSION:
+        raise ValueError(f"unsupported session snapshot schema version: {snapshot.schema_version}")
+    graph, tasks = _decode_task_graph(snapshot.task_graph)
+    state = _decode_agent_state(snapshot.state, tasks)
+    evidence = tuple(_decode_evidence(item) for item in snapshot.evidence)
     return SessionSnapshot(
         state,
         graph,
         evidence,
-        domain_name,
-        domain_version,
-        _decode_domain_identities(payload.get("domains"), domain_name, domain_version),
-        _int(payload.get("version", 0), "version"),
+        snapshot.domain.name,
+        snapshot.domain.version,
+        _decode_domain_identities(
+            snapshot.domains,
+            snapshot.domain.name,
+            snapshot.domain.version,
+        ),
+        snapshot.version,
     )
 
 
@@ -94,19 +222,18 @@ def encode_runtime_event(event: RuntimeEvent) -> JsonObject:
 
 
 def decode_runtime_event(payload: Mapping[str, JsonValue]) -> RuntimeEvent:
-    version = _int(_required(payload, "schema_version"), "schema_version")
-    if version != SCHEMA_VERSION:
-        raise ValueError(f"unsupported runtime event schema version: {version}")
-    action_id = _required(payload, "action_id")
+    event = _parse_codec_payload(_RuntimeEventPayload, payload)
+    if event.schema_version != SCHEMA_VERSION:
+        raise ValueError(f"unsupported runtime event schema version: {event.schema_version}")
     return RuntimeEvent(
-        type=_string(_required(payload, "type"), "type"),
-        session_id=SessionId(_string(_required(payload, "session_id"), "session_id")),
-        goal_id=GoalId(_string(_required(payload, "goal_id"), "goal_id")),
-        task_id=TaskId(_string(_required(payload, "task_id"), "task_id")),
-        id=EventId(_string(_required(payload, "event_id"), "event_id")),
-        action_id=None if action_id is None else ActionId(_string(action_id, "action_id")),
-        data=immutable_json(_object(_required(payload, "data"), "data")),
-        occurred_at=_datetime(_required(payload, "occurred_at"), "occurred_at"),
+        type=event.type,
+        session_id=SessionId(event.session_id),
+        goal_id=GoalId(event.goal_id),
+        task_id=TaskId(event.task_id),
+        id=EventId(event.event_id),
+        action_id=None if event.action_id is None else ActionId(event.action_id),
+        data=immutable_json(json_mapping(event.data)),
+        occurred_at=datetime.fromisoformat(event.occurred_at),
     )
 
 
@@ -131,38 +258,23 @@ def _encode_agent_state(state: AgentState) -> JsonObject:
     }
 
 
-def _decode_agent_state(payload: JsonObject, tasks: Mapping[TaskId, Task]) -> AgentState:
-    current_task = _task_by_id(
-        tasks,
-        TaskId(_string(_required(payload, "current_task_id"), "current_task_id")),
-    )
+def _decode_agent_state(payload: _AgentStatePayload, tasks: Mapping[TaskId, Task]) -> AgentState:
+    current_task = _task_by_id(tasks, TaskId(payload.current_task_id))
     state = AgentState(
-        session_id=SessionId(_string(_required(payload, "session_id"), "session_id")),
-        goal=_decode_goal(_object(_required(payload, "goal"), "goal")),
+        session_id=SessionId(payload.session_id),
+        goal=_decode_goal(payload.goal),
         current_task=current_task,
-        iteration=_int(_required(payload, "iteration"), "iteration"),
-        satisfied_criteria=dict(
-            _object(_required(payload, "satisfied_criteria"), "satisfied_criteria")
-        ),
-        observations=[
-            _decode_observation(_object(item, "observations[]"))
-            for item in _list(_required(payload, "observations"), "observations")
-        ],
-        latest_evaluation=_decode_optional_evaluation(_required(payload, "latest_evaluation")),
-        pending_action=_decode_optional_pending_action(_required(payload, "pending_action")),
+        iteration=payload.iteration,
+        satisfied_criteria=dict(json_mapping(payload.satisfied_criteria)),
+        observations=[_decode_observation(item) for item in payload.observations],
+        latest_evaluation=_decode_optional_evaluation(payload.latest_evaluation),
+        pending_action=_decode_optional_pending_action(payload.pending_action),
         tasks=[
-            _task_by_id(tasks, TaskId(_string(item, "task_ids[]")))
-            for item in _list(_required(payload, "task_ids"), "task_ids")
+            _task_by_id(tasks, TaskId(task_id)) for task_id in payload.task_ids
         ],
-        recovery_attempts={
-            key: _int(value, f"recovery_attempts.{key}")
-            for key, value in _object(
-                _required(payload, "recovery_attempts"),
-                "recovery_attempts",
-            ).items()
-        },
-        termination_reason=_optional_string(_required(payload, "termination_reason")),
-        error_code=_decode_optional_error(_required(payload, "error_code")),
+        recovery_attempts=dict(payload.recovery_attempts),
+        termination_reason=payload.termination_reason,
+        error_code=_decode_optional_error(payload.error_code),
     )
     return state
 
@@ -179,19 +291,15 @@ def _encode_goal(goal: Goal) -> JsonObject:
     }
 
 
-def _decode_goal(payload: JsonObject) -> Goal:
+def _decode_goal(payload: _GoalPayload) -> Goal:
     return Goal(
-        _string(_required(payload, "description"), "goal.description"),
+        payload.description,
         tuple(
-            SuccessCriterion(
-                _string(_required(_object(item, "success_criteria[]"), "key"), "criterion.key"),
-                _required(_object(item, "success_criteria[]"), "expected"),
-            )
-            for item in _list(_required(payload, "success_criteria"), "success_criteria")
+            SuccessCriterion(item.key, item.expected) for item in payload.success_criteria
         ),
-        GoalId(_string(_required(payload, "id"), "goal.id")),
-        GoalStatus(_string(_required(payload, "status"), "goal.status")),
-        _datetime(_required(payload, "created_at"), "goal.created_at"),
+        GoalId(payload.id),
+        GoalStatus(payload.status),
+        datetime.fromisoformat(payload.created_at),
     )
 
 
@@ -205,19 +313,13 @@ def _encode_task(task: Task) -> JsonObject:
     }
 
 
-def _decode_task(payload: JsonObject) -> Task:
+def _decode_task(payload: _TaskPayload) -> Task:
     return Task(
-        _string(_required(payload, "description"), "task.description"),
-        tuple(
-            _string(item, "required_criteria[]")
-            for item in _list(
-                _required(payload, "required_criteria"),
-                "required_criteria",
-            )
-        ),
-        TaskId(_string(_required(payload, "id"), "task.id")),
-        TaskStatus(_string(_required(payload, "status"), "task.status")),
-        _datetime(_required(payload, "created_at"), "task.created_at"),
+        payload.description,
+        tuple(payload.required_criteria),
+        TaskId(payload.id),
+        TaskStatus(payload.status),
+        datetime.fromisoformat(payload.created_at),
     )
 
 
@@ -235,28 +337,26 @@ def _encode_task_graph(graph: TaskGraphSnapshot) -> JsonObject:
     }
 
 
-def _decode_task_graph(payload: JsonObject) -> tuple[TaskGraphSnapshot, dict[TaskId, Task]]:
+def _decode_task_graph(
+    payload: _TaskGraphPayload,
+) -> tuple[TaskGraphSnapshot, dict[TaskId, Task]]:
     nodes: list[TaskNodeSnapshot] = []
     tasks: dict[TaskId, Task] = {}
-    for item in _list(_required(payload, "nodes"), "nodes"):
-        node = _object(item, "nodes[]")
-        task = _decode_task(_object(_required(node, "task"), "node.task"))
+    for node in payload.nodes:
+        task = _decode_task(node.task)
         if task.id in tasks:
             raise ValueError(f"duplicate task id: {task.id}")
         tasks[task.id] = task
         nodes.append(
             TaskNodeSnapshot(
-                _string(_required(node, "key"), "node.key"),
+                node.key,
                 task,
-                tuple(
-                    TaskId(_string(task_id, "depends_on[]"))
-                    for task_id in _list(_required(node, "depends_on"), "depends_on")
-                ),
+                tuple(TaskId(task_id) for task_id in node.depends_on),
             )
         )
     graph = TaskGraphSnapshot(
         tuple(nodes),
-        TaskId(_string(_required(payload, "current_task_id"), "current_task_id")),
+        TaskId(payload.current_task_id),
     )
     return graph, tasks
 
@@ -275,17 +375,17 @@ def _encode_observation(observation: Observation) -> JsonObject:
     }
 
 
-def _decode_observation(payload: JsonObject) -> Observation:
+def _decode_observation(payload: _ObservationPayload) -> Observation:
     return Observation(
-        ObservationId(_string(_required(payload, "id"), "observation.id")),
-        ActionId(_string(_required(payload, "action_id"), "observation.action_id")),
-        TaskId(_string(_required(payload, "task_id"), "observation.task_id")),
-        _string(_required(payload, "source"), "observation.source"),
-        ObservationStatus(_string(_required(payload, "status"), "observation.status")),
-        immutable_json(_object(_required(payload, "data"), "observation.data")),
-        _datetime(_required(payload, "observed_at"), "observation.observed_at"),
-        _optional_string(_required(payload, "error")),
-        _decode_optional_error(_required(payload, "error_code")),
+        ObservationId(payload.id),
+        ActionId(payload.action_id),
+        TaskId(payload.task_id),
+        payload.source,
+        ObservationStatus(payload.status),
+        immutable_json(json_mapping(payload.data)),
+        datetime.fromisoformat(payload.observed_at),
+        payload.error,
+        _decode_optional_error(payload.error_code),
     )
 
 
@@ -300,17 +400,16 @@ def _encode_evaluation(evaluation: EvaluationResult) -> JsonObject:
     }
 
 
-def _decode_optional_evaluation(value: JsonValue) -> EvaluationResult | None:
-    if value is None:
+def _decode_optional_evaluation(payload: _EvaluationPayload | None) -> EvaluationResult | None:
+    if payload is None:
         return None
-    payload = _object(value, "latest_evaluation")
     return EvaluationResult(
-        EvaluationStatus(_string(_required(payload, "status"), "evaluation.status")),
-        _string(_required(payload, "reason"), "evaluation.reason"),
-        _string(_required(payload, "evaluator_name"), "evaluation.evaluator_name"),
-        immutable_json(_object(_required(payload, "matched_criteria"), "matched_criteria")),
-        _bool(_required(payload, "task_completed"), "evaluation.task_completed"),
-        _bool(_required(payload, "goal_completed"), "evaluation.goal_completed"),
+        EvaluationStatus(payload.status),
+        payload.reason,
+        payload.evaluator_name,
+        immutable_json(json_mapping(payload.matched_criteria)),
+        payload.task_completed,
+        payload.goal_completed,
     )
 
 
@@ -331,23 +430,22 @@ def _encode_pending_action(action: PendingAction) -> JsonObject:
     }
 
 
-def _decode_optional_pending_action(value: JsonValue) -> PendingAction | None:
-    if value is None:
+def _decode_optional_pending_action(payload: _PendingActionPayload | None) -> PendingAction | None:
+    if payload is None:
         return None
-    payload = _object(value, "pending_action")
     return PendingAction(
-        ActionId(_string(_required(payload, "action_id"), "pending_action.action_id")),
-        _string(_required(payload, "capability"), "pending_action.capability"),
-        _string(_required(payload, "tool_name"), "pending_action.tool_name"),
-        _optional_string(_required(payload, "target")),
-        immutable_json(_object(_required(payload, "arguments"), "pending_action.arguments")),
-        _string(_required(payload, "domain_name"), "pending_action.domain_name"),
-        _string(_required(payload, "domain_version"), "pending_action.domain_version"),
-        _optional_string(payload.get("idempotency_key")) or "",
-        _optional_string(payload.get("parameters_hash")) or "",
-        _int(payload.get("attempt", 1), "pending_action.attempt"),
-        _optional_string(payload.get("resource_key")) or "",
-        _optional_string(payload.get("resource_version")),
+        ActionId(payload.action_id),
+        payload.capability,
+        payload.tool_name,
+        payload.target,
+        immutable_json(json_mapping(payload.arguments)),
+        payload.domain_name,
+        payload.domain_version,
+        payload.idempotency_key,
+        payload.parameters_hash,
+        payload.attempt,
+        payload.resource_key,
+        payload.resource_version,
     )
 
 
@@ -369,26 +467,26 @@ def _encode_evidence(evidence: Evidence) -> JsonObject:
     }
 
 
-def _decode_evidence(payload: JsonObject) -> Evidence:
+def _decode_evidence(payload: _EvidencePayload) -> Evidence:
     return Evidence(
-        SessionId(_string(_required(payload, "session_id"), "evidence.session_id")),
-        TaskId(_string(_required(payload, "task_id"), "evidence.task_id")),
-        ActionId(_string(_required(payload, "action_id"), "evidence.action_id")),
-        ObservationId(_string(_required(payload, "observation_id"), "evidence.observation_id")),
-        _string(_required(payload, "subject"), "evidence.subject"),
-        _string(_required(payload, "claim"), "evidence.claim"),
-        _required(payload, "value"),
-        _string(_required(payload, "source"), "evidence.source"),
-        _float(_required(payload, "confidence"), "evidence.confidence"),
-        EvidenceId(_string(_required(payload, "id"), "evidence.id")),
-        _datetime(_required(payload, "observed_at"), "evidence.observed_at"),
-        _optional_string(payload.get("domain_name")) or "",
-        _optional_string(payload.get("domain_version")) or "",
+        SessionId(payload.session_id),
+        TaskId(payload.task_id),
+        ActionId(payload.action_id),
+        ObservationId(payload.observation_id),
+        payload.subject,
+        payload.claim,
+        payload.value,
+        payload.source,
+        payload.confidence,
+        EvidenceId(payload.id),
+        datetime.fromisoformat(payload.observed_at),
+        payload.domain_name,
+        payload.domain_version,
     )
 
 
 def _decode_domain_identities(
-    value: JsonValue,
+    value: Sequence[_DomainIdentityPayload] | None,
     fallback_name: str,
     fallback_version: str,
 ) -> tuple[DomainIdentity, ...]:
@@ -396,25 +494,20 @@ def _decode_domain_identities(
         if fallback_name and fallback_version:
             return (DomainIdentity(fallback_name, fallback_version),)
         return ()
-    identities = tuple(
-        _decode_domain_identity(_object(item, "domains[]")) for item in _list(value, "domains")
-    )
+    identities = tuple(_decode_domain_identity(item) for item in value)
     if not identities and fallback_name and fallback_version:
         return (DomainIdentity(fallback_name, fallback_version),)
     return identities
 
 
-def _decode_domain_identity(payload: JsonObject) -> DomainIdentity:
-    return DomainIdentity(
-        _string(_required(payload, "name"), "domain_identity.name"),
-        _string(_required(payload, "version"), "domain_identity.version"),
-    )
+def _decode_domain_identity(payload: _DomainIdentityPayload) -> DomainIdentity:
+    return DomainIdentity(payload.name, payload.version)
 
 
-def _decode_optional_error(value: JsonValue) -> ErrorCode | None:
+def _decode_optional_error(value: str | None) -> ErrorCode | None:
     if value is None:
         return None
-    return ErrorCode(_string(value, "error_code"))
+    return ErrorCode(value)
 
 
 def _task_by_id(tasks: Mapping[TaskId, Task], task_id: TaskId) -> Task:
@@ -438,60 +531,11 @@ def _to_json(value: object) -> JsonValue:
     return str(value)
 
 
-def _required(payload: Mapping[str, JsonValue], key: str) -> JsonValue:
+def _parse_codec_payload[T: ConfigPayload](
+    model_type: type[T],
+    payload: Mapping[str, JsonValue],
+) -> T:
     try:
-        return payload[key]
-    except KeyError as exc:
-        raise ValueError(f"missing required field: {key}") from exc
-
-
-def _object(value: JsonValue, field: str) -> JsonObject:
-    if isinstance(value, dict):
-        return value
-    raise ValueError(f"{field} must be an object")
-
-
-def _list(value: JsonValue, field: str) -> list[JsonValue]:
-    if isinstance(value, list):
-        return value
-    raise ValueError(f"{field} must be a list")
-
-
-def _string(value: JsonValue, field: str) -> str:
-    if isinstance(value, str):
-        return value
-    raise ValueError(f"{field} must be a string")
-
-
-def _optional_string(value: JsonValue) -> str | None:
-    if value is None:
-        return None
-    return _string(value, "optional string")
-
-
-def _int(value: JsonValue, field: str) -> int:
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value
-    raise ValueError(f"{field} must be an integer")
-
-
-def _float(value: JsonValue, field: str) -> float:
-    if isinstance(value, int | float) and not isinstance(value, bool):
-        return float(value)
-    raise ValueError(f"{field} must be a number")
-
-
-def _bool(value: JsonValue, field: str) -> bool:
-    if isinstance(value, bool):
-        return value
-    raise ValueError(f"{field} must be a boolean")
-
-
-def _datetime(value: JsonValue, field: str) -> datetime:
-    return datetime.fromisoformat(_string(value, field))
-
-
-def json_mapping(value: object) -> JsonMapping:
-    if isinstance(value, dict) and all(isinstance(key, str) for key in value):
-        return cast(JsonMapping, value)
-    raise ValueError("expected a JSON object")
+        return parse_payload(model_type, payload)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
