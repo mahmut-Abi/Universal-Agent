@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fcntl
 import json
 import sqlite3
 from collections.abc import Iterator
@@ -10,6 +9,7 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 
+from filelock import FileLock
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 from pydantic import ValidationError as PydanticValidationError
 
@@ -219,6 +219,7 @@ class FileWorkerRegistry(InMemoryWorkerRegistry):
         super().__init__()
         self._path = Path(path)
         self._lock_path = self._path.with_suffix(self._path.suffix + ".lock")
+        self._file_lock = FileLock(str(self._lock_path))
         self._lock_depth = 0
         with self._locked():
             self._load()
@@ -311,7 +312,8 @@ class FileWorkerRegistry(InMemoryWorkerRegistry):
         if self._lock_depth > 0:
             yield
             return
-        with _file_worker_registry_lock(self._lock_path):
+        self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._file_lock:
             self._lock_depth += 1
             try:
                 yield
@@ -522,17 +524,6 @@ class SQLiteWorkerRegistry(InMemoryWorkerRegistry):
             """,
             (_sqlite_worker_record_row(record) for record in super().list()),
         )
-
-
-@contextmanager
-def _file_worker_registry_lock(lock_path: Path) -> Iterator[None]:
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+", encoding="utf-8") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _encode_worker_record(record: WorkerRecord) -> dict[str, object]:

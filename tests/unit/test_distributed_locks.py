@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fcntl
 import json
 import subprocess
 import sys
@@ -8,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from filelock import FileLock
 
 from universal_agent.core import immutable_json
 from universal_agent.distributed import (
@@ -249,9 +249,7 @@ def test_file_distributed_lock_registry_serializes_cross_process_operations(
         now=now,
     )
 
-    lock_handle = lock_path.open("a+", encoding="utf-8")
-    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-    try:
+    with FileLock(str(lock_path)):
         persisted = json.loads(path.read_text(encoding="utf-8"))
         assert persisted["locks"][0]["lock_key"] == "session/session-1"
         probe = subprocess.run(
@@ -259,13 +257,13 @@ def test_file_distributed_lock_registry_serializes_cross_process_operations(
                 sys.executable,
                 "-c",
                 (
-                    "import errno, fcntl, pathlib, sys; "
-                    "handle = pathlib.Path(sys.argv[1]).open('a+', encoding='utf-8'); "
+                    "import sys\n"
+                    "from filelock import FileLock, Timeout\n"
                     "\ntry:\n"
-                    "    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
-                    "except BlockingIOError as exc:\n"
-                    "    blocked = exc.errno in (errno.EACCES, errno.EAGAIN)\n"
-                    "    print('blocked' if blocked else exc.errno)\n"
+                    "    with FileLock(sys.argv[1], timeout=0):\n"
+                    "        print('acquired')\n"
+                    "except Timeout:\n"
+                    "    print('blocked')\n"
                     "else:\n"
                     "    print('acquired')\n"
                 ),
@@ -276,10 +274,6 @@ def test_file_distributed_lock_registry_serializes_cross_process_operations(
             text=True,
             timeout=5,
         )
-    finally:
-        if not lock_handle.closed:
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
-            lock_handle.close()
 
     assert probe.stdout.strip() == "blocked"
 

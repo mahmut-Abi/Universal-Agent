@@ -226,6 +226,17 @@ def test_decode_domain_package_manifest_rejects_conflicting_api_version_keys() -
         decode_domain_package_manifest(payload)
 
 
+def test_domain_package_compatibility_validates_runtime_api_specifiers() -> None:
+    compatibility = DomainPackageCompatibility(runtime_api=">=0.1,<1")
+
+    assert compatibility.supports_runtime_api("0.5.0") is True
+    assert compatibility.supports_runtime_api("1.0.0") is False
+    with pytest.raises(DomainPackageValidationError, match="valid version specifier"):
+        DomainPackageCompatibility(runtime_api="not-a-specifier")
+    with pytest.raises(DomainPackageValidationError, match="PEP 440 compatible"):
+        compatibility.supports_runtime_api("not-a-version")
+
+
 def test_decode_domain_package_manifest_rejects_resources_outside_package_root() -> None:
     payload = package_payload()
     payload["resources"] = ["../outside.md"]

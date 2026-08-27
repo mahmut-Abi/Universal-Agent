@@ -4,6 +4,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion, Version
+
 from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
 from universal_agent.domain.runtime import ActiveDomain, DomainRuntime
 
@@ -52,8 +55,26 @@ class DomainPackageCompatibility:
     def __post_init__(self) -> None:
         if self.runtime_api is not None:
             _require_non_empty(self.runtime_api, "compatibility.runtime_api")
+            _runtime_api_specifier(self.runtime_api, field_name="compatibility.runtime_api")
         if self.domain_api is not None:
             _require_non_empty(self.domain_api, "compatibility.domain_api")
+
+    def supports_runtime_api(self, version: str) -> bool:
+        """Return whether a runtime API version satisfies this package compatibility."""
+
+        _require_non_empty(version, "runtime_api version")
+        if self.runtime_api is None:
+            return True
+        try:
+            runtime_version = Version(version)
+        except InvalidVersion as exc:
+            raise DomainPackageValidationError(
+                f"runtime_api version must be PEP 440 compatible: {version}"
+            ) from exc
+        return runtime_version in _runtime_api_specifier(
+            self.runtime_api,
+            field_name="compatibility.runtime_api",
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,6 +237,15 @@ class DomainPackageRuntimeActivation:
 def _require_non_empty(value: str, field_name: str) -> None:
     if not value.strip():
         raise DomainPackageValidationError(f"{field_name} must not be empty")
+
+
+def _runtime_api_specifier(value: str, *, field_name: str) -> SpecifierSet:
+    try:
+        return SpecifierSet(value)
+    except InvalidSpecifier as exc:
+        raise DomainPackageValidationError(
+            f"{field_name} must be a valid version specifier: {value}"
+        ) from exc
 
 
 def _validate_strings(field_name: str, values: Sequence[str]) -> None:

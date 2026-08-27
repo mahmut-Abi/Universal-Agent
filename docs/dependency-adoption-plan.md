@@ -9,7 +9,7 @@
 
 ## 现状基线
 
-- 源码约 39.7k 行，已引入 `httpx`、`jsonschema`、`pydantic` 等基础运行时依赖，
+- 源码约 39.7k 行，已引入 `httpx`、`jsonschema`、`pydantic`、`filelock` 等基础运行时依赖，
   mypy strict + ruff 全量约束
 - 已出现 4 个超 2000 行文件：`agentd/app.py`(2796)、`web.py`(2728)、
   `cli.py`(2781)、`service/runtime.py`(2222) —— 违反 AGENTS.md §17.1 小模块偏好
@@ -64,6 +64,14 @@
 | 收益 | 对齐设计文档的 `manifest.yaml` 目标，同时保留 scaffold 默认写 `manifest.json` 的兼容契约 |
 | 风险 | 低：同目录存在多个 manifest 时显式报错，避免 registry 静默选错 |
 
+### 6. filelock → 替换手写 fcntl 文件互斥锁（已完成）
+
+| 项 | 说明 |
+|---|---|
+| 现状 | `FileWorkQueue`、`FileDistributedLockRegistry`、`FileWorkerRegistry` 已使用 `FileLock` 接管 `.lock` 文件互斥；重入保护、JSON 原子替换和公开 registry/queue 契约保持不变 |
+| 收益 | 去除三处直接 `fcntl` 调用，获得跨平台文件锁抽象；测试仍覆盖跨进程互斥行为 |
+| 风险 | 低：仅替换文件型本地协调边界，不改变 SQLite 后端和调度语义 |
+
 ---
 
 ## Tier 2 — 明确收益，按需排期
@@ -72,6 +80,7 @@
 |---|---|---|---|
 | Textual | `tui.py` | 683 行一次性静态打印 → 真 TUI（现状无 curses/事件循环/刷新，见 cli.py:1192 仅"建快照→渲染→退出"） | headless 测试模式保住可测性；现有 `build_tui_snapshot` 直接复用为数据层 |
 | jsonschema | `core/arguments.py` / `tools/runtime.py:181` | 已由 `Draft202012Validator` 接管 capability/tool argument schema 校验；`tools/runtime.py` 继续通过统一 contract 入口调用 | 后续可补充 `oneOf/pattern` 等覆盖用例 |
+| packaging | `domain/package_models.py` | 已用 `SpecifierSet` 接管 `compatibility.runtime_api` 校验与 runtime API version 支持判断 | 当前刻意不收紧所有 Domain identity version 字符串，避免破坏既有包标识兼容性 |
 | opentelemetry-proto | `operations/otlp.py` | 已用官方 OTLP protobuf schema 类型接管 trace export payload 生成，保留现有 JSON/hex ID Runtime API 契约 | 后续若需要直接推送 Tempo/Collector，再引入 `opentelemetry-sdk` / OTLP exporter |
 | Typer + Rich | `cli.py` | argparse 样板约 -30%；内省命令表格化输出 | 与 Textual 同批做体验统一 |
 
@@ -111,6 +120,8 @@
     Textual TUI + Typer/Rich CLI
     opentelemetry-proto OTLP payload（已完成）；opentelemetry-sdk exporter（按部署需要再接入）
     PyYAML(Domain Package manifest YAML 兼容，已完成)
+    packaging runtime_api compatibility specifier（已完成）
+    filelock 文件协调锁（已完成）
 
 第四批（触发式）
     Redis/PostgreSQL 分布式后端

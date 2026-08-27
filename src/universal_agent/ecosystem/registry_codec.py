@@ -14,7 +14,7 @@ from universal_agent.core.config_validation import (
     json_mapping,
     parse_payload,
 )
-from universal_agent.domain import DomainPackageCompatibility
+from universal_agent.domain import DomainPackageCompatibility, DomainPackageValidationError
 from universal_agent.ecosystem.models import (
     EcosystemDomainPackageRef,
     EcosystemEvaluationDatasetRef,
@@ -340,10 +340,13 @@ def _compatibility(
         _EcosystemRegistryCompatibilityPayload,
         json_mapping(value),
     )
-    return DomainPackageCompatibility(
-        runtime_api=payload.runtime_api,
-        domain_api=payload.domain_api,
-    )
+    try:
+        return DomainPackageCompatibility(
+            runtime_api=payload.runtime_api,
+            domain_api=payload.domain_api,
+        )
+    except DomainPackageValidationError as exc:
+        raise EcosystemRegistryValidationError(str(exc)) from exc
 
 
 def _string_tuple(value: Sequence[str], field_name: str) -> tuple[str, ...]:

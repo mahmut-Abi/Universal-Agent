@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import json
 import subprocess
 import sys
@@ -9,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from filelock import FileLock
 
 from universal_agent.core import ActionId, SessionId, TaskId, immutable_json, runtime_primitives
 from universal_agent.distributed import (
@@ -206,10 +206,7 @@ def test_file_work_queue_serializes_cross_process_operations(tmp_path: Path) -> 
     now = datetime(2026, 1, 1, tzinfo=UTC)
     FileWorkQueue(path).enqueue(kind="agent_session", available_at=now)
 
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_handle = lock_path.open("a+", encoding="utf-8")
-    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-    try:
+    with FileLock(str(lock_path)):
         persisted = json.loads(path.read_text(encoding="utf-8"))
         assert persisted["items"][0]["status"] == WorkItemStatus.QUEUED.value
         probe = subprocess.run(
@@ -217,13 +214,13 @@ def test_file_work_queue_serializes_cross_process_operations(tmp_path: Path) -> 
                 sys.executable,
                 "-c",
                 (
-                    "import errno, fcntl, pathlib, sys; "
-                    "handle = pathlib.Path(sys.argv[1]).open('a+', encoding='utf-8'); "
+                    "import sys\n"
+                    "from filelock import FileLock, Timeout\n"
                     "\ntry:\n"
-                    "    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
-                    "except BlockingIOError as exc:\n"
-                    "    blocked = exc.errno in (errno.EACCES, errno.EAGAIN)\n"
-                    "    print('blocked' if blocked else exc.errno)\n"
+                    "    with FileLock(sys.argv[1], timeout=0):\n"
+                    "        print('acquired')\n"
+                    "except Timeout:\n"
+                    "    print('blocked')\n"
                     "else:\n"
                     "    print('acquired')\n"
                 ),
@@ -234,10 +231,6 @@ def test_file_work_queue_serializes_cross_process_operations(tmp_path: Path) -> 
             text=True,
             timeout=5,
         )
-    finally:
-        if not lock_handle.closed:
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
-            lock_handle.close()
 
     assert probe.stdout.strip() == "blocked"
     leased = FileWorkQueue(path).lease(worker_id=WorkerId("worker-a"), now=now)

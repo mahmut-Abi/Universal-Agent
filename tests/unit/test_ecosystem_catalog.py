@@ -320,6 +320,29 @@ def test_ecosystem_registry_manifest_accepts_legacy_package_refs_without_optiona
     assert decoded.domain_packages[0].manifest_sha256 == ""
 
 
+def test_ecosystem_registry_manifest_rejects_invalid_runtime_api_specifier() -> None:
+    payload: dict[str, object] = {
+        "apiVersion": "agent.nantian.dev/v1alpha1",
+        "kind": "EcosystemRegistry",
+        "metadata": {
+            "name": "registry",
+            "version": "1.0.0",
+            "description": "Registry",
+        },
+        "domain_packages": [
+            {
+                "name": "kubernetes",
+                "version": "1.0.0",
+                "description": "Kubernetes",
+                "compatibility": {"runtime_api": "not-a-specifier"},
+            }
+        ],
+    }
+
+    with pytest.raises(EcosystemRegistryValidationError, match="valid version specifier"):
+        decode_ecosystem_registry_manifest(cast(JsonMapping, payload))
+
+
 def test_ecosystem_registry_index_queries_exported_manifest(tmp_path: Path) -> None:
     domain_root = tmp_path / "domains"
     dataset_root = tmp_path / "datasets"
