@@ -10,7 +10,11 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
+from pydantic import ValidationError as PydanticValidationError
+
 from universal_agent.core import JsonMapping, immutable_json, utc_now
+from universal_agent.core.config_validation import PydanticJsonValue, json_mapping
 from universal_agent.distributed.queue import WorkerId
 
 
@@ -35,6 +39,26 @@ class WorkerRecord:
     capabilities: tuple[str, ...] = ()
     metadata: JsonMapping = field(default_factory=immutable_json)
     last_error: str | None = None
+
+
+class _WorkerRegistryPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    version: StrictInt
+    workers: list[dict[str, object]] = Field(default_factory=list)
+
+
+class _WorkerRecordPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    worker_id: StrictStr
+    status: StrictStr
+    registered_at: datetime
+    heartbeat_at: datetime
+    lease_expires_at: datetime
+    capabilities: list[StrictStr]
+    metadata: dict[str, PydanticJsonValue] | None = None
+    last_error: StrictStr | None = None
 
 
 class InMemoryWorkerRegistry:
@@ -300,20 +324,13 @@ class FileWorkerRegistry(InMemoryWorkerRegistry):
             return
         with self._path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
-        if not isinstance(payload, dict):
-            raise ValueError("file worker registry payload must be an object")
-        version = payload.get("version")
-        if isinstance(version, bool) or not isinstance(version, int):
-            raise ValueError("file worker registry version must be an integer")
-        if version != 1:
-            raise ValueError(f"unsupported file worker registry version: {version}")
-        workers = payload.get("workers", [])
-        if not isinstance(workers, list):
-            raise ValueError("file worker registry workers must be a list")
+        registry_payload = _decode_worker_registry_payload(payload)
+        if registry_payload.version != 1:
+            raise ValueError(
+                f"unsupported file worker registry version: {registry_payload.version}"
+            )
         loaded: dict[WorkerId, WorkerRecord] = {}
-        for index, worker_payload in enumerate(workers):
-            if not isinstance(worker_payload, dict):
-                raise ValueError(f"file worker registry workers[{index}] must be an object")
+        for worker_payload in registry_payload.workers:
             record = _decode_worker_record(worker_payload)
             if record.worker_id in loaded:
                 raise ValueError(f"duplicate file worker registry worker: {record.worker_id}")
@@ -532,15 +549,16 @@ def _encode_worker_record(record: WorkerRecord) -> dict[str, object]:
 
 
 def _decode_worker_record(payload: dict[str, object]) -> WorkerRecord:
+    record = _parse_worker_payload(_WorkerRecordPayload, payload)
     return WorkerRecord(
-        worker_id=WorkerId(_required_str(payload, "worker_id")),
-        status=WorkerStatus(_required_str(payload, "status")),
-        registered_at=_required_datetime(payload, "registered_at"),
-        heartbeat_at=_required_datetime(payload, "heartbeat_at"),
-        lease_expires_at=_required_datetime(payload, "lease_expires_at"),
-        capabilities=_required_str_tuple(payload.get("capabilities"), "capabilities"),
-        metadata=immutable_json(_optional_mapping(payload.get("metadata"), "metadata")),
-        last_error=_optional_str(payload.get("last_error"), "last_error"),
+        worker_id=WorkerId(record.worker_id),
+        status=WorkerStatus(record.status),
+        registered_at=record.registered_at,
+        heartbeat_at=record.heartbeat_at,
+        lease_expires_at=record.lease_expires_at,
+        capabilities=tuple(record.capabilities),
+        metadata=immutable_json(json_mapping(record.metadata or {})),
+        last_error=record.last_error,
     )
 
 
@@ -558,46 +576,100 @@ def _require_worker_id(worker_id: WorkerId) -> None:
         raise ValueError("worker_id must not be empty")
 
 
-def _required_str(payload: dict[str, object], key: str) -> str:
-    value = payload.get(key)
-    if not isinstance(value, str):
-        raise ValueError(f"{key} must be a string")
-    return value
-
-
-def _optional_str(value: object, key: str) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"{key} must be a string")
-    return value
-
-
-def _required_datetime(payload: dict[str, object], key: str) -> datetime:
-    value = _required_str(payload, key)
+def _decode_worker_registry_payload(payload: object) -> _WorkerRegistryPayload:
     try:
-        return datetime.fromisoformat(value)
-    except ValueError as exc:
-        raise ValueError(f"{key} must be an ISO datetime") from exc
+        return _WorkerRegistryPayload.model_validate(payload)
+    except PydanticValidationError as exc:
+        raise ValueError(_worker_registry_payload_error_message(exc)) from exc
 
 
-def _required_str_tuple(value: object, key: str) -> tuple[str, ...]:
-    if not isinstance(value, list):
-        raise ValueError(f"{key} must be a list")
-    items: list[str] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, str):
-            raise ValueError(f"{key}[{index}] must be a string")
-        items.append(item)
-    return tuple(items)
+def _parse_worker_payload[T: BaseModel](payload_type: type[T], payload: object) -> T:
+    try:
+        return payload_type.model_validate(payload)
+    except PydanticValidationError as exc:
+        raise ValueError(_worker_record_payload_error_message(exc)) from exc
 
 
-def _optional_mapping(value: object, key: str) -> JsonMapping:
-    if value is None:
-        return immutable_json()
-    if not isinstance(value, dict):
-        raise ValueError(f"{key} must be an object")
-    return immutable_json(value)
+def _worker_registry_payload_error_message(error: PydanticValidationError) -> str:
+    errors = error.errors(include_url=False)
+    if not errors:
+        return str(error)
+    first = errors[0]
+    path = _pydantic_error_path(first.get("loc", ()))
+    error_type = str(first.get("type", ""))
+    if not path and error_type in {"model_attributes_type", "model_type"}:
+        return "file worker registry payload must be an object"
+    if path == "workers" and error_type == "list_type":
+        return "file worker registry workers must be a list"
+    if path.startswith("workers[") and error_type in {
+        "dict_type",
+        "model_attributes_type",
+        "model_type",
+    }:
+        return f"file worker registry {path} must be an object"
+    if path == "version" and error_type in {"int_type", "missing"}:
+        return "file worker registry version must be an integer"
+    message = str(first.get("msg", ""))
+    return message or str(error)
+
+
+def _worker_record_payload_error_message(error: PydanticValidationError) -> str:
+    errors = error.errors(include_url=False)
+    if not errors:
+        return str(error)
+    first = errors[0]
+    path = _pydantic_error_path(first.get("loc", ()))
+    error_type = str(first.get("type", ""))
+    if not path and error_type in {"model_attributes_type", "model_type"}:
+        return "worker record payload must be an object"
+    if "datetime" in error_type:
+        return f"{path} must be an ISO datetime"
+    expected = _expected_worker_record_error_type(error_type, path)
+    if expected is not None:
+        return f"{path} must be {expected}"
+    message = str(first.get("msg", ""))
+    if message:
+        return message.removeprefix("Value error, ")
+    return str(error)
+
+
+def _pydantic_error_path(location: object) -> str:
+    parts: list[str] = []
+    if isinstance(location, tuple):
+        for item in location:
+            if isinstance(item, int):
+                if parts:
+                    parts[-1] = f"{parts[-1]}[{item}]"
+                else:
+                    parts.append(f"[{item}]")
+            else:
+                parts.append(str(item))
+    return ".".join(parts)
+
+
+def _expected_worker_record_error_type(error_type: str, path: str) -> str | None:
+    if error_type == "missing":
+        return _missing_worker_record_field_type(path)
+    return {
+        "dict_type": "an object",
+        "invalid-json-value": "JSON-compatible",
+        "list_type": "a list",
+        "string_type": "a string",
+    }.get(error_type)
+
+
+def _missing_worker_record_field_type(path: str) -> str:
+    if path in {
+        "registered_at",
+        "heartbeat_at",
+        "lease_expires_at",
+    }:
+        return "an ISO datetime"
+    if path == "capabilities":
+        return "a list"
+    if path == "metadata":
+        return "an object"
+    return "a string"
 
 
 def _ensure_sqlite_worker_registry_schema(connection: sqlite3.Connection) -> None:

@@ -252,6 +252,22 @@ def test_file_work_queue_rejects_unsupported_file_version(tmp_path: Path) -> Non
         FileWorkQueue(path)
 
 
+def test_file_work_queue_rejects_non_list_items(tmp_path: Path) -> None:
+    path = tmp_path / "work-queue.json"
+    path.write_text(json.dumps({"version": 1, "items": "bad"}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="file work queue items must be a list"):
+        FileWorkQueue(path)
+
+
+def test_file_work_queue_rejects_non_object_item_payload(tmp_path: Path) -> None:
+    path = tmp_path / "work-queue.json"
+    path.write_text(json.dumps({"version": 1, "items": ["bad"]}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"file work queue items\[0\] must be an object"):
+        FileWorkQueue(path)
+
+
 def test_file_work_queue_rejects_duplicate_persisted_work_item_ids(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     FileWorkQueue(path).enqueue(kind="agent_session")
@@ -279,6 +295,53 @@ def test_file_work_queue_rejects_attempts_above_max_attempts(tmp_path: Path) -> 
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(ValueError, match="attempts must not exceed max_attempts"):
+        FileWorkQueue(path)
+
+
+def test_file_work_queue_rejects_non_object_persisted_payload(tmp_path: Path) -> None:
+    path = tmp_path / "work-queue.json"
+    FileWorkQueue(path).enqueue(kind="agent_session")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    items = payload["items"]
+    assert isinstance(items, list)
+    item = items[0]
+    assert isinstance(item, dict)
+    item["payload"] = "bad"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="payload must be an object"):
+        FileWorkQueue(path)
+
+
+def test_file_work_queue_accepts_legacy_null_payload_as_empty_object(tmp_path: Path) -> None:
+    path = tmp_path / "work-queue.json"
+    enqueued = FileWorkQueue(path).enqueue(kind="agent_session")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    items = payload["items"]
+    assert isinstance(items, list)
+    item = items[0]
+    assert isinstance(item, dict)
+    item["payload"] = None
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert FileWorkQueue(path).get(enqueued.work_item_id).payload == {}
+
+
+def test_file_work_queue_rejects_invalid_persisted_datetime(tmp_path: Path) -> None:
+    path = tmp_path / "work-queue.json"
+    FileWorkQueue(path).enqueue(kind="agent_session")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    items = payload["items"]
+    assert isinstance(items, list)
+    item = items[0]
+    assert isinstance(item, dict)
+    item["created_at"] = "not-a-date"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="created_at must be an ISO datetime"):
         FileWorkQueue(path)
 
 

@@ -10,7 +10,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import NewType
 
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
+from pydantic import ValidationError as PydanticValidationError
+
 from universal_agent.core import JsonMapping, immutable_json, utc_now
+from universal_agent.core.config_validation import PydanticJsonValue, json_mapping
 
 DistributedLockLeaseId = NewType("DistributedLockLeaseId", str)
 DistributedLockOwnerId = NewType("DistributedLockOwnerId", str)
@@ -33,6 +37,26 @@ class DistributedLockLease:
     lease_expires_at: datetime
     heartbeat_at: datetime
     metadata: JsonMapping = field(default_factory=immutable_json)
+
+
+class _DistributedLockRegistryPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    version: StrictInt
+    sequence: StrictInt | None = None
+    locks: list[dict[str, object]] = Field(default_factory=list)
+
+
+class _DistributedLockLeasePayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    lock_key: StrictStr
+    owner_id: StrictStr
+    lease_id: StrictStr
+    acquired_at: datetime
+    lease_expires_at: datetime
+    heartbeat_at: datetime
+    metadata: dict[str, PydanticJsonValue] | None = None
 
 
 class InMemoryDistributedLockRegistry:
@@ -247,33 +271,23 @@ class FileDistributedLockRegistry(InMemoryDistributedLockRegistry):
             return
         with self._path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
-        if not isinstance(payload, dict):
-            raise ValueError("file distributed lock payload must be an object")
-        version = payload.get("version")
-        if isinstance(version, bool) or not isinstance(version, int):
-            raise ValueError("file distributed lock version must be an integer")
-        if version != 1:
-            raise ValueError(f"unsupported file distributed lock version: {version}")
-        leases = payload.get("locks", [])
-        if not isinstance(leases, list):
-            raise ValueError("file distributed locks must be a list")
+        registry_payload = _decode_distributed_lock_registry_payload(payload)
+        if registry_payload.version != 1:
+            raise ValueError(
+                f"unsupported file distributed lock version: {registry_payload.version}"
+            )
         loaded: dict[str, DistributedLockLease] = {}
-        for index, lease_payload in enumerate(leases):
-            if not isinstance(lease_payload, dict):
-                raise ValueError(f"file distributed locks[{index}] must be an object")
+        for lease_payload in registry_payload.locks:
             lease = _decode_distributed_lock_lease(lease_payload)
             if lease.lock_key in loaded:
                 raise ValueError(f"duplicate file distributed lock: {lease.lock_key}")
             loaded[lease.lock_key] = lease
-        sequence = payload.get("sequence")
-        if sequence is not None and (isinstance(sequence, bool) or not isinstance(sequence, int)):
-            raise ValueError("file distributed lock sequence must be an integer")
         self._leases = loaded
         loaded_sequence = max(
             (_sequence_from_lock_lease_id(lease.lease_id) for lease in loaded.values()),
             default=0,
         )
-        self._sequence = max(loaded_sequence, sequence or 0)
+        self._sequence = max(loaded_sequence, registry_payload.sequence or 0)
 
     def _save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -500,14 +514,15 @@ def _encode_distributed_lock_lease(lease: DistributedLockLease) -> dict[str, obj
 
 
 def _decode_distributed_lock_lease(payload: dict[str, object]) -> DistributedLockLease:
+    lease = _parse_distributed_lock_payload(_DistributedLockLeasePayload, payload)
     return DistributedLockLease(
-        lock_key=_required_str(payload, "lock_key"),
-        owner_id=DistributedLockOwnerId(_required_str(payload, "owner_id")),
-        lease_id=DistributedLockLeaseId(_required_str(payload, "lease_id")),
-        acquired_at=_required_datetime(payload, "acquired_at"),
-        lease_expires_at=_required_datetime(payload, "lease_expires_at"),
-        heartbeat_at=_required_datetime(payload, "heartbeat_at"),
-        metadata=immutable_json(_optional_mapping(payload.get("metadata"), "metadata")),
+        lock_key=lease.lock_key,
+        owner_id=DistributedLockOwnerId(lease.owner_id),
+        lease_id=DistributedLockLeaseId(lease.lease_id),
+        acquired_at=lease.acquired_at,
+        lease_expires_at=lease.lease_expires_at,
+        heartbeat_at=lease.heartbeat_at,
+        metadata=immutable_json(json_mapping(lease.metadata or {})),
     )
 
 
@@ -527,27 +542,106 @@ def _require_owner_id(owner_id: DistributedLockOwnerId) -> None:
         raise ValueError("owner_id must not be empty")
 
 
-def _required_str(payload: dict[str, object], key: str) -> str:
-    value = payload.get(key)
-    if not isinstance(value, str):
-        raise ValueError(f"{key} must be a string")
-    return value
-
-
-def _required_datetime(payload: dict[str, object], key: str) -> datetime:
-    value = _required_str(payload, key)
+def _decode_distributed_lock_registry_payload(payload: object) -> _DistributedLockRegistryPayload:
     try:
-        return datetime.fromisoformat(value)
-    except ValueError as exc:
-        raise ValueError(f"{key} must be an ISO datetime") from exc
+        return _DistributedLockRegistryPayload.model_validate(payload)
+    except PydanticValidationError as exc:
+        raise ValueError(_distributed_lock_registry_payload_error_message(exc)) from exc
 
 
-def _optional_mapping(value: object, key: str) -> JsonMapping:
-    if value is None:
-        return immutable_json()
-    if not isinstance(value, dict):
-        raise ValueError(f"{key} must be an object")
-    return immutable_json(value)
+def _parse_distributed_lock_payload[T: BaseModel](
+    payload_type: type[T],
+    payload: object,
+) -> T:
+    try:
+        return payload_type.model_validate(payload)
+    except PydanticValidationError as exc:
+        raise ValueError(_distributed_lock_lease_payload_error_message(exc)) from exc
+
+
+def _distributed_lock_registry_payload_error_message(
+    error: PydanticValidationError,
+) -> str:
+    errors = error.errors(include_url=False)
+    if not errors:
+        return str(error)
+    first = errors[0]
+    path = _pydantic_error_path(first.get("loc", ()))
+    error_type = str(first.get("type", ""))
+    if not path and error_type in {"model_attributes_type", "model_type"}:
+        return "file distributed lock payload must be an object"
+    if path == "locks" and error_type == "list_type":
+        return "file distributed locks must be a list"
+    if path.startswith("locks[") and error_type in {
+        "dict_type",
+        "model_attributes_type",
+        "model_type",
+    }:
+        return f"file distributed {path} must be an object"
+    if path == "version" and error_type in {"int_type", "missing"}:
+        return "file distributed lock version must be an integer"
+    if path == "sequence" and error_type == "int_type":
+        return "file distributed lock sequence must be an integer"
+    message = str(first.get("msg", ""))
+    return message or str(error)
+
+
+def _distributed_lock_lease_payload_error_message(
+    error: PydanticValidationError,
+) -> str:
+    errors = error.errors(include_url=False)
+    if not errors:
+        return str(error)
+    first = errors[0]
+    path = _pydantic_error_path(first.get("loc", ()))
+    error_type = str(first.get("type", ""))
+    if not path and error_type in {"model_attributes_type", "model_type"}:
+        return "distributed lock lease payload must be an object"
+    if "datetime" in error_type:
+        return f"{path} must be an ISO datetime"
+    expected = _expected_distributed_lock_lease_error_type(error_type, path)
+    if expected is not None:
+        return f"{path} must be {expected}"
+    message = str(first.get("msg", ""))
+    if message:
+        return message.removeprefix("Value error, ")
+    return str(error)
+
+
+def _pydantic_error_path(location: object) -> str:
+    parts: list[str] = []
+    if isinstance(location, tuple):
+        for item in location:
+            if isinstance(item, int):
+                if parts:
+                    parts[-1] = f"{parts[-1]}[{item}]"
+                else:
+                    parts.append(f"[{item}]")
+            else:
+                parts.append(str(item))
+    return ".".join(parts)
+
+
+def _expected_distributed_lock_lease_error_type(error_type: str, path: str) -> str | None:
+    if error_type == "missing":
+        return _missing_distributed_lock_lease_field_type(path)
+    return {
+        "dict_type": "an object",
+        "invalid-json-value": "JSON-compatible",
+        "string_type": "a string",
+    }.get(error_type)
+
+
+def _missing_distributed_lock_lease_field_type(path: str) -> str:
+    if path in {
+        "acquired_at",
+        "lease_expires_at",
+        "heartbeat_at",
+    }:
+        return "an ISO datetime"
+    if path == "metadata":
+        return "an object"
+    return "a string"
 
 
 def _sequence_from_lock_lease_id(lease_id: DistributedLockLeaseId) -> int:

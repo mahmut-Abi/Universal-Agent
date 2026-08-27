@@ -199,6 +199,62 @@ def test_file_worker_registry_serializes_cross_process_operations(tmp_path: Path
     assert probe.stdout.strip() == "blocked"
 
 
+def test_file_worker_registry_rejects_unsupported_file_version(tmp_path: Path) -> None:
+    path = tmp_path / "workers.json"
+    path.write_text(json.dumps({"version": 2, "workers": []}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unsupported file worker registry version: 2"):
+        FileWorkerRegistry(path)
+
+
+def test_file_worker_registry_rejects_non_list_workers(tmp_path: Path) -> None:
+    path = tmp_path / "workers.json"
+    path.write_text(json.dumps({"version": 1, "workers": "bad"}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="file worker registry workers must be a list"):
+        FileWorkerRegistry(path)
+
+
+def test_file_worker_registry_rejects_non_object_worker_payload(tmp_path: Path) -> None:
+    path = tmp_path / "workers.json"
+    path.write_text(json.dumps({"version": 1, "workers": ["bad"]}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"file worker registry workers\[0\] must be an object"):
+        FileWorkerRegistry(path)
+
+
+def test_file_worker_registry_rejects_invalid_worker_datetime(tmp_path: Path) -> None:
+    path = tmp_path / "workers.json"
+    FileWorkerRegistry(path).register(WorkerId("worker-a"))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    workers = payload["workers"]
+    assert isinstance(workers, list)
+    worker = workers[0]
+    assert isinstance(worker, dict)
+    worker["registered_at"] = "not-a-date"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="registered_at must be an ISO datetime"):
+        FileWorkerRegistry(path)
+
+
+def test_file_worker_registry_rejects_non_object_worker_metadata(tmp_path: Path) -> None:
+    path = tmp_path / "workers.json"
+    FileWorkerRegistry(path).register(WorkerId("worker-a"))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    workers = payload["workers"]
+    assert isinstance(workers, list)
+    worker = workers[0]
+    assert isinstance(worker, dict)
+    worker["metadata"] = "bad"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="metadata must be an object"):
+        FileWorkerRegistry(path)
+
+
 def test_worker_registry_heartbeat_extends_worker_lease() -> None:
     registry = InMemoryWorkerRegistry()
     now = datetime(2026, 1, 1, tzinfo=UTC)

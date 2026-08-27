@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import datetime
 
-from universal_agent.core import ActionId, JsonMapping, SessionId, TaskId, immutable_json
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
+from pydantic import ValidationError as PydanticValidationError
+
+from universal_agent.core import ActionId, SessionId, TaskId, immutable_json
+from universal_agent.core.config_validation import PydanticJsonValue, json_mapping
 from universal_agent.distributed.queue_models import (
     LeaseId,
     WorkerId,
@@ -12,6 +15,44 @@ from universal_agent.distributed.queue_models import (
     WorkItemId,
     WorkItemStatus,
 )
+
+
+class _QueueCodecPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+
+class _WorkQueueFilePayload(_QueueCodecPayload):
+    version: StrictInt
+    items: list[dict[str, object]] = Field(default_factory=list)
+
+
+class _WorkerLeasePayload(_QueueCodecPayload):
+    lease_id: StrictStr
+    worker_id: StrictStr
+    leased_at: datetime
+    lease_expires_at: datetime
+    heartbeat_at: datetime
+
+
+class _WorkItemPayload(_QueueCodecPayload):
+    work_item_id: StrictStr
+    kind: StrictStr
+    payload: dict[str, PydanticJsonValue] | None = None
+    session_id: StrictStr | None = None
+    task_id: StrictStr | None = None
+    action_id: StrictStr | None = None
+    priority: StrictInt
+    max_attempts: StrictInt
+    attempts: StrictInt
+    status: StrictStr
+    created_at: datetime
+    available_at: datetime
+    lease: _WorkerLeasePayload | None = None
+    idempotency_key: StrictStr | None = None
+    completed_at: datetime | None = None
+    failed_at: datetime | None = None
+    cancelled_at: datetime | None = None
+    last_error: StrictStr | None = None
 
 
 def _encode_work_item(item: WorkItem) -> dict[str, object]:
@@ -38,26 +79,34 @@ def _encode_work_item(item: WorkItem) -> dict[str, object]:
 
 
 def _decode_work_item(payload: dict[str, object]) -> WorkItem:
+    item = _parse_queue_payload(_WorkItemPayload, payload)
     return WorkItem(
-        work_item_id=WorkItemId(_required_str(payload, "work_item_id")),
-        kind=_required_str(payload, "kind"),
-        payload=immutable_json(_optional_mapping(payload.get("payload"), "payload")),
-        session_id=_optional_new_type(payload.get("session_id"), SessionId, "session_id"),
-        task_id=_optional_new_type(payload.get("task_id"), TaskId, "task_id"),
-        action_id=_optional_new_type(payload.get("action_id"), ActionId, "action_id"),
-        priority=_required_int(payload, "priority"),
-        max_attempts=_required_int(payload, "max_attempts"),
-        attempts=_required_int(payload, "attempts"),
-        status=WorkItemStatus(_required_str(payload, "status")),
-        created_at=_required_datetime(payload, "created_at"),
-        available_at=_required_datetime(payload, "available_at"),
-        lease=_decode_optional_worker_lease(payload.get("lease")),
-        idempotency_key=_optional_str(payload.get("idempotency_key"), "idempotency_key"),
-        completed_at=_optional_datetime(payload.get("completed_at"), "completed_at"),
-        failed_at=_optional_datetime(payload.get("failed_at"), "failed_at"),
-        cancelled_at=_optional_datetime(payload.get("cancelled_at"), "cancelled_at"),
-        last_error=_optional_str(payload.get("last_error"), "last_error"),
+        work_item_id=WorkItemId(item.work_item_id),
+        kind=item.kind,
+        payload=immutable_json(json_mapping(item.payload or {})),
+        session_id=None if item.session_id is None else SessionId(item.session_id),
+        task_id=None if item.task_id is None else TaskId(item.task_id),
+        action_id=None if item.action_id is None else ActionId(item.action_id),
+        priority=item.priority,
+        max_attempts=item.max_attempts,
+        attempts=item.attempts,
+        status=WorkItemStatus(item.status),
+        created_at=item.created_at,
+        available_at=item.available_at,
+        lease=_decode_optional_worker_lease(item.lease),
+        idempotency_key=item.idempotency_key,
+        completed_at=item.completed_at,
+        failed_at=item.failed_at,
+        cancelled_at=item.cancelled_at,
+        last_error=item.last_error,
     )
+
+
+def _decode_work_queue_payload(payload: object) -> _WorkQueueFilePayload:
+    try:
+        return _WorkQueueFilePayload.model_validate(payload)
+    except PydanticValidationError as exc:
+        raise ValueError(_work_queue_file_payload_error_message(exc)) from exc
 
 
 def _encode_worker_lease(lease: WorkerLease) -> dict[str, object]:
@@ -70,75 +119,113 @@ def _encode_worker_lease(lease: WorkerLease) -> dict[str, object]:
     }
 
 
-def _decode_optional_worker_lease(value: object) -> WorkerLease | None:
+def _decode_optional_worker_lease(value: _WorkerLeasePayload | None) -> WorkerLease | None:
     if value is None:
         return None
-    if not isinstance(value, dict):
-        raise ValueError("lease must be an object")
     return WorkerLease(
-        lease_id=LeaseId(_required_str(value, "lease_id")),
-        worker_id=WorkerId(_required_str(value, "worker_id")),
-        leased_at=_required_datetime(value, "leased_at"),
-        lease_expires_at=_required_datetime(value, "lease_expires_at"),
-        heartbeat_at=_required_datetime(value, "heartbeat_at"),
+        lease_id=LeaseId(value.lease_id),
+        worker_id=WorkerId(value.worker_id),
+        leased_at=value.leased_at,
+        lease_expires_at=value.lease_expires_at,
+        heartbeat_at=value.heartbeat_at,
     )
 
 
-def _required_str(payload: dict[str, object], key: str) -> str:
-    value = payload.get(key)
-    if not isinstance(value, str):
-        raise ValueError(f"{key} must be a string")
-    return value
-
-
-def _optional_str(value: object, key: str) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"{key} must be a string")
-    return value
-
-
-def _required_int(payload: dict[str, object], key: str) -> int:
-    value = payload.get(key)
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{key} must be an integer")
-    return value
-
-
-def _required_datetime(payload: dict[str, object], key: str) -> datetime:
-    return _parse_datetime(_required_str(payload, key), key)
-
-
-def _optional_datetime(value: object, key: str) -> datetime | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"{key} must be a string")
-    return _parse_datetime(value, key)
-
-
-def _parse_datetime(value: str, key: str) -> datetime:
+def _parse_queue_payload[T: _QueueCodecPayload](
+    payload_type: type[T],
+    payload: object,
+) -> T:
     try:
-        return datetime.fromisoformat(value)
-    except ValueError as exc:
-        raise ValueError(f"{key} must be an ISO datetime") from exc
+        return payload_type.model_validate(payload)
+    except PydanticValidationError as exc:
+        raise ValueError(_queue_payload_error_message(exc)) from exc
 
 
-def _optional_mapping(value: object, key: str) -> JsonMapping:
-    if value is None:
-        return immutable_json()
-    if not isinstance(value, dict):
-        raise ValueError(f"{key} must be an object")
-    return immutable_json(value)
+def _work_queue_file_payload_error_message(error: PydanticValidationError) -> str:
+    errors = error.errors(include_url=False)
+    if not errors:
+        return str(error)
+    first = errors[0]
+    path = _pydantic_error_path(first.get("loc", ()))
+    error_type = str(first.get("type", ""))
+    if not path and error_type in {"model_attributes_type", "model_type"}:
+        return "file work queue payload must be an object"
+    if path == "items" and error_type == "list_type":
+        return "file work queue items must be a list"
+    if path.startswith("items[") and error_type in {
+        "dict_type",
+        "model_attributes_type",
+        "model_type",
+    }:
+        return f"file work queue {path} must be an object"
+    if path == "version" and error_type in {"int_type", "missing"}:
+        return "file work queue version must be an integer"
+    message = str(first.get("msg", ""))
+    return message or str(error)
 
 
-def _optional_new_type[T](
-    value: object,
-    factory: Callable[[str], T],
-    key: str,
-) -> T | None:
-    text = _optional_str(value, key)
-    if text is None:
-        return None
-    return factory(text)
+def _queue_payload_error_message(error: PydanticValidationError) -> str:
+    errors = error.errors(include_url=False)
+    if not errors:
+        return str(error)
+    first = errors[0]
+    path = _pydantic_error_path(first.get("loc", ()))
+    error_type = str(first.get("type", ""))
+    if path == "lease" and error_type in {"dict_type", "model_attributes_type", "model_type"}:
+        return "lease must be an object"
+    if "datetime" in error_type:
+        return f"{path} must be an ISO datetime"
+    expected = _expected_error_type(error_type, path)
+    if expected is not None:
+        return f"{path} must be {expected}"
+    message = str(first.get("msg", ""))
+    if message:
+        return message.removeprefix("Value error, ")
+    return str(error)
+
+
+def _pydantic_error_path(location: object) -> str:
+    parts: list[str] = []
+    if isinstance(location, tuple):
+        for item in location:
+            if isinstance(item, int):
+                if parts:
+                    parts[-1] = f"{parts[-1]}[{item}]"
+                else:
+                    parts.append(f"[{item}]")
+            else:
+                parts.append(str(item))
+    return ".".join(parts)
+
+
+def _expected_error_type(error_type: str, path: str) -> str | None:
+    if error_type == "missing":
+        return _missing_field_type(path)
+    return {
+        "dict_type": "an object",
+        "int_type": "an integer",
+        "invalid-json-value": "JSON-compatible",
+        "model_attributes_type": "an object",
+        "model_type": "an object",
+        "string_type": "a string",
+    }.get(error_type)
+
+
+def _missing_field_type(path: str) -> str:
+    if path in {
+        "priority",
+        "max_attempts",
+        "attempts",
+    }:
+        return "an integer"
+    if path in {
+        "created_at",
+        "available_at",
+        "leased_at",
+        "lease_expires_at",
+        "heartbeat_at",
+    }:
+        return "an ISO datetime"
+    if path == "payload":
+        return "an object"
+    return "a string"

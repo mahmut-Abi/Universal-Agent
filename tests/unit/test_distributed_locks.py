@@ -284,6 +284,76 @@ def test_file_distributed_lock_registry_serializes_cross_process_operations(
     assert probe.stdout.strip() == "blocked"
 
 
+def test_file_distributed_lock_registry_rejects_unsupported_file_version(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "distributed-locks.json"
+    path.write_text(json.dumps({"version": 2, "locks": []}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unsupported file distributed lock version: 2"):
+        FileDistributedLockRegistry(path)
+
+
+def test_file_distributed_lock_registry_rejects_non_list_locks(tmp_path: Path) -> None:
+    path = tmp_path / "distributed-locks.json"
+    path.write_text(json.dumps({"version": 1, "locks": "bad"}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="file distributed locks must be a list"):
+        FileDistributedLockRegistry(path)
+
+
+def test_file_distributed_lock_registry_rejects_non_object_lock_payload(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "distributed-locks.json"
+    path.write_text(json.dumps({"version": 1, "locks": ["bad"]}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"file distributed locks\[0\] must be an object"):
+        FileDistributedLockRegistry(path)
+
+
+def test_file_distributed_lock_registry_rejects_invalid_lease_datetime(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "distributed-locks.json"
+    FileDistributedLockRegistry(path).acquire(
+        lock_key="session/session-1",
+        owner_id=DistributedLockOwnerId("worker-a"),
+    )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    locks = payload["locks"]
+    assert isinstance(locks, list)
+    lease = locks[0]
+    assert isinstance(lease, dict)
+    lease["acquired_at"] = "not-a-date"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="acquired_at must be an ISO datetime"):
+        FileDistributedLockRegistry(path)
+
+
+def test_file_distributed_lock_registry_rejects_non_object_lease_metadata(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "distributed-locks.json"
+    FileDistributedLockRegistry(path).acquire(
+        lock_key="session/session-1",
+        owner_id=DistributedLockOwnerId("worker-a"),
+    )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    locks = payload["locks"]
+    assert isinstance(locks, list)
+    lease = locks[0]
+    assert isinstance(lease, dict)
+    lease["metadata"] = "bad"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="metadata must be an object"):
+        FileDistributedLockRegistry(path)
+
+
 def test_distributed_lock_registry_rejects_conflicting_owner() -> None:
     registry = InMemoryDistributedLockRegistry()
     now = datetime(2026, 1, 1, tzinfo=UTC)

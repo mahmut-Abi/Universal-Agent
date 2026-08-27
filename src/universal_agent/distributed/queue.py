@@ -17,7 +17,11 @@ from universal_agent.core import (
     immutable_json,
     utc_now,
 )
-from universal_agent.distributed.queue_codec import _decode_work_item, _encode_work_item
+from universal_agent.distributed.queue_codec import (
+    _decode_work_item,
+    _decode_work_queue_payload,
+    _encode_work_item,
+)
 from universal_agent.distributed.queue_models import (
     LeaseId,
     LeaseLostError,
@@ -518,20 +522,11 @@ class FileWorkQueue(InMemoryWorkQueue):
             return
         with self._path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
-        if not isinstance(payload, dict):
-            raise ValueError("file work queue payload must be an object")
-        version = payload.get("version")
-        if isinstance(version, bool) or not isinstance(version, int):
-            raise ValueError("file work queue version must be an integer")
-        if version != 1:
-            raise ValueError(f"unsupported file work queue version: {version}")
-        items = payload.get("items", [])
-        if not isinstance(items, list):
-            raise ValueError("file work queue items must be a list")
+        queue_payload = _decode_work_queue_payload(payload)
+        if queue_payload.version != 1:
+            raise ValueError(f"unsupported file work queue version: {queue_payload.version}")
         loaded: dict[WorkItemId, WorkItem] = {}
-        for index, item_payload in enumerate(items):
-            if not isinstance(item_payload, dict):
-                raise ValueError(f"file work queue items[{index}] must be an object")
+        for item_payload in queue_payload.items:
             item = _decode_work_item(item_payload)
             if item.work_item_id in loaded:
                 raise ValueError(f"duplicate file work queue item: {item.work_item_id}")
