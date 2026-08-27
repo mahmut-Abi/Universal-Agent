@@ -1,21 +1,19 @@
 from __future__ import annotations
 
 import socket
-from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from types import MappingProxyType
 
 from starlette.applications import Starlette
 from starlette.requests import Request as StarletteRequest
-from starlette.responses import JSONResponse
 from starlette.responses import Response as StarletteResponse
 from starlette.routing import Route
 from uvicorn import Config, Server
 
 from universal_agent.agentd.app import AgentdApp
 from universal_agent.agentd.http import HttpRequest, HttpResponse
-from universal_agent.core import JsonCodecError, JsonMapping, JsonValue, immutable_json, loads_json
+from universal_agent.core import JsonCodecError, JsonMapping, dumps_json, immutable_json, loads_json
 from universal_agent.core.config_validation import parse_json_object
 
 
@@ -175,10 +173,11 @@ def _starlette_response(response: HttpResponse) -> StarletteResponse:
             headers=headers,
             media_type=None,
         )
-    return JSONResponse(
-        _to_json(response.body),
+    return StarletteResponse(
+        dumps_json(response.body).encode("utf-8"),
         status_code=response.status_code,
         headers=headers,
+        media_type=None,
     )
 
 
@@ -197,16 +196,6 @@ def _request_body_error_message(message: str) -> str:
 
 def _json_error_message(error: JsonCodecError) -> str:
     return str(error).removeprefix("invalid JSON: ")
-
-
-def _to_json(value: object) -> JsonValue:
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, Mapping):
-        return {str(key): _to_json(item) for key, item in value.items()}
-    if isinstance(value, list | tuple):
-        return [_to_json(item) for item in value]
-    return str(value)
 
 
 def _bind_socket(host: str, port: int) -> socket.socket:
