@@ -2,6 +2,34 @@ from __future__ import annotations
 
 from html import escape
 
+from jinja2 import Environment, select_autoescape
+
+_WEB_ENV = Environment(autoescape=select_autoescape(default=True))
+_PAGE_TEMPLATE = _WEB_ENV.from_string(
+    """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>{{ stylesheet|safe }}</style>
+</head>
+<body>
+<main class="shell">
+{{ body|safe }}
+</main>
+</body>
+</html>"""
+)
+
+
+def _page(title: str, sections: tuple[str, ...], *, stylesheet: str | None = None) -> str:
+    return _PAGE_TEMPLATE.render(
+        title=title,
+        stylesheet=_stylesheet() if stylesheet is None else stylesheet,
+        body="\n".join(sections),
+    )
+
 
 def _section(title: str, body: str) -> str:
     return "\n".join(

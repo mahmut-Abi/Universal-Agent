@@ -9,7 +9,7 @@
 
 ## 现状基线
 
-- 源码约 39.7k 行，已引入 `httpx`、`jsonschema`、`pydantic`、`filelock` 等基础运行时依赖，
+- 源码约 39.7k 行，已引入 `httpx`、`jsonschema`、`pydantic`、`filelock`、`jinja2` 等基础运行时依赖，
   mypy strict + ruff 全量约束
 - 已出现 4 个超 2000 行文件：`agentd/app.py`(2796)、`web.py`(2728)、
   `cli.py`(2781)、`service/runtime.py`(2222) —— 违反 AGENTS.md §17.1 小模块偏好
@@ -72,6 +72,14 @@
 | 收益 | 去除三处直接 `fcntl` 调用，获得跨平台文件锁抽象；测试仍覆盖跨进程互斥行为 |
 | 风险 | 低：仅替换文件型本地协调边界，不改变 SQLite 后端和调度语义 |
 
+### 7. Jinja2 → 替换手写 Web 页面外壳拼接（第一批已完成）
+
+| 项 | 说明 |
+|---|---|
+| 现状 | `web_ui._page()` 已用 Jinja2 接管 Web Console 与 Evaluation Console 的 doctype/head/body/main 页面骨架；页面内部 section/table 渲染暂保留现有 helper，避免一次性大迁移 |
+| 收益 | 去除十余处重复 HTML 外壳拼接，统一标题转义和 body 注入边界，为后续 section/table 模板化建立单一入口 |
+| 风险 | 低：渲染内容顺序和现有 URL/section helper 不变，Web/Evaluation 测试覆盖 escaping 与关键页面文本 |
+
 ---
 
 ## Tier 2 — 明确收益，按需排期
@@ -89,7 +97,7 @@
 | 库 | 触发条件 | 说明 |
 |---|---|---|
 | Redis 或 PostgreSQL | P6 分布式超过本地原语 | 文件轮询队列 → `FOR UPDATE SKIP LOCKED` / Redis TTL 锁的生产级语义 |
-| Jinja2 | `web.py` 继续膨胀 | 2728 行 f-string 拼 HTML + escape → 模板化，预计省一半 |
+| Jinja2 | Web section/table helper 继续膨胀 | 页面外壳已完成；后续再迁移高重复 table/card/hero section，不一次性重写全部 UI |
 
 ---
 
@@ -122,6 +130,7 @@
     PyYAML(Domain Package manifest YAML 兼容，已完成)
     packaging runtime_api compatibility specifier（已完成）
     filelock 文件协调锁（已完成）
+    Jinja2 Web/Evaluation 页面外壳（第一批已完成）
 
 第四批（触发式）
     Redis/PostgreSQL 分布式后端

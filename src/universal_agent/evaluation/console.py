@@ -11,6 +11,7 @@ from universal_agent.evaluation.recording import (
     EvaluationScenarioRecording,
     FileEvaluationReportStore,
 )
+from universal_agent.web_ui import _page
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,18 +31,9 @@ def build_evaluation_console_snapshot(report_dir: str | Path) -> EvaluationConso
 
 def render_evaluation_console(snapshot: EvaluationConsoleSnapshot) -> str:
     title = "Universal Agent Evaluation Console"
-    return "\n".join(
+    return _page(
+        title,
         (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f"<title>{_html(title)}</title>",
-            f"<style>{_stylesheet()}</style>",
-            "</head>",
-            "<body>",
-            '<main class="shell">',
             _hero(snapshot),
             '<section class="grid cards" aria-label="Evaluation summary">',
             _metric_card("Suites", len(snapshot.reports)),
@@ -54,10 +46,8 @@ def render_evaluation_console(snapshot: EvaluationConsoleSnapshot) -> str:
             _reports(snapshot.reports),
             _scenarios(snapshot.reports),
             _gate_checks(snapshot.reports),
-            "</main>",
-            "</body>",
-            "</html>",
-        )
+        ),
+        stylesheet=_stylesheet(),
     )
 
 

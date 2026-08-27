@@ -96,7 +96,7 @@ from universal_agent.web_session_sections import (
     _task_timeline,
 )
 from universal_agent.web_types import WebCatalogPage, WebConsoleSnapshot
-from universal_agent.web_ui import _html, _metric_card, _stylesheet
+from universal_agent.web_ui import _metric_card, _page
 from universal_agent.web_world_sections import (
     _evidence,
     _world_entities,
@@ -109,18 +109,9 @@ from universal_agent.web_world_sections import (
 
 def render_web_console(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Console"
-    return "\n".join(
+    return _page(
+        title,
         (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f"<title>{_html(title)}</title>",
-            f"<style>{_stylesheet()}</style>",
-            "</head>",
-            "<body>",
-            '<main class="shell">',
             _hero(snapshot),
             '<section class="grid cards" aria-label="Runtime summary">',
             _metric_card("Sessions", snapshot.metrics.session_count),
@@ -150,27 +141,15 @@ def render_web_console(snapshot: WebConsoleSnapshot) -> str:
             _evidence(snapshot.session_explorer),
             _events(snapshot.events),
             _audit(snapshot.audit_records),
-            "</main>",
-            "</body>",
-            "</html>",
-        )
+        ),
     )
 
 
 def render_web_session_detail(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Session Detail"
-    return "\n".join(
+    return _page(
+        title,
         (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f"<title>{_html(title)}</title>",
-            f"<style>{_stylesheet()}</style>",
-            "</head>",
-            "<body>",
-            '<main class="shell">',
             _session_scoped_hero(snapshot, "Session Detail"),
             '<section class="grid cards" aria-label="Session summary">',
             _metric_card("Iteration", _selected_iteration(snapshot.selected_session)),
@@ -190,27 +169,15 @@ def render_web_session_detail(snapshot: WebConsoleSnapshot) -> str:
             _evidence(snapshot.session_explorer),
             _events(snapshot.events),
             _audit(snapshot.audit_records),
-            "</main>",
-            "</body>",
-            "</html>",
-        )
+        ),
     )
 
 
 def render_web_sessions(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Sessions"
-    return "\n".join(
+    return _page(
+        title,
         (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f"<title>{_html(title)}</title>",
-            f"<style>{_stylesheet()}</style>",
-            "</head>",
-            "<body>",
-            '<main class="shell">',
             _sessions_hero(snapshot),
             '<section class="grid cards" aria-label="Session summary">',
             _metric_card("Sessions", snapshot.metrics.session_count),
@@ -224,27 +191,15 @@ def render_web_sessions(snapshot: WebConsoleSnapshot) -> str:
             _selected_session(snapshot.selected_session),
             _events(snapshot.events),
             _audit(snapshot.audit_records),
-            "</main>",
-            "</body>",
-            "</html>",
-        )
+        ),
     )
 
 
 def render_web_doctor(snapshot: WebConsoleSnapshot, doctor: DoctorReportView) -> str:
     title = "Universal Agent Runtime Doctor"
-    return "\n".join(
+    return _page(
+        title,
         (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f"<title>{_html(title)}</title>",
-            f"<style>{_stylesheet()}</style>",
-            "</head>",
-            "<body>",
-            '<main class="shell">',
             _doctor_hero(snapshot, doctor),
             '<section class="grid cards" aria-label="Doctor summary">',
             _metric_card("Status", doctor.status),
@@ -257,10 +212,7 @@ def render_web_doctor(snapshot: WebConsoleSnapshot, doctor: DoctorReportView) ->
             _doctor_checks(doctor),
             _operational_diagnostics(snapshot),
             _runtime_settings(snapshot),
-            "</main>",
-            "</body>",
-            "</html>",
-        )
+        ),
     )
 
 
@@ -270,18 +222,9 @@ def render_web_distributed(
     health: DistributedHealthReport | None,
 ) -> str:
     title = "Universal Agent Runtime Distributed"
-    return "\n".join(
+    return _page(
+        title,
         (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f"<title>{_html(title)}</title>",
-            f"<style>{_stylesheet()}</style>",
-            "</head>",
-            "<body>",
-            '<main class="shell">',
             _distributed_hero(snapshot, health),
             '<section class="grid cards" aria-label="Distributed summary">',
             _metric_card("Status", _distributed_status(health)),
@@ -300,28 +243,16 @@ def render_web_distributed(
             _distributed_work_queue(distributed),
             _distributed_workers(distributed),
             _distributed_locks(distributed),
-            "</main>",
-            "</body>",
-            "</html>",
-        )
+        ),
     )
 
 
 def render_web_multi_agent(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Multi-Agent"
     multi_agent = snapshot.multi_agent
-    return "\n".join(
+    return _page(
+        title,
         (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f"<title>{_html(title)}</title>",
-            f"<style>{_stylesheet()}</style>",
-            "</head>",
-            "<body>",
-            '<main class="shell">',
             _multi_agent_hero(snapshot),
             '<section class="grid cards" aria-label="Multi-Agent summary">',
             _metric_card("Status", "enabled" if multi_agent.enabled else "not configured"),
@@ -332,27 +263,15 @@ def render_web_multi_agent(snapshot: WebConsoleSnapshot) -> str:
             _metric_card("Delegation Tasks", multi_agent.delegation_task_count),
             "</section>",
             _multi_agent(multi_agent),
-            "</main>",
-            "</body>",
-            "</html>",
-        )
+        ),
     )
 
 
 def render_web_evidence_explorer(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Evidence Explorer"
-    return "\n".join(
+    return _page(
+        title,
         (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f"<title>{_html(title)}</title>",
-            f"<style>{_stylesheet()}</style>",
-            "</head>",
-            "<body>",
-            '<main class="shell">',
             _session_scoped_hero(snapshot, "Evidence Explorer"),
             '<section class="grid cards" aria-label="Evidence summary">',
             _metric_card("Evidence", _selected_evidence_count(snapshot.session_explorer)),
@@ -368,27 +287,15 @@ def render_web_evidence_explorer(snapshot: WebConsoleSnapshot) -> str:
             _world_entities(snapshot.session_explorer),
             _world_relations(snapshot.session_explorer),
             _events(snapshot.events),
-            "</main>",
-            "</body>",
-            "</html>",
-        )
+        ),
     )
 
 
 def render_web_world_model_explorer(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime World Model Explorer"
-    return "\n".join(
+    return _page(
+        title,
         (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f"<title>{_html(title)}</title>",
-            f"<style>{_stylesheet()}</style>",
-            "</head>",
-            "<body>",
-            '<main class="shell">',
             _session_scoped_hero(snapshot, "World Model Explorer"),
             '<section class="grid cards" aria-label="World model summary">',
             _metric_card("World Facts", _selected_world_fact_count(snapshot.session_explorer)),
@@ -411,10 +318,7 @@ def render_web_world_model_explorer(snapshot: WebConsoleSnapshot) -> str:
             _world_relations(snapshot.session_explorer),
             _evidence(snapshot.session_explorer),
             _events(snapshot.events),
-            "</main>",
-            "</body>",
-            "</html>",
-        )
+        ),
     )
 
 
@@ -426,18 +330,9 @@ def render_web_domain_detail(
 ) -> str:
     domain = _selected_domain(snapshot, domain_name, domain_version)
     title = "Universal Agent Runtime Domain Manager"
-    return "\n".join(
+    return _page(
+        title,
         (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f"<title>{_html(title)}</title>",
-            f"<style>{_stylesheet()}</style>",
-            "</head>",
-            "<body>",
-            '<main class="shell">',
             _domain_hero(snapshot, domain),
             '<section class="grid cards" aria-label="Domain summary">',
             _metric_card("Capabilities", _domain_capability_count(snapshot, domain)),
@@ -453,10 +348,7 @@ def render_web_domain_detail(
             _policies(_domain_policies(snapshot, domain)),
             _evaluators(_domain_evaluators(snapshot, domain)),
             _memory(_domain_memories(snapshot, domain)),
-            "</main>",
-            "</body>",
-            "</html>",
-        )
+        ),
     )
 
 
@@ -468,18 +360,9 @@ def render_web_domain_package_detail(
 ) -> str:
     package = _selected_domain_package(snapshot, package_name, package_version)
     title = "Universal Agent Runtime Domain Package"
-    return "\n".join(
+    return _page(
+        title,
         (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f"<title>{_html(title)}</title>",
-            f"<style>{_stylesheet()}</style>",
-            "</head>",
-            "<body>",
-            '<main class="shell">',
             _domain_package_hero(snapshot, package),
             '<section class="grid cards" aria-label="Domain package summary">',
             _metric_card("Capabilities", _package_capability_count(package)),
@@ -494,27 +377,15 @@ def render_web_domain_package_detail(
             _domain_package_security(package),
             _domain_package_active_domains(snapshot, package),
             _domain_package_profiles(snapshot, package),
-            "</main>",
-            "</body>",
-            "</html>",
-        )
+        ),
     )
 
 
 def render_web_profile_catalog(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Profile Catalog"
-    return "\n".join(
+    return _page(
+        title,
         (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f"<title>{_html(title)}</title>",
-            f"<style>{_stylesheet()}</style>",
-            "</head>",
-            "<body>",
-            '<main class="shell">',
             _profile_hero(snapshot),
             '<section class="grid cards" aria-label="Profile summary">',
             _metric_card("Profiles", len(snapshot.profiles)),
@@ -528,53 +399,29 @@ def render_web_profile_catalog(snapshot: WebConsoleSnapshot) -> str:
             _domains(snapshot),
             _configured_domains(snapshot),
             _capabilities(snapshot.capabilities),
-            "</main>",
-            "</body>",
-            "</html>",
-        )
+        ),
     )
 
 
 def render_web_catalog(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> str:
     title = f"Universal Agent Runtime {_catalog_title(catalog)}"
-    return "\n".join(
+    return _page(
+        title,
         (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f"<title>{_html(title)}</title>",
-            f"<style>{_stylesheet()}</style>",
-            "</head>",
-            "<body>",
-            '<main class="shell">',
             _catalog_hero(snapshot, catalog),
             '<section class="grid cards" aria-label="Catalog summary">',
             *_catalog_metrics(snapshot, catalog),
             "</section>",
             *_catalog_sections(snapshot, catalog),
-            "</main>",
-            "</body>",
-            "</html>",
-        )
+        ),
     )
 
 
 def render_web_settings(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Settings"
-    return "\n".join(
+    return _page(
+        title,
         (
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f"<title>{_html(title)}</title>",
-            f"<style>{_stylesheet()}</style>",
-            "</head>",
-            "<body>",
-            '<main class="shell">',
             _settings_hero(snapshot),
             '<section class="grid cards" aria-label="Settings summary">',
             _metric_card("Store", snapshot.config.store_backend),
@@ -594,8 +441,5 @@ def render_web_settings(snapshot: WebConsoleSnapshot) -> str:
             _configured_domains(snapshot),
             _runtime_secrets(snapshot),
             _environment(snapshot),
-            "</main>",
-            "</body>",
-            "</html>",
-        )
+        ),
     )
