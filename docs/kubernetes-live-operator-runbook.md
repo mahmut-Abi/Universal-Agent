@@ -173,6 +173,8 @@ Expected:
 - `preflight.status` is `ok`.
 - `contract.status` is `ok` for a fully ready real backend, or `attention` if a
   non-blocking warning such as the fake backend is present.
+- `preflight.observations.workload_inspection.pods` is present when the target
+  workload exposes selector labels and the Kubernetes identity can list Pods.
 - `next_step.type` is `run_kubernetes_remediation`.
 
 Use `--skip-cluster` only when validating profile/model shape without touching a

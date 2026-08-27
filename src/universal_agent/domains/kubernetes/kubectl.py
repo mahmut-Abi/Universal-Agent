@@ -143,6 +143,8 @@ class KubectlBackend:
         desired = k8s.optional_int(spec.get("replicas"))
         if desired is None:
             desired = 1
+        selector_labels = k8s.selector_labels(spec)
+        pods = await self._workload_pods(ref.namespace, selector_labels)
         ready = k8s.optional_int(status.get("readyReplicas")) or 0
         available = k8s.optional_int(status.get("availableReplicas"))
         updated = k8s.optional_int(status.get("updatedReplicas")) or 0
@@ -162,9 +164,35 @@ class KubectlBackend:
             "resource_version": k8s.string_value(metadata.get("resourceVersion")),
             "conditions": k8s.condition_list(status.get("conditions")),
         }
+        if selector_labels:
+            result["selector_labels"] = {key: value for key, value in selector_labels.items()}
+            result["pod_count"] = len(pods)
+            result["ready_pod_count"] = k8s.ready_pod_count(pods)
+            result["pods"] = pods
         if not healthy:
-            result["root_cause"] = k8s.workload_root_cause(desired, ready, status.get("conditions"))
+            result["root_cause"] = k8s.pod_related_root_cause(pods) or k8s.workload_root_cause(
+                desired, ready, status.get("conditions")
+            )
         return immutable_json(result)
+
+    async def _workload_pods(
+        self,
+        namespace: str,
+        selector_labels: dict[str, str],
+    ) -> list[JsonValue]:
+        if not selector_labels:
+            return []
+        payload = await self._run_json(
+            "get",
+            "pods",
+            "--namespace",
+            namespace,
+            "-l",
+            k8s.label_selector(selector_labels),
+            "-o",
+            "json",
+        )
+        return k8s.pod_summaries(payload)
 
     async def _inspect_pod(self, arguments: JsonMapping) -> JsonMapping:
         ref = k8s.resource_ref(

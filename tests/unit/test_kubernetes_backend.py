@@ -225,6 +225,57 @@ async def test_kubectl_backend_inspects_workload_health_and_command_scope() -> N
 
 
 @pytest.mark.asyncio
+async def test_kubectl_backend_includes_workload_pod_summaries_from_selector() -> None:
+    runner = RecordingKubectlRunner(
+        {
+            (
+                "get",
+                "deployment",
+                "api",
+                "--namespace",
+                "prod",
+                "-o",
+                "json",
+            ): {
+                "metadata": {"name": "api", "resourceVersion": "rv-1", "generation": 4},
+                "spec": {
+                    "replicas": 2,
+                    "selector": {"matchLabels": {"tier": "web", "app": "api"}},
+                },
+                "status": {"readyReplicas": 1, "availableReplicas": 1},
+            },
+            (
+                "get",
+                "pods",
+                "--namespace",
+                "prod",
+                "-l",
+                "app=api,tier=web",
+                "-o",
+                "json",
+            ): {"items": [_crash_loop_pod()]},
+        }
+    )
+    backend = KubectlBackend(runner=runner)
+
+    result = await backend.inspect(
+        "inspect_workload",
+        immutable_json({"name": "deployment/api", "namespace": "prod"}),
+    )
+
+    assert result["selector_labels"] == {"app": "api", "tier": "web"}
+    assert result["pod_count"] == 1
+    assert result["ready_pod_count"] == 0
+    assert result["root_cause"] == "crash_loop_back_off"
+    pods = result["pods"]
+    assert isinstance(pods, list)
+    pod = pods[0]
+    assert isinstance(pod, dict)
+    assert pod["resource"] == "pod/api-123"
+    assert pod["restart_count"] == 5
+
+
+@pytest.mark.asyncio
 async def test_kubectl_backend_inspects_pod_container_diagnostics() -> None:
     runner = RecordingKubectlRunner(
         {
@@ -499,6 +550,54 @@ async def test_kubernetes_api_backend_inspects_workload_health() -> None:
 
 
 @pytest.mark.asyncio
+async def test_kubernetes_api_backend_includes_workload_pod_summaries_from_selector() -> None:
+    transport = RecordingKubernetesApiTransport(
+        {
+            (
+                "GET",
+                "/apis/apps/v1/namespaces/prod/deployments/api",
+                (),
+            ): {
+                "metadata": {"name": "api", "resourceVersion": "rv-1", "generation": 4},
+                "spec": {
+                    "replicas": 2,
+                    "selector": {"matchLabels": {"tier": "web", "app": "api"}},
+                },
+                "status": {"readyReplicas": 1, "availableReplicas": 1},
+            },
+            (
+                "GET",
+                "/api/v1/namespaces/prod/pods",
+                (("labelSelector", "app=api,tier=web"),),
+            ): {"items": [_crash_loop_pod()]},
+        }
+    )
+    backend = KubernetesApiBackend(
+        api_server="https://cluster.example.test",
+        transport=transport,
+        default_namespace="prod",
+    )
+
+    result = await backend.inspect("inspect_workload", immutable_json({"name": "deployment/api"}))
+
+    assert result["selector_labels"] == {"app": "api", "tier": "web"}
+    assert result["pod_count"] == 1
+    assert result["ready_pod_count"] == 0
+    assert result["root_cause"] == "crash_loop_back_off"
+    pods = result["pods"]
+    assert isinstance(pods, list)
+    pod = pods[0]
+    assert isinstance(pod, dict)
+    assert pod["resource"] == "pod/api-123"
+    assert pod["restart_count"] == 5
+    assert transport.requests[1][0:3] == (
+        "GET",
+        "/api/v1/namespaces/prod/pods",
+        (("labelSelector", "app=api,tier=web"),),
+    )
+
+
+@pytest.mark.asyncio
 async def test_kubernetes_api_backend_reads_logs_and_events() -> None:
     logs = "first line\nsecond line\n"
     transport = RecordingKubernetesApiTransport(
@@ -646,4 +745,25 @@ def _event(reason: str, event_type: str) -> dict[str, JsonValue]:
         "count": 1,
         "lastTimestamp": "2026-01-01T00:00:00Z",
         "involvedObject": {"kind": "Deployment", "name": "api"},
+    }
+
+
+def _crash_loop_pod() -> dict[str, JsonValue]:
+    return {
+        "metadata": {
+            "name": "api-123",
+            "namespace": "prod",
+            "resourceVersion": "rv-pod",
+        },
+        "status": {
+            "phase": "Running",
+            "containerStatuses": [
+                {
+                    "name": "api",
+                    "ready": False,
+                    "restartCount": 5,
+                    "state": {"waiting": {"reason": "CrashLoopBackOff"}},
+                }
+            ],
+        },
     }

@@ -59,6 +59,9 @@ The command must:
   stops before cluster inspection if the model contract fails;
 - run model probe and Kubernetes preflight before Runtime submission unless
   `--skip-preflight` is explicit;
+- include matching Pod summaries in workload inspection observations when the
+  workload exposes selector labels, so container readiness and CrashLoopBackOff
+  evidence can influence diagnosis before a separate Pod/log action;
 - construct a Runtime-owned `Goal` with `healthy=true`, `resource=<workload>`,
   and optional `namespace=<namespace>` success criteria;
 - construct a `Task` that names the workload and namespace;
@@ -160,6 +163,8 @@ Tests target these public interfaces:
 - Failed preflight returns status `failed` and no Runtime session is submitted.
 - The runtime denies scoped Kubernetes mutations whose target resource or
   namespace differs from the `kubernetes run` request.
+- `inspect_workload` observations for selector-backed workloads include
+  `selector_labels`, `pod_count`, `ready_pod_count`, and `pods` summary fields.
 - Production `scale_workload` decisions return status `waiting` with a
   confirmation command instead of mutating immediately, while
   `contract.checks.confirmation_boundary` remains `ok`.

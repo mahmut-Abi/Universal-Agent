@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
@@ -80,6 +81,60 @@ def workload_root_cause(
     if ready < desired:
         return "under_replicated"
     return "unhealthy_workload"
+
+
+def selector_labels(spec: dict[str, JsonValue]) -> dict[str, str]:
+    selector = object_value(spec.get("selector"))
+    match_labels = object_value(selector.get("matchLabels"))
+    labels: dict[str, str] = {}
+    for key, value in match_labels.items():
+        if isinstance(value, str) and value.strip():
+            labels[key] = value
+    return labels
+
+
+def label_selector(labels: Mapping[str, str]) -> str:
+    return ",".join(f"{key}={value}" for key, value in sorted(labels.items()))
+
+
+def pod_summaries(payload: dict[str, JsonValue]) -> list[JsonValue]:
+    return [pod_summary(item) for item in items(payload)]
+
+
+def pod_summary(pod: dict[str, JsonValue]) -> JsonValue:
+    metadata = object_value(pod.get("metadata"))
+    status = object_value(pod.get("status"))
+    container_items = container_statuses(status.get("containerStatuses"))
+    ready = bool(container_items) and all(bool_value(item.get("ready")) for item in container_items)
+    restart_count = sum(optional_int(item.get("restartCount")) or 0 for item in container_items)
+    summary: dict[str, JsonValue] = {
+        "resource": f"pod/{string_value(metadata.get('name'))}",
+        "namespace": string_value(metadata.get("namespace")),
+        "name": string_value(metadata.get("name")),
+        "phase": string_value(status.get("phase")),
+        "ready": ready,
+        "restart_count": restart_count,
+        "resource_version": string_value(metadata.get("resourceVersion")),
+        "containers": [container_summary(item) for item in container_items],
+    }
+    root_cause = pod_root_cause(summary["phase"], ready, container_items)
+    if root_cause:
+        summary["root_cause"] = root_cause
+    return summary
+
+
+def ready_pod_count(pods: list[JsonValue]) -> int:
+    return sum(1 for pod in pods if isinstance(pod, dict) and pod.get("ready") is True)
+
+
+def pod_related_root_cause(pods: list[JsonValue]) -> str | None:
+    for pod in pods:
+        if not isinstance(pod, dict):
+            continue
+        root_cause = optional_string(pod.get("root_cause"))
+        if root_cause:
+            return root_cause
+    return None
 
 
 def pod_root_cause(

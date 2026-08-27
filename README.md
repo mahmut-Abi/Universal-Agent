@@ -443,7 +443,10 @@ backends; no real cluster is accessed unless a caller explicitly wires `KubectlB
 implements those protocols through Kubernetes HTTP API requests with an injectable transport and
 optional bearer-token secret resolution at the CLI/host boundary. See
 `examples/p3_2_kubectl_backend.py` and `examples/p3_2_kubernetes_api_backend.py` for the adapter
-shapes. Profile configs can now opt in with `domain.backend = "kubectl"` or
+shapes. For Deployment-like workloads with `spec.selector.matchLabels`, both real backends include
+selector labels plus matching Pod summaries in `inspect_workload` observations, allowing
+CrashLoopBackOff and container readiness evidence to surface before a separate Pod inspection is
+chosen. Profile configs can now opt in with `domain.backend = "kubectl"` or
 `domain.backend = "kubernetes_api"` and backend-specific settings; the local CLI writes those forms
 with `agent init --domain-backend kubectl` or `agent init --domain-backend kubernetes_api` and still
 defaults to the fake backend. The read-only `KubernetesDomain` remains available, while `KubernetesRemediationDomain` adds the policy-gated mutation path. Multi-domain operation now
