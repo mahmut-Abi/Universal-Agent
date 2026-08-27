@@ -10,6 +10,7 @@ from universal_agent.core import (
     CapabilityCategory,
     CapabilityDefinition,
     CapabilityInputContract,
+    DateTimeParseError,
     Decision,
     DecisionType,
     Goal,
@@ -17,6 +18,7 @@ from universal_agent.core import (
     Task,
     immutable_json,
     new_session_id,
+    parse_iso_datetime,
     runtime_primitives,
     utc_now,
     validate_argument_contract,
@@ -69,6 +71,24 @@ def test_runtime_primitives_override_ids_and_clock_inside_context() -> None:
         assert utc_now() == datetime(2026, 1, 1, 0, 0, 10, tzinfo=UTC)
 
     assert new_session_id() != "session-fixed-2"
+
+
+def test_parse_iso_datetime_uses_dateutil_and_timezone_policy() -> None:
+    parsed = parse_iso_datetime(
+        "2026-01-01T00:00:00Z",
+        field="before",
+        require_timezone=True,
+    )
+
+    assert parsed.isoformat() == "2026-01-01T00:00:00+00:00"
+    with pytest.raises(DateTimeParseError, match="before must include a timezone"):
+        parse_iso_datetime(
+            "2026-01-01T00:00:00",
+            field="before",
+            require_timezone=True,
+        )
+    with pytest.raises(DateTimeParseError, match="created_at must be an ISO datetime string"):
+        parse_iso_datetime("not-a-date", field="created_at")
 
 
 def test_basic_context_exposes_capabilities_not_tools() -> None:

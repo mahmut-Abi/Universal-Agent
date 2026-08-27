@@ -9,10 +9,10 @@
 
 ## 现状基线
 
-- 源码约 39.7k 行，已引入 `httpx`、`jsonschema`、`pydantic`、`filelock`、`jinja2` 等基础运行时依赖，
-  mypy strict + ruff 全量约束
-- 已出现 4 个超 2000 行文件：`agentd/app.py`(2796)、`web.py`(2728)、
-  `cli.py`(2781)、`service/runtime.py`(2222) —— 违反 AGENTS.md §17.1 小模块偏好
+- 源码约 39.7k 行，已引入 `httpx`、`jsonschema`、`pydantic`、`filelock`、`jinja2`、
+  `python-dateutil`、`rich` 等基础运行时依赖，mypy strict + ruff 全量约束
+- 早期超 2000 行源码文件已被压回 1000 行以内；后续先优先做库替换和 seam 收口，
+  暂不继续以拆文件作为主线
 - 主要瓶颈是**代码量增长速度**，非性能（主循环为 I/O 密集：LLM 秒级、kubectl 子进程、HTTP）
 
 ---
@@ -80,17 +80,33 @@
 | 收益 | 去除十余处重复 HTML 外壳拼接，统一标题转义和 body 注入边界，为后续 section/table 模板化建立单一入口 |
 | 风险 | 低：渲染内容顺序和现有 URL/section helper 不变，Web/Evaluation 测试覆盖 escaping 与关键页面文本 |
 
+### 8. python-dateutil → 替换手写 ISO datetime 兼容解析（已完成）
+
+| 项 | 说明 |
+|---|---|
+| 现状 | `core.time.parse_iso_datetime()` 已使用 `dateutil.parser.isoparse` 接管 ISO 8601 解析；persistence codec、agentd HTTP payload、CLI `--before` 与 distributed runtime payload 共享同一时间解析入口 |
+| 收益 | 去除 `value.replace("Z", "+00:00")` / `datetime.fromisoformat()` 分散写法，统一 `Z` 后缀、时区强制和错误文案 |
+| 风险 | 低：保留 public dataclass/API 类型，测试覆盖持久化恢复和 CLI/HTTP 输入解析 |
+
+### 9. Rich → 替换手写终端渲染执行层（第一批已完成）
+
+| 项 | 说明 |
+|---|---|
+| 现状 | Runtime TUI 与 Evaluation Console 的 deterministic text output 已通过 Rich `Console` / `Text` 渲染；保持现有纯文本输出契约，先不引入交互式 Textual |
+| 收益 | 终端渲染 seam 从手写 `"\n".join(...)` 收口到库适配层，为后续颜色、表格、实时刷新和 Textual headless 测试做准备 |
+| 风险 | 低：输出不含 ANSI，现有 TUI / Evaluation Console / CLI 测试继续使用关键文本断言 |
+
 ---
 
 ## Tier 2 — 明确收益，按需排期
 
 | 库 | 目标模块 | 收益 | 备注 |
 |---|---|---|---|
-| Textual | `tui.py` | 683 行一次性静态打印 → 真 TUI（现状无 curses/事件循环/刷新，见 cli.py:1192 仅"建快照→渲染→退出"） | headless 测试模式保住可测性；现有 `build_tui_snapshot` 直接复用为数据层 |
+| Textual | `tui.py` | 静态 Rich text output → 真 TUI（事件循环、刷新、筛选、详情面板） | Rich deterministic renderer 已作为第一批终端 seam；Textual 仍需等 Runtime API/生产流程更稳定后再做 |
 | jsonschema | `core/arguments.py` / `tools/runtime.py:181` | 已由 `Draft202012Validator` 接管 capability/tool argument schema 校验；`tools/runtime.py` 继续通过统一 contract 入口调用 | 后续可补充 `oneOf/pattern` 等覆盖用例 |
 | packaging | `domain/package_models.py` | 已用 `SpecifierSet` 接管 `compatibility.runtime_api` 校验与 runtime API version 支持判断 | 当前刻意不收紧所有 Domain identity version 字符串，避免破坏既有包标识兼容性 |
 | opentelemetry-proto | `operations/otlp.py` | 已用官方 OTLP protobuf schema 类型接管 trace export payload 生成，保留现有 JSON/hex ID Runtime API 契约 | 后续若需要直接推送 Tempo/Collector，再引入 `opentelemetry-sdk` / OTLP exporter |
-| Typer + Rich | `cli.py` | argparse 样板约 -30%；内省命令表格化输出 | 与 Textual 同批做体验统一 |
+| Typer | `cli_parser.py` / `cli.py` | argparse 样板约 -30%；命令声明与 help 文案更可维护 | Rich 已先用于终端渲染；Typer 迁移单独排期，避免一次性改动全部 CLI 契约 |
 
 ## Tier 3 — 场景触发再引入
 
@@ -125,12 +141,14 @@
     → 官方 Python/JS client 由 schema 自动生成
 
 第三批（体验与观测）
-    Textual TUI + Typer/Rich CLI
+    Rich deterministic terminal renderer（第一批已完成）
+    Textual TUI + Typer CLI（后续渐进）
     opentelemetry-proto OTLP payload（已完成）；opentelemetry-sdk exporter（按部署需要再接入）
     PyYAML(Domain Package manifest YAML 兼容，已完成)
     packaging runtime_api compatibility specifier（已完成）
     filelock 文件协调锁（已完成）
     Jinja2 Web/Evaluation 页面外壳（第一批已完成）
+    python-dateutil ISO datetime 解析（已完成）
 
 第四批（触发式）
     Redis/PostgreSQL 分布式后端

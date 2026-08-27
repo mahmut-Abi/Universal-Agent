@@ -387,6 +387,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
 
     rendered = render_tui_snapshot(snapshot)
 
+    assert "\x1b[" not in rendered
     assert "Universal Agent Runtime TUI" in rendered
     assert "Health: ok | Ready: yes" in rendered
     assert "model=scripted/scripted" in rendered

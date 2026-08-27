@@ -27,6 +27,7 @@ from universal_agent.core import (
     TaskId,
     TaskStatus,
     immutable_json,
+    parse_iso_datetime,
 )
 from universal_agent.core.config_validation import (
     ConfigPayload,
@@ -233,7 +234,7 @@ def decode_runtime_event(payload: Mapping[str, JsonValue]) -> RuntimeEvent:
         id=EventId(event.event_id),
         action_id=None if event.action_id is None else ActionId(event.action_id),
         data=immutable_json(json_mapping(event.data)),
-        occurred_at=datetime.fromisoformat(event.occurred_at),
+        occurred_at=parse_iso_datetime(event.occurred_at, field="occurred_at"),
     )
 
 
@@ -299,7 +300,7 @@ def _decode_goal(payload: _GoalPayload) -> Goal:
         ),
         GoalId(payload.id),
         GoalStatus(payload.status),
-        datetime.fromisoformat(payload.created_at),
+        parse_iso_datetime(payload.created_at, field="goal.created_at"),
     )
 
 
@@ -319,7 +320,7 @@ def _decode_task(payload: _TaskPayload) -> Task:
         tuple(payload.required_criteria),
         TaskId(payload.id),
         TaskStatus(payload.status),
-        datetime.fromisoformat(payload.created_at),
+        parse_iso_datetime(payload.created_at, field="task.created_at"),
     )
 
 
@@ -383,7 +384,7 @@ def _decode_observation(payload: _ObservationPayload) -> Observation:
         payload.source,
         ObservationStatus(payload.status),
         immutable_json(json_mapping(payload.data)),
-        datetime.fromisoformat(payload.observed_at),
+        parse_iso_datetime(payload.observed_at, field="observation.observed_at"),
         payload.error,
         _decode_optional_error(payload.error_code),
     )
@@ -479,7 +480,7 @@ def _decode_evidence(payload: _EvidencePayload) -> Evidence:
         payload.source,
         payload.confidence,
         EvidenceId(payload.id),
-        datetime.fromisoformat(payload.observed_at),
+        parse_iso_datetime(payload.observed_at, field="evidence.observed_at"),
         payload.domain_name,
         payload.domain_version,
     )

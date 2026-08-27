@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 
@@ -305,6 +306,88 @@ def test_runtime_event_codec_preserves_json_safe_event_data() -> None:
     assert restored.data["domains"] == ["kubernetes@0.2.0", "observability@0.1.0"]
     assert restored.data["emitted_at"] == "2026-08-22T10:31:00+00:00"
     assert restored.occurred_at == event.occurred_at
+
+
+def test_persistence_codec_accepts_z_suffix_datetime_payloads() -> None:
+    observed_at = datetime(2026, 8, 22, 10, 30, tzinfo=UTC)
+    session_id = SessionId("session-z")
+    task = Task("Inspect", (), TaskId("task-z"), TaskStatus.WAITING, observed_at)
+    observation = Observation(
+        ObservationId("observation-z"),
+        ActionId("action-z"),
+        task.id,
+        "probe",
+        ObservationStatus.SUCCEEDED,
+        immutable_json({"healthy": True}),
+        observed_at,
+    )
+    snapshot = SessionSnapshot(
+        AgentState(
+            session_id=session_id,
+            goal=Goal("Restore", (), GoalId("goal-z"), GoalStatus.WAITING, observed_at),
+            current_task=task,
+            observations=[observation],
+            tasks=[task],
+        ),
+        TaskGraphSnapshot((TaskNodeSnapshot("root", task),), task.id),
+        (
+            Evidence(
+                session_id,
+                task.id,
+                ActionId("action-z"),
+                ObservationId("observation-z"),
+                "deployment/example",
+                "healthy",
+                True,
+                "probe",
+                0.99,
+                EvidenceId("evidence-z"),
+                observed_at,
+            ),
+        ),
+        "kubernetes",
+        "0.2.0",
+    )
+    encoded = encode_session_snapshot(snapshot)
+    state_payload = cast(dict[str, object], encoded["state"])
+    goal_payload = cast(dict[str, object], state_payload["goal"])
+    observations = cast(list[object], state_payload["observations"])
+    observation_payload = cast(dict[str, object], observations[0])
+    task_graph_payload = cast(dict[str, object], encoded["task_graph"])
+    task_nodes = cast(list[object], task_graph_payload["nodes"])
+    task_node = cast(dict[str, object], task_nodes[0])
+    task_payload = cast(dict[str, object], task_node["task"])
+    evidence_items = cast(list[object], encoded["evidence"])
+    evidence_payload = cast(dict[str, object], evidence_items[0])
+    goal_payload["created_at"] = "2026-08-22T10:30:00Z"
+    task_payload["created_at"] = "2026-08-22T10:30:00Z"
+    observation_payload["observed_at"] = "2026-08-22T10:30:00Z"
+    evidence_payload["observed_at"] = "2026-08-22T10:30:00Z"
+
+    restored = decode_session_snapshot(encoded)
+
+    assert restored.state.goal.created_at.isoformat() == "2026-08-22T10:30:00+00:00"
+    assert restored.state.current_task.created_at.isoformat() == "2026-08-22T10:30:00+00:00"
+    assert restored.state.observations[0].observed_at.isoformat() == "2026-08-22T10:30:00+00:00"
+    assert restored.evidence[0].observed_at.isoformat() == "2026-08-22T10:30:00+00:00"
+
+    event_payload = encode_runtime_event(
+        RuntimeEvent(
+            type="EventWithZ",
+            session_id=session_id,
+            goal_id=GoalId("goal-z"),
+            task_id=task.id,
+            id=EventId("event-z"),
+            action_id=None,
+            data={},
+            occurred_at=observed_at,
+        )
+    )
+    event_payload["occurred_at"] = "2026-08-22T10:30:00Z"
+
+    assert decode_runtime_event(event_payload).occurred_at.isoformat() == (
+        "2026-08-22T10:30:00+00:00"
+    )
 
 
 def test_persistence_codec_rejects_invalid_persisted_types_without_coercion() -> None:

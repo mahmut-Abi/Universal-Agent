@@ -15,6 +15,7 @@ from universal_agent.core import (
     SuccessCriterion,
     Task,
     immutable_json,
+    parse_iso_datetime,
 )
 from universal_agent.core.config_validation import ConfigPayload, PydanticJsonValue
 
@@ -327,10 +328,9 @@ def _optional_datetime_field(
         return None
     if not isinstance(value, str):
         raise ValueError(f"{field} must be an ISO 8601 datetime string")
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise ValueError(f"{field} must be an ISO 8601 datetime string") from exc
-    if parsed.tzinfo is None:
-        raise ValueError(f"{field} must include a timezone")
-    return parsed
+    return parse_iso_datetime(
+        value,
+        field=field,
+        description="an ISO 8601 datetime string",
+        require_timezone=True,
+    )

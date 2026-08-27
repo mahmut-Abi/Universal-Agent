@@ -18,6 +18,7 @@ from universal_agent.core import (
     Task,
     TaskId,
     immutable_json,
+    parse_iso_datetime,
     utc_now,
 )
 from universal_agent.distributed import (
@@ -834,7 +835,4 @@ def _datetime_payload_field(
         return utc_now()
     if not isinstance(value, str):
         raise ValueError(f"{field} must be an ISO datetime string")
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError as exc:
-        raise ValueError(f"{field} must be an ISO datetime string") from exc
+    return parse_iso_datetime(value, field=field)

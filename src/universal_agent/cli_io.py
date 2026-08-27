@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import TextIO
 
-from universal_agent.core import DomainIdentity, JsonValue, SuccessCriterion
+from universal_agent.core import DomainIdentity, JsonValue, SuccessCriterion, parse_iso_datetime
 from universal_agent.core.config_validation import parse_json_value
 
 
@@ -90,10 +90,9 @@ def _optional_bool(value: str | None) -> bool | None:
 def _parse_optional_datetime(value: str | None) -> datetime | None:
     if value is None:
         return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise ValueError("--before must be an ISO 8601 datetime") from exc
-    if parsed.tzinfo is None:
-        raise ValueError("--before must include a timezone")
-    return parsed
+    return parse_iso_datetime(
+        value,
+        field="--before",
+        description="an ISO 8601 datetime",
+        require_timezone=True,
+    )

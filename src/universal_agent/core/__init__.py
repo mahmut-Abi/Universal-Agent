@@ -53,6 +53,7 @@ from universal_agent.core.models import (
     runtime_primitives,
     utc_now,
 )
+from universal_agent.core.time import DateTimeParseError, parse_iso_datetime
 
 __all__ = [
     "ActionId",
@@ -63,6 +64,7 @@ __all__ = [
     "CapabilityInputContract",
     "CapabilitySummary",
     "ContextFragment",
+    "DateTimeParseError",
     "Decision",
     "DecisionContext",
     "DecisionType",
@@ -103,6 +105,7 @@ __all__ = [
     "new_action_id",
     "new_observation_id",
     "new_session_id",
+    "parse_iso_datetime",
     "runtime_primitives",
     "utc_now",
     "validate_argument_contract",

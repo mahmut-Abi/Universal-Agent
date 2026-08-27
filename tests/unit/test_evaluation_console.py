@@ -44,6 +44,7 @@ def test_evaluation_console_renders_terminal_text_snapshot() -> None:
 
     rendered = render_evaluation_console_text(snapshot)
 
+    assert "\x1b[" not in rendered
     assert "Universal Agent Evaluation Console" in rendered
     assert "Report Dir: /tmp/reports" in rendered
     assert "Summary: suites=1 scenarios=1 passed=0 failed=1 gate_failures=1 tokens=123" in rendered
