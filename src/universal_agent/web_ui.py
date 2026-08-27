@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from html import escape
 
 from jinja2 import Environment, select_autoescape
+from markupsafe import Markup
 
 _WEB_ENV = Environment(autoescape=select_autoescape(default=True))
+_WEB_ENV.filters["html_text"] = lambda value: Markup(escape(str(value), quote=False))
 _PAGE_TEMPLATE = _WEB_ENV.from_string(
     """<!doctype html>
 <html lang="en">
@@ -39,22 +41,48 @@ _TABLE_TEMPLATE = _WEB_ENV.from_string(
     "{% for header in headers %}<th>{{ header }}</th>{% endfor %}"
     "</tr></thead><tbody>{{ rows|join|safe }}</tbody></table></div>"
 )
+_TABLE_ROW_TEMPLATE = _WEB_ENV.from_string(
+    "<tr>"
+    "{% for cell in cells %}"
+    '<td{% if cell.colspan != 1 %} colspan="{{ cell.colspan }}"{% endif %}>'
+    "{% if cell.raw %}{{ cell.value|safe }}{% else %}{{ cell.value|html_text }}{% endif %}"
+    "</td>"
+    "{% endfor %}"
+    "</tr>"
+)
 _HERO_TEMPLATE = _WEB_ENV.from_string(
     '<section class="hero">\n'
     "<div>\n"
-    "<p>{{ eyebrow }}</p>\n"
-    "<h1>{{ title }}</h1>\n"
-    "{% if detail %}<span>{{ detail }}</span>{% endif %}\n"
+    "<p>{{ eyebrow|html_text }}</p>\n"
+    "<h1>{{ title|html_text }}</h1>\n"
+    "{% if detail %}<span>{{ detail|html_text }}</span>{% endif %}\n"
     "</div>\n"
     '<div class="status">\n'
     "{% for link in links %}"
-    '<a class="pill link" href="{{ link.href }}">{{ link.label }}</a>'
+    '<a class="pill link" href="{{ link.href }}">{{ link.label|html_text }}</a>'
     "{% endfor %}\n"
     "{% for pill in pills %}"
-    '<span class="pill {{ pill.class_name }}">{{ pill.label }}: {{ pill.value }}</span>'
+    '<span class="pill {{ pill.class_name }}">'
+    "{{ pill.label|html_text }}: {{ pill.value|html_text }}</span>"
     "{% endfor %}\n"
     "</div>\n"
     "</section>"
+)
+_PILL_TEMPLATE = _WEB_ENV.from_string(
+    '<span class="pill {{ class_name }}">{{ value|html_text }}</span>'
+)
+_SPAN_TEMPLATE = _WEB_ENV.from_string(
+    '<span class="{{ class_name }}">{{ value|html_text }}</span>'
+)
+_LINK_TEMPLATE = _WEB_ENV.from_string(
+    '<a href="{{ href }}">{{ label|html_text }}</a>'
+)
+_DETAIL_LIST_TEMPLATE = _WEB_ENV.from_string(
+    '<dl class="details">'
+    "{% for label, value in items %}"
+    "<dt>{{ label|html_text }}</dt><dd>{{ value|html_text }}</dd>"
+    "{% endfor %}"
+    "</dl>"
 )
 
 
@@ -69,6 +97,13 @@ class _HeroPill:
     label: str
     value: object
     class_name: str = "ok"
+
+
+@dataclass(frozen=True, slots=True)
+class _TableCell:
+    value: object
+    colspan: int = 1
+    raw: bool = False
 
 
 def _page(title: str, sections: tuple[str, ...], *, stylesheet: str | None = None) -> str:
@@ -91,6 +126,36 @@ def _table(headers: tuple[str, ...], rows: tuple[str, ...]) -> str:
     return _TABLE_TEMPLATE.render(headers=headers, rows=rows)
 
 
+def _table_row(cells: tuple[object | _TableCell, ...]) -> str:
+    return _TABLE_ROW_TEMPLATE.render(
+        cells=tuple(cell if isinstance(cell, _TableCell) else _TableCell(cell) for cell in cells)
+    )
+
+
+def _raw_table_cell(value: str) -> _TableCell:
+    return _TableCell(value, raw=True)
+
+
+def _empty_table_row(message: str, *, colspan: int) -> str:
+    return _table_row((_TableCell(message, colspan=colspan),))
+
+
+def _pill(value: object, *, class_name: str = "ok") -> str:
+    return _PILL_TEMPLATE.render(value=value, class_name=class_name)
+
+
+def _span(value: object, *, class_name: str) -> str:
+    return _SPAN_TEMPLATE.render(value=value, class_name=class_name)
+
+
+def _link(label: object, href: str) -> str:
+    return _LINK_TEMPLATE.render(label=label, href=href)
+
+
+def _detail_list(items: tuple[tuple[object, object], ...]) -> str:
+    return _DETAIL_LIST_TEMPLATE.render(items=items)
+
+
 def _hero_block(
     title: str,
     *,
@@ -106,14 +171,6 @@ def _hero_block(
         links=links,
         pills=pills,
     )
-
-
-def _html(value: object) -> str:
-    return escape(str(value), quote=False)
-
-
-def _attr(value: object) -> str:
-    return escape(str(value), quote=True)
 
 
 def _status_class(status: str) -> str:

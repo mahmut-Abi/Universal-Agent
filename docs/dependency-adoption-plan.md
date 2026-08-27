@@ -33,7 +33,7 @@
 
 | 项 | 说明 |
 |---|---|
-| 现状 | 已用 Pydantic v2 接管 `host/config.py`、`profile/config.py`、`domain/package_codec.py`、`persistence/codec.py` 的 JSON/config payload 类型解析，并开始接管 `agentd/routing.py` 中分布式、doctor 与 session 路由的简单 HTTP payload 校验、`agentd/server.py` 的 request body JSON object 校验、`service/distributed_runtime.py` 的 distributed goal work payload 解码、`multi_agent/contracts.py` 的 Agent Task/Result contract 解码、`multi_agent/registry.py` 的 Agent registry snapshot 解码、`domains/kubernetes/resources.py` 的 Kubernetes 资源摘要解析、`model/http.py` 的 OpenAI provider response payload 解析、`distributed/queue_codec.py` 的 work queue 持久化 payload 解析、`distributed/worker_state.py` 的 worker registry 持久化 payload 解析、`distributed/locks.py` 的 distributed lock 持久化 payload 解析，以及 `evaluation/dataset.py` 的 dataset manifest、`evaluation/scenario_config.py` 的 suite/scenario config、`evaluation/recording.py` 的 report/replay recording codec 解析；公共 dataclass API、持久化 schema version 与 legacy 默认值保留 |
+| 现状 | 已用 Pydantic v2 接管 `host/config.py`、`profile/config.py`、`domain/package_codec.py`、`persistence/codec.py` 的 JSON/config payload 类型解析，并开始接管 `agentd/routing.py` 中分布式、doctor 与 session 路由的简单 HTTP payload 校验、`agentd/server.py` 的 request body JSON object 校验、`core/arguments.py` 进入 jsonschema 前的 JSON shape 校验、`service/distributed_runtime.py` 的 distributed goal work payload 解码、`multi_agent/contracts.py` 的 Agent Task/Result contract 解码、`multi_agent/registry.py` 的 Agent registry snapshot 解码、`domains/kubernetes/resources.py` 的 Kubernetes 资源摘要解析、`model/http.py` 的 OpenAI provider response payload 解析、`distributed/queue_codec.py` 的 work queue 持久化 payload 解析、`distributed/worker_state.py` 的 worker registry 持久化 payload 解析、`distributed/locks.py` 的 distributed lock 持久化 payload 解析，以及 `evaluation/dataset.py` 的 dataset manifest、`evaluation/scenario_config.py` 的 suite/scenario config、`evaluation/recording.py` 的 report/replay recording codec 解析；公共 dataclass API、持久化 schema version 与 legacy 默认值保留 |
 | 收益 | 预计 **-1500~2500 行**；pydantic-core（Rust）解析快一个量级；错误信息标准化 |
 | 合规性 | 零风险：AGENTS.md §6 明文列出 Pydantic 为首选方案之一 |
 | 剩余 | 可继续评估 agentd 其他请求体是否值得按模块迁移；当前不建议一次性替换核心 runtime contracts |
@@ -82,13 +82,13 @@
 | 收益 | 去除三处直接 `fcntl` 调用，获得跨平台文件锁抽象；测试仍覆盖跨进程互斥行为 |
 | 风险 | 低：仅替换文件型本地协调边界，不改变 SQLite 后端和调度语义 |
 
-### 8. Jinja2 → 替换手写 Web 页面外壳与 Hero 拼接（持续推进）
+### 8. Jinja2 → 替换手写 Web 页面外壳 / Hero / Row 拼接（持续推进）
 
 | 项 | 说明 |
 |---|---|
-| 现状 | `web_ui._page()`、`_section()`、`_metric_card()`、`_table()` 与 `_hero_block()` 已用 Jinja2 接管 Web Console 与 Evaluation Console 的页面骨架、公共 section/card/table 片段、hero/nav/status pill 片段；Evaluation Console 已复用公共 helper，去除第二套手写 hero HTML |
-| 收益 | HTML 外壳与高频片段渲染统一到模板 seam，减少重复拼接和 escaping 漏洞面；后续可按页面族迁移 row/detail 模板，不必一次性重写全部 UI |
-| 风险 | 低：渲染内容顺序和现有 URL/section helper 不变，Web/Evaluation/agentd route 测试覆盖 escaping、导航链接与关键页面文本 |
+| 现状 | `web_ui._page()`、`_section()`、`_metric_card()`、`_table()`、`_hero_block()`、`_table_row()` 与 `_detail_list()` 已用 Jinja2 接管 Web Console 与 Evaluation Console 的页面骨架、公共 section/card/table 片段、hero/nav/status pill 片段，以及 Evaluation/World/Session/Catalog/Operational 页面族的第一批 row/detail 片段；Evaluation Console 已复用公共 helper，去除第二套手写 hero HTML |
+| 收益 | HTML 外壳与高频片段渲染统一到模板 seam，减少重复拼接和 escaping 漏洞面；后续可按页面族继续迁移更细的复杂 section 模板，不必一次性重写全部 UI |
+| 风险 | 低：渲染内容顺序和现有 URL/section helper 不变，Web/Evaluation/agentd route 测试覆盖 escaping、导航链接、row/detail 输出与关键页面文本 |
 
 ### 9. python-dateutil → 替换手写 ISO datetime 兼容解析（已完成）
 
@@ -113,7 +113,7 @@
 | 库 | 目标模块 | 收益 | 备注 |
 |---|---|---|---|
 | Textual | `tui.py` | 静态 Rich text output → 真 TUI（事件循环、刷新、筛选、详情面板） | Rich deterministic renderer 已作为第一批终端 seam；Textual 仍需等 Runtime API/生产流程更稳定后再做 |
-| jsonschema | `core/arguments.py` / `tools/runtime.py:181` | 已由 `Draft202012Validator` 接管 capability/tool argument schema 校验；`tools/runtime.py` 继续通过统一 contract 入口调用 | 后续可补充 `oneOf/pattern` 等覆盖用例 |
+| jsonschema | `core/arguments.py` / `tools/runtime.py:181` | 已由 `Draft202012Validator` 接管 capability/tool argument schema 校验，并在进入 jsonschema 前复用 Pydantic JSON adapter 校验 schema/arguments 形状；`tools/runtime.py` 继续通过统一 contract 入口调用 | 后续可补充更多 JSON Schema 关键字覆盖用例 |
 | packaging | `domain/package_models.py` | 已用 `SpecifierSet` 接管 `compatibility.runtime_api` 校验与 runtime API version 支持判断 | 当前刻意不收紧所有 Domain identity version 字符串，避免破坏既有包标识兼容性 |
 | opentelemetry-proto | `operations/otlp.py` | 已用官方 OTLP protobuf schema 类型接管 trace export payload 生成，保留现有 JSON/hex ID Runtime API 契约 | 后续若需要直接推送 Tempo/Collector，再引入 `opentelemetry-sdk` / OTLP exporter |
 | Typer | `cli_parser.py` / `cli.py` | argparse 样板约 -30%；命令声明与 help 文案更可维护 | Rich 已先用于终端渲染；Typer 迁移单独排期，避免一次性改动全部 CLI 契约 |
@@ -123,7 +123,7 @@
 | 库 | 触发条件 | 说明 |
 |---|---|---|
 | Redis 或 PostgreSQL | P6 分布式超过本地原语 | 文件轮询队列 → `FOR UPDATE SKIP LOCKED` / Redis TTL 锁的生产级语义 |
-| Jinja2 | Web row/detail helper 继续膨胀 | 页面外壳与 hero/nav 已完成；后续再迁移高重复 row/detail section，不一次性重写全部 UI |
+| Jinja2 | Web 复杂 section helper 继续膨胀 | 页面外壳、hero/nav 与主要 row/detail 已完成；后续只在 section 复杂度继续上升时迁移更细模板 |
 
 ---
 
@@ -157,12 +157,12 @@
     PyYAML(Domain Package manifest YAML 兼容，已完成)
     packaging runtime_api compatibility specifier（已完成）
     filelock 文件协调锁（已完成）
-    Jinja2 Web/Evaluation 页面外壳与 hero/nav（持续推进）
+    Jinja2 Web/Evaluation 页面外壳、hero/nav、主要 row/detail（持续推进）
     python-dateutil ISO datetime 解析（已完成）
 
 第四批（触发式）
     Redis/PostgreSQL 分布式后端
-    Jinja2 模板化 web console row/detail 片段
+    Jinja2 模板化 web console 复杂 section 片段
 ```
 
 ## 关联待办（非依赖类，同批考虑）

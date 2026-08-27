@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from html import escape
 from io import StringIO
 from pathlib import Path
 
@@ -15,7 +14,18 @@ from universal_agent.evaluation.recording import (
     EvaluationScenarioRecording,
     FileEvaluationReportStore,
 )
-from universal_agent.web_ui import _hero_block, _HeroPill, _metric_card, _page, _section, _table
+from universal_agent.web_ui import (
+    _empty_table_row,
+    _hero_block,
+    _HeroPill,
+    _metric_card,
+    _page,
+    _pill,
+    _raw_table_cell,
+    _section,
+    _table,
+    _table_row,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,26 +189,24 @@ def _hero(snapshot: EvaluationConsoleSnapshot) -> str:
 
 def _reports(reports: tuple[EvaluationReportRecording, ...]) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(report.suite_name)}</td>",
-                f"<td>{_status_pill(report.passed)}</td>",
-                f"<td>{report.summary.scenario_count}</td>",
-                f"<td>{report.summary.passed_count}</td>",
-                f"<td>{report.summary.failed_count}</td>",
-                f"<td>{_html(_gate_text(report.gate))}</td>",
-                f"<td>{_html(_failed_scenario_text(report))}</td>",
-                f"<td>{report.summary.execution_duration_ms}</td>",
-                f"<td>{report.summary.model_total_token_count}</td>",
-                f"<td>{report.summary.model_estimated_cost_micros}</td>",
-                "</tr>",
+                report.suite_name,
+                _raw_table_cell(_status_pill(report.passed)),
+                report.summary.scenario_count,
+                report.summary.passed_count,
+                report.summary.failed_count,
+                _gate_text(report.gate),
+                _failed_scenario_text(report),
+                report.summary.execution_duration_ms,
+                report.summary.model_total_token_count,
+                report.summary.model_estimated_cost_micros,
             )
         )
         for report in reports
     ]
     if not rows:
-        rows.append('<tr><td colspan="10">No evaluation reports</td></tr>')
+        rows.append(_empty_table_row("No evaluation reports", colspan=10))
     return _section(
         "Evaluation Reports",
         _table(
@@ -222,7 +230,7 @@ def _reports(reports: tuple[EvaluationReportRecording, ...]) -> str:
 def _scenarios(reports: tuple[EvaluationReportRecording, ...]) -> str:
     rows = [_scenario_row(report, scenario) for report in reports for scenario in report.scenarios]
     if not rows:
-        rows.append('<tr><td colspan="9">No scenarios</td></tr>')
+        rows.append(_empty_table_row("No scenarios", colspan=9))
     return _section(
         "Scenario Results",
         _table(
@@ -246,33 +254,29 @@ def _scenario_row(
     report: EvaluationReportRecording,
     scenario: EvaluationScenarioRecording,
 ) -> str:
-    return "\n".join(
+    return _table_row(
         (
-            "<tr>",
-            f"<td>{_html(report.suite_name)}</td>",
-            f"<td>{_html(scenario.scenario_name)}</td>",
-            f"<td>{_html(scenario.kind.value)}</td>",
-            f"<td>{_html(_tuple_text(scenario.tags))}</td>",
-            f"<td>{_status_pill(scenario.passed)}</td>",
-            f"<td>{_html(_result_text(scenario))}</td>",
-            f"<td>{_html(_checks_text(scenario.checks))}</td>",
-            f"<td>{_html(_tuple_text(scenario.action_capabilities))}</td>",
-            f"<td>{_html(_tuple_text(scenario.evidence_claims))}</td>",
-            "</tr>",
+            report.suite_name,
+            scenario.scenario_name,
+            scenario.kind.value,
+            _tuple_text(scenario.tags),
+            _raw_table_cell(_status_pill(scenario.passed)),
+            _result_text(scenario),
+            _checks_text(scenario.checks),
+            _tuple_text(scenario.action_capabilities),
+            _tuple_text(scenario.evidence_claims),
         )
     )
 
 
 def _gate_checks(reports: tuple[EvaluationReportRecording, ...]) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(report.suite_name)}</td>",
-                f"<td>{_html(check.name)}</td>",
-                f"<td>{_status_pill(check.passed)}</td>",
-                f"<td>{_html(check.message)}</td>",
-                "</tr>",
+                report.suite_name,
+                check.name,
+                _raw_table_cell(_status_pill(check.passed)),
+                check.message,
             )
         )
         for report in reports
@@ -280,7 +284,7 @@ def _gate_checks(reports: tuple[EvaluationReportRecording, ...]) -> str:
         for check in report.gate.checks
     ]
     if not rows:
-        rows.append('<tr><td colspan="4">No gate checks</td></tr>')
+        rows.append(_empty_table_row("No gate checks", colspan=4))
     return _section(
         "Quality Gate Checks",
         _table(("Suite", "Check", "Status", "Message"), tuple(rows)),
@@ -357,11 +361,7 @@ def _status_class(passed: bool) -> str:
 
 
 def _status_pill(passed: bool) -> str:
-    return f'<span class="pill {_status_class(passed)}">{_pass_text(passed)}</span>'
-
-
-def _html(value: object) -> str:
-    return escape(str(value), quote=False)
+    return _pill(_pass_text(passed), class_name=_status_class(passed))
 
 
 def _stylesheet() -> str:

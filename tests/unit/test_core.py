@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
 
@@ -14,6 +15,7 @@ from universal_agent.core import (
     Decision,
     DecisionType,
     Goal,
+    JsonMapping,
     SuccessCriterion,
     Task,
     immutable_json,
@@ -171,6 +173,16 @@ def test_argument_contract_uses_jsonschema_keywords_beyond_runtime_subset() -> N
     assert "does not match" in pattern_error
     assert one_of_error is not None
     assert "not valid under any of the given schemas" in one_of_error
+
+
+def test_argument_contract_uses_pydantic_json_adapter_before_jsonschema() -> None:
+    error = validate_argument_contract(
+        required_arguments=(),
+        argument_schema=immutable_json({"type": "object"}),
+        arguments=cast(JsonMapping, {"payload": object()}),
+    )
+
+    assert error == "arguments.payload must be JSON-compatible"
 
 
 def test_basic_context_projects_world_entities_and_relations() -> None:

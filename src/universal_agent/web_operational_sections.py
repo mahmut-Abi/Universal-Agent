@@ -11,7 +11,16 @@ from universal_agent.web_helpers import (
     _value_text,
 )
 from universal_agent.web_types import WebConsoleSnapshot
-from universal_agent.web_ui import _html, _section, _status_class, _table
+from universal_agent.web_ui import (
+    _detail_list,
+    _empty_table_row,
+    _raw_table_cell,
+    _section,
+    _span,
+    _status_class,
+    _table,
+    _table_row,
+)
 
 
 def _runtime_settings(snapshot: WebConsoleSnapshot) -> str:
@@ -39,32 +48,24 @@ def _runtime_settings(snapshot: WebConsoleSnapshot) -> str:
         ("Health", snapshot.health.status),
         ("Ready", _ready_text(snapshot)),
     )
-    return _section(
-        "Runtime Configuration",
-        '<dl class="details">'
-        + "".join(f"<dt>{_html(label)}</dt><dd>{_html(value)}</dd>" for label, value in items)
-        + "</dl>",
-    )
+    return _section("Runtime Configuration", _detail_list(items))
 
 
 def _doctor_checks(doctor: DoctorReportView) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(check.name)}</td>",
-                (
-                    '<td><span class="severity '
-                    f'{_status_class(check.status)}">{_html(check.status)}</span></td>'
+                check.name,
+                _raw_table_cell(
+                    _span(check.status, class_name=f"severity {_status_class(check.status)}")
                 ),
-                f"<td>{_html(check.message)}</td>",
-                "</tr>",
+                check.message,
             )
         )
         for check in doctor.checks
     ]
     if not rows:
-        rows.append('<tr><td colspan="3">No doctor checks</td></tr>')
+        rows.append(_empty_table_row("No doctor checks", colspan=3))
     return _section(
         "Doctor Checks",
         _table(("Check", "Status", "Message"), tuple(rows)),
@@ -94,23 +95,22 @@ def _distributed_health_checks(health: DistributedHealthReport | None) -> str:
     rows = []
     if health is not None:
         rows = [
-            "\n".join(
+            _table_row(
                 (
-                    "<tr>",
-                    f"<td>{_html(check.name)}</td>",
-                    (
-                        '<td><span class="severity '
-                        f'{_status_class(check.status.value)}">'
-                        f"{_html(check.status.value)}</span></td>"
+                    check.name,
+                    _raw_table_cell(
+                        _span(
+                            check.status.value,
+                            class_name=f"severity {_status_class(check.status.value)}",
+                        )
                     ),
-                    f"<td>{_html(check.message)}</td>",
-                    "</tr>",
+                    check.message,
                 )
             )
             for check in health.checks
         ]
     if not rows:
-        rows.append('<tr><td colspan="3">No distributed health checks</td></tr>')
+        rows.append(_empty_table_row("No distributed health checks", colspan=3))
     return _section(
         "Distributed Health Checks",
         _table(("Check", "Status", "Message"), tuple(rows)),
@@ -121,24 +121,23 @@ def _distributed_recommendations(health: DistributedHealthReport | None) -> str:
     rows = []
     if health is not None:
         rows = [
-            "\n".join(
+            _table_row(
                 (
-                    "<tr>",
-                    f"<td>{_html(recommendation.code)}</td>",
-                    (
-                        '<td><span class="severity '
-                        f'{_status_class(recommendation.severity.value)}">'
-                        f"{_html(recommendation.severity.value)}</span></td>"
+                    recommendation.code,
+                    _raw_table_cell(
+                        _span(
+                            recommendation.severity.value,
+                            class_name=f"severity {_status_class(recommendation.severity.value)}",
+                        )
                     ),
-                    f"<td>{_html(recommendation.target or 'runtime')}</td>",
-                    f"<td>{_html(recommendation.message)}</td>",
-                    "</tr>",
+                    recommendation.target or "runtime",
+                    recommendation.message,
                 )
             )
             for recommendation in health.recommendations
         ]
     if not rows:
-        rows.append('<tr><td colspan="4">No distributed recommendations</td></tr>')
+        rows.append(_empty_table_row("No distributed recommendations", colspan=4))
     return _section(
         "Distributed Recommendations",
         _table(("Code", "Severity", "Target", "Message"), tuple(rows)),
@@ -149,26 +148,24 @@ def _distributed_work_queue(distributed: DistributedRuntimeSnapshot | None) -> s
     rows = []
     if distributed is not None:
         rows = [
-            "\n".join(
+            _table_row(
                 (
-                    "<tr>",
-                    f"<td>{_html(item.work_item_id)}</td>",
-                    f"<td>{_html(item.kind)}</td>",
-                    f"<td>{_html(item.status.value)}</td>",
-                    f"<td>{_html(item.session_id or '-')}</td>",
-                    f"<td>{_html(item.task_id or '-')}</td>",
-                    f"<td>{_html(item.action_id or '-')}</td>",
-                    f"<td>{item.priority}</td>",
-                    f"<td>{item.attempts}/{item.max_attempts}</td>",
-                    f"<td>{_html(item.worker_id or '-')}</td>",
-                    f"<td>{_html(item.last_error or '-')}</td>",
-                    "</tr>",
+                    item.work_item_id,
+                    item.kind,
+                    item.status.value,
+                    item.session_id or "-",
+                    item.task_id or "-",
+                    item.action_id or "-",
+                    item.priority,
+                    f"{item.attempts}/{item.max_attempts}",
+                    item.worker_id or "-",
+                    item.last_error or "-",
                 )
             )
             for item in distributed.work_queue.items
         ]
     if not rows:
-        rows.append('<tr><td colspan="10">No distributed work items</td></tr>')
+        rows.append(_empty_table_row("No distributed work items", colspan=10))
     return _section(
         "Distributed Work Queue",
         _table(
@@ -193,22 +190,20 @@ def _distributed_workers(distributed: DistributedRuntimeSnapshot | None) -> str:
     rows = []
     if distributed is not None:
         rows = [
-            "\n".join(
+            _table_row(
                 (
-                    "<tr>",
-                    f"<td>{_html(worker.worker_id)}</td>",
-                    f"<td>{_html(worker.status.value)}</td>",
-                    f"<td>{_html(', '.join(worker.capabilities) or 'none')}</td>",
-                    f"<td>{_html(worker.heartbeat_at.isoformat())}</td>",
-                    f"<td>{_html(worker.lease_expires_at.isoformat())}</td>",
-                    f"<td>{_html(worker.last_error or '-')}</td>",
-                    "</tr>",
+                    worker.worker_id,
+                    worker.status.value,
+                    ", ".join(worker.capabilities) or "none",
+                    worker.heartbeat_at.isoformat(),
+                    worker.lease_expires_at.isoformat(),
+                    worker.last_error or "-",
                 )
             )
             for worker in distributed.workers.workers
         ]
     if not rows:
-        rows.append('<tr><td colspan="6">No distributed workers</td></tr>')
+        rows.append(_empty_table_row("No distributed workers", colspan=6))
     return _section(
         "Distributed Workers",
         _table(
@@ -222,22 +217,20 @@ def _distributed_locks(distributed: DistributedRuntimeSnapshot | None) -> str:
     rows = []
     if distributed is not None:
         rows = [
-            "\n".join(
+            _table_row(
                 (
-                    "<tr>",
-                    f"<td>{_html(lock.lock_key)}</td>",
-                    f"<td>{_html(lock.owner_id)}</td>",
-                    f"<td>{_html(lock.lease_id)}</td>",
-                    f"<td>{_html(lock.heartbeat_at.isoformat())}</td>",
-                    f"<td>{_html(lock.lease_expires_at.isoformat())}</td>",
-                    f"<td>{_html(_value_text(lock.metadata))}</td>",
-                    "</tr>",
+                    lock.lock_key,
+                    lock.owner_id,
+                    lock.lease_id,
+                    lock.heartbeat_at.isoformat(),
+                    lock.lease_expires_at.isoformat(),
+                    _value_text(lock.metadata),
                 )
             )
             for lock in distributed.locks
         ]
     if not rows:
-        rows.append('<tr><td colspan="6">No distributed locks</td></tr>')
+        rows.append(_empty_table_row("No distributed locks", colspan=6))
     return _section(
         "Distributed Locks",
         _table(("Lock", "Owner", "Lease", "Heartbeat", "Lease Expires", "Metadata"), tuple(rows)),
@@ -251,51 +244,45 @@ def _multi_agent(multi_agent: MultiAgentView) -> str:
             '<p class="empty">Multi-Agent registry is not configured</p>',
         )
     profile_rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(profile.name)}@{_html(profile.version)}</td>",
-                f"<td>{_html(_identity_tuple_text(profile.domains))}</td>",
-                f"<td>{_html(_string_tuple_text(profile.permissions))}</td>",
-                f"<td>{_html(_string_tuple_text(profile.capabilities))}</td>",
-                f"<td>{_html(profile.description)}</td>",
-                "</tr>",
+                f"{profile.name}@{profile.version}",
+                _identity_tuple_text(profile.domains),
+                _string_tuple_text(profile.permissions),
+                _string_tuple_text(profile.capabilities),
+                profile.description,
             )
         )
         for profile in multi_agent.profiles
     ]
     instance_rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(instance.agent_id)}</td>",
-                f"<td>{_html(instance.profile_name)}@{_html(instance.profile_version)}</td>",
-                f"<td>{_html(instance.status.value)}</td>",
-                f"<td>{_html(instance.session_id or 'none')}</td>",
-                f"<td>{_html(instance.endpoint or 'none')}</td>",
-                "</tr>",
+                instance.agent_id,
+                f"{instance.profile_name}@{instance.profile_version}",
+                instance.status.value,
+                instance.session_id or "none",
+                instance.endpoint or "none",
             )
         )
         for instance in multi_agent.instances
     ]
     task_rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(task.task_id)}</td>",
-                f"<td>{task.child_count}</td>",
-                f"<td>{_html(_delegation_depth_text(task.delegation_depth))}</td>",
-                "</tr>",
+                task.task_id,
+                task.child_count,
+                _delegation_depth_text(task.delegation_depth),
             )
         )
         for task in multi_agent.delegation_tasks
     ]
     if not profile_rows:
-        profile_rows.append('<tr><td colspan="5">No agent profiles</td></tr>')
+        profile_rows.append(_empty_table_row("No agent profiles", colspan=5))
     if not instance_rows:
-        instance_rows.append('<tr><td colspan="5">No agent instances</td></tr>')
+        instance_rows.append(_empty_table_row("No agent instances", colspan=5))
     if not task_rows:
-        task_rows.append('<tr><td colspan="3">No delegation tasks</td></tr>')
+        task_rows.append(_empty_table_row("No delegation tasks", colspan=3))
     return _section(
         "Multi-Agent",
         _table(
@@ -374,13 +361,11 @@ def _diagnostic_row(
     value: object,
     reason: str = "",
 ) -> str:
-    return "\n".join(
+    return _table_row(
         (
-            "<tr>",
-            f'<td><span class="severity {severity}">{_html(severity)}</span></td>',
-            f"<td>{_html(signal)}</td>",
-            f"<td>{_html(value)}</td>",
-            f"<td>{_html(reason)}</td>",
-            "</tr>",
+            _raw_table_cell(_span(severity, class_name=f"severity {severity}")),
+            signal,
+            value,
+            reason,
         )
     )

@@ -3,30 +3,35 @@ from __future__ import annotations
 from universal_agent.operations import AuditRecordView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
 from universal_agent.web_helpers import _event_detail, _mapping_text, _string_tuple_text
-from universal_agent.web_ui import _attr, _html, _section, _table
+from universal_agent.web_ui import (
+    _detail_list,
+    _empty_table_row,
+    _link,
+    _raw_table_cell,
+    _section,
+    _table,
+    _table_row,
+)
 
 
 def _sessions(sessions: tuple[SessionSummaryView, ...]) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                (
-                    '<td><a href="/console/sessions/'
-                    f'{_attr(session.session_id)}">{_html(session.session_id)}</a></td>'
+                _raw_table_cell(
+                    _link(session.session_id, f"/console/sessions/{session.session_id}")
                 ),
-                f"<td>{_html(session.goal_status.value)}</td>",
-                f"<td>{_html(session.current_task_status.value)}</td>",
-                f"<td>{session.iteration}</td>",
-                f"<td>{_html(session.domain_name)}@{_html(session.domain_version)}</td>",
-                f"<td>{_html(session.goal_description)}</td>",
-                "</tr>",
+                session.goal_status.value,
+                session.current_task_status.value,
+                session.iteration,
+                f"{session.domain_name}@{session.domain_version}",
+                session.goal_description,
             )
         )
         for session in sessions
     ]
     if not rows:
-        rows.append('<tr><td colspan="6">No sessions</td></tr>')
+        rows.append(_empty_table_row("No sessions", colspan=6))
     return _section(
         "Sessions",
         _table(
@@ -67,33 +72,26 @@ def _selected_session(session: SessionView | None) -> str:
         ("Pending Action", pending),
         ("Latest Evaluation", latest),
     )
-    return _section(
-        "Selected Session",
-        '<dl class="details">'
-        + "".join(f"<dt>{_html(label)}</dt><dd>{_html(value)}</dd>" for label, value in items)
-        + "</dl>",
-    )
+    return _section("Selected Session", _detail_list(items))
 
 
 def _task_timeline(session: SessionView | None) -> str:
     rows = []
     if session is not None:
         rows = [
-            "\n".join(
+            _table_row(
                 (
-                    "<tr>",
-                    f"<td>{_html(task.task_id)}</td>",
-                    f"<td>{_html(task.status.value)}</td>",
-                    f"<td>{_html(task.description)}</td>",
-                    f"<td>{_html(_string_tuple_text(task.required_criteria))}</td>",
-                    f"<td>{_html(_string_tuple_text(task.depends_on))}</td>",
-                    "</tr>",
+                    task.task_id,
+                    task.status.value,
+                    task.description,
+                    _string_tuple_text(task.required_criteria),
+                    _string_tuple_text(task.depends_on),
                 )
             )
             for task in session.tasks
         ]
     if not rows:
-        rows.append('<tr><td colspan="5">No tasks</td></tr>')
+        rows.append(_empty_table_row("No tasks", colspan=5))
     return _section(
         "Task Timeline",
         _table(("Task", "Status", "Description", "Required Criteria", "Depends On"), tuple(rows)),
@@ -102,21 +100,19 @@ def _task_timeline(session: SessionView | None) -> str:
 
 def _events(events: tuple[RuntimeEventView, ...]) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(event.occurred_at.isoformat())}</td>",
-                f"<td>{_html(event.type)}</td>",
-                f"<td>{_html(event.task_id)}</td>",
-                f"<td>{_html(event.action_id or '-')}</td>",
-                f"<td>{_html(_event_detail(event.data))}</td>",
-                "</tr>",
+                event.occurred_at.isoformat(),
+                event.type,
+                event.task_id,
+                event.action_id or "-",
+                _event_detail(event.data),
             )
         )
         for event in events
     ]
     if not rows:
-        rows.append('<tr><td colspan="5">No events</td></tr>')
+        rows.append(_empty_table_row("No events", colspan=5))
     return _section(
         "Recent Events",
         _table(("Time", "Type", "Task", "Action", "Detail"), tuple(rows)),
@@ -125,21 +121,19 @@ def _events(events: tuple[RuntimeEventView, ...]) -> str:
 
 def _audit(records: tuple[AuditRecordView, ...]) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(record.occurred_at.isoformat())}</td>",
-                f"<td>{_html(record.capability)}</td>",
-                f"<td>{_html(record.tool_name)}</td>",
-                f"<td>{_html(record.policy_effect)}:{_html(record.policy_name)}</td>",
-                f"<td>{_html(record.status)}</td>",
-                "</tr>",
+                record.occurred_at.isoformat(),
+                record.capability,
+                record.tool_name,
+                f"{record.policy_effect}:{record.policy_name}",
+                record.status,
             )
         )
         for record in records
     ]
     if not rows:
-        rows.append('<tr><td colspan="5">No audit records</td></tr>')
+        rows.append(_empty_table_row("No audit records", colspan=5))
     return _section(
         "Audit",
         _table(("Time", "Capability", "Tool", "Policy", "Status"), tuple(rows)),

@@ -19,29 +19,36 @@ from universal_agent.web_helpers import (
     _value_text,
 )
 from universal_agent.web_types import WebConsoleSnapshot
-from universal_agent.web_ui import _attr, _html, _section, _table
+from universal_agent.web_ui import (
+    _detail_list,
+    _empty_table_row,
+    _link,
+    _raw_table_cell,
+    _section,
+    _table,
+    _table_row,
+)
 
 
 def _domains(snapshot: WebConsoleSnapshot) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                (
-                    '<td><a href="/console/domains/'
-                    f'{_attr(domain.name)}/{_attr(domain.version)}">'
-                    f"{_html(domain.name)}@{_html(domain.version)}</a></td>"
+                _raw_table_cell(
+                    _link(
+                        f"{domain.name}@{domain.version}",
+                        f"/console/domains/{domain.name}/{domain.version}",
+                    )
                 ),
-                f"<td>{'yes' if domain.primary else 'no'}</td>",
-                f"<td>{len(domain.capability_names)}</td>",
-                f"<td>{len(domain.evaluator_names)}</td>",
-                "</tr>",
+                "yes" if domain.primary else "no",
+                len(domain.capability_names),
+                len(domain.evaluator_names),
             )
         )
         for domain in snapshot.domains
     ]
     if not rows:
-        rows.append('<tr><td colspan="4">No active domains</td></tr>')
+        rows.append(_empty_table_row("No active domains", colspan=4))
     return _section(
         "Active Domains",
         _table(
@@ -62,31 +69,24 @@ def _domain_details(domain: DomainView | None) -> str:
         ("Capabilities", _string_tuple_text(domain.capability_names)),
         ("Evaluators", _string_tuple_text(domain.evaluator_names)),
     )
-    return _section(
-        "Domain",
-        '<dl class="details">'
-        + "".join(f"<dt>{_html(label)}</dt><dd>{_html(value)}</dd>" for label, value in items)
-        + "</dl>",
-    )
+    return _section("Domain", _detail_list(items))
 
 
 def _configured_domains(snapshot: WebConsoleSnapshot) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(domain.name)}</td>",
-                f"<td>{_html(domain.version)}</td>",
-                f"<td>{'yes' if domain.primary else 'no'}</td>",
-                f"<td>{_html(domain.backend or 'default')}</td>",
-                f"<td>{_html(_value_text(domain.settings) if domain.settings else 'none')}</td>",
-                "</tr>",
+                domain.name,
+                domain.version,
+                "yes" if domain.primary else "no",
+                domain.backend or "default",
+                _value_text(domain.settings) if domain.settings else "none",
             )
         )
         for domain in snapshot.config.domains
     ]
     if not rows:
-        rows.append('<tr><td colspan="5">No configured domains</td></tr>')
+        rows.append(_empty_table_row("No configured domains", colspan=5))
     return _section(
         "Configured Domains",
         _table(("Domain", "Version", "Primary", "Backend", "Settings"), tuple(rows)),
@@ -95,21 +95,19 @@ def _configured_domains(snapshot: WebConsoleSnapshot) -> str:
 
 def _runtime_secrets(snapshot: WebConsoleSnapshot) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(secret.name)}</td>",
-                f"<td>{_html(secret.source)}</td>",
-                f"<td>{_html(secret.key)}</td>",
-                f"<td>{'yes' if secret.required else 'no'}</td>",
-                f"<td>{_html(_secret_status_text(secret.available, secret.status))}</td>",
-                "</tr>",
+                secret.name,
+                secret.source,
+                secret.key,
+                "yes" if secret.required else "no",
+                _secret_status_text(secret.available, secret.status),
             )
         )
         for secret in snapshot.config.secrets
     ]
     if not rows:
-        rows.append('<tr><td colspan="5">No runtime secrets</td></tr>')
+        rows.append(_empty_table_row("No runtime secrets", colspan=5))
     return _section(
         "Runtime Secrets",
         _table(("Name", "Source", "Key", "Required", "Status"), tuple(rows)),
@@ -118,38 +116,29 @@ def _runtime_secrets(snapshot: WebConsoleSnapshot) -> str:
 
 def _environment(snapshot: WebConsoleSnapshot) -> str:
     rows = [
-        "\n".join(
-            (
-                "<tr>",
-                f"<td>{_html(key)}</td>",
-                f"<td>{_html(_value_text(value))}</td>",
-                "</tr>",
-            )
-        )
+        _table_row((key, _value_text(value)))
         for key, value in sorted(snapshot.config.environment.items())
     ]
     if not rows:
-        rows.append('<tr><td colspan="2">No environment settings</td></tr>')
+        rows.append(_empty_table_row("No environment settings", colspan=2))
     return _section("Environment", _table(("Key", "Value"), tuple(rows)))
 
 
 def _profiles(profiles: tuple[ProfileView, ...]) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(profile.name)}</td>",
-                f"<td>{_html(profile.version)}</td>",
-                f"<td>{_html(profile.domain_name)}@{_html(profile.domain_version)}</td>",
-                f"<td>{_html(_profile_domain_text(profile))}</td>",
-                f"<td>{_html(profile.description)}</td>",
-                "</tr>",
+                profile.name,
+                profile.version,
+                f"{profile.domain_name}@{profile.domain_version}",
+                _profile_domain_text(profile),
+                profile.description,
             )
         )
         for profile in profiles
     ]
     if not rows:
-        rows.append('<tr><td colspan="5">No profiles</td></tr>')
+        rows.append(_empty_table_row("No profiles", colspan=5))
     return _section(
         "Profile Catalog",
         _table(("Profile", "Version", "Primary Domain", "Domains", "Description"), tuple(rows)),
@@ -158,28 +147,27 @@ def _profiles(profiles: tuple[ProfileView, ...]) -> str:
 
 def _domain_packages(packages: tuple[DomainPackageView, ...]) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                (
-                    '<td><a href="/console/domain-packages/'
-                    f'{_attr(package.name)}/{_attr(package.version)}">'
-                    f"{_html(package.name)}@{_html(package.version)}</a></td>"
+                _raw_table_cell(
+                    _link(
+                        f"{package.name}@{package.version}",
+                        f"/console/domain-packages/{package.name}/{package.version}",
+                    )
                 ),
-                f"<td>{_html(package.entrypoint or 'none')}</td>",
-                f"<td>{_html(', '.join(package.capability_names) or 'none')}</td>",
-                f"<td>{_html(_domain_package_dependencies(package))}</td>",
-                f"<td>{_html(', '.join(package.required_tools) or 'none')}</td>",
-                f"<td>{_html(', '.join(package.resource_names) or 'none')}</td>",
-                f"<td>{_html(_value_text(package.security))}</td>",
-                f"<td>{_html(package.manifest_path)}</td>",
-                "</tr>",
+                package.entrypoint or "none",
+                ", ".join(package.capability_names) or "none",
+                _domain_package_dependencies(package),
+                ", ".join(package.required_tools) or "none",
+                ", ".join(package.resource_names) or "none",
+                _value_text(package.security),
+                package.manifest_path,
             )
         )
         for package in packages
     ]
     if not rows:
-        rows.append('<tr><td colspan="8">No domain packages</td></tr>')
+        rows.append(_empty_table_row("No domain packages", colspan=8))
     return _section(
         "Domain Package Catalog",
         _table(
@@ -200,22 +188,20 @@ def _domain_packages(packages: tuple[DomainPackageView, ...]) -> str:
 
 def _capabilities(capabilities: tuple[CapabilityView, ...]) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(capability.name)}</td>",
-                f"<td>{_html(capability.category.value)}</td>",
-                f"<td>{_html(capability.risk.value)}</td>",
-                (f"<td>{_html(capability.domain_name)}@{_html(capability.domain_version)}</td>"),
-                f"<td>{_html(', '.join(capability.tool_names))}</td>",
-                f"<td>{_html(capability.description)}</td>",
-                "</tr>",
+                capability.name,
+                capability.category.value,
+                capability.risk.value,
+                f"{capability.domain_name}@{capability.domain_version}",
+                ", ".join(capability.tool_names),
+                capability.description,
             )
         )
         for capability in capabilities
     ]
     if not rows:
-        rows.append('<tr><td colspan="6">No capabilities</td></tr>')
+        rows.append(_empty_table_row("No capabilities", colspan=6))
     return _section(
         "Capability Catalog",
         _table(("Capability", "Category", "Risk", "Domain", "Tools", "Description"), tuple(rows)),
@@ -224,23 +210,21 @@ def _capabilities(capabilities: tuple[CapabilityView, ...]) -> str:
 
 def _tools(tools: tuple[ToolView, ...]) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(tool.name)}</td>",
-                f"<td>{_html(tool.side_effect.value)}</td>",
-                f"<td>{_html(tool.risk.value)}</td>",
-                f"<td>{_html(', '.join(tool.capabilities))}</td>",
-                f"<td>{_html(', '.join(tool.required_arguments))}</td>",
-                f"<td>{tool.timeout_seconds:g}s</td>",
-                f"<td>{_html(tool.domain_name)}@{_html(tool.domain_version)}</td>",
-                "</tr>",
+                tool.name,
+                tool.side_effect.value,
+                tool.risk.value,
+                ", ".join(tool.capabilities),
+                ", ".join(tool.required_arguments),
+                f"{tool.timeout_seconds:g}s",
+                f"{tool.domain_name}@{tool.domain_version}",
             )
         )
         for tool in tools
     ]
     if not rows:
-        rows.append('<tr><td colspan="7">No tools</td></tr>')
+        rows.append(_empty_table_row("No tools", colspan=7))
     return _section(
         "Tool Catalog",
         _table(
@@ -252,24 +236,22 @@ def _tools(tools: tuple[ToolView, ...]) -> str:
 
 def _policies(policies: tuple[PolicyView, ...]) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(policy.name)}</td>",
-                f"<td>{_html(policy.policy_type)}</td>",
-                f"<td>{_html('n/a' if policy.effect is None else policy.effect.value)}</td>",
-                f"<td>{_html(_enum_tuple_text(policy.categories))}</td>",
-                f"<td>{_html(_enum_tuple_text(policy.risks))}</td>",
-                f"<td>{_html(', '.join(policy.capability_names))}</td>",
-                f"<td>{_html(policy.domain_name)}@{_html(policy.domain_version)}</td>",
-                f"<td>{_html(policy.description)}</td>",
-                "</tr>",
+                policy.name,
+                policy.policy_type,
+                "n/a" if policy.effect is None else policy.effect.value,
+                _enum_tuple_text(policy.categories),
+                _enum_tuple_text(policy.risks),
+                ", ".join(policy.capability_names),
+                f"{policy.domain_name}@{policy.domain_version}",
+                policy.description,
             )
         )
         for policy in policies
     ]
     if not rows:
-        rows.append('<tr><td colspan="8">No policies</td></tr>')
+        rows.append(_empty_table_row("No policies", colspan=8))
     return _section(
         "Policy Catalog",
         _table(
@@ -281,19 +263,17 @@ def _policies(policies: tuple[PolicyView, ...]) -> str:
 
 def _evaluators(evaluators: tuple[EvaluatorView, ...]) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(evaluator.name)}</td>",
-                f"<td>{_html(evaluator.evaluator_type)}</td>",
-                f"<td>{_html(evaluator.domain_name)}@{_html(evaluator.domain_version)}</td>",
-                "</tr>",
+                evaluator.name,
+                evaluator.evaluator_type,
+                f"{evaluator.domain_name}@{evaluator.domain_version}",
             )
         )
         for evaluator in evaluators
     ]
     if not rows:
-        rows.append('<tr><td colspan="3">No evaluators</td></tr>')
+        rows.append(_empty_table_row("No evaluators", colspan=3))
     return _section(
         "Evaluator Catalog",
         _table(("Evaluator", "Type", "Domain"), tuple(rows)),
@@ -302,23 +282,21 @@ def _evaluators(evaluators: tuple[EvaluatorView, ...]) -> str:
 
 def _memory(memories: tuple[MemoryView, ...]) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(memory.memory_id)}</td>",
-                f"<td>{_html(memory.kind.value)}</td>",
-                f"<td>{_html(memory.subject)}</td>",
-                f"<td>{_html(memory.scope or 'global')}</td>",
-                f"<td>{memory.confidence:.2f}</td>",
-                f"<td>{_html(memory.source_session_id or 'none')}</td>",
-                f"<td>{_html(memory.content)}</td>",
-                "</tr>",
+                memory.memory_id,
+                memory.kind.value,
+                memory.subject,
+                memory.scope or "global",
+                f"{memory.confidence:.2f}",
+                memory.source_session_id or "none",
+                memory.content,
             )
         )
         for memory in memories
     ]
     if not rows:
-        rows.append('<tr><td colspan="7">No memory</td></tr>')
+        rows.append(_empty_table_row("No memory", colspan=7))
     return _section(
         "Memory Catalog",
         _table(
@@ -353,23 +331,15 @@ def _domain_package_details(package: DomainPackageView | None) -> str:
         ("Root Path", package.root_path),
         ("Manifest Path", package.manifest_path),
     )
-    return _section(
-        "Domain Package",
-        '<dl class="details">'
-        + "".join(f"<dt>{_html(label)}</dt><dd>{_html(value)}</dd>" for label, value in items)
-        + "</dl>",
-    )
+    return _section("Domain Package", _detail_list(items))
 
 
 def _domain_package_resources(package: DomainPackageView | None) -> str:
     rows = []
     if package is not None:
-        rows = [
-            "\n".join(("<tr>", f"<td>{_html(resource)}</td>", "</tr>"))
-            for resource in package.resource_names
-        ]
+        rows = [_table_row((resource,)) for resource in package.resource_names]
     if not rows:
-        rows.append("<tr><td>No package resources</td></tr>")
+        rows.append(_empty_table_row("No package resources", colspan=1))
     return _section("Package Resources", _table(("Resource",), tuple(rows)))
 
 
@@ -382,12 +352,7 @@ def _domain_package_security(package: DomainPackageView | None) -> str:
         ("Runtime API Compatibility", package.runtime_api_compatibility or "none"),
         ("Domain API Compatibility", package.domain_api_compatibility or "none"),
     )
-    return _section(
-        "Package Security",
-        '<dl class="details">'
-        + "".join(f"<dt>{_html(label)}</dt><dd>{_html(value)}</dd>" for label, value in items)
-        + "</dl>",
-    )
+    return _section("Package Security", _detail_list(items))
 
 
 def _domain_package_active_domains(
@@ -419,21 +384,19 @@ def _domain_package_profiles(
         )
     )
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                f"<td>{_html(profile.name)}</td>",
-                f"<td>{_html(profile.version)}</td>",
-                f"<td>{_html(profile.domain_name)}@{_html(profile.domain_version)}</td>",
-                f"<td>{_html(_profile_domain_text(profile))}</td>",
-                f"<td>{_html(profile.description)}</td>",
-                "</tr>",
+                profile.name,
+                profile.version,
+                f"{profile.domain_name}@{profile.domain_version}",
+                _profile_domain_text(profile),
+                profile.description,
             )
         )
         for profile in matches
     ]
     if not rows:
-        rows.append('<tr><td colspan="5">No matching profiles</td></tr>')
+        rows.append(_empty_table_row("No matching profiles", colspan=5))
     return _section(
         "Matching Profiles",
         _table(("Profile", "Version", "Primary Domain", "Domains", "Description"), tuple(rows)),
@@ -442,22 +405,21 @@ def _domain_package_profiles(
 
 def _domain_rows(domains: tuple[DomainView, ...]) -> str:
     rows = [
-        "\n".join(
+        _table_row(
             (
-                "<tr>",
-                (
-                    '<td><a href="/console/domains/'
-                    f'{_attr(domain.name)}/{_attr(domain.version)}">'
-                    f"{_html(domain.name)}@{_html(domain.version)}</a></td>"
+                _raw_table_cell(
+                    _link(
+                        f"{domain.name}@{domain.version}",
+                        f"/console/domains/{domain.name}/{domain.version}",
+                    )
                 ),
-                f"<td>{'yes' if domain.primary else 'no'}</td>",
-                f"<td>{len(domain.capability_names)}</td>",
-                f"<td>{len(domain.evaluator_names)}</td>",
-                "</tr>",
+                "yes" if domain.primary else "no",
+                len(domain.capability_names),
+                len(domain.evaluator_names),
             )
         )
         for domain in domains
     ]
     if not rows:
-        rows.append('<tr><td colspan="4">No matching active domains</td></tr>')
+        rows.append(_empty_table_row("No matching active domains", colspan=4))
     return _table(("Domain", "Primary", "Capabilities", "Evaluators"), tuple(rows))

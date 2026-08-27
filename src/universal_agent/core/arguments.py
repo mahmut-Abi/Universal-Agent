@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import Any
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError, ValidationError
 
+from universal_agent.core.config_validation import parse_json_object
 from universal_agent.core.models import JsonMapping, JsonValue
 
 
@@ -27,11 +28,13 @@ def validate_argument_contract(
     if not argument_schema:
         return None
     try:
+        schema = _jsonschema_object(argument_schema, "argument_schema")
+        validated_arguments = _jsonschema_object(arguments, "arguments")
         return _validate_argument_schema(
-            _plain_json_object(argument_schema),
-            _plain_json_object(arguments),
+            schema,
+            validated_arguments,
         )
-    except ArgumentSchemaError as exc:
+    except (ArgumentSchemaError, ValueError) as exc:
         return str(exc)
 
 
@@ -188,13 +191,5 @@ def _number_text(value: object) -> str:
     return str(value)
 
 
-def _plain_json_object(values: Mapping[str, JsonValue]) -> dict[str, Any]:
-    return {key: _plain_json_value(value) for key, value in values.items()}
-
-
-def _plain_json_value(value: JsonValue) -> Any:
-    if isinstance(value, Mapping):
-        return _plain_json_object(cast(Mapping[str, JsonValue], value))
-    if isinstance(value, list):
-        return [_plain_json_value(item) for item in value]
-    return value
+def _jsonschema_object(values: Mapping[str, JsonValue], field: str) -> dict[str, Any]:
+    return dict(parse_json_object(dict(values), field))
