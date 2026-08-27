@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -8,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import Field
 
-from universal_agent.core import JsonValue
+from universal_agent.core import JsonCodecError, JsonValue, read_json_file
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
@@ -64,8 +63,7 @@ class ProfileConfig:
 
     @classmethod
     def from_json_file(cls, path: str | Path) -> ProfileConfig:
-        with Path(path).open("r", encoding="utf-8") as handle:
-            loaded: object = json.load(handle)
+        loaded = read_json_file(path)
         return cls.from_mapping(parse_json_object(loaded, "profile config file"))
 
     @classmethod
@@ -260,7 +258,7 @@ def _profile_config_exists(entry: ProfileCatalogEntry) -> ProfileCatalogCheck:
 def _profile_config_matches_identity(entry: ProfileCatalogEntry) -> ProfileCatalogCheck:
     try:
         loaded = ProfileConfig.from_json_file(entry.path).to_profile()
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
+    except (OSError, JsonCodecError, ValueError) as exc:
         return ProfileCatalogCheck(
             "profile_config_matches_identity",
             False,

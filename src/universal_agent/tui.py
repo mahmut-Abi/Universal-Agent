@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from io import StringIO
 from typing import Any
@@ -9,7 +8,7 @@ from rich.console import Console
 from rich.text import Text
 
 from universal_agent.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
-from universal_agent.core import DomainIdentity, SessionId
+from universal_agent.core import DomainIdentity, SessionId, dumps_json
 from universal_agent.operations import AuditRecordView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
 from universal_agent.service import (
@@ -714,9 +713,9 @@ def _enum_tuple_text(values: tuple[Any, ...]) -> str:
 
 def _value_text(value: object) -> str:
     if isinstance(value, Mapping):
-        return json.dumps(dict(value), sort_keys=True)
+        return dumps_json(dict(value))
     if isinstance(value, list):
-        return json.dumps(value, sort_keys=True)
+        return dumps_json(value)
     return str(value)
 
 

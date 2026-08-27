@@ -1,11 +1,18 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 from pathlib import Path
 
-from universal_agent.core import AgentState, EventId, RuntimeEvent, SessionId
-from universal_agent.core.config_validation import json_mapping
+from universal_agent.core import (
+    AgentState,
+    EventId,
+    JsonMapping,
+    RuntimeEvent,
+    SessionId,
+    dumps_json,
+    loads_json,
+)
+from universal_agent.core.config_validation import parse_json_object
 from universal_agent.persistence.codec import (
     decode_runtime_event,
     decode_session_snapshot,
@@ -56,7 +63,7 @@ class SQLiteSessionStore:
                 ORDER BY created_at DESC, session_id DESC
                 """
             ).fetchall()
-        return tuple(decode_session_snapshot(json_mapping(json.loads(row[0]))) for row in rows)
+        return tuple(decode_session_snapshot(_loads_json_object(row[0])) for row in rows)
 
     async def load_session(self, session_id: SessionId) -> SessionSnapshot:
         with self._connect() as connection:
@@ -66,7 +73,7 @@ class SQLiteSessionStore:
             ).fetchone()
         if row is None:
             raise StateNotFoundError(f"session not found: {session_id}")
-        return decode_session_snapshot(json_mapping(json.loads(row[0])))
+        return decode_session_snapshot(_loads_json_object(row[0]))
 
     async def save_session(self, snapshot: SessionSnapshot) -> None:
         with self._connect() as connection:
@@ -76,7 +83,7 @@ class SQLiteSessionStore:
             ).fetchone()
             if row is None:
                 raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
-            stored = decode_session_snapshot(json_mapping(json.loads(row[0])))
+            stored = decode_session_snapshot(_loads_json_object(row[0]))
             if snapshot.version != stored.version:
                 raise SessionVersionConflictError(
                     f"session version conflict: {snapshot.state.session_id} expected "
@@ -146,7 +153,7 @@ class SQLiteEventStore:
                     """,
                     (str(session_id),),
                 ).fetchall()
-        events = tuple(decode_runtime_event(json_mapping(json.loads(row[0]))) for row in rows)
+        events = tuple(decode_runtime_event(_loads_json_object(row[0])) for row in rows)
         return filter_events(
             events,
             session_id=session_id,
@@ -179,7 +186,7 @@ class SQLiteRuntimeStore(SQLiteSessionStore, SQLiteEventStore):
             ).fetchone()
             if row is None:
                 raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
-            stored = decode_session_snapshot(json_mapping(json.loads(row[0])))
+            stored = decode_session_snapshot(_loads_json_object(row[0]))
             if snapshot.version != stored.version:
                 raise SessionVersionConflictError(
                     f"session version conflict: {snapshot.state.session_id} expected "
@@ -239,7 +246,11 @@ def _ensure_schema(connection: sqlite3.Connection) -> None:
 
 
 def _encode_json(payload: object) -> str:
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return dumps_json(payload)
+
+
+def _loads_json_object(value: str | bytes | bytearray) -> JsonMapping:
+    return parse_json_object(loads_json(value), "sqlite payload")
 
 
 def _insert_runtime_event(connection: sqlite3.Connection, event: RuntimeEvent) -> None:

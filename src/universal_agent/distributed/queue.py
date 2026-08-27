@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 from collections.abc import Collection, Iterator
 from contextlib import contextmanager
@@ -15,8 +14,12 @@ from universal_agent.core import (
     JsonMapping,
     SessionId,
     TaskId,
+    dumps_json,
     immutable_json,
+    loads_json,
+    read_json_file,
     utc_now,
+    write_json,
 )
 from universal_agent.distributed.queue_codec import (
     _decode_work_item,
@@ -523,8 +526,7 @@ class FileWorkQueue(InMemoryWorkQueue):
             self._items = {}
             self._sequence = 0
             return
-        with self._path.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
+        payload = read_json_file(self._path)
         queue_payload = _decode_work_queue_payload(payload)
         if queue_payload.version != 1:
             raise ValueError(f"unsupported file work queue version: {queue_payload.version}")
@@ -547,8 +549,7 @@ class FileWorkQueue(InMemoryWorkQueue):
             "items": [_encode_work_item(item) for item in super().list()],
         }
         with tmp_path.open("w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, sort_keys=True)
-            handle.write("\n")
+            write_json(handle, payload, indent=True)
         tmp_path.replace(self._path)
 
 
@@ -779,7 +780,7 @@ class SQLiteWorkQueue(InMemoryWorkQueue):
         ).fetchall()
         loaded: dict[WorkItemId, WorkItem] = {}
         for row in rows:
-            payload: object = json.loads(row[0])
+            payload = loads_json(row[0])
             if not isinstance(payload, dict):
                 raise ValueError("sqlite work queue item payload must be an object")
             item = _decode_work_item(payload)
@@ -914,5 +915,5 @@ def _sqlite_work_item_row(
         item.available_at.isoformat(),
         None if lease is None else lease.lease_expires_at.isoformat(),
         item.idempotency_key,
-        json.dumps(_encode_work_item(item), sort_keys=True, separators=(",", ":")),
+        dumps_json(_encode_work_item(item)),
     )

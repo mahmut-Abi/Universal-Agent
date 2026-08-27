@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -8,7 +7,13 @@ from pathlib import Path
 
 from pydantic import Field, field_validator
 
-from universal_agent.core import DomainIdentity, JsonMapping, JsonValue, immutable_json
+from universal_agent.core import (
+    DomainIdentity,
+    JsonMapping,
+    JsonValue,
+    immutable_json,
+    read_json_file,
+)
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
@@ -372,8 +377,7 @@ class RuntimeConfig:
 
     @classmethod
     def from_json_file(cls, path: str | Path) -> RuntimeConfig:
-        with Path(path).open("r", encoding="utf-8") as handle:
-            loaded: object = json.load(handle)
+        loaded = read_json_file(path)
         return cls.from_mapping(parse_json_object(loaded, "runtime config file"))
 
     @classmethod

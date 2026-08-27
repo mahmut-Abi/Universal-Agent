@@ -16,6 +16,7 @@ dependencies = [
   "jinja2>=3.1,<4",
   "jsonschema>=4.23,<5",
   "opentelemetry-proto>=1.28,<2",
+  "orjson>=3.10,<4",
   "packaging>=24,<27",
   "prometheus-client>=0.22,<1",
   "pydantic>=2.5,<3",

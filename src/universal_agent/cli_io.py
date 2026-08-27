@@ -1,11 +1,18 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import TextIO
 
-from universal_agent.core import DomainIdentity, JsonValue, SuccessCriterion, parse_iso_datetime
+from universal_agent.core import (
+    DomainIdentity,
+    JsonCodecError,
+    JsonValue,
+    SuccessCriterion,
+    loads_json,
+    parse_iso_datetime,
+    write_json,
+)
 from universal_agent.core.config_validation import parse_json_value
 
 
@@ -43,8 +50,8 @@ def _success_criteria(values: Sequence[str]) -> tuple[SuccessCriterion, ...]:
 
 def _parse_success_json_value(value: str, key: str) -> JsonValue:
     try:
-        loaded: object = json.loads(value)
-    except json.JSONDecodeError as exc:
+        loaded = loads_json(value)
+    except JsonCodecError as exc:
         raise ValueError(f"success criterion {key} must be valid JSON") from exc
     return parse_json_value(loaded, f"success.{key}")
 
@@ -59,8 +66,7 @@ def _parse_domain_identity(value: str) -> DomainIdentity:
 
 
 def _write_json(out: TextIO, payload: object) -> None:
-    json.dump(_json_safe(payload), out, indent=2, sort_keys=True)
-    out.write("\n")
+    write_json(out, _json_safe(payload), indent=True)
 
 
 def _write_text(out: TextIO, payload: str) -> None:

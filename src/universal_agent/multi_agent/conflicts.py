@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
@@ -12,6 +11,7 @@ from universal_agent.core import (
     PolicyEffect,
     RiskLevel,
     SideEffect,
+    dumps_json,
     immutable_json,
 )
 from universal_agent.evidence import EvidenceId
@@ -60,14 +60,12 @@ class AgentActionProposal:
 
     @property
     def action_fingerprint(self) -> str:
-        return json.dumps(
+        return dumps_json(
             {
                 "capability": self.capability,
                 "target": self.target,
                 "arguments": dict(self.arguments),
             },
-            sort_keys=True,
-            separators=(",", ":"),
         )
 
 

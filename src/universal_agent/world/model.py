@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable, Mapping
 
-from universal_agent.core import JsonMapping, JsonValue, SessionId, immutable_json
+from universal_agent.core import JsonMapping, JsonValue, SessionId, dumps_json, immutable_json
 from universal_agent.evidence import Evidence, EvidenceId
 from universal_agent.world.models import (
     EntityId,
@@ -300,7 +299,7 @@ def _has_conflicting_values(evidence: tuple[Evidence, ...]) -> bool:
 
 
 def _value_key(value: JsonValue) -> str:
-    return json.dumps(_plain_json_value(value), sort_keys=True, separators=(",", ":"))
+    return dumps_json(_plain_json_value(value))
 
 
 def _plain_json_value(value: JsonValue) -> JsonValue:

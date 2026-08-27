@@ -403,8 +403,8 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
     assert "Multi-Agent" in rendered
     assert "Configured Domains" in rendered
     assert "backend=kubernetes_api" in rendered
-    assert '"api_server": "https://cluster.example.test"' in rendered
-    assert '"bearer_token_secret": "<redacted>"' in rendered
+    assert '"api_server":"https://cluster.example.test"' in rendered
+    assert '"bearer_token_secret":"<redacted>"' in rendered
     assert "Runtime Secrets" in rendered
     assert "kubernetes_api_token source=env key=KUBERNETES_API_TOKEN" in rendered
     assert "status=available" in rendered
@@ -441,7 +441,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
         "evidence-4:value=False confidence=0.51 source=stale_health_probe"
     ) in rendered
     assert "World Entities" in rendered
-    assert 'deployment/example kind=Deployment attributes={"healthy": true}' in rendered
+    assert 'deployment/example kind=Deployment attributes={"healthy":true}' in rendered
     assert "World Relations" in rendered
     assert "deployment/example -[owns]-> pod/example-1 evidence=evidence-3" in rendered
     assert "Session Evidence" in rendered

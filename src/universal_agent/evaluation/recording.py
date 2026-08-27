@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
@@ -11,7 +10,15 @@ from urllib.parse import quote
 from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
 
-from universal_agent.core import ErrorCode, ExecutionStatus, JsonMapping, JsonValue, immutable_json
+from universal_agent.core import (
+    ErrorCode,
+    ExecutionStatus,
+    JsonMapping,
+    JsonValue,
+    immutable_json,
+    read_json_file,
+    write_json,
+)
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
@@ -271,22 +278,20 @@ class FileEvaluationReportStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = path.with_suffix(".json.tmp")
         with tmp_path.open("w", encoding="utf-8") as handle:
-            json.dump(encode_evaluation_report(recording), handle, indent=2, sort_keys=True)
-            handle.write("\n")
+            write_json(handle, encode_evaluation_report(recording), indent=True)
         tmp_path.replace(path)
 
     def load(self, suite_name: str) -> EvaluationReportRecording:
         path = self._path(suite_name)
         if not path.exists():
             raise EvaluationReportNotFoundError(f"evaluation report not found: {suite_name}")
-        with path.open("r", encoding="utf-8") as handle:
-            return decode_evaluation_report(json_mapping(json.load(handle)))
+        return decode_evaluation_report(json_mapping(read_json_file(path)))
 
     def list_reports(self) -> tuple[EvaluationReportRecording, ...]:
         if not self._root.exists():
             return ()
         reports = tuple(
-            decode_evaluation_report(json_mapping(json.loads(path.read_text(encoding="utf-8"))))
+            decode_evaluation_report(json_mapping(read_json_file(path)))
             for path in sorted(self._root.glob("*.json"))
         )
         return tuple(sorted(reports, key=lambda item: item.suite_name))
@@ -306,22 +311,20 @@ class FileReplayRecordingStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = path.with_suffix(".json.tmp")
         with tmp_path.open("w", encoding="utf-8") as handle:
-            json.dump(encode_replay_recording(recording), handle, indent=2, sort_keys=True)
-            handle.write("\n")
+            write_json(handle, encode_replay_recording(recording), indent=True)
         tmp_path.replace(path)
 
     def load(self, scenario_name: str) -> ReplayRecording:
         path = self._path(scenario_name)
         if not path.exists():
             raise ReplayRecordingNotFoundError(f"replay recording not found: {scenario_name}")
-        with path.open("r", encoding="utf-8") as handle:
-            return decode_replay_recording(json_mapping(json.load(handle)))
+        return decode_replay_recording(json_mapping(read_json_file(path)))
 
     def list_recordings(self) -> tuple[ReplayRecording, ...]:
         if not self._root.exists():
             return ()
         recordings = tuple(
-            decode_replay_recording(json_mapping(json.loads(path.read_text(encoding="utf-8"))))
+            decode_replay_recording(json_mapping(read_json_file(path)))
             for path in sorted(self._root.glob("*.json"))
         )
         return tuple(sorted(recordings, key=lambda item: item.scenario_name))

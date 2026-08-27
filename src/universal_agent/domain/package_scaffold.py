@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from universal_agent.core import JsonMapping
+from universal_agent.core import JsonMapping, write_json
 from universal_agent.domain.package_codec import (
     build_domain_package_manifest,
     encode_domain_package_manifest,
@@ -97,8 +96,7 @@ def scaffold_domain_package(
 def _write_json_manifest(path: Path, payload: JsonMapping) -> None:
     tmp_path = path.with_name(path.name + ".tmp")
     with tmp_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+        write_json(handle, payload, indent=True)
     tmp_path.replace(path)
 
 

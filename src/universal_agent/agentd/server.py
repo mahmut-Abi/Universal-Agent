@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import socket
 from collections.abc import Mapping
 from contextlib import suppress
@@ -16,7 +15,7 @@ from uvicorn import Config, Server
 
 from universal_agent.agentd.app import AgentdApp
 from universal_agent.agentd.http import HttpRequest, HttpResponse
-from universal_agent.core import JsonMapping, JsonValue, immutable_json
+from universal_agent.core import JsonCodecError, JsonMapping, JsonValue, immutable_json, loads_json
 from universal_agent.core.config_validation import parse_json_object
 
 
@@ -154,11 +153,13 @@ async def _request_body(
         return immutable_json()
 
     try:
-        loaded = json.loads(b"".join(chunks).decode("utf-8"))
+        raw_body = b"".join(chunks)
+        raw_body.decode("utf-8")
+        loaded = loads_json(raw_body)
     except UnicodeDecodeError:
         return _error_response(400, "bad_request", "request body must be UTF-8 JSON")
-    except json.JSONDecodeError as exc:
-        return _error_response(400, "bad_request", f"invalid JSON body: {exc.msg}")
+    except JsonCodecError as exc:
+        return _error_response(400, "bad_request", f"invalid JSON body: {_json_error_message(exc)}")
     try:
         return immutable_json(parse_json_object(loaded, "request body"))
     except ValueError as exc:
@@ -192,6 +193,10 @@ def _request_body_error_message(message: str) -> str:
     if message == "request body must be an object":
         return "request body must be a JSON object"
     return message
+
+
+def _json_error_message(error: JsonCodecError) -> str:
+    return str(error).removeprefix("invalid JSON: ")
 
 
 def _to_json(value: object) -> JsonValue:

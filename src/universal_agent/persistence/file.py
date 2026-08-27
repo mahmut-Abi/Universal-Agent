@@ -1,11 +1,20 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from urllib.parse import quote
 
-from universal_agent.core import AgentState, EventId, RuntimeEvent, SessionId
-from universal_agent.core.config_validation import json_mapping
+from universal_agent.core import (
+    AgentState,
+    EventId,
+    JsonMapping,
+    RuntimeEvent,
+    SessionId,
+    dumps_json,
+    loads_json,
+    read_json_file,
+    write_json,
+)
+from universal_agent.core.config_validation import parse_json_object
 from universal_agent.persistence.codec import (
     decode_runtime_event,
     decode_session_snapshot,
@@ -45,8 +54,7 @@ class FileSessionStore:
             return ()
         snapshots: list[SessionSnapshot] = []
         for path in sorted(self._sessions.glob("*.json")):
-            with path.open("r", encoding="utf-8") as handle:
-                snapshots.append(decode_session_snapshot(json_mapping(json.load(handle))))
+            snapshots.append(decode_session_snapshot(_load_json_object(path, "session snapshot")))
         return tuple(
             sorted(
                 snapshots,
@@ -62,15 +70,13 @@ class FileSessionStore:
         path = self._session_path(session_id)
         if not path.exists():
             raise StateNotFoundError(f"session not found: {session_id}")
-        with path.open("r", encoding="utf-8") as handle:
-            return decode_session_snapshot(json_mapping(json.load(handle)))
+        return decode_session_snapshot(_load_json_object(path, "session snapshot"))
 
     async def save_session(self, snapshot: SessionSnapshot) -> None:
         path = self._session_path(snapshot.state.session_id)
         if not path.exists():
             raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
-        with path.open("r", encoding="utf-8") as handle:
-            stored = decode_session_snapshot(json_mapping(json.load(handle)))
+        stored = decode_session_snapshot(_load_json_object(path, "session snapshot"))
         if snapshot.version != stored.version:
             raise SessionVersionConflictError(
                 f"session version conflict: {snapshot.state.session_id} expected "
@@ -96,8 +102,7 @@ class FileSessionStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = path.with_suffix(".json.tmp")
         with tmp_path.open("w", encoding="utf-8") as handle:
-            json.dump(encode_session_snapshot(snapshot), handle, indent=2, sort_keys=True)
-            handle.write("\n")
+            write_json(handle, encode_session_snapshot(snapshot), indent=True)
         tmp_path.replace(path)
 
 
@@ -110,7 +115,7 @@ class FileEventStore:
     async def emit(self, event: RuntimeEvent) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(encode_runtime_event(event), sort_keys=True))
+            handle.write(dumps_json(encode_runtime_event(event)))
             handle.write("\n")
 
     async def list_events(
@@ -127,7 +132,7 @@ class FileEventStore:
             for line in handle:
                 if not line.strip():
                     continue
-                event = decode_runtime_event(json_mapping(json.loads(line)))
+                event = decode_runtime_event(_loads_json_object(line, "runtime event"))
                 events.append(event)
         return filter_events(
             events,
@@ -191,8 +196,7 @@ class FileRuntimeStore(FileSessionStore, FileEventStore):
             raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
         if self._event_exists(event.id):
             raise ValueError(f"runtime event already exists: {event.id}")
-        with path.open("r", encoding="utf-8") as handle:
-            stored = decode_session_snapshot(json_mapping(json.load(handle)))
+        stored = decode_session_snapshot(_load_json_object(path, "session snapshot"))
         if snapshot.version != stored.version:
             raise SessionVersionConflictError(
                 f"session version conflict: {snapshot.state.session_id} expected "
@@ -211,18 +215,18 @@ class FileRuntimeStore(FileSessionStore, FileEventStore):
         if not self._commits.exists():
             return
         for path in sorted(self._commits.glob("*.json")):
-            with path.open("r", encoding="utf-8") as handle:
-                payload = json_mapping(json.load(handle))
+            payload = _load_json_object(path, "file runtime commit record")
             snapshot_payload = payload.get("session")
             event_payload = payload.get("event")
             if not isinstance(snapshot_payload, dict) or not isinstance(event_payload, dict):
                 raise ValueError(f"invalid file runtime commit record: {path}")
-            snapshot = decode_session_snapshot(json_mapping(snapshot_payload))
-            event = decode_runtime_event(json_mapping(event_payload))
+            snapshot = decode_session_snapshot(snapshot_payload)
+            event = decode_runtime_event(event_payload)
             session_path = self._session_path(snapshot.state.session_id)
             if session_path.exists():
-                with session_path.open("r", encoding="utf-8") as handle:
-                    stored = decode_session_snapshot(json_mapping(json.load(handle)))
+                stored = decode_session_snapshot(
+                    _load_json_object(session_path, "session snapshot")
+                )
                 if stored.version < snapshot.version:
                     self._write_snapshot(session_path, snapshot)
             else:
@@ -242,16 +246,14 @@ class FileRuntimeStore(FileSessionStore, FileEventStore):
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = path.with_suffix(".json.tmp")
         with tmp_path.open("w", encoding="utf-8") as handle:
-            json.dump(
+            write_json(
+                handle,
                 {
                     "session": encode_session_snapshot(snapshot),
                     "event": encode_runtime_event(event),
                 },
-                handle,
-                indent=2,
-                sort_keys=True,
+                indent=True,
             )
-            handle.write("\n")
         tmp_path.replace(path)
 
     def _append_event_if_missing(self, event: RuntimeEvent) -> None:
@@ -259,7 +261,7 @@ class FileRuntimeStore(FileSessionStore, FileEventStore):
             return
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(encode_runtime_event(event), sort_keys=True))
+            handle.write(dumps_json(encode_runtime_event(event)))
             handle.write("\n")
 
     def _event_exists(self, event_id: EventId) -> bool:
@@ -269,7 +271,16 @@ class FileRuntimeStore(FileSessionStore, FileEventStore):
             for line in handle:
                 if not line.strip():
                     continue
-                event = decode_runtime_event(json_mapping(json.loads(line)))
+                event = decode_runtime_event(_loads_json_object(line, "runtime event"))
                 if event.id == event_id:
                     return True
         return False
+
+
+def _load_json_object(path: Path, field: str) -> JsonMapping:
+    return _loads_json_object(read_json_file(path), field)
+
+
+def _loads_json_object(value: object, field: str) -> JsonMapping:
+    decoded = loads_json(value) if isinstance(value, str | bytes | bytearray) else value
+    return parse_json_object(decoded, field)

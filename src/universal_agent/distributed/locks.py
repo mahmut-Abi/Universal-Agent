@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -13,7 +12,15 @@ from filelock import FileLock
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 from pydantic import ValidationError as PydanticValidationError
 
-from universal_agent.core import JsonMapping, immutable_json, utc_now
+from universal_agent.core import (
+    JsonMapping,
+    dumps_json,
+    immutable_json,
+    loads_json,
+    read_json_file,
+    utc_now,
+    write_json,
+)
 from universal_agent.core.config_validation import PydanticJsonValue, json_mapping
 
 DistributedLockLeaseId = NewType("DistributedLockLeaseId", str)
@@ -271,8 +278,7 @@ class FileDistributedLockRegistry(InMemoryDistributedLockRegistry):
             self._leases = {}
             self._sequence = 0
             return
-        with self._path.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
+        payload = read_json_file(self._path)
         registry_payload = _decode_distributed_lock_registry_payload(payload)
         if registry_payload.version != 1:
             raise ValueError(
@@ -300,8 +306,7 @@ class FileDistributedLockRegistry(InMemoryDistributedLockRegistry):
             "locks": [_encode_distributed_lock_lease(lease) for lease in super().active()],
         }
         with tmp_path.open("w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, sort_keys=True)
-            handle.write("\n")
+            write_json(handle, payload, indent=True)
         tmp_path.replace(self._path)
 
 
@@ -449,7 +454,7 @@ class SQLiteDistributedLockRegistry(InMemoryDistributedLockRegistry):
         ).fetchall()
         loaded: dict[str, DistributedLockLease] = {}
         for row in rows:
-            payload: object = json.loads(row[0])
+            payload = loads_json(row[0])
             if not isinstance(payload, dict):
                 raise ValueError("sqlite distributed lock payload must be an object")
             lease = _decode_distributed_lock_lease(payload)
@@ -681,7 +686,7 @@ def _sqlite_lock_lease_row(
         str(lease.owner_id),
         str(lease.lease_id),
         lease.lease_expires_at.isoformat(),
-        json.dumps(_encode_distributed_lock_lease(lease), sort_keys=True, separators=(",", ":")),
+        dumps_json(_encode_distributed_lock_lease(lease)),
     )
 
 

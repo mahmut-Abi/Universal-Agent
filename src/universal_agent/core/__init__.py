@@ -2,6 +2,14 @@ from universal_agent.core.arguments import (
     ArgumentSchemaError,
     validate_argument_contract,
 )
+from universal_agent.core.json_codec import (
+    JsonCodecError,
+    dumps_json,
+    loads_json,
+    read_json_file,
+    write_json,
+    write_json_file,
+)
 from universal_agent.core.models import (
     ActionId,
     AgentState,
@@ -81,6 +89,7 @@ __all__ = [
     "Goal",
     "GoalId",
     "GoalStatus",
+    "JsonCodecError",
     "JsonMapping",
     "JsonValue",
     "Observation",
@@ -101,12 +110,17 @@ __all__ = [
     "ToolCall",
     "ToolDefinition",
     "ToolResult",
+    "dumps_json",
     "immutable_json",
+    "loads_json",
     "new_action_id",
     "new_observation_id",
     "new_session_id",
     "parse_iso_datetime",
+    "read_json_file",
     "runtime_primitives",
     "utc_now",
     "validate_argument_contract",
+    "write_json",
+    "write_json_file",
 ]

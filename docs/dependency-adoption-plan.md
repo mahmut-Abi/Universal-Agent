@@ -9,8 +9,8 @@
 
 ## 现状基线
 
-- 源码约 39.7k 行，已引入 `httpx`、`jsonschema`、`pydantic`、`filelock`、`jinja2`、
-  `python-dateutil`、`rich` 等基础运行时依赖，mypy strict + ruff 全量约束
+- 源码约 39.7k 行，已引入 `httpx`、`jsonschema`、`pydantic`、`orjson`、`filelock`、
+  `jinja2`、`python-dateutil`、`rich` 等基础运行时依赖，mypy strict + ruff 全量约束
 - 早期超 2000 行源码文件已被压回 1000 行以内；后续先优先做库替换和 seam 收口，
   暂不继续以拆文件作为主线
 - 主要瓶颈是**代码量增长速度**，非性能（主循环为 I/O 密集：LLM 秒级、kubectl 子进程、HTTP）
@@ -39,7 +39,17 @@
 | 剩余 | 可继续评估 agentd 其他请求体是否值得按模块迁移；当前不建议一次性替换核心 runtime contracts |
 | 风险 | 低；建议继续按模块迁移，避免一次性替换所有 dataclass 构造契约 |
 
-### 3. Starlette + uvicorn → 替换 agentd socket/server / routing 适配层（持续推进）
+### 3. orjson → 替换分散的标准库 JSON 编解码（第一批已完成）
+
+| 项 | 说明 |
+|---|---|
+| 现状 | 已新增 `core/json_codec.py` 作为统一 JSON codec seam，并用 `orjson` 接管 Runtime 源码中的 JSON dumps/loads、文件读写、model prompt 编码、agentd 请求体解析、persistence payload、distributed queue/lock/worker registry payload、evaluation recording/config、ecosystem registry、Kubernetes API/kubectl 响应解析，以及 web/tui value text 的 JSON 渲染 |
+| 收益 | JSON 编解码从调用点收口到一个库适配层；compact canonical JSON 用于 hash/fingerprint，pretty JSON 用于 CLI/config/report 文件输出；后续可在 codec 层统一处理 bytes、mappingproxy、tuple/list 和错误文案 |
+| 兼容性 | `JsonCodecError` 继承 `ValueError`；HTTP/CLI 的用户可见错误保持原语义；UI 中嵌入的小 JSON 片段改为 `orjson` compact one-line 格式 |
+| 剩余 | 测试和 examples 仍可继续使用标准库 JSON 构造 fixture；若未来要强制全 repo 收口，再单独迁移测试工具层 |
+| 风险 | 低：全量 `ruff`、`mypy` 与 `pytest` 已覆盖 |
+
+### 4. Starlette + uvicorn → 替换 agentd socket/server / routing 适配层（持续推进）
 
 | 项 | 说明 |
 |---|---|
@@ -48,7 +58,7 @@
 | 剩余 | 后续再按路由族逐步把 `agentd/app.py` 手写分派迁入 Starlette route primitives，并在稳定 schema 后补 OpenAPI |
 | 风险 | 中：依赖树变大；需持续保证 Runtime API 行为不变（现有 test_agentd_routes / test_agentd_server 兜底） |
 
-### 4. prometheus-client → 替换手写 Prometheus text exposition（已完成）
+### 5. prometheus-client → 替换手写 Prometheus text exposition（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -56,7 +66,7 @@
 | 收益 | 指标格式交给官方库维护，避免手写 HELP/TYPE/sample 行细节；Runtime 仍只负责从事件投影 metrics view |
 | 风险 | 低：输出数值使用 prometheus-client 的 float 表达，相关 CLI/agentd 测试已覆盖 |
 
-### 5. PyYAML → 替换 Domain manifest 的 JSON-only loader（已完成）
+### 6. PyYAML → 替换 Domain manifest 的 JSON-only loader（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -64,7 +74,7 @@
 | 收益 | 对齐设计文档的 `manifest.yaml` 目标，同时保留 scaffold 默认写 `manifest.json` 的兼容契约 |
 | 风险 | 低：同目录存在多个 manifest 时显式报错，避免 registry 静默选错 |
 
-### 6. filelock → 替换手写 fcntl 文件互斥锁（已完成）
+### 7. filelock → 替换手写 fcntl 文件互斥锁（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -72,7 +82,7 @@
 | 收益 | 去除三处直接 `fcntl` 调用，获得跨平台文件锁抽象；测试仍覆盖跨进程互斥行为 |
 | 风险 | 低：仅替换文件型本地协调边界，不改变 SQLite 后端和调度语义 |
 
-### 7. Jinja2 → 替换手写 Web 页面外壳拼接（第一批已完成）
+### 8. Jinja2 → 替换手写 Web 页面外壳拼接（第一批已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -80,7 +90,7 @@
 | 收益 | 去除十余处重复 HTML 外壳拼接，统一标题转义和 body 注入边界，为后续 section/table 模板化建立单一入口 |
 | 风险 | 低：渲染内容顺序和现有 URL/section helper 不变，Web/Evaluation 测试覆盖 escaping 与关键页面文本 |
 
-### 8. python-dateutil → 替换手写 ISO datetime 兼容解析（已完成）
+### 9. python-dateutil → 替换手写 ISO datetime 兼容解析（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -88,7 +98,7 @@
 | 收益 | 去除 `value.replace("Z", "+00:00")` / `datetime.fromisoformat()` 分散写法，统一 `Z` 后缀、时区强制和错误文案 |
 | 风险 | 低：保留 public dataclass/API 类型，测试覆盖持久化恢复和 CLI/HTTP 输入解析 |
 
-### 9. Rich → 替换手写终端渲染执行层（第一批已完成）
+### 10. Rich → 替换手写终端渲染执行层（第一批已完成）
 
 | 项 | 说明 |
 |---|---|

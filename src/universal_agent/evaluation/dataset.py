@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -8,7 +7,13 @@ from typing import Any
 
 from pydantic import Field
 
-from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
+from universal_agent.core import (
+    DomainIdentity,
+    JsonCodecError,
+    JsonMapping,
+    immutable_json,
+    read_json_file,
+)
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
@@ -428,8 +433,8 @@ def _load_json_object(path: Path) -> JsonMapping:
     if not path.exists():
         raise EvaluationDatasetNotFoundError(f"evaluation dataset manifest not found: {path}")
     try:
-        loaded: object = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+        loaded = read_json_file(path)
+    except JsonCodecError as exc:
         raise EvaluationDatasetValidationError(
             f"invalid evaluation dataset manifest JSON: {path}"
         ) from exc

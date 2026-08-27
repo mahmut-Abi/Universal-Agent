@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 
@@ -30,6 +29,7 @@ from universal_agent.core import (
     SideEffect,
     ToolCall,
     ToolDefinition,
+    dumps_json,
     immutable_json,
     new_action_id,
 )
@@ -507,7 +507,7 @@ def _action_parameters_hash(decision: Decision) -> str:
         "capability": decision.capability,
         "target": decision.target,
     }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    encoded = dumps_json(payload)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 

@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from pydantic import Field
 
-from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
+from universal_agent.core import (
+    DomainIdentity,
+    JsonCodecError,
+    JsonMapping,
+    immutable_json,
+    read_json_file,
+    write_json,
+)
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
@@ -210,8 +216,8 @@ def load_ecosystem_registry_manifest(path: str | Path) -> EcosystemRegistryManif
     if not manifest_path.exists():
         raise EcosystemRegistryNotFoundError(f"ecosystem registry manifest not found: {path}")
     try:
-        loaded: object = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+        loaded = read_json_file(manifest_path)
+    except JsonCodecError as exc:
         raise EcosystemRegistryValidationError(
             f"invalid ecosystem registry manifest JSON: {path}"
         ) from exc
@@ -242,8 +248,7 @@ def write_ecosystem_registry_manifest(
     overwritten = output.exists()
     tmp_path = output.with_name(output.name + ".tmp")
     with tmp_path.open("w", encoding="utf-8") as handle:
-        json.dump(encode_ecosystem_registry_manifest(manifest), handle, indent=2, sort_keys=True)
-        handle.write("\n")
+        write_json(handle, encode_ecosystem_registry_manifest(manifest), indent=True)
     tmp_path.replace(output)
     return EcosystemRegistryWriteResult(manifest, output, overwritten)
 

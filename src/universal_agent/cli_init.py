@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import TextIO, cast
 
 from universal_agent.cli_io import _parse_key_value_options, _write_json
+from universal_agent.core import write_json
 from universal_agent.domains.kubernetes.cli import (
     profile_domain_config as kubernetes_profile_domain_config,
 )
@@ -54,8 +54,7 @@ def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
     )
     tmp_path = output.with_name(output.name + ".tmp")
     with tmp_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+        write_json(handle, payload, indent=True)
     tmp_path.replace(output)
     _write_json(out, {"status": "created", "profile": profile_name, "path": str(output)})
 

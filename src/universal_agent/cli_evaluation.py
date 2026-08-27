@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import TextIO, cast
 
@@ -18,6 +17,7 @@ from universal_agent.core import (
     SuccessCriterion,
     Task,
     immutable_json,
+    read_json_file,
 )
 from universal_agent.evaluation.console import (
     build_evaluation_console_snapshot,
@@ -382,8 +382,7 @@ def _local_evaluation_suite(name: str) -> EvaluationSuite:
 
 
 def _load_evaluation_report(path: Path) -> EvaluationReportRecording:
-    with path.open("r", encoding="utf-8") as handle:
-        return decode_evaluation_report(json_mapping(json.load(handle)))
+    return decode_evaluation_report(json_mapping(read_json_file(path)))
 
 
 def _evaluation_run_body(

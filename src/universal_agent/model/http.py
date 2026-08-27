@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from typing import Protocol
 
@@ -14,11 +13,14 @@ from universal_agent.core import (
     Decision,
     DecisionContext,
     DecisionType,
+    JsonCodecError,
     JsonMapping,
     JsonValue,
     Observation,
     SuccessCriterion,
+    dumps_json,
     immutable_json,
+    loads_json,
     validate_argument_contract,
 )
 from universal_agent.core.config_validation import (
@@ -130,9 +132,11 @@ class HttpxJsonHttpTransport:
                     timeout_seconds=timeout_seconds,
                 )
         try:
-            decoded = response.json()
-        except ValueError as exc:
-            raise JsonHttpModelError(f"model provider returned invalid JSON: {exc}") from exc
+            decoded = loads_json(response.content)
+        except JsonCodecError as exc:
+            raise JsonHttpModelError(
+                f"model provider returned invalid JSON: {_json_error_message(exc)}"
+            ) from exc
         return _json_mapping(decoded, "response")
 
     async def _post_with_client(
@@ -148,7 +152,7 @@ class HttpxJsonHttpTransport:
             response = await client.post(
                 url,
                 headers=dict(headers),
-                json=dict(payload),
+                content=dumps_json(payload).encode("utf-8"),
                 timeout=timeout_seconds,
             )
             response.raise_for_status()
@@ -306,9 +310,11 @@ class OpenAIResponsesModelAdapter:
         _raise_for_openai_response_status(openai_response)
         output_text = _openai_output_text(openai_response)
         try:
-            decoded = json.loads(output_text)
-        except json.JSONDecodeError as exc:
-            raise JsonHttpModelError(f"OpenAI response output_text was not JSON: {exc}") from exc
+            decoded = loads_json(output_text)
+        except JsonCodecError as exc:
+            raise JsonHttpModelError(
+                f"OpenAI response output_text was not JSON: {_json_error_message(exc)}"
+            ) from exc
         decision_payload = _decision_payload(_json_mapping(decoded, "output_text"))
         try:
             decision = _decode_decision(decision_payload)
@@ -357,7 +363,7 @@ class OpenAIResponsesModelAdapter:
                     "content": [
                         {
                             "type": "input_text",
-                            "text": json.dumps(prompt, sort_keys=True, separators=(",", ":")),
+                            "text": dumps_json(prompt),
                         }
                     ],
                 }
@@ -480,7 +486,7 @@ class OpenAIChatCompletionsModelAdapter:
                 },
                 {
                     "role": "user",
-                    "content": json.dumps(prompt, sort_keys=True, separators=(",", ":")),
+                    "content": dumps_json(prompt),
                 },
             ],
         }
@@ -681,14 +687,15 @@ def _openai_chat_completion_content(response: _OpenAIChatCompletionPayload) -> s
 
 def _loads_json_text(text: str, source: str) -> object:
     candidates = (text, _strip_json_code_fence(text))
-    last_error: json.JSONDecodeError | None = None
+    last_error: JsonCodecError | None = None
     for candidate in dict.fromkeys(candidates):
         try:
-            return json.loads(candidate)
-        except json.JSONDecodeError as exc:
+            return loads_json(candidate)
+        except JsonCodecError as exc:
             last_error = exc
     assert last_error is not None
-    raise JsonHttpModelError(f"{source} was not JSON: {last_error}") from last_error
+    message = f"{source} was not JSON: {_json_error_message(last_error)}"
+    raise JsonHttpModelError(message) from last_error
 
 
 def _strip_json_code_fence(text: str) -> str:
@@ -702,6 +709,10 @@ def _strip_json_code_fence(text: str) -> str:
     if opening not in {"```", "```json"}:
         return text
     return "\n".join(lines[1:-1]).strip()
+
+
+def _json_error_message(error: JsonCodecError) -> str:
+    return str(error).removeprefix("invalid JSON: ")
 
 
 def _openai_chat_response_format(mode: str) -> dict[str, JsonValue] | None:

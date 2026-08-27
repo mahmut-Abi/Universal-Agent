@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -9,7 +8,7 @@ from urllib.parse import quote
 import httpx
 from pydantic import TypeAdapter
 
-from universal_agent.core import JsonMapping, JsonValue, immutable_json
+from universal_agent.core import JsonCodecError, JsonMapping, JsonValue, immutable_json, loads_json
 from universal_agent.core.config_validation import PydanticJsonValue
 from universal_agent.domains.kubernetes import resources as k8s
 
@@ -459,7 +458,7 @@ def _decode_optional_json(text: str) -> JsonValue:
     if not text.strip():
         return None
     try:
-        loaded: object = json.loads(text)
-    except json.JSONDecodeError:
+        loaded = loads_json(text)
+    except JsonCodecError:
         return None
     return _JSON_VALUE_ADAPTER.validate_python(loaded, strict=True)

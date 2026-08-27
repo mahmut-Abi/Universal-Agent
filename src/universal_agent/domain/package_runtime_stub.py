@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from typing import Any
+
+from universal_agent.core import dumps_json
 
 
 def runtime_stub_source(manifest: Any, factory_name: str) -> str:
@@ -118,7 +119,7 @@ def _runtime_stub_evaluators(manifest: Any) -> str:
 
 
 def _py_string(value: str) -> str:
-    return json.dumps(value)
+    return dumps_json(value)
 
 
 def _py_string_tuple(values: Sequence[str]) -> str:

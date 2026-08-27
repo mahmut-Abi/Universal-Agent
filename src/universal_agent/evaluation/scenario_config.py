@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +15,7 @@ from universal_agent.core import (
     SuccessCriterion,
     Task,
     immutable_json,
+    read_json_file,
 )
 from universal_agent.core.config_validation import (
     ConfigPayload,
@@ -117,8 +117,7 @@ def load_evaluation_suite(path: str | Path) -> EvaluationSuite:
 
 
 def load_evaluation_suite_config(path: str | Path) -> EvaluationSuiteConfig:
-    with Path(path).open("r", encoding="utf-8") as handle:
-        loaded: object = json.load(handle)
+    loaded = read_json_file(path)
     return evaluation_suite_config_from_mapping(parse_json_object(loaded, "evaluation suite file"))
 
 

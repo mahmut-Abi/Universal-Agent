@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from dataclasses import dataclass
 from typing import Protocol
 
-from universal_agent.core import JsonMapping, JsonValue, immutable_json
+from universal_agent.core import JsonCodecError, JsonMapping, JsonValue, immutable_json, loads_json
 from universal_agent.domains.kubernetes import resources as k8s
 
 
@@ -316,8 +315,8 @@ class KubectlBackend:
     async def _run_json(self, *args: str) -> dict[str, JsonValue]:
         result = await self._run(*args)
         try:
-            payload = json.loads(result.stdout)
-        except json.JSONDecodeError as exc:
+            payload = loads_json(result.stdout)
+        except JsonCodecError as exc:
             raise KubectlCommandError(f"kubectl returned invalid JSON: {exc}") from exc
         if not isinstance(payload, dict):
             raise KubectlCommandError("kubectl returned JSON that was not an object")

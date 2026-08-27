@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Sequence
 from types import MappingProxyType
 
@@ -18,7 +17,14 @@ from universal_agent.agentd.session_representations import (
     session_body,
     session_summary_body,
 )
-from universal_agent.core import ExecutionResult, JsonMapping, JsonValue, SessionId, immutable_json
+from universal_agent.core import (
+    ExecutionResult,
+    JsonMapping,
+    JsonValue,
+    SessionId,
+    dumps_json,
+    immutable_json,
+)
 from universal_agent.distributed import (
     DistributedCancellationResult,
     DistributedHealthReport,
@@ -146,7 +152,7 @@ def sse_event_batch_text(batch: RuntimeEventBatch) -> str:
         chunks.append(f"id: {event.event_id}\n")
         chunks.append(f"event: {event.type}\n")
         chunks.append("data: ")
-        chunks.append(json.dumps(event_body(event), sort_keys=True))
+        chunks.append(dumps_json(event_body(event)))
         chunks.append("\n\n")
     if not batch.events:
         chunks.append(": heartbeat\n\n")

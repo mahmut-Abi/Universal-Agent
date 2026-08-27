@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
@@ -20,6 +19,7 @@ from universal_agent.core import (
     SessionId,
     Task,
     ToolDefinition,
+    read_json_file,
 )
 from universal_agent.evaluation import Evaluator
 from universal_agent.evidence import EvidenceExtractor
@@ -617,7 +617,7 @@ class DomainLoader:
                 )
 
     def manifest_from_json(self, path: Path) -> DomainManifest:
-        raw = cast(dict[str, JsonValue], json.loads(path.read_text(encoding="utf-8")))
+        raw = cast(dict[str, JsonValue], read_json_file(path))
         try:
             metadata = cast(dict[str, JsonValue], raw["metadata"])
             specification = cast(dict[str, JsonValue], raw["spec"])
