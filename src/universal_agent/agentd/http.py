@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from types import MappingProxyType
 
+from pydantic import ValidationError as PydanticValidationError
+
 from universal_agent.core import (
     Goal,
     JsonMapping,
@@ -14,6 +16,7 @@ from universal_agent.core import (
     Task,
     immutable_json,
 )
+from universal_agent.core.config_validation import ConfigPayload, PydanticJsonValue
 
 
 def _empty_json() -> JsonMapping:
@@ -45,6 +48,27 @@ class GoalSubmission:
     goal: Goal
     task: Task
     profile_name: str | None = None
+
+
+class _SuccessCriterionPayload(ConfigPayload):
+    key: str
+    expected: PydanticJsonValue
+
+
+class _GoalPayload(ConfigPayload):
+    description: str
+    success_criteria: list[_SuccessCriterionPayload]
+
+
+class _TaskPayload(ConfigPayload):
+    description: str
+    required_criteria: list[str]
+
+
+class _GoalSubmissionPayload(ConfigPayload):
+    goal: _GoalPayload
+    task: _TaskPayload
+    profile: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,61 +212,109 @@ def _bearer_token(value: str | None) -> str | None:
 
 
 def parse_goal_submission(body: JsonMapping) -> GoalSubmission:
-    profile_name = _optional_non_empty_string_field(body, "profile", "profile")
-    goal_payload = _object_field(body, "goal", "goal")
-    task_payload = _object_field(body, "task", "task")
+    payload = _parse_goal_submission_payload(body)
+    profile_name = _optional_non_empty_string(payload.profile, "profile")
+    goal_payload = payload.goal
+    task_payload = payload.task
     goal = Goal(
-        _non_empty_string_field(goal_payload, "description", "goal.description"),
-        _success_criteria(goal_payload),
+        _non_empty_string(goal_payload.description, "goal.description"),
+        _success_criteria(goal_payload.success_criteria),
     )
     task = Task(
-        _non_empty_string_field(task_payload, "description", "task.description"),
-        _string_tuple_field(task_payload, "required_criteria", "task.required_criteria"),
+        _non_empty_string(task_payload.description, "task.description"),
+        _string_tuple(task_payload.required_criteria, "task.required_criteria"),
     )
     return GoalSubmission(goal, task, profile_name)
 
 
-def _success_criteria(payload: Mapping[str, JsonValue]) -> tuple[SuccessCriterion, ...]:
-    items = _list_field(payload, "success_criteria", "goal.success_criteria")
+def _parse_goal_submission_payload(body: JsonMapping) -> _GoalSubmissionPayload:
+    try:
+        return _GoalSubmissionPayload.model_validate(dict(body))
+    except PydanticValidationError as exc:
+        raise ValueError(_goal_submission_error_message(exc)) from exc
+
+
+def _success_criteria(
+    items: list[_SuccessCriterionPayload],
+) -> tuple[SuccessCriterion, ...]:
     if not items:
         raise ValueError("goal.success_criteria must not be empty")
     criteria: list[SuccessCriterion] = []
     for index, item in enumerate(items):
-        field = f"goal.success_criteria[{index}]"
-        if not isinstance(item, dict):
-            raise ValueError(f"{field} must be an object")
         criteria.append(
             SuccessCriterion(
-                _non_empty_string_field(item, "key", f"{field}.key"),
-                _required_field(item, "expected", f"{field}.expected"),
+                _non_empty_string(item.key, f"goal.success_criteria[{index}].key"),
+                item.expected,
             )
         )
     return tuple(criteria)
 
 
-def _string_tuple_field(
-    payload: Mapping[str, JsonValue],
-    key: str,
+def _string_tuple(
+    items: list[str],
     field: str,
 ) -> tuple[str, ...]:
-    items = _list_field(payload, key, field)
     values: list[str] = []
     for index, item in enumerate(items):
-        if not isinstance(item, str):
-            raise ValueError(f"{field}[{index}] must be a string")
         if not item.strip():
             raise ValueError(f"{field}[{index}] must not be empty")
         values.append(item)
     return tuple(values)
 
 
-def _object_field(
-    payload: Mapping[str, JsonValue], key: str, field: str
-) -> Mapping[str, JsonValue]:
-    value = _required_field(payload, key, field)
-    if isinstance(value, dict):
-        return value
-    raise ValueError(f"{field} must be an object")
+def _non_empty_string(value: str, field: str) -> str:
+    if not value.strip():
+        raise ValueError(f"{field} must not be empty")
+    return value
+
+
+def _optional_non_empty_string(value: str | None, field: str) -> str | None:
+    if value is None:
+        return None
+    return _non_empty_string(value, field)
+
+
+def _goal_submission_error_message(error: PydanticValidationError) -> str:
+    errors = error.errors(include_url=False)
+    if not errors:
+        return str(error)
+    first = errors[0]
+    path = _pydantic_error_path(first.get("loc", ()))
+    error_type = str(first.get("type", ""))
+    if error_type == "missing":
+        return f"{path} is required"
+    expected = _goal_submission_expected_type(error_type)
+    if expected is not None:
+        return f"{path} must be {expected}"
+    message = str(first.get("msg", ""))
+    if error_type == "value_error":
+        return message.removeprefix("Value error, ")
+    return f"{path}: {message}" if path and message else message or str(error)
+
+
+def _goal_submission_expected_type(error_type: str) -> str | None:
+    return {
+        "dict_type": "an object",
+        "list_type": "a list",
+        "model_attributes_type": "an object",
+        "model_type": "an object",
+        "string_type": "a string",
+        "invalid-json-value": "JSON-compatible",
+    }.get(error_type)
+
+
+def _pydantic_error_path(location: object) -> str:
+    parts: list[str] = []
+    if isinstance(location, tuple):
+        for item in location:
+            if isinstance(item, int):
+                if parts:
+                    parts[-1] = f"{parts[-1]}[{item}]"
+                else:
+                    parts.append(f"[{item}]")
+            else:
+                parts.append(str(item))
+    return ".".join(parts)
 
 
 def _optional_datetime_field(
@@ -262,41 +334,3 @@ def _optional_datetime_field(
     if parsed.tzinfo is None:
         raise ValueError(f"{field} must include a timezone")
     return parsed
-
-
-def _list_field(payload: Mapping[str, JsonValue], key: str, field: str) -> list[JsonValue]:
-    value = _required_field(payload, key, field)
-    if isinstance(value, list):
-        return value
-    raise ValueError(f"{field} must be a list")
-
-
-def _non_empty_string_field(payload: Mapping[str, JsonValue], key: str, field: str) -> str:
-    value = _required_field(payload, key, field)
-    if not isinstance(value, str):
-        raise ValueError(f"{field} must be a string")
-    if not value.strip():
-        raise ValueError(f"{field} must not be empty")
-    return value
-
-
-def _optional_non_empty_string_field(
-    payload: Mapping[str, JsonValue],
-    key: str,
-    field: str,
-) -> str | None:
-    value = payload.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"{field} must be a string")
-    if not value.strip():
-        raise ValueError(f"{field} must not be empty")
-    return value
-
-
-def _required_field(payload: Mapping[str, JsonValue], key: str, field: str) -> JsonValue:
-    try:
-        return payload[key]
-    except KeyError as exc:
-        raise ValueError(f"{field} is required") from exc

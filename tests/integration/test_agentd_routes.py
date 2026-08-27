@@ -2599,6 +2599,9 @@ async def test_agentd_create_session_route_validates_request_body() -> None:
         "description": "Inspect workload",
         "required_criteria": [1],
     }
+    missing_task_description: dict[str, JsonValue] = {
+        "required_criteria": ["healthy"],
+    }
     valid_goal: dict[str, JsonValue] = {
         "description": "Verify workload health",
         "success_criteria": [{"key": "healthy", "expected": True}],
@@ -2627,6 +2630,27 @@ async def test_agentd_create_session_route_validates_request_body() -> None:
             immutable_json({"goal": valid_goal, "task": invalid_required_task}),
         )
     )
+    invalid_profile = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/sessions",
+            immutable_json({"profile": 1, "goal": valid_goal, "task": valid_task}),
+        )
+    )
+    invalid_goal_object = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/sessions",
+            immutable_json({"goal": [], "task": valid_task}),
+        )
+    )
+    missing_task_field = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/sessions",
+            immutable_json({"goal": valid_goal, "task": missing_task_description}),
+        )
+    )
 
     assert wrong_method.status_code == 405
     assert wrong_method.headers["allow"] == "GET, POST"
@@ -2649,6 +2673,21 @@ async def test_agentd_create_session_route_validates_request_body() -> None:
     assert invalid_required_criteria.body["error"] == {
         "code": "bad_request",
         "message": "task.required_criteria[0] must be a string",
+    }
+    assert invalid_profile.status_code == 400
+    assert invalid_profile.body["error"] == {
+        "code": "bad_request",
+        "message": "profile must be a string",
+    }
+    assert invalid_goal_object.status_code == 400
+    assert invalid_goal_object.body["error"] == {
+        "code": "bad_request",
+        "message": "goal must be an object",
+    }
+    assert missing_task_field.status_code == 400
+    assert missing_task_field.body["error"] == {
+        "code": "bad_request",
+        "message": "task.description is required",
     }
 
 
