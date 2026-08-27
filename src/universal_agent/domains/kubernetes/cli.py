@@ -52,8 +52,6 @@ def add_kubernetes_command(
 
 
 def is_kubernetes_probe_service_command(args: argparse.Namespace) -> bool:
-    return (
-        cast(str | None, getattr(args, "command", None)) == "kubernetes"
-        and cast(str | None, getattr(args, "kubernetes_command", None))
-        in {"model-probe", "check"}
-    )
+    return cast(str | None, getattr(args, "command", None)) == "kubernetes" and cast(
+        str | None, getattr(args, "kubernetes_command", None)
+    ) in {"model-probe", "check"}

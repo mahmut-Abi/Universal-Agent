@@ -878,10 +878,7 @@ class RuntimeService:
         if dry_run:
             return StateEventRepairReport(
                 "planned",
-                tuple(
-                    planned_state_event_repair_view(event)
-                    for event in repair_events
-                ),
+                tuple(planned_state_event_repair_view(event) for event in repair_events),
                 (),
             )
 

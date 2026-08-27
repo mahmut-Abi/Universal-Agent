@@ -134,8 +134,6 @@ __all__ = [
 ServerRunner = Callable[[AgentdHttpServer], None]
 
 
-
-
 def build_default_service() -> RuntimeService:
     return build_kubernetes_default_service()
 
@@ -194,8 +192,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     return asyncio.run(run_cli(argv))
 
 
-
-
 def _service_from_args(args: argparse.Namespace) -> RuntimeService:
     profile_config = cast(str | None, args.profile_config)
     if profile_config is None:
@@ -203,8 +199,6 @@ def _service_from_args(args: argparse.Namespace) -> RuntimeService:
     if is_kubernetes_probe_service_command(args):
         return build_configured_probe_service(profile_config)
     return build_configured_service(profile_config)
-
-
 
 
 async def _dispatch(
@@ -558,40 +552,6 @@ async def _dispatch_tui(
     _write_text(out, render_tui_snapshot(snapshot))
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def _dispatch_config(
     args: argparse.Namespace,
     service: RuntimeService,
@@ -602,24 +562,6 @@ def _dispatch_config(
         _write_json(out, config_body(service.config()))
         return
     raise ValueError(f"unknown config command: {command}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _dispatch_serve(
@@ -831,76 +773,6 @@ async def _stream_events_for_cli(
             limit=limit,
         )
     return batch
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _package_version() -> str:

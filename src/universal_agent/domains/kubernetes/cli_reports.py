@@ -30,6 +30,9 @@ from universal_agent.domains.kubernetes.cli_runtime import (
     ModelAdapterBuilder,
     configured_kubernetes_backend,
 )
+from universal_agent.domains.kubernetes.production_contract import (
+    kubernetes_production_contract_report,
+)
 from universal_agent.host import build_configured_model_adapter
 from universal_agent.model import ModelAdapter, ScriptedModelAdapter
 from universal_agent.profile import ProfileConfig
@@ -284,12 +287,22 @@ async def kubernetes_check_report(
         model_adapter_builder=model_adapter_builder,
     )
     if model_probe["status"] == "failed":
+        operation = kubernetes_operation_body(profile, workload, namespace)
         return immutable_json(
             {
                 "status": "failed",
-                "operation": kubernetes_operation_body(profile, workload, namespace),
+                "operation": operation,
                 "model_probe": dict(model_probe),
                 "preflight": None,
+                "contract": dict(
+                    kubernetes_production_contract_report(
+                        operation=operation,
+                        model_probe=model_probe,
+                        preflight=None,
+                        run=None,
+                        include_runtime=False,
+                    )
+                ),
                 "next_step": {
                     "type": "fix_model_provider",
                     "message": (
@@ -304,24 +317,44 @@ async def kubernetes_check_report(
         backend_builder=backend_builder,
     )
     if preflight["status"] == "failed":
+        operation = kubernetes_operation_body(profile, workload, namespace)
         return immutable_json(
             {
                 "status": "failed",
-                "operation": kubernetes_operation_body(profile, workload, namespace),
+                "operation": operation,
                 "model_probe": dict(model_probe),
                 "preflight": dict(preflight),
+                "contract": dict(
+                    kubernetes_production_contract_report(
+                        operation=operation,
+                        model_probe=model_probe,
+                        preflight=preflight,
+                        run=None,
+                        include_runtime=False,
+                    )
+                ),
                 "next_step": {
                     "type": "fix_preflight",
                     "message": "Resolve failed Kubernetes preflight checks before remediation.",
                 },
             }
         )
+    operation = kubernetes_operation_body(profile, workload, namespace)
     return immutable_json(
         {
             "status": "ok",
-            "operation": kubernetes_operation_body(profile, workload, namespace),
+            "operation": operation,
             "model_probe": dict(model_probe),
             "preflight": dict(preflight),
+            "contract": dict(
+                kubernetes_production_contract_report(
+                    operation=operation,
+                    model_probe=model_probe,
+                    preflight=preflight,
+                    run=None,
+                    include_runtime=False,
+                )
+            ),
             "next_step": {
                 "type": "run_kubernetes_remediation",
                 "message": "Model and Kubernetes preflight checks passed; run remediation next.",
@@ -704,17 +737,28 @@ def kubernetes_run_body(
     model_probe: JsonMapping | None,
 ) -> JsonMapping:
     profile_config = cast(str | None, args.profile_config)
+    operation: dict[str, JsonValue] = {
+        "profile": cast(str, args.profile),
+        "workload": kubernetes_workload_resource(cast(str, args.workload)),
+        "namespace": optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
+    }
+    run_body = dict(runtime_run_body(run))
     return immutable_json(
         {
             "status": run.result.status.value,
-            "operation": {
-                "profile": cast(str, args.profile),
-                "workload": kubernetes_workload_resource(cast(str, args.workload)),
-                "namespace": optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
-            },
+            "operation": operation,
             "model_probe": None if model_probe is None else dict(model_probe),
             "preflight": None if preflight is None else dict(preflight),
-            "run": dict(runtime_run_body(run)),
+            "run": run_body,
+            "contract": dict(
+                kubernetes_production_contract_report(
+                    operation=operation,
+                    model_probe=model_probe,
+                    preflight=preflight,
+                    run=run_body,
+                    include_runtime=True,
+                )
+            ),
             "next_step": kubernetes_run_next_step(run, profile_config),
         }
     )
@@ -724,17 +768,27 @@ def kubernetes_run_model_probe_failed_body(
     args: argparse.Namespace,
     model_probe: JsonMapping,
 ) -> JsonMapping:
+    operation: dict[str, JsonValue] = {
+        "profile": cast(str, args.profile),
+        "workload": kubernetes_workload_resource(cast(str, args.workload)),
+        "namespace": optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
+    }
     return immutable_json(
         {
             "status": "failed",
-            "operation": {
-                "profile": cast(str, args.profile),
-                "workload": kubernetes_workload_resource(cast(str, args.workload)),
-                "namespace": optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
-            },
+            "operation": operation,
             "model_probe": dict(model_probe),
             "preflight": None,
             "run": None,
+            "contract": dict(
+                kubernetes_production_contract_report(
+                    operation=operation,
+                    model_probe=model_probe,
+                    preflight=None,
+                    run=None,
+                    include_runtime=True,
+                )
+            ),
             "next_step": {
                 "type": "fix_model_provider",
                 "message": "Fix model probe failure before Kubernetes preflight or remediation.",
@@ -748,17 +802,27 @@ def kubernetes_run_preflight_failed_body(
     preflight: JsonMapping,
     model_probe: JsonMapping | None,
 ) -> JsonMapping:
+    operation: dict[str, JsonValue] = {
+        "profile": cast(str, args.profile),
+        "workload": kubernetes_workload_resource(cast(str, args.workload)),
+        "namespace": optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
+    }
     return immutable_json(
         {
             "status": "failed",
-            "operation": {
-                "profile": cast(str, args.profile),
-                "workload": kubernetes_workload_resource(cast(str, args.workload)),
-                "namespace": optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
-            },
+            "operation": operation,
             "model_probe": None if model_probe is None else dict(model_probe),
             "preflight": dict(preflight),
             "run": None,
+            "contract": dict(
+                kubernetes_production_contract_report(
+                    operation=operation,
+                    model_probe=model_probe,
+                    preflight=preflight,
+                    run=None,
+                    include_runtime=True,
+                )
+            ),
             "next_step": {
                 "type": "fix_preflight",
                 "message": "Resolve failed Kubernetes preflight checks before running remediation.",

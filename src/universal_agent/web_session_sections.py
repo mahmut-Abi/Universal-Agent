@@ -35,6 +35,7 @@ def _sessions(sessions: tuple[SessionSummaryView, ...]) -> str:
         ),
     )
 
+
 def _selected_session(session: SessionView | None) -> str:
     if session is None:
         return _section("Selected Session", '<p class="empty">No selected session</p>')
@@ -73,6 +74,7 @@ def _selected_session(session: SessionView | None) -> str:
         + "</dl>",
     )
 
+
 def _task_timeline(session: SessionView | None) -> str:
     rows = []
     if session is not None:
@@ -97,6 +99,7 @@ def _task_timeline(session: SessionView | None) -> str:
         _table(("Task", "Status", "Description", "Required Criteria", "Depends On"), tuple(rows)),
     )
 
+
 def _events(events: tuple[RuntimeEventView, ...]) -> str:
     rows = [
         "\n".join(
@@ -119,6 +122,7 @@ def _events(events: tuple[RuntimeEventView, ...]) -> str:
         _table(("Time", "Type", "Task", "Action", "Detail"), tuple(rows)),
     )
 
+
 def _audit(records: tuple[AuditRecordView, ...]) -> str:
     rows = [
         "\n".join(
@@ -140,4 +144,3 @@ def _audit(records: tuple[AuditRecordView, ...]) -> str:
         "Audit",
         _table(("Time", "Capability", "Tool", "Policy", "Status"), tuple(rows)),
     )
-

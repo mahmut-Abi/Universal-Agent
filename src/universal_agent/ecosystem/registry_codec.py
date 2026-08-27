@@ -490,5 +490,3 @@ def _compatibility_body(compatibility: DomainPackageCompatibility) -> dict[str, 
     if compatibility.domain_api is not None:
         body["domain_api"] = compatibility.domain_api
     return body
-
-

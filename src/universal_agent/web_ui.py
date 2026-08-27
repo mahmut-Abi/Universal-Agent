@@ -35,6 +35,7 @@ def _table(headers: tuple[str, ...], rows: tuple[str, ...]) -> str:
         + "</tbody></table></div>"
     )
 
+
 def _html(value: object) -> str:
     return escape(str(value), quote=False)
 

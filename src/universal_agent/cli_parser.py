@@ -473,6 +473,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     return parser
 
+
 def _add_evaluation_selector_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument(
         "--kind",

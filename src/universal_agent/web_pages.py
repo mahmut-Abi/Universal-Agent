@@ -156,6 +156,7 @@ def render_web_console(snapshot: WebConsoleSnapshot) -> str:
         )
     )
 
+
 def render_web_session_detail(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Session Detail"
     return "\n".join(
@@ -195,6 +196,7 @@ def render_web_session_detail(snapshot: WebConsoleSnapshot) -> str:
         )
     )
 
+
 def render_web_sessions(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Sessions"
     return "\n".join(
@@ -228,6 +230,7 @@ def render_web_sessions(snapshot: WebConsoleSnapshot) -> str:
         )
     )
 
+
 def render_web_doctor(snapshot: WebConsoleSnapshot, doctor: DoctorReportView) -> str:
     title = "Universal Agent Runtime Doctor"
     return "\n".join(
@@ -259,6 +262,7 @@ def render_web_doctor(snapshot: WebConsoleSnapshot, doctor: DoctorReportView) ->
             "</html>",
         )
     )
+
 
 def render_web_distributed(
     snapshot: WebConsoleSnapshot,
@@ -302,6 +306,7 @@ def render_web_distributed(
         )
     )
 
+
 def render_web_multi_agent(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Multi-Agent"
     multi_agent = snapshot.multi_agent
@@ -332,6 +337,7 @@ def render_web_multi_agent(snapshot: WebConsoleSnapshot) -> str:
             "</html>",
         )
     )
+
 
 def render_web_evidence_explorer(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Evidence Explorer"
@@ -367,6 +373,7 @@ def render_web_evidence_explorer(snapshot: WebConsoleSnapshot) -> str:
             "</html>",
         )
     )
+
 
 def render_web_world_model_explorer(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime World Model Explorer"
@@ -410,6 +417,7 @@ def render_web_world_model_explorer(snapshot: WebConsoleSnapshot) -> str:
         )
     )
 
+
 def render_web_domain_detail(
     snapshot: WebConsoleSnapshot,
     *,
@@ -451,6 +459,7 @@ def render_web_domain_detail(
         )
     )
 
+
 def render_web_domain_package_detail(
     snapshot: WebConsoleSnapshot,
     *,
@@ -491,6 +500,7 @@ def render_web_domain_package_detail(
         )
     )
 
+
 def render_web_profile_catalog(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Profile Catalog"
     return "\n".join(
@@ -524,6 +534,7 @@ def render_web_profile_catalog(snapshot: WebConsoleSnapshot) -> str:
         )
     )
 
+
 def render_web_catalog(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> str:
     title = f"Universal Agent Runtime {_catalog_title(catalog)}"
     return "\n".join(
@@ -548,6 +559,7 @@ def render_web_catalog(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) ->
             "</html>",
         )
     )
+
 
 def render_web_settings(snapshot: WebConsoleSnapshot) -> str:
     title = "Universal Agent Runtime Settings"
@@ -587,4 +599,3 @@ def render_web_settings(snapshot: WebConsoleSnapshot) -> str:
             "</html>",
         )
     )
-

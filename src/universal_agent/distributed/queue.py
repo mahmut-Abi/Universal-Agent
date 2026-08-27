@@ -872,8 +872,6 @@ def _terminal_at(item: WorkItem) -> datetime | None:
     return None
 
 
-
-
 def _sequence_from_work_item_id(work_item_id: WorkItemId) -> int:
     value = str(work_item_id)
     if not value.startswith("work-"):

@@ -110,10 +110,7 @@ class FixtureKubernetesApiTransport:
             return KubernetesApiResponse(200, {"items": [_ready_node()]})
         if method == "GET" and path == "/api/v1/namespaces":
             return KubernetesApiResponse(200, {"items": [_namespace("prod")]})
-        if (
-            method == "GET"
-            and path == "/apis/apps/v1/namespaces/prod/deployments/api"
-        ):
+        if method == "GET" and path == "/apis/apps/v1/namespaces/prod/deployments/api":
             return KubernetesApiResponse(200, _healthy_deployment())
         return KubernetesApiResponse(
             404,
@@ -158,20 +155,31 @@ async def test_kubernetes_production_contract_runs_openai_chat_and_api_preflight
 
     assert check.status == 0
     assert check.payload["status"] == "ok"
+    check_contract = _object(check.payload["contract"])
     check_model_probe = _object(check.payload["model_probe"])
     check_decision = _object(check_model_probe["decision"])
     check_preflight = _object(check.payload["preflight"])
     check_observations = _object(check_preflight["observations"])
     check_workload = _object(check_observations["workload_inspection"])
+    assert check_contract["status"] == "ok"
+    assert check_contract["passed"] is True
+    assert check_contract["failed_check_count"] == 0
     assert check_decision["capability"] == "inspect_workload"
     assert check_workload["healthy"] is True
     assert run.status == 0
     assert run.payload["status"] == "completed"
+    run_contract = _object(run.payload["contract"])
     run_model_probe = _object(run.payload["model_probe"])
     run_preflight = _object(run.payload["preflight"])
     run_body = _object(run.payload["run"])
     run_result = _object(run_body["result"])
     run_session = _object(run_body["session"])
+    run_contract_checks = {
+        str(item["name"]): item for item in cast(list[dict[str, JsonValue]], run_contract["checks"])
+    }
+    assert run_contract["status"] == "ok"
+    assert run_contract["passed"] is True
+    assert run_contract_checks["completion_verification"]["status"] == "ok"
     assert run_model_probe["status"] == "ok"
     assert run_preflight["status"] == "ok"
     assert run_result["status"] == "completed"

@@ -46,6 +46,7 @@ def _runtime_settings(snapshot: WebConsoleSnapshot) -> str:
         + "</dl>",
     )
 
+
 def _doctor_checks(doctor: DoctorReportView) -> str:
     rows = [
         "\n".join(
@@ -69,6 +70,7 @@ def _doctor_checks(doctor: DoctorReportView) -> str:
         _table(("Check", "Status", "Message"), tuple(rows)),
     )
 
+
 def _state_event_commit_text(snapshot: WebConsoleSnapshot) -> str:
     supported = snapshot.config.state_event_commit_supported
     strategy = snapshot.config.state_event_commit_strategy or "unknown"
@@ -78,6 +80,7 @@ def _state_event_commit_text(snapshot: WebConsoleSnapshot) -> str:
     status = "enabled" if supported and shared_store else "split"
     return f"{status} ({strategy})"
 
+
 def _distributed_not_configured(distributed: DistributedRuntimeSnapshot | None) -> str:
     if distributed is not None:
         return ""
@@ -85,6 +88,7 @@ def _distributed_not_configured(distributed: DistributedRuntimeSnapshot | None) 
         "Distributed Runtime",
         '<p class="empty">Distributed runtime coordinator is not configured</p>',
     )
+
 
 def _distributed_health_checks(health: DistributedHealthReport | None) -> str:
     rows = []
@@ -112,6 +116,7 @@ def _distributed_health_checks(health: DistributedHealthReport | None) -> str:
         _table(("Check", "Status", "Message"), tuple(rows)),
     )
 
+
 def _distributed_recommendations(health: DistributedHealthReport | None) -> str:
     rows = []
     if health is not None:
@@ -138,6 +143,7 @@ def _distributed_recommendations(health: DistributedHealthReport | None) -> str:
         "Distributed Recommendations",
         _table(("Code", "Severity", "Target", "Message"), tuple(rows)),
     )
+
 
 def _distributed_work_queue(distributed: DistributedRuntimeSnapshot | None) -> str:
     rows = []
@@ -182,6 +188,7 @@ def _distributed_work_queue(distributed: DistributedRuntimeSnapshot | None) -> s
         ),
     )
 
+
 def _distributed_workers(distributed: DistributedRuntimeSnapshot | None) -> str:
     rows = []
     if distributed is not None:
@@ -210,6 +217,7 @@ def _distributed_workers(distributed: DistributedRuntimeSnapshot | None) -> str:
         ),
     )
 
+
 def _distributed_locks(distributed: DistributedRuntimeSnapshot | None) -> str:
     rows = []
     if distributed is not None:
@@ -234,6 +242,7 @@ def _distributed_locks(distributed: DistributedRuntimeSnapshot | None) -> str:
         "Distributed Locks",
         _table(("Lock", "Owner", "Lease", "Heartbeat", "Lease Expires", "Metadata"), tuple(rows)),
     )
+
 
 def _multi_agent(multi_agent: MultiAgentView) -> str:
     if not multi_agent.enabled:
@@ -297,10 +306,12 @@ def _multi_agent(multi_agent: MultiAgentView) -> str:
         + _table(("Task", "Children", "Depth"), tuple(task_rows)),
     )
 
+
 def _delegation_depth_text(delegation_depth: int | None) -> str:
     if delegation_depth is None:
         return "unknown"
     return str(delegation_depth)
+
 
 def _operational_diagnostics(snapshot: WebConsoleSnapshot) -> str:
     rows = tuple(_operational_diagnostic_rows(snapshot))
@@ -317,6 +328,7 @@ def _operational_diagnostics(snapshot: WebConsoleSnapshot) -> str:
         "Operational Diagnostics",
         _table(("Severity", "Signal", "Value", "Reason"), rows),
     )
+
 
 def _operational_diagnostic_rows(snapshot: WebConsoleSnapshot) -> list[str]:
     metrics = snapshot.metrics
@@ -355,6 +367,7 @@ def _operational_diagnostic_rows(snapshot: WebConsoleSnapshot) -> list[str]:
         rows.append(_diagnostic_row("info", "recoveries_planned", metrics.recovery_planned_count))
     return rows
 
+
 def _diagnostic_row(
     severity: str,
     signal: str,
@@ -371,4 +384,3 @@ def _diagnostic_row(
             "</tr>",
         )
     )
-

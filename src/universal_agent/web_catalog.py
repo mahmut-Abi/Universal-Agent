@@ -39,6 +39,7 @@ def _catalog_title(catalog: WebCatalogPage) -> str:
     }
     return titles[catalog]
 
+
 def _catalog_metrics(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> tuple[str, ...]:
     if catalog is WebCatalogPage.DOMAINS:
         return (
@@ -105,6 +106,7 @@ def _catalog_metrics(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> t
         _metric_card("Ready", _ready_text(snapshot)),
     )
 
+
 def _catalog_sections(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> tuple[str, ...]:
     if catalog is WebCatalogPage.DOMAINS:
         return (_domains(snapshot), _configured_domains(snapshot), _profiles(snapshot.profiles))
@@ -127,4 +129,3 @@ def _catalog_sections(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> 
     if catalog is WebCatalogPage.EVALUATORS:
         return (_evaluators(snapshot.evaluators), _domains(snapshot), _sessions(snapshot.sessions))
     return (_memory(snapshot.memories), _domains(snapshot), _profiles(snapshot.profiles))
-

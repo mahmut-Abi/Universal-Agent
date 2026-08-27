@@ -28,6 +28,7 @@ async def main() -> None:
     )
     payload = read_json(output.getvalue())
     model_probe = cast(dict[str, Any], payload["model_probe"])
+    contract = cast(dict[str, Any], payload["contract"])
     run = cast(dict[str, Any], payload["run"])
     result = cast(dict[str, Any], run["result"])
     session = cast(dict[str, Any], run["session"])
@@ -42,6 +43,7 @@ async def main() -> None:
             {
                 "status": payload["status"],
                 "model_probe": model_probe["status"],
+                "contract": contract["status"],
                 "session_id": session["session_id"],
                 "goal": session["goal_description"],
             },

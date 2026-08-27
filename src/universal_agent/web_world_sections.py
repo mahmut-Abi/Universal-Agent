@@ -31,6 +31,7 @@ def _world_facts(explorer: SessionExplorerView | None) -> str:
         _table(("Subject", "Claim", "Value", "Confidence", "Evidence"), tuple(rows)),
     )
 
+
 def _world_fact_history(explorer: SessionExplorerView | None) -> str:
     rows = []
     if explorer is not None:
@@ -54,6 +55,7 @@ def _world_fact_history(explorer: SessionExplorerView | None) -> str:
         "World Fact History",
         _table(("Subject", "Claim", "Current", "Conflicting", "Candidates"), tuple(rows)),
     )
+
 
 def _world_neighborhood(neighborhood: WorldNeighborhoodView | None) -> str:
     if neighborhood is None:
@@ -99,6 +101,7 @@ def _world_neighborhood(neighborhood: WorldNeighborhoodView | None) -> str:
         ),
     )
 
+
 def _world_entities(explorer: SessionExplorerView | None) -> str:
     rows = []
     if explorer is not None:
@@ -110,6 +113,7 @@ def _world_entities(explorer: SessionExplorerView | None) -> str:
         _table(("Entity", "Kind", "Attributes", "Evidence"), tuple(rows)),
     )
 
+
 def _world_relations(explorer: SessionExplorerView | None) -> str:
     rows = []
     if explorer is not None:
@@ -120,6 +124,7 @@ def _world_relations(explorer: SessionExplorerView | None) -> str:
         "World Relations",
         _table(("Source", "Relation", "Target", "Evidence"), tuple(rows)),
     )
+
 
 def _evidence(explorer: SessionExplorerView | None) -> str:
     rows = []
@@ -146,6 +151,7 @@ def _evidence(explorer: SessionExplorerView | None) -> str:
         _table(("Evidence", "Subject", "Claim", "Value", "Source", "Confidence"), tuple(rows)),
     )
 
+
 def _world_fact_rows(facts: tuple[Any, ...], *, empty: str) -> tuple[str, ...]:
     rows = tuple(
         "\n".join(
@@ -165,11 +171,13 @@ def _world_fact_rows(facts: tuple[Any, ...], *, empty: str) -> tuple[str, ...]:
         return rows
     return (f'<tr><td colspan="5">{_html(empty)}</td></tr>',)
 
+
 def _world_entity_rows(entities: tuple[Any, ...], *, empty: str) -> tuple[str, ...]:
     rows = tuple(_world_entity_row(entity) for entity in entities)
     if rows or not empty:
         return rows
     return (f'<tr><td colspan="4">{_html(empty)}</td></tr>',)
+
 
 def _world_entity_row(entity: Any) -> str:
     return "\n".join(
@@ -182,6 +190,7 @@ def _world_entity_row(entity: Any) -> str:
             "</tr>",
         )
     )
+
 
 def _world_relation_rows(relations: tuple[Any, ...], *, empty: str) -> tuple[str, ...]:
     rows = tuple(
@@ -201,6 +210,7 @@ def _world_relation_rows(relations: tuple[Any, ...], *, empty: str) -> tuple[str
         return rows
     return (f'<tr><td colspan="4">{_html(empty)}</td></tr>',)
 
+
 def _fact_history_candidates_text(candidates: tuple[Any, ...]) -> str:
     if not candidates:
         return "none"
@@ -213,4 +223,3 @@ def _fact_history_candidates_text(candidates: tuple[Any, ...]) -> str:
         )
         for candidate in candidates
     )
-

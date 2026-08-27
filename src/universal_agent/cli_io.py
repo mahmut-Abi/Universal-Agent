@@ -12,6 +12,7 @@ class CliExit(Exception):
     def __init__(self, status: int) -> None:
         self.status = status
 
+
 def _parse_key_value_options(values: Sequence[str], label: str) -> dict[str, str]:
     parsed: dict[str, str] = {}
     for value in values:
@@ -22,6 +23,7 @@ def _parse_key_value_options(values: Sequence[str], label: str) -> dict[str, str
             raise ValueError(f"duplicate {label}: {key}")
         parsed[key] = option_value
     return parsed
+
 
 def _success_criteria(values: Sequence[str]) -> tuple[SuccessCriterion, ...]:
     if not values:
@@ -37,12 +39,14 @@ def _success_criteria(values: Sequence[str]) -> tuple[SuccessCriterion, ...]:
         parsed[key] = _parse_success_json_value(raw_expected, key)
     return tuple(SuccessCriterion(key, expected) for key, expected in parsed.items())
 
+
 def _parse_success_json_value(value: str, key: str) -> JsonValue:
     try:
         loaded: object = json.loads(value)
     except json.JSONDecodeError as exc:
         raise ValueError(f"success criterion {key} must be valid JSON") from exc
     return _json_value(loaded, f"success.{key}")
+
 
 def _json_value(value: object, field: str) -> JsonValue:
     if value is None or isinstance(value, bool | int | float | str):
@@ -58,6 +62,7 @@ def _json_value(value: object, field: str) -> JsonValue:
         return result
     raise ValueError(f"{field} must be JSON-compatible")
 
+
 def _parse_domain_identity(value: str) -> DomainIdentity:
     if "@" not in value:
         raise ValueError(f"domain package dependency must be name@version: {value}")
@@ -66,15 +71,19 @@ def _parse_domain_identity(value: str) -> DomainIdentity:
         raise ValueError(f"domain package dependency must be name@version: {value}")
     return DomainIdentity(name, version)
 
+
 def _write_json(out: TextIO, payload: object) -> None:
     json.dump(_json_safe(payload), out, indent=2, sort_keys=True)
     out.write("\n")
 
+
 def _write_text(out: TextIO, payload: str) -> None:
     out.write(payload)
 
+
 def _write_error(out: TextIO, code: str, message: str) -> None:
     _write_json(out, {"error": {"code": code, "message": message}})
+
 
 def _json_safe(value: object) -> object:
     if value is None or isinstance(value, bool | int | float | str):
@@ -85,10 +94,12 @@ def _json_safe(value: object) -> object:
         return [_json_safe(item) for item in value]
     return str(value)
 
+
 def _optional_bool(value: str | None) -> bool | None:
     if value is None:
         return None
     return value == "true"
+
 
 def _parse_optional_datetime(value: str | None) -> datetime | None:
     if value is None:

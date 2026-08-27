@@ -72,6 +72,7 @@ class AgentdAuthPolicy:
     def enabled(self) -> bool:
         return self.bearer_token is not None or self.read_only_bearer_token is not None
 
+
 def json_response(body: JsonMapping, *, status_code: int = 200) -> HttpResponse:
     return HttpResponse(status_code=status_code, body=body)
 

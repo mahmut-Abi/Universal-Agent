@@ -8,6 +8,7 @@ from universal_agent.service import RuntimeService
 
 WebConsoleSnapshot = RuntimeConsoleSnapshot
 
+
 class WebCatalogPage(StrEnum):
     DOMAINS = "domains"
     DOMAIN_PACKAGES = "domain-packages"
@@ -16,6 +17,7 @@ class WebCatalogPage(StrEnum):
     POLICIES = "policies"
     EVALUATORS = "evaluators"
     MEMORY = "memory"
+
 
 async def build_web_console_snapshot(
     service: RuntimeService,
@@ -36,6 +38,7 @@ async def build_web_console_snapshot(
         world_entity_id=world_entity_id,
         world_relation=world_relation,
     )
+
 
 __all__ = [
     "WebCatalogPage",

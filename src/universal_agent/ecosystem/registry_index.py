@@ -216,5 +216,3 @@ def _reference_check(
     if not missing:
         return EcosystemCatalogCheck(name, True, passed_message)
     return EcosystemCatalogCheck(name, False, f"{failed_prefix}: {', '.join(missing)}")
-
-

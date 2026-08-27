@@ -50,6 +50,7 @@ def _domains(snapshot: WebConsoleSnapshot) -> str:
         ),
     )
 
+
 def _domain_details(domain: DomainView | None) -> str:
     if domain is None:
         return _section("Domain", '<p class="empty">No selected domain</p>')
@@ -67,6 +68,7 @@ def _domain_details(domain: DomainView | None) -> str:
         + "".join(f"<dt>{_html(label)}</dt><dd>{_html(value)}</dd>" for label, value in items)
         + "</dl>",
     )
+
 
 def _configured_domains(snapshot: WebConsoleSnapshot) -> str:
     rows = [
@@ -90,6 +92,7 @@ def _configured_domains(snapshot: WebConsoleSnapshot) -> str:
         _table(("Domain", "Version", "Primary", "Backend", "Settings"), tuple(rows)),
     )
 
+
 def _runtime_secrets(snapshot: WebConsoleSnapshot) -> str:
     rows = [
         "\n".join(
@@ -112,6 +115,7 @@ def _runtime_secrets(snapshot: WebConsoleSnapshot) -> str:
         _table(("Name", "Source", "Key", "Required", "Status"), tuple(rows)),
     )
 
+
 def _environment(snapshot: WebConsoleSnapshot) -> str:
     rows = [
         "\n".join(
@@ -127,6 +131,7 @@ def _environment(snapshot: WebConsoleSnapshot) -> str:
     if not rows:
         rows.append('<tr><td colspan="2">No environment settings</td></tr>')
     return _section("Environment", _table(("Key", "Value"), tuple(rows)))
+
 
 def _profiles(profiles: tuple[ProfileView, ...]) -> str:
     rows = [
@@ -149,6 +154,7 @@ def _profiles(profiles: tuple[ProfileView, ...]) -> str:
         "Profile Catalog",
         _table(("Profile", "Version", "Primary Domain", "Domains", "Description"), tuple(rows)),
     )
+
 
 def _domain_packages(packages: tuple[DomainPackageView, ...]) -> str:
     rows = [
@@ -191,6 +197,7 @@ def _domain_packages(packages: tuple[DomainPackageView, ...]) -> str:
         ),
     )
 
+
 def _capabilities(capabilities: tuple[CapabilityView, ...]) -> str:
     rows = [
         "\n".join(
@@ -213,6 +220,7 @@ def _capabilities(capabilities: tuple[CapabilityView, ...]) -> str:
         "Capability Catalog",
         _table(("Capability", "Category", "Risk", "Domain", "Tools", "Description"), tuple(rows)),
     )
+
 
 def _tools(tools: tuple[ToolView, ...]) -> str:
     rows = [
@@ -240,6 +248,7 @@ def _tools(tools: tuple[ToolView, ...]) -> str:
             tuple(rows),
         ),
     )
+
 
 def _policies(policies: tuple[PolicyView, ...]) -> str:
     rows = [
@@ -269,6 +278,7 @@ def _policies(policies: tuple[PolicyView, ...]) -> str:
         ),
     )
 
+
 def _evaluators(evaluators: tuple[EvaluatorView, ...]) -> str:
     rows = [
         "\n".join(
@@ -288,6 +298,7 @@ def _evaluators(evaluators: tuple[EvaluatorView, ...]) -> str:
         "Evaluator Catalog",
         _table(("Evaluator", "Type", "Domain"), tuple(rows)),
     )
+
 
 def _memory(memories: tuple[MemoryView, ...]) -> str:
     rows = [
@@ -315,6 +326,7 @@ def _memory(memories: tuple[MemoryView, ...]) -> str:
             tuple(rows),
         ),
     )
+
 
 def _domain_package_details(package: DomainPackageView | None) -> str:
     if package is None:
@@ -348,6 +360,7 @@ def _domain_package_details(package: DomainPackageView | None) -> str:
         + "</dl>",
     )
 
+
 def _domain_package_resources(package: DomainPackageView | None) -> str:
     rows = []
     if package is not None:
@@ -358,6 +371,7 @@ def _domain_package_resources(package: DomainPackageView | None) -> str:
     if not rows:
         rows.append("<tr><td>No package resources</td></tr>")
     return _section("Package Resources", _table(("Resource",), tuple(rows)))
+
 
 def _domain_package_security(package: DomainPackageView | None) -> str:
     if package is None:
@@ -375,6 +389,7 @@ def _domain_package_security(package: DomainPackageView | None) -> str:
         + "</dl>",
     )
 
+
 def _domain_package_active_domains(
     snapshot: WebConsoleSnapshot,
     package: DomainPackageView | None,
@@ -387,6 +402,7 @@ def _domain_package_active_domains(
         if domain.name == package.name and domain.version == package.version
     )
     return _section("Matching Active Domains", _domain_rows(matches))
+
 
 def _domain_package_profiles(
     snapshot: WebConsoleSnapshot,
@@ -423,6 +439,7 @@ def _domain_package_profiles(
         _table(("Profile", "Version", "Primary Domain", "Domains", "Description"), tuple(rows)),
     )
 
+
 def _domain_rows(domains: tuple[DomainView, ...]) -> str:
     rows = [
         "\n".join(
@@ -444,4 +461,3 @@ def _domain_rows(domains: tuple[DomainView, ...]) -> str:
     if not rows:
         rows.append('<tr><td colspan="4">No matching active domains</td></tr>')
     return _table(("Domain", "Primary", "Capabilities", "Evaluators"), tuple(rows))
-

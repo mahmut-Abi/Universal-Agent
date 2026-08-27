@@ -344,5 +344,3 @@ class EcosystemInstallResult:
     installed_domain_packages: tuple[DomainPackage, ...]
     installed_evaluation_datasets: tuple[EvaluationDataset, ...]
     installed_profiles: tuple[ProfileCatalogEntry, ...]
-
-

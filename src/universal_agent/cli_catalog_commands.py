@@ -44,6 +44,7 @@ def _dispatch_profile(
         return
     raise ValueError(f"unknown profile command: {command}")
 
+
 def _dispatch_domain_packages(
     args: argparse.Namespace,
     service: RuntimeService,
@@ -96,6 +97,7 @@ def _dispatch_domain_packages(
         return
     raise ValueError(f"unknown domain package command: {command}")
 
+
 def _domain_package_scaffold_spec(args: argparse.Namespace) -> DomainPackageScaffoldSpec:
     return DomainPackageScaffoldSpec(
         name=cast(str, args.name),
@@ -132,6 +134,7 @@ def _domain_package_scaffold_spec(args: argparse.Namespace) -> DomainPackageScaf
         runtime_stub=cast(bool, args.runtime_stub),
     )
 
+
 def domain_package_scaffold_body(result: DomainPackageScaffoldResult) -> dict[str, object]:
     package = result.package
     return {
@@ -144,6 +147,7 @@ def domain_package_scaffold_body(result: DomainPackageScaffoldResult) -> dict[st
         "written_paths": [str(path) for path in result.written_paths],
         "runtime_stub_paths": [str(path) for path in result.runtime_stub_paths],
     }
+
 
 def domain_package_runtime_activation_body(
     activation: DomainPackageRuntimeActivation,
@@ -177,6 +181,7 @@ def domain_package_runtime_activation_body(
         },
     }
 
+
 def domain_package_verification_body(
     report: DomainPackageVerificationReport,
 ) -> dict[str, object]:
@@ -192,6 +197,7 @@ def domain_package_verification_body(
             for check in report.checks
         ],
     }
+
 
 def profile_catalog_verification_body(
     report: ProfileCatalogVerificationReport,

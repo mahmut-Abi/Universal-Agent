@@ -97,6 +97,7 @@ def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:
         return
     raise ValueError(f"unknown ecosystem command: {command}")
 
+
 def _dispatch_ecosystem_store(args: argparse.Namespace, out: TextIO) -> None:
     store = FileEcosystemRegistryStore(cast(str, args.store_dir))
     command = cast(str, args.ecosystem_store_command)
@@ -133,12 +134,14 @@ def _dispatch_ecosystem_store(args: argparse.Namespace, out: TextIO) -> None:
         return
     raise ValueError(f"unknown ecosystem store command: {command}")
 
+
 def _load_ecosystem_catalog_from_args(args: argparse.Namespace) -> EcosystemCatalog:
     return load_ecosystem_catalog(
         domain_package_root=cast(str | None, args.domain_package_dir),
         evaluation_dataset_root=cast(str | None, args.dataset_dir),
         profile_root=cast(str | None, args.profile_dir),
     )
+
 
 def _ecosystem_catalog_body(catalog: EcosystemCatalog) -> dict[str, object]:
     summary = catalog.summary
@@ -158,8 +161,10 @@ def _ecosystem_catalog_body(catalog: EcosystemCatalog) -> dict[str, object]:
         "profiles": [_ecosystem_profile_body(entry) for entry in catalog.profiles],
     }
 
+
 def _ecosystem_verification_body(catalog: EcosystemCatalog) -> dict[str, object]:
     return _ecosystem_verification_report_body(catalog.verify())
+
 
 def _ecosystem_verification_report_body(
     report: EcosystemCatalogVerificationReport,
@@ -177,6 +182,7 @@ def _ecosystem_verification_report_body(
         ],
     }
 
+
 def _ecosystem_registry_summary_body(manifest: EcosystemRegistryManifest) -> dict[str, object]:
     return {
         "name": manifest.name,
@@ -189,6 +195,7 @@ def _ecosystem_registry_summary_body(manifest: EcosystemRegistryManifest) -> dic
             "total_items": manifest.summary.total_items,
         },
     }
+
 
 def _ecosystem_install_plan_body(plan: EcosystemInstallPlan) -> dict[str, object]:
     return {
@@ -205,6 +212,7 @@ def _ecosystem_install_plan_body(plan: EcosystemInstallPlan) -> dict[str, object
         ],
         "profiles": [_ecosystem_profile_body(candidate.entry) for candidate in plan.profiles],
     }
+
 
 def _ecosystem_install_result_body(result: EcosystemInstallResult) -> dict[str, object]:
     domain_package_registry_count = len(result.domain_packages.identities())
@@ -225,6 +233,7 @@ def _ecosystem_install_result_body(result: EcosystemInstallResult) -> dict[str, 
         ],
         "profiles": [_ecosystem_profile_body(entry) for entry in result.installed_profiles],
     }
+
 
 def _ecosystem_domain_package_body(package: DomainPackage) -> dict[str, object]:
     manifest = package.manifest
@@ -258,6 +267,7 @@ def _ecosystem_domain_package_body(package: DomainPackage) -> dict[str, object]:
         "root_path": str(package.root_path),
         "manifest_path": str(package.manifest_path),
     }
+
 
 def _ecosystem_profile_body(entry: ProfileCatalogEntry) -> dict[str, object]:
     profile = entry.profile

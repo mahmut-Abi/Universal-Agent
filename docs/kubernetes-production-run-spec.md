@@ -68,6 +68,9 @@ The command must:
 - keep production mutations paused for explicit confirmation;
 - return the normal runtime run body plus model probe, preflight, and a focused
   operator `next_step`;
+- return a deterministic `contract` report that summarizes model probe,
+  preflight, runtime submission, verification evidence, and confirmation
+  boundary status for operator review;
 - avoid storing or printing secret values.
 
 ## Non-Scope
@@ -111,7 +114,10 @@ Tests target these public interfaces:
 6. Enforce requested workload scope in deterministic Kubernetes mutation policy.
 7. Return an explicit `confirm_pending_action` next step when production policy
    pauses a remediation mutation.
-8. Document the operator flow and keep offline examples so the path remains
+8. Add a production contract report to `kubernetes check` and `kubernetes run`
+   outputs so skipped gates, fake backends, failed preflight checks and pending
+   confirmations are visible without reading the full session body.
+9. Document the operator flow and keep offline examples so the path remains
    easy to verify without a live cluster.
 
 ## Acceptance Criteria
@@ -139,7 +145,7 @@ Tests target these public interfaces:
   ```
 
 - Check runs model probe first, skips preflight when the model contract fails,
-  and does not submit a Runtime session.
+  does not submit a Runtime session, and includes a `contract` report.
 - A Kubernetes profile can run:
 
   ```bash
@@ -150,11 +156,13 @@ Tests target these public interfaces:
   ```
 
 - Failed model probe returns status `failed`, skips preflight, and submits no
-  Runtime session.
+  Runtime session; the `contract.status` is `failed`.
 - Failed preflight returns status `failed` and no Runtime session is submitted.
 - The runtime denies scoped Kubernetes mutations whose target resource or
   namespace differs from the `kubernetes run` request.
 - Production `scale_workload` decisions return status `waiting` with a
-  confirmation command instead of mutating immediately.
+  confirmation command instead of mutating immediately, while
+  `contract.checks.confirmation_boundary` remains `ok`.
 - Completed runs expose the normal session, evidence, world, and event surfaces
-  through existing session commands.
+  through existing session commands, and `contract.checks.completion_verification`
+  is `ok` only when the requested workload health criteria are present.

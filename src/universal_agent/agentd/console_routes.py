@@ -155,14 +155,10 @@ async def handle_console_route(
                 session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
                 event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
                 world_entity_id=(
-                    _optional_query_value(request.path, "entity_id")
-                    if is_world_explorer
-                    else None
+                    _optional_query_value(request.path, "entity_id") if is_world_explorer else None
                 ),
                 world_relation=(
-                    _optional_query_value(request.path, "relation")
-                    if is_world_explorer
-                    else None
+                    _optional_query_value(request.path, "relation") if is_world_explorer else None
                 ),
             )
         except StateNotFoundError as exc:
@@ -235,9 +231,7 @@ async def handle_console_route(
             return bad_request(str(exc))
         domain = _console_domain_view(snapshot, console_domain_name, console_domain_version)
         if domain is None:
-            return not_found(
-                _domain_not_found_message(console_domain_name, console_domain_version)
-            )
+            return not_found(_domain_not_found_message(console_domain_name, console_domain_version))
         return text_response(
             render_web_domain_detail(
                 snapshot,
@@ -273,14 +267,10 @@ async def handle_console_route(
                 session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
                 event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
                 world_entity_id=(
-                    _optional_query_value(request.path, "entity_id")
-                    if is_world_explorer
-                    else None
+                    _optional_query_value(request.path, "entity_id") if is_world_explorer else None
                 ),
                 world_relation=(
-                    _optional_query_value(request.path, "relation")
-                    if is_world_explorer
-                    else None
+                    _optional_query_value(request.path, "relation") if is_world_explorer else None
                 ),
             )
         except StateNotFoundError as exc:

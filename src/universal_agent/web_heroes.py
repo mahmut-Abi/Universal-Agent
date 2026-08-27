@@ -45,6 +45,7 @@ def _hero(snapshot: WebConsoleSnapshot) -> str:
         )
     )
 
+
 def _settings_hero(snapshot: WebConsoleSnapshot) -> str:
     ready_class = "ok" if snapshot.ready.ready else "warn"
     return "\n".join(
@@ -78,6 +79,7 @@ def _settings_hero(snapshot: WebConsoleSnapshot) -> str:
         )
     )
 
+
 def _domain_hero(snapshot: WebConsoleSnapshot, domain: DomainView | None) -> str:
     ready_class = "ok" if snapshot.ready.ready else "warn"
     domain_text = "No selected domain"
@@ -104,6 +106,7 @@ def _domain_hero(snapshot: WebConsoleSnapshot, domain: DomainView | None) -> str
             "</section>",
         )
     )
+
 
 def _profile_hero(snapshot: WebConsoleSnapshot) -> str:
     ready_class = "ok" if snapshot.ready.ready else "warn"
@@ -135,6 +138,7 @@ def _profile_hero(snapshot: WebConsoleSnapshot) -> str:
         )
     )
 
+
 def _domain_package_hero(
     snapshot: WebConsoleSnapshot,
     package: DomainPackageView | None,
@@ -164,6 +168,7 @@ def _domain_package_hero(
             "</section>",
         )
     )
+
 
 def _catalog_hero(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> str:
     ready_class = "ok" if snapshot.ready.ready else "warn"
@@ -196,6 +201,7 @@ def _catalog_hero(snapshot: WebConsoleSnapshot, catalog: WebCatalogPage) -> str:
         )
     )
 
+
 def _sessions_hero(snapshot: WebConsoleSnapshot) -> str:
     ready_class = "ok" if snapshot.ready.ready else "warn"
     return "\n".join(
@@ -226,6 +232,7 @@ def _sessions_hero(snapshot: WebConsoleSnapshot) -> str:
         )
     )
 
+
 def _doctor_hero(snapshot: WebConsoleSnapshot, doctor: DoctorReportView) -> str:
     ready_class = "ok" if snapshot.ready.ready else "warn"
     doctor_class = _status_class(doctor.status)
@@ -251,6 +258,7 @@ def _doctor_hero(snapshot: WebConsoleSnapshot, doctor: DoctorReportView) -> str:
             "</section>",
         )
     )
+
 
 def _distributed_hero(
     snapshot: WebConsoleSnapshot,
@@ -280,6 +288,7 @@ def _distributed_hero(
         )
     )
 
+
 def _multi_agent_hero(snapshot: WebConsoleSnapshot) -> str:
     ready_class = "ok" if snapshot.ready.ready else "warn"
     status = "enabled" if snapshot.multi_agent.enabled else "not configured"
@@ -304,6 +313,7 @@ def _multi_agent_hero(snapshot: WebConsoleSnapshot) -> str:
             "</section>",
         )
     )
+
 
 def _session_scoped_hero(snapshot: WebConsoleSnapshot, title: str) -> str:
     ready_class = "ok" if snapshot.ready.ready else "warn"
@@ -330,6 +340,7 @@ def _session_scoped_hero(snapshot: WebConsoleSnapshot, title: str) -> str:
         )
     )
 
+
 def _session_nav(session: SessionView | None) -> str:
     links = [
         '<a class="pill link" href="/console">Console</a>',
@@ -347,4 +358,3 @@ def _session_nav(session: SessionView | None) -> str:
             )
         )
     return "".join(links)
-

@@ -57,7 +57,9 @@ cluster preflight.
 
 Use `kubernetes check` as the normal production pre-run gate. It runs
 `model-probe` first and only proceeds to Kubernetes preflight if the model
-contract is valid.
+contract is valid. The JSON response includes a `contract` report summarizing
+whether the model probe, preflight checks and non-blocking warnings are
+production-ready.
 
 ```bash
 .venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes check production-operator --workload deployment/api --namespace prod
@@ -71,7 +73,8 @@ contract is valid.
 Use `kubernetes run` for the first production-oriented Kubernetes flow. It runs
 model probe and preflight by default, submits a health-remediation goal scoped
 to the requested workload and namespace, and returns the normal runtime session
-body plus a focused `next_step` for operators. Use `--skip-model-probe` only
+body plus a focused `contract` report and `next_step` for operators. Use
+`--skip-model-probe` only
 when intentionally reusing a recently validated model endpoint while still
 running Kubernetes preflight. Use `--skip-preflight` only when intentionally
 skipping all pre-run checks. If the model proposes `scale_workload` outside that

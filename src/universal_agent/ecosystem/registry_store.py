@@ -62,5 +62,3 @@ class FileEcosystemRegistryStore:
         _require_non_empty(name, "registry name")
         _require_non_empty(version, "registry version")
         return self._root / f"{quote(name, safe='')}@{quote(version, safe='')}.json"
-
-

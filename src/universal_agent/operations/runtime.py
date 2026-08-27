@@ -21,6 +21,7 @@ _TERMINAL_EVENT_BY_GOAL_STATUS = {
     GoalStatus.CANCELLED: "GoalCancelled",
 }
 
+
 def build_runtime_metrics(
     sessions: tuple[SessionSummaryView, ...],
     events: tuple[RuntimeEventView, ...],

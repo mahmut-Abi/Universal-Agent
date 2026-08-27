@@ -153,6 +153,8 @@ Expected:
 
 - `model_probe.status` is `ok`.
 - `preflight.status` is `ok`.
+- `contract.status` is `ok` for a fully ready real backend, or `attention` if a
+  non-blocking warning such as the fake backend is present.
 - `next_step.type` is `run_kubernetes_remediation`.
 
 Use `--skip-cluster` only when validating profile/model shape without touching a
@@ -177,12 +179,16 @@ Expected successful no-mutation run:
 - `model_probe.status` is `ok`.
 - `preflight.status` is `ok`.
 - `run.result.status` is `completed`.
+- `contract.checks.completion_verification.status` is `ok`.
 - session evidence and world state include fresh workload health.
 
 Expected production mutation run:
 
 - top-level `status` is `waiting`.
 - `run.session.pending_action.capability` is `scale_workload`.
+- `contract.checks.confirmation_boundary.status` is `ok`.
+- `contract.checks.completion_verification.status` is `skipped` until the
+  mutation is explicitly confirmed and re-verified.
 - `next_step.type` is `confirm_pending_action`.
 - no mutation has executed yet.
 

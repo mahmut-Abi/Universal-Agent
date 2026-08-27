@@ -282,7 +282,9 @@ detect accidental split state/event wiring. These adapters are local persistence
   OpenAI-compatible Chat Completions path for older `/v1/chat/completions` deployments, and
   `OpenAIResponsesModelAdapter` adds a direct `httpx`-backed OpenAI Responses provider path. Both
   request structured `Decision` JSON and still validate the decoded decision locally before the
-  Runtime acts.
+  Runtime acts. Kubernetes `check` and `run` responses now include a deterministic production
+  `contract` report covering model probe, preflight, runtime submission, verification evidence and
+  confirmation-boundary status for operator review.
 - P3.6/P3.7 foundation: event-derived `metrics`, Prometheus metrics text export, `cost`, `logs`,
   `traces`, OTLP trace export, `doctor` and `audit` projections exposed through RuntimeService,
   agentd-shaped routes and CLI commands, plus optional

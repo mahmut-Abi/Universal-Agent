@@ -38,6 +38,7 @@ async def main() -> None:
                 "status": payload["status"],
                 "model_probe": cast(dict[str, Any], payload["model_probe"])["status"],
                 "preflight": cast(dict[str, Any], payload["preflight"])["status"],
+                "contract": cast(dict[str, Any], payload["contract"])["status"],
                 "next_step": cast(dict[str, Any], payload["next_step"])["type"],
             },
             indent=2,

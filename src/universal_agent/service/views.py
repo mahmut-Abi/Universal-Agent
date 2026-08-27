@@ -373,6 +373,7 @@ class SessionExplorerView:
     world_relations: tuple[WorldRelationView, ...] = ()
     world_fact_histories: tuple[WorldFactHistoryView, ...] = ()
 
+
 def _multi_agent_instance_status_count(
     instances: tuple[MultiAgentInstanceView, ...],
     status: AgentInstanceStatus,

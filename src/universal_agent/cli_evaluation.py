@@ -169,10 +169,12 @@ async def _dispatch_eval(
         return
     raise ValueError(f"unknown eval command: {command}")
 
+
 def _evaluation_dataset_registry(args: argparse.Namespace) -> EvaluationDatasetRegistry:
     registry = EvaluationDatasetRegistry()
     registry.discover(Path(cast(str, args.dataset_dir)))
     return registry
+
 
 def _evaluation_selector(args: argparse.Namespace) -> EvaluationScenarioSelector | None:
     kinds = cast(list[str] | None, args.kind)
@@ -185,6 +187,7 @@ def _evaluation_selector(args: argparse.Namespace) -> EvaluationScenarioSelector
         tags=tuple(tags or ()),
         exclude_tags=tuple(exclude_tags or ()),
     )
+
 
 async def _dispatch_eval_replay(
     args: argparse.Namespace,
@@ -232,14 +235,17 @@ async def _dispatch_eval_replay(
         "scenarios": [_replay_report_body(report) for report in reports],
     }
 
+
 def _evaluation_suite(args: argparse.Namespace) -> EvaluationSuite:
     return _evaluation_suite_config(args).suite
+
 
 def _evaluation_suite_config(args: argparse.Namespace) -> EvaluationSuiteConfig:
     suite_file = cast(str | None, args.suite_file)
     if suite_file is not None:
         return load_evaluation_suite_config(suite_file)
     return EvaluationSuiteConfig(_local_evaluation_suite(cast(str, args.suite)))
+
 
 def _evaluation_quality_gate(
     args: argparse.Namespace,
@@ -333,6 +339,7 @@ def _evaluation_quality_gate(
         else base.max_total_model_estimated_cost_micros,
     )
 
+
 def _local_evaluation_suite(name: str) -> EvaluationSuite:
     goal = Goal("Evaluate workload health", (SuccessCriterion("healthy", True),))
     task = Task("Inspect workload", ("healthy",))
@@ -373,9 +380,11 @@ def _local_evaluation_suite(name: str) -> EvaluationSuite:
         tags=("local", "kubernetes"),
     )
 
+
 def _load_evaluation_report(path: Path) -> EvaluationReportRecording:
     with path.open("r", encoding="utf-8") as handle:
         return decode_evaluation_report(json_mapping(json.load(handle)))
+
 
 def _evaluation_run_body(
     result: EvaluationRunResult,
@@ -390,6 +399,7 @@ def _evaluation_run_body(
         "report_dir": report_dir,
     }
 
+
 def _evaluation_reports_body(
     report_dir: str,
     reports: tuple[EvaluationReportRecording, ...],
@@ -399,6 +409,7 @@ def _evaluation_reports_body(
         "report_count": len(reports),
         "reports": [_evaluation_report_summary_body(item) for item in reports],
     }
+
 
 def _evaluation_report_summary_body(recording: EvaluationReportRecording) -> dict[str, object]:
     return {
@@ -416,6 +427,7 @@ def _evaluation_report_summary_body(recording: EvaluationReportRecording) -> dic
         "model_estimated_cost_micros": recording.summary.model_estimated_cost_micros,
     }
 
+
 def _evaluation_list_body(
     suite: EvaluationSuite,
     scenarios: tuple[EvaluationScenario, ...],
@@ -426,6 +438,7 @@ def _evaluation_list_body(
         "scenario_count": len(scenarios),
         "scenarios": [_evaluation_scenario_definition_body(item) for item in scenarios],
     }
+
 
 def evaluation_dataset_verification_body(
     report: EvaluationDatasetVerificationReport,
@@ -442,6 +455,7 @@ def evaluation_dataset_verification_body(
             for check in report.checks
         ],
     }
+
 
 def _evaluation_dataset_body(dataset: EvaluationDataset) -> dict[str, object]:
     return {
@@ -468,6 +482,7 @@ def _evaluation_dataset_body(dataset: EvaluationDataset) -> dict[str, object]:
         "manifest_path": str(dataset.manifest_path),
     }
 
+
 def _evaluation_scenario_definition_body(scenario: EvaluationScenario) -> dict[str, object]:
     return {
         "scenario_name": scenario.name,
@@ -483,6 +498,7 @@ def _evaluation_scenario_definition_body(scenario: EvaluationScenario) -> dict[s
         },
     }
 
+
 def _evaluation_report_body(recording: EvaluationReportRecording) -> dict[str, object]:
     return {
         "suite_name": recording.suite_name,
@@ -490,6 +506,7 @@ def _evaluation_report_body(recording: EvaluationReportRecording) -> dict[str, o
         "summary": _evaluation_summary_body(recording.summary),
         "scenarios": [_evaluation_scenario_body(item) for item in recording.scenarios],
     }
+
 
 def _evaluation_summary_body(summary: EvaluationSummaryRecording) -> dict[str, object]:
     return {
@@ -512,6 +529,7 @@ def _evaluation_summary_body(summary: EvaluationSummaryRecording) -> dict[str, o
         "model_estimated_cost_micros": summary.model_estimated_cost_micros,
     }
 
+
 def _evaluation_scenario_body(scenario: EvaluationScenarioRecording) -> dict[str, object]:
     return {
         "scenario_name": scenario.scenario_name,
@@ -528,14 +546,17 @@ def _evaluation_scenario_body(scenario: EvaluationScenarioRecording) -> dict[str
         "evidence_claims": list(scenario.evidence_claims),
     }
 
+
 def _evaluation_gate_body(gate: EvaluationGateRecording) -> dict[str, object]:
     return {
         "passed": gate.passed,
         "checks": [_evaluation_check_body(check) for check in gate.checks],
     }
 
+
 def _evaluation_check_body(check: EvaluationCheckRecording) -> dict[str, object]:
     return {"name": check.name, "passed": check.passed, "message": check.message}
+
 
 def _replay_report_body(report: ReplayReport) -> dict[str, object]:
     return {
@@ -547,6 +568,7 @@ def _replay_report_body(report: ReplayReport) -> dict[str, object]:
         "actual": encode_replay_recording(report.actual),
     }
 
+
 def _replay_recordings_body(
     recording_dir: str,
     recordings: tuple[ReplayRecording, ...],
@@ -556,6 +578,7 @@ def _replay_recordings_body(
         "recording_count": len(recordings),
         "recordings": [_replay_recording_summary_body(item) for item in recordings],
     }
+
 
 def _replay_recording_summary_body(recording: ReplayRecording) -> dict[str, object]:
     return {
@@ -574,8 +597,10 @@ def _replay_recording_summary_body(recording: ReplayRecording) -> dict[str, obje
         "audit_capabilities": [item.capability for item in recording.audit_entries],
     }
 
+
 def _replay_check_body(check: ReplayCheck) -> dict[str, object]:
     return {"name": check.name, "passed": check.passed, "message": check.message}
+
 
 def _evaluation_comparison_body(comparison: EvaluationReportComparison) -> dict[str, object]:
     return {
@@ -583,6 +608,7 @@ def _evaluation_comparison_body(comparison: EvaluationReportComparison) -> dict[
         "checks": [_comparison_check_body(check) for check in comparison.checks],
         "failed_checks": [_comparison_check_body(check) for check in comparison.failed_checks],
     }
+
 
 def _comparison_check_body(check: EvaluationReportComparisonCheck) -> dict[str, object]:
     return {

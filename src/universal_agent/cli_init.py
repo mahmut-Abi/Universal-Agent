@@ -59,6 +59,7 @@ def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
     tmp_path.replace(output)
     _write_json(out, {"status": "created", "profile": profile_name, "path": str(output)})
 
+
 def _profile_config_payload(
     *,
     profile_name: str,
@@ -164,6 +165,7 @@ def _profile_config_payload(
         "runtime": runtime,
     }
 
+
 def _single_secret_source(
     label: str,
     *,
@@ -178,6 +180,7 @@ def _single_secret_source(
         return ("file", file_path)
     return None
 
+
 def _add_secret(
     secrets: dict[str, dict[str, object]],
     name: str,
@@ -191,6 +194,7 @@ def _add_secret(
     if name in secrets:
         raise ValueError(f"duplicate runtime secret: {name}")
     secrets[name] = {"source": source_name, "key": key, "required": True}
+
 
 def _profile_model_config(
     *,

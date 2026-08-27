@@ -9,27 +9,7 @@ from urllib.parse import quote
 import httpx
 
 from universal_agent.core import JsonMapping, JsonValue, immutable_json
-from universal_agent.domains.kubernetes.kubectl import (
-    _bool,
-    _condition_list,
-    _container_statuses,
-    _container_summary,
-    _event_summary,
-    _items,
-    _json_object,
-    _node_ready,
-    _object,
-    _optional_int,
-    _optional_resource_version,
-    _optional_string,
-    _pod_root_cause,
-    _positive_int,
-    _required_int,
-    _resource_ref,
-    _stable_mutation_id,
-    _string,
-    _workload_root_cause,
-)
+from universal_agent.domains.kubernetes import resources as k8s
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,9 +173,9 @@ class KubernetesApiBackend:
     async def _inspect_cluster(self) -> JsonMapping:
         nodes = await self._request_json("GET", "/api/v1/nodes")
         namespaces = await self._request_json("GET", "/api/v1/namespaces")
-        node_items = _items(nodes)
-        namespace_items = _items(namespaces)
-        ready_nodes = sum(1 for node in node_items if _node_ready(node))
+        node_items = k8s.items(nodes)
+        namespace_items = k8s.items(namespaces)
+        ready_nodes = sum(1 for node in node_items if k8s.node_ready(node))
         return immutable_json(
             {
                 "resource": "cluster",
@@ -207,21 +187,21 @@ class KubernetesApiBackend:
         )
 
     async def _inspect_workload(self, arguments: JsonMapping) -> JsonMapping:
-        ref = _resource_ref(
+        ref = k8s.resource_ref(
             arguments,
             default_kind="deployment",
             default_namespace=self._default_namespace,
         )
         payload = await self._request_json("GET", _workload_path(ref.kind, ref.namespace, ref.name))
-        metadata = _object(payload.get("metadata"))
-        spec = _object(payload.get("spec"))
-        status = _object(payload.get("status"))
-        desired = _optional_int(spec.get("replicas"))
+        metadata = k8s.object_value(payload.get("metadata"))
+        spec = k8s.object_value(payload.get("spec"))
+        status = k8s.object_value(payload.get("status"))
+        desired = k8s.optional_int(spec.get("replicas"))
         if desired is None:
             desired = 1
-        ready = _optional_int(status.get("readyReplicas")) or 0
-        available = _optional_int(status.get("availableReplicas"))
-        updated = _optional_int(status.get("updatedReplicas")) or 0
+        ready = k8s.optional_int(status.get("readyReplicas")) or 0
+        available = k8s.optional_int(status.get("availableReplicas"))
+        updated = k8s.optional_int(status.get("updatedReplicas")) or 0
         healthy = ready >= desired and (available is None or available >= desired)
         result: dict[str, JsonValue] = {
             "resource": ref.resource,
@@ -233,56 +213,56 @@ class KubernetesApiBackend:
             "ready_replicas": ready,
             "available_replicas": available or 0,
             "updated_replicas": updated,
-            "generation": _optional_int(metadata.get("generation")) or 0,
-            "observed_generation": _optional_int(status.get("observedGeneration")) or 0,
-            "resource_version": _string(metadata.get("resourceVersion")),
-            "conditions": _condition_list(status.get("conditions")),
+            "generation": k8s.optional_int(metadata.get("generation")) or 0,
+            "observed_generation": k8s.optional_int(status.get("observedGeneration")) or 0,
+            "resource_version": k8s.string_value(metadata.get("resourceVersion")),
+            "conditions": k8s.condition_list(status.get("conditions")),
         }
         if not healthy:
-            result["root_cause"] = _workload_root_cause(desired, ready, status.get("conditions"))
+            result["root_cause"] = k8s.workload_root_cause(desired, ready, status.get("conditions"))
         return immutable_json(result)
 
     async def _inspect_pod(self, arguments: JsonMapping) -> JsonMapping:
-        ref = _resource_ref(
+        ref = k8s.resource_ref(
             arguments,
             default_kind="pod",
             default_namespace=self._default_namespace,
         )
         payload = await self._request_json("GET", _pod_path(ref.namespace, ref.name))
-        metadata = _object(payload.get("metadata"))
-        status = _object(payload.get("status"))
-        container_statuses = _container_statuses(status.get("containerStatuses"))
+        metadata = k8s.object_value(payload.get("metadata"))
+        status = k8s.object_value(payload.get("status"))
+        container_statuses = k8s.container_statuses(status.get("containerStatuses"))
         ready = bool(container_statuses) and all(
-            _bool(item.get("ready")) for item in container_statuses
+            k8s.bool_value(item.get("ready")) for item in container_statuses
         )
         restart_count = sum(
-            _optional_int(item.get("restartCount")) or 0 for item in container_statuses
+            k8s.optional_int(item.get("restartCount")) or 0 for item in container_statuses
         )
         result: dict[str, JsonValue] = {
             "resource": ref.resource,
             "namespace": ref.namespace,
             "kind": ref.kind,
             "name": ref.name,
-            "phase": _string(status.get("phase")),
+            "phase": k8s.string_value(status.get("phase")),
             "ready": ready,
             "restart_count": restart_count,
-            "resource_version": _string(metadata.get("resourceVersion")),
-            "containers": [_container_summary(item) for item in container_statuses],
+            "resource_version": k8s.string_value(metadata.get("resourceVersion")),
+            "containers": [k8s.container_summary(item) for item in container_statuses],
         }
-        root_cause = _pod_root_cause(result["phase"], ready, container_statuses)
+        root_cause = k8s.pod_root_cause(result["phase"], ready, container_statuses)
         if root_cause:
             result["root_cause"] = root_cause
         return immutable_json(result)
 
     async def _inspect_logs(self, arguments: JsonMapping) -> JsonMapping:
-        ref = _resource_ref(
+        ref = k8s.resource_ref(
             arguments,
             default_kind="pod",
             default_namespace=self._default_namespace,
         )
-        tail_lines = _positive_int(arguments.get("tail_lines"), default=100)
+        tail_lines = k8s.positive_int(arguments.get("tail_lines"), default=100)
         query = {"tailLines": str(tail_lines)}
-        container = _optional_string(arguments.get("container"))
+        container = k8s.optional_string(arguments.get("container"))
         if container is not None:
             query["container"] = container
         response = await self._request("GET", _pod_log_path(ref.namespace, ref.name), query=query)
@@ -298,18 +278,18 @@ class KubernetesApiBackend:
         )
 
     async def _inspect_events(self, arguments: JsonMapping) -> JsonMapping:
-        ref = _resource_ref(
+        ref = k8s.resource_ref(
             arguments,
             default_kind="deployment",
             default_namespace=self._default_namespace,
         )
-        limit = _positive_int(arguments.get("limit"), default=20)
+        limit = k8s.positive_int(arguments.get("limit"), default=20)
         payload = await self._request_json(
             "GET",
             _events_path(ref.namespace),
             query={"fieldSelector": f"involvedObject.name={ref.name}"},
         )
-        events = [_event_summary(item) for item in _items(payload)]
+        events = [k8s.event_summary(item) for item in k8s.items(payload)]
         return immutable_json(
             {
                 "resource": ref.resource,
@@ -320,23 +300,23 @@ class KubernetesApiBackend:
         )
 
     async def _scale_workload(self, arguments: JsonMapping) -> JsonMapping:
-        ref = _resource_ref(
+        ref = k8s.resource_ref(
             arguments,
             default_kind="deployment",
             default_namespace=self._default_namespace,
         )
-        replicas = _required_int(arguments, "replicas")
+        replicas = k8s.required_int(arguments, "replicas")
         before = await self._request_json("GET", _workload_path(ref.kind, ref.namespace, ref.name))
-        metadata = _object(before.get("metadata"))
-        spec = _object(before.get("spec"))
-        previous = _optional_int(spec.get("replicas")) or 0
-        current = _optional_int(arguments.get("current_replicas"))
+        metadata = k8s.object_value(before.get("metadata"))
+        spec = k8s.object_value(before.get("spec"))
+        previous = k8s.optional_int(spec.get("replicas")) or 0
+        current = k8s.optional_int(arguments.get("current_replicas"))
         if current is not None and current != previous:
             raise KubernetesApiConflictError(
                 f"current replicas mismatch: expected {current}, observed {previous}"
             )
-        observed_resource_version = _string(metadata.get("resourceVersion"))
-        expected_resource_version = _optional_resource_version(arguments.get("resource_version"))
+        observed_resource_version = k8s.string_value(metadata.get("resourceVersion"))
+        expected_resource_version = k8s.optional_resource_version(arguments.get("resource_version"))
         if (
             expected_resource_version is not None
             and observed_resource_version
@@ -355,7 +335,7 @@ class KubernetesApiBackend:
             body=immutable_json(body),
             headers={"content-type": "application/merge-patch+json"},
         )
-        response_metadata = _object(response.get("metadata"))
+        response_metadata = k8s.object_value(response.get("metadata"))
         return immutable_json(
             {
                 "resource": ref.resource,
@@ -364,8 +344,8 @@ class KubernetesApiBackend:
                 "previous_replicas": previous,
                 "replicas": replicas,
                 "resource_version": observed_resource_version,
-                "mutation_id": _stable_mutation_id(
-                    _string(response_metadata.get("resourceVersion"))
+                "mutation_id": k8s.stable_mutation_id(
+                    k8s.string_value(response_metadata.get("resourceVersion"))
                     or f"{ref.resource} scaled to {replicas}"
                 ),
             }
@@ -386,7 +366,7 @@ class KubernetesApiBackend:
             payload = _decode_optional_json(response.text)
         if not isinstance(payload, dict):
             raise KubernetesApiError("Kubernetes API returned JSON that was not an object")
-        return _json_object(payload)
+        return k8s.json_object(payload)
 
     async def _request(
         self,

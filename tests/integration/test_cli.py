@@ -1645,6 +1645,8 @@ async def test_cli_kubernetes_check_runs_model_probe_then_preflight() -> None:
     assert payload["model_probe"]["status"] == "ok"
     assert payload["model_probe"]["decision"]["capability"] == "inspect_workload"
     assert payload["preflight"]["status"] == "ok"
+    assert payload["contract"]["status"] == "attention"
+    assert payload["contract"]["warning_check_count"] == 1
     assert checks["cluster_inspection"]["status"] == "ok"
     assert checks["workload_inspection"]["status"] == "ok"
     assert payload["next_step"]["type"] == "run_kubernetes_remediation"
@@ -1695,6 +1697,8 @@ async def test_cli_kubernetes_check_stops_before_preflight_when_model_probe_fail
     assert payload["status"] == "failed"
     assert payload["model_probe"]["status"] == "failed"
     assert payload["preflight"] is None
+    assert payload["contract"]["status"] == "failed"
+    assert payload["contract"]["failed_check_count"] == 1
     assert payload["next_step"]["type"] == "fix_model_provider"
 
 
@@ -1740,6 +1744,8 @@ async def test_cli_kubernetes_run_submits_production_workload_goal() -> None:
         "namespace": "prod",
     }
     assert payload["preflight"] is None
+    assert payload["contract"]["status"] == "attention"
+    assert payload["contract"]["warning_check_count"] == 2
     assert payload["next_step"] is None
     assert run["result"]["status"] == "completed"
     assert (
@@ -1794,6 +1800,10 @@ async def test_cli_kubernetes_run_reports_confirmation_next_step() -> None:
     assert payload["status"] == "waiting"
     assert run["result"]["status"] == "waiting"
     assert session["pending_action"]["capability"] == "scale_workload"
+    assert payload["contract"]["status"] == "attention"
+    contract_checks = {item["name"]: item for item in payload["contract"]["checks"]}
+    assert contract_checks["confirmation_boundary"]["status"] == "ok"
+    assert contract_checks["completion_verification"]["status"] == "skipped"
     assert next_step["type"] == "confirm_pending_action"
     assert "--profile-config profile.json session resume" in next_step["command"]
     assert "--confirmed true" in next_step["command"]
@@ -1838,6 +1848,10 @@ async def test_cli_kubernetes_run_can_skip_model_probe_but_still_run_preflight()
     assert payload["status"] == "completed"
     assert payload["model_probe"] is None
     assert preflight["status"] == "ok"
+    assert payload["contract"]["status"] == "attention"
+    contract_checks = {item["name"]: item for item in payload["contract"]["checks"]}
+    assert contract_checks["model_probe"]["status"] == "warn"
+    assert contract_checks["completion_verification"]["status"] == "ok"
     assert run["result"]["status"] == "completed"
     assert backend.inspect_calls == 1
 
@@ -1884,6 +1898,8 @@ async def test_cli_kubernetes_run_stops_before_runtime_when_preflight_fails() ->
     assert payload["status"] == "failed"
     assert payload["model_probe"]["status"] == "ok"
     assert payload["run"] is None
+    assert payload["contract"]["status"] == "failed"
+    assert payload["contract"]["failed_check_count"] == 2
     assert payload["next_step"]["type"] == "fix_preflight"
     assert checks["model_secret"]["status"] == "failed"
     assert backend.inspect_calls == 0
@@ -1946,6 +1962,8 @@ async def test_cli_kubernetes_run_stops_before_preflight_when_model_probe_fails(
     assert payload["model_probe"]["status"] == "failed"
     assert payload["preflight"] is None
     assert payload["run"] is None
+    assert payload["contract"]["status"] == "failed"
+    assert payload["contract"]["failed_check_count"] == 1
     assert payload["next_step"]["type"] == "fix_model_provider"
 
 

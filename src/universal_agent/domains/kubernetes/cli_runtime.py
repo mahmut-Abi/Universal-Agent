@@ -35,6 +35,8 @@ PREFLIGHT_CAPABILITIES = (
 )
 
 ModelAdapterBuilder = Callable[..., ModelAdapter]
+
+
 def local_domain() -> DomainConfig:
     return DomainConfig("kubernetes", "0.2.0")
 
@@ -251,6 +253,8 @@ def profile_domain_config(
         domain["settings"] = settings
         return domain
     raise ValueError(f"unsupported domain backend: {domain_backend}")
+
+
 def setting_string(settings: JsonMapping, key: str, *, default: str) -> str:
     value = settings.get(key, default)
     if isinstance(value, str) and value.strip():
