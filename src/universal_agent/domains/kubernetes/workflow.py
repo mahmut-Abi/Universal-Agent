@@ -1,6 +1,19 @@
 from __future__ import annotations
 
+from universal_agent.core import JsonValue
 from universal_agent.tasks import TaskExpansionContext, TaskSpec
+
+_POD_LOG_ROOT_CAUSES = frozenset(
+    {
+        "crash_loop_back_off",
+        "containers_not_ready",
+        "create_container_config_error",
+        "create_container_error",
+        "err_image_pull",
+        "image_pull_back_off",
+        "pending",
+    }
+)
 
 
 class KubernetesRemediationExpander:
@@ -8,6 +21,7 @@ class KubernetesRemediationExpander:
     capability_names = (
         "inspect_workload",
         "inspect_pod",
+        "inspect_logs",
         "inspect_events",
         "scale_workload",
     )
@@ -32,11 +46,22 @@ class KubernetesRemediationExpander:
                 )
             )
 
+        root_cause = facts.get("root_cause")
         if (
-            facts.get("root_cause") == "under_replicated"
-            and facts.get("mutation_applied") is None
-            and "root_cause" in current_criteria
+            root_cause in _POD_LOG_ROOT_CAUSES
+            and facts.get("pod_diagnostics_observed") is None
+            and _has_owned_pod(facts.get("relation:owns"))
         ):
+            specs.append(
+                TaskSpec(
+                    "collect-pod-diagnostics",
+                    "Collect logs from the failing Kubernetes pod",
+                    ("pod_diagnostics_observed",),
+                    depends_on,
+                )
+            )
+
+        if root_cause == "under_replicated" and facts.get("mutation_applied") is None:
             specs.append(
                 TaskSpec(
                     "remediate-unhealthy-workload",
@@ -71,3 +96,13 @@ class KubernetesRemediationExpander:
             )
 
         return tuple(specs)
+
+
+def _has_owned_pod(value: JsonValue | None) -> bool:
+    if isinstance(value, str):
+        return value.startswith("pod/") and value != "pod/"
+    if isinstance(value, list):
+        return any(
+            isinstance(item, str) and item.startswith("pod/") and item != "pod/" for item in value
+        )
+    return False

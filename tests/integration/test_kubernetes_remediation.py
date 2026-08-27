@@ -105,6 +105,74 @@ class RemediationBackend:
         )
 
 
+class DirectRootCauseBackend(RemediationBackend):
+    async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
+        self.inspect_calls.append(capability)
+        if capability != "inspect_workload":
+            raise AssertionError(f"unexpected inspection capability: {capability}")
+        if self._scaled:
+            return immutable_json(
+                {
+                    "resource": "deployment/example",
+                    "healthy": True,
+                    "desired_replicas": 3,
+                    "ready_replicas": 3,
+                    "verification_observed": True,
+                }
+            )
+        return immutable_json(
+            {
+                "resource": "deployment/example",
+                "healthy": False,
+                "desired_replicas": 3,
+                "ready_replicas": 1,
+                "resource_version": "rv-before",
+                "root_cause": "under_replicated",
+            }
+        )
+
+
+class CrashLoopBackend(RemediationBackend):
+    async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
+        self.inspect_calls.append(capability)
+        if capability == "inspect_workload":
+            return immutable_json(
+                {
+                    "resource": "deployment/example",
+                    "namespace": "default",
+                    "healthy": False,
+                    "desired_replicas": 1,
+                    "ready_replicas": 0,
+                    "root_cause": "crash_loop_back_off",
+                    "pods": [
+                        {
+                            "resource": "pod/example-123",
+                            "namespace": "default",
+                            "name": "example-123",
+                            "phase": "Running",
+                            "ready": False,
+                            "restart_count": 7,
+                            "resource_version": "rv-pod",
+                            "root_cause": "crash_loop_back_off",
+                        }
+                    ],
+                }
+            )
+        if capability == "inspect_logs":
+            return immutable_json(
+                {
+                    "resource": "pod/example-123",
+                    "namespace": "default",
+                    "line_count": 1,
+                    "recent_logs": "application failed during startup",
+                }
+            )
+        raise AssertionError(f"unexpected inspection capability: {capability}")
+
+    async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
+        raise AssertionError(f"unexpected mutation capability: {capability}")
+
+
 def inspect_decision(capability: str, *observations: str) -> Decision:
     return Decision(
         DecisionType.EXECUTE,
@@ -133,6 +201,17 @@ def scale_decision(
             {"name": workload_name, "namespace": namespace, "replicas": replicas}
         ),
         expected_observations=("mutation_applied",),
+    )
+
+
+def pod_logs_decision() -> Decision:
+    return Decision(
+        DecisionType.EXECUTE,
+        "Collect logs from the failing pod",
+        capability="inspect_logs",
+        target="pod/example-123",
+        arguments=immutable_json({"name": "example-123", "namespace": "default"}),
+        expected_observations=("pod_diagnostics_observed",),
     )
 
 
@@ -211,6 +290,66 @@ async def test_remediation_completes_only_after_fresh_verification() -> None:
     assert enriched.data["argument_names"] == ("current_replicas", "resource_version")
     assert event_types[-1] == "GoalCompleted"
     assert "PolicyChecked" in event_types
+
+
+@pytest.mark.asyncio
+async def test_workload_root_cause_expands_remediation_without_extra_diagnosis() -> None:
+    backend = DirectRootCauseBackend()
+    runtime, store, _ = build_runtime(
+        backend,
+        [
+            inspect_decision("inspect_workload", "healthy", "root_cause"),
+            scale_decision(),
+            inspect_decision("inspect_workload", "verification_observed", "healthy"),
+            Decision(DecisionType.FINISH, "Health verified after remediation"),
+        ],
+    )
+
+    result = await runtime.run(*goal_task())
+    snapshot = await store.load_session(result.session_id)
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert backend.inspect_calls == ["inspect_workload", "inspect_workload"]
+    assert backend.mutation_calls == 1
+    assert [node.key for node in snapshot.task_graph.nodes] == [
+        "root",
+        "remediate-unhealthy-workload",
+        "verify-remediation",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_crash_loop_expands_pod_log_diagnostics() -> None:
+    backend = CrashLoopBackend()
+    runtime, store, events = build_runtime(
+        backend,
+        [
+            inspect_decision("inspect_workload", "healthy", "root_cause"),
+            pod_logs_decision(),
+            Decision(DecisionType.FINISH, "Pod diagnostics collected"),
+        ],
+    )
+
+    result = await runtime.run(
+        Goal(
+            "Collect crash loop diagnostics",
+            (SuccessCriterion("pod_diagnostics_observed", True),),
+        ),
+        Task("Inspect workload", ()),
+    )
+    snapshot = await store.load_session(result.session_id)
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert backend.inspect_calls == ["inspect_workload", "inspect_logs"]
+    assert backend.mutation_calls == 0
+    assert [node.key for node in snapshot.task_graph.nodes] == [
+        "root",
+        "collect-pod-diagnostics",
+    ]
+    assert any(
+        event.type == "EvidenceRecorded" and event.data["claim"] == "pod_diagnostics_observed"
+        for event in events.events
+    )
 
 
 @pytest.mark.asyncio

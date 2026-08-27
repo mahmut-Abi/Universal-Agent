@@ -94,3 +94,31 @@ def test_kubernetes_evidence_extractor_ignores_failed_observations() -> None:
         )
         == ()
     )
+
+
+def test_kubernetes_log_observation_marks_pod_diagnostics_observed() -> None:
+    task = Task("Collect pod logs", ("pod_diagnostics_observed",))
+    observation = Observation(
+        new_observation_id(),
+        new_action_id(),
+        task.id,
+        "kubernetes_inspect_logs",
+        ObservationStatus.SUCCEEDED,
+        immutable_json(
+            {
+                "resource": "pod/api-123",
+                "namespace": "prod",
+                "line_count": 2,
+                "recent_logs": "first\nsecond\n",
+            }
+        ),
+        datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    extracted = KubernetesEvidenceExtractor().extract(
+        EvidenceContext(SessionId("session-kubernetes"), task, observation)
+    )
+
+    assert ("pod/api-123", "pod_diagnostics_observed", True) in {
+        (item.subject, item.claim, item.value) for item in extracted
+    }

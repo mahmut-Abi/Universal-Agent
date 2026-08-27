@@ -18,6 +18,7 @@ class KubernetesEvidenceExtractor:
             _evidence(context, subject, key, value)
             for key, value in context.observation.data.items()
         ]
+        evidence.extend(_diagnostic_evidence(context, subject))
         evidence.extend(_pod_evidence(context, subject, context.observation.data.get("pods")))
         return tuple(evidence)
 
@@ -48,6 +49,14 @@ def _pod_evidence(
     if pod_resources:
         evidence.append(_evidence(context, workload_subject, "relation:owns", pod_resources))
     return evidence
+
+
+def _diagnostic_evidence(context: EvidenceContext, subject: str) -> list[Evidence]:
+    if _valid_resource(context.observation.data.get("resource"), expected_kind="pod") is None:
+        return []
+    if "recent_logs" in context.observation.data:
+        return [_evidence(context, subject, "pod_diagnostics_observed", True)]
+    return []
 
 
 def _observation_subject(context: EvidenceContext) -> str:
