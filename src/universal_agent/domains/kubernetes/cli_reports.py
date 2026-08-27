@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import shlex
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import cast
 
@@ -42,15 +42,26 @@ from universal_agent.service import RuntimeConfigDomainView, RuntimeConfigView, 
 class KubernetesCliResult:
     payload: JsonMapping
     status: int = 0
+
+
+KubernetesPreflightBackendBuilder = Callable[[str | None], KubernetesBackend]
+
+
 async def dispatch_kubernetes(
     args: argparse.Namespace,
     service: RuntimeService,
     *,
     model_adapter_builder: ModelAdapterBuilder = build_configured_model_adapter,
+    preflight_backend_builder: KubernetesPreflightBackendBuilder | None = None,
 ) -> KubernetesCliResult:
+    backend_builder = preflight_backend_builder or kubernetes_preflight_backend
     command = cast(str, args.kubernetes_command)
     if command == "preflight":
-        standalone_preflight = await kubernetes_preflight_report(args, service)
+        standalone_preflight = await kubernetes_preflight_report(
+            args,
+            service,
+            backend_builder=backend_builder,
+        )
         return KubernetesCliResult(
             standalone_preflight,
             1 if standalone_preflight["status"] == "failed" else 0,
@@ -67,6 +78,7 @@ async def dispatch_kubernetes(
             args,
             service,
             model_adapter_builder=model_adapter_builder,
+            backend_builder=backend_builder,
         )
         return KubernetesCliResult(check, 1 if check["status"] == "failed" else 0)
     if command == "run":
@@ -84,7 +96,11 @@ async def dispatch_kubernetes(
                         kubernetes_run_model_probe_failed_body(args, model_probe_report),
                         1,
                     )
-            preflight_report = await kubernetes_preflight_report(args, service)
+            preflight_report = await kubernetes_preflight_report(
+                args,
+                service,
+                backend_builder=backend_builder,
+            )
             if preflight_report["status"] == "failed":
                 return KubernetesCliResult(
                     kubernetes_run_preflight_failed_body(
@@ -104,7 +120,10 @@ async def dispatch_kubernetes(
 async def kubernetes_preflight_report(
     args: argparse.Namespace,
     service: RuntimeService,
+    *,
+    backend_builder: KubernetesPreflightBackendBuilder | None = None,
 ) -> JsonMapping:
+    build_backend = backend_builder or kubernetes_preflight_backend
     config = service.config()
     checks: list[JsonValue] = []
     observations: dict[str, JsonValue] = {}
@@ -137,7 +156,7 @@ async def kubernetes_preflight_report(
     append_capability_preflight_check(checks, service)
 
     if domain is not None and not cast(bool, args.skip_cluster):
-        backend = kubernetes_preflight_backend(profile_config)
+        backend = build_backend(profile_config)
         await append_backend_observation_check(
             checks,
             observations,
@@ -254,6 +273,7 @@ async def kubernetes_check_report(
     service: RuntimeService,
     *,
     model_adapter_builder: ModelAdapterBuilder = build_configured_model_adapter,
+    backend_builder: KubernetesPreflightBackendBuilder | None = None,
 ) -> JsonMapping:
     profile = cast(str, args.profile)
     workload = kubernetes_workload_resource(cast(str, args.workload))
@@ -278,7 +298,11 @@ async def kubernetes_check_report(
                 },
             }
         )
-    preflight = await kubernetes_preflight_report(args, service)
+    preflight = await kubernetes_preflight_report(
+        args,
+        service,
+        backend_builder=backend_builder,
+    )
     if preflight["status"] == "failed":
         return immutable_json(
             {
