@@ -26,7 +26,9 @@ from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     parse_json_object,
+    parse_non_empty_string,
     parse_non_empty_string_sequence,
+    parse_optional_non_empty_string,
     parse_payload,
 )
 from universal_agent.model.adapter import ModelUsage
@@ -195,18 +197,15 @@ class JsonHttpModelAdapter:
         timeout_seconds: float = 30.0,
         transport: JsonHttpModelTransport | None = None,
     ) -> None:
-        if not endpoint.strip():
-            raise ValueError("model endpoint must not be empty")
-        if not model.strip():
-            raise ValueError("model name must not be empty")
-        if not provider.strip():
-            raise ValueError("model provider must not be empty")
+        parsed_endpoint = parse_non_empty_string(endpoint, "model endpoint")
+        parsed_model = parse_non_empty_string(model, "model name")
+        parsed_provider = parse_non_empty_string(provider, "model provider")
         if timeout_seconds <= 0:
             raise ValueError("model timeout_seconds must be positive")
         _validate_headers(extra_headers or {})
-        self._endpoint = endpoint
-        self._model = model
-        self._provider = provider
+        self._endpoint = parsed_endpoint
+        self._model = parsed_model
+        self._provider = parsed_provider
         self._api_key = api_key
         self._extra_headers = dict(extra_headers or {})
         self._timeout_seconds = timeout_seconds
@@ -286,18 +285,15 @@ class OpenAIResponsesModelAdapter:
         timeout_seconds: float = 30.0,
         transport: JsonHttpModelTransport | None = None,
     ) -> None:
-        if not model.strip():
-            raise ValueError("model name must not be empty")
-        if not api_key.strip():
-            raise ValueError("OpenAI API key must not be empty")
-        if not endpoint.strip():
-            raise ValueError("OpenAI responses endpoint must not be empty")
+        parsed_model = parse_non_empty_string(model, "model name")
+        parsed_api_key = parse_non_empty_string(api_key, "OpenAI API key")
+        parsed_endpoint = parse_non_empty_string(endpoint, "OpenAI responses endpoint")
         if timeout_seconds <= 0:
             raise ValueError("model timeout_seconds must be positive")
         _validate_headers(extra_headers or {})
-        self._model = model
-        self._api_key = api_key
-        self._endpoint = endpoint
+        self._model = parsed_model
+        self._api_key = parsed_api_key
+        self._endpoint = parsed_endpoint
         self._extra_headers = dict(extra_headers or {})
         self._timeout_seconds = timeout_seconds
         self._transport = transport or HttpxJsonHttpTransport()
@@ -406,23 +402,20 @@ class OpenAIChatCompletionsModelAdapter:
         response_format: str = "json_schema",
         transport: JsonHttpModelTransport | None = None,
     ) -> None:
-        if not model.strip():
-            raise ValueError("model name must not be empty")
-        if not api_key.strip():
-            raise ValueError("OpenAI API key must not be empty")
-        if not endpoint.strip():
-            raise ValueError("OpenAI chat completions endpoint must not be empty")
+        parsed_model = parse_non_empty_string(model, "model name")
+        parsed_api_key = parse_non_empty_string(api_key, "OpenAI API key")
+        parsed_endpoint = parse_non_empty_string(endpoint, "OpenAI chat completions endpoint")
         if timeout_seconds <= 0:
             raise ValueError("model timeout_seconds must be positive")
         if response_format not in {"json_schema", "json_object", "prompt_json"}:
             raise ValueError(
                 "OpenAI chat completions response_format must be "
                 "json_schema, json_object, or prompt_json"
-            )
+        )
         _validate_headers(extra_headers or {})
-        self._model = model
-        self._api_key = api_key
-        self._endpoint = endpoint
+        self._model = parsed_model
+        self._api_key = parsed_api_key
+        self._endpoint = parsed_endpoint
         self._extra_headers = dict(extra_headers or {})
         self._timeout_seconds = timeout_seconds
         self._response_format = response_format
@@ -571,17 +564,17 @@ def _decision_payload(response: JsonMapping) -> JsonMapping:
 
 def _decode_decision(payload: JsonMapping) -> Decision:
     parsed = _parse_value_payload(_DecisionPayload, payload)
-    decision_type = DecisionType(_non_empty_string(parsed.type, "type"))
-    reason = _non_empty_string(parsed.reason, "reason")
-    capability = _optional_non_empty_string(parsed.capability, "capability")
-    target = _optional_non_empty_string(parsed.target, "target")
+    decision_type = DecisionType(_model_non_empty_string(parsed.type, "type"))
+    reason = _model_non_empty_string(parsed.reason, "reason")
+    capability = _model_optional_non_empty_string(parsed.capability, "capability")
+    target = _model_optional_non_empty_string(parsed.target, "target")
     arguments = immutable_json(parsed.arguments)
     expected_observations = parse_non_empty_string_sequence(
         parsed.expected_observations,
         "expected_observations",
         empty_template="{path} must be a non-empty string",
     )
-    message = _optional_non_empty_string(parsed.message, "message")
+    message = _model_optional_non_empty_string(parsed.message, "message")
     return Decision(
         decision_type,
         reason,
@@ -620,7 +613,7 @@ def _decode_usage(provider: str, model: str, value: JsonValue) -> ModelUsage | N
     output_tokens = (
         usage.output_tokens if usage.output_tokens is not None else usage.completion_tokens
     )
-    currency = _optional_non_empty_string(usage.currency, "usage.currency") or "USD"
+    currency = _model_optional_non_empty_string(usage.currency, "usage.currency") or "USD"
     return ModelUsage(
         provider,
         model,
@@ -770,22 +763,25 @@ def _openai_decision_json_schema() -> dict[str, JsonValue]:
     }
 
 
-def _optional_non_empty_string(value: str | None, field_name: str) -> str | None:
-    if value is None:
-        return None
-    return _non_empty_string(value, field_name)
+def _model_non_empty_string(value: str, field_name: str) -> str:
+    return parse_non_empty_string(
+        value,
+        field_name,
+        empty_template="{path} must be a non-empty string",
+    )
 
 
-def _non_empty_string(value: str, field_name: str) -> str:
-    if not value.strip():
-        raise ValueError(f"{field_name} must be a non-empty string")
-    return value
+def _model_optional_non_empty_string(value: str | None, field_name: str) -> str | None:
+    return parse_optional_non_empty_string(
+        value,
+        field_name,
+        empty_template="{path} must be a non-empty string",
+    )
 
 
 def _validate_headers(headers: Mapping[str, str]) -> None:
     for name, value in headers.items():
-        if not name.strip():
-            raise ValueError("model extra header name must not be empty")
+        parse_non_empty_string(name, "model extra header name")
         if "\n" in name or "\r" in name or "\n" in value or "\r" in value:
             raise ValueError("model extra headers must not contain newlines")
 

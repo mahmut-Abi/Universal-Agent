@@ -22,9 +22,11 @@ __all__ = [
     "parse_json_object",
     "parse_json_object_sequence",
     "parse_json_value",
+    "parse_non_empty_string",
     "parse_non_empty_string_sequence",
     "parse_optional_bool",
     "parse_optional_int",
+    "parse_optional_non_empty_string",
     "parse_optional_string",
     "parse_payload",
     "parse_string",
@@ -65,6 +67,9 @@ _JSON_VALUE_ADAPTER: TypeAdapter[PydanticJsonValue] = TypeAdapter(PydanticJsonVa
 _BOOL_ADAPTER: TypeAdapter[bool] = TypeAdapter(bool)
 _INT_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
 _STRING_ADAPTER: TypeAdapter[str] = TypeAdapter(str)
+_NON_EMPTY_STRING_ADAPTER: TypeAdapter[_PydanticNonEmptyString] = TypeAdapter(
+    _PydanticNonEmptyString
+)
 _NON_EMPTY_STRING_SEQUENCE_ADAPTER: TypeAdapter[list[_PydanticNonEmptyString]] = TypeAdapter(
     list[_PydanticNonEmptyString]
 )
@@ -137,6 +142,34 @@ def parse_optional_string(value: object, field: str) -> str | None:
     if value is None:
         return None
     return parse_string(value, field)
+
+
+def parse_non_empty_string(
+    value: object,
+    field: str,
+    *,
+    empty_template: str = "{path} must not be empty",
+) -> str:
+    try:
+        return _NON_EMPTY_STRING_ADAPTER.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        details = pydantic_error_details(exc, field)
+        if details.error_type == "value_error" and details.message.endswith(
+            "must not be empty"
+        ):
+            raise ValueError(empty_template.format(path=details.path)) from exc
+        raise ValueError(pydantic_error_message(exc, field)) from exc
+
+
+def parse_optional_non_empty_string(
+    value: object,
+    field: str,
+    *,
+    empty_template: str = "{path} must not be empty",
+) -> str | None:
+    if value is None:
+        return None
+    return parse_non_empty_string(value, field, empty_template=empty_template)
 
 
 def parse_string_sequence(value: object, field: str) -> tuple[str, ...]:

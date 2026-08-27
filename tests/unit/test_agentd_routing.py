@@ -2,90 +2,93 @@ from __future__ import annotations
 
 import pytest
 
+from universal_agent.agentd.app import _DETAIL_GET_ROUTES, _DISTRIBUTED_ROUTES, _SESSION_ROUTES
+from universal_agent.agentd.console_routes import _CONSOLE_ROUTES
 from universal_agent.agentd.routing import (
-    _console_domain_package_route,
-    _console_domain_route,
-    _console_session_route,
-    _distributed_cancel_route,
-    _distributed_lock_lease_route,
-    _distributed_schedule_action_route,
-    _distributed_schedule_session_route,
-    _distributed_schedule_task_route,
-    _distributed_worker_action_route,
+    AgentdRouteDefinition,
+    AgentdRouteMatcher,
     _distributed_worker_registration_payload,
-    _domain_package_route,
     _match_path,
+    _optional_bool_query,
+    _optional_float_query,
+    _optional_positive_int_query,
     _optional_query_value,
-    _profile_route,
-    _session_route,
 )
-from universal_agent.core import ActionId, SessionId, TaskId, immutable_json
-from universal_agent.distributed import DistributedLockLeaseId, WorkerId, WorkItemId
+from universal_agent.core import immutable_json
 
 
-def test_agentd_route_helpers_match_starlette_path_templates() -> None:
-    session_id, suffix = _session_route("/v1/sessions/session-1/events/stream")
-    task_session_id, task_id = _distributed_schedule_task_route(
-        "/v1/distributed/sessions/session-1/tasks/task-1/schedule"
+def test_agentd_route_tables_match_starlette_path_templates() -> None:
+    session = _SESSION_ROUTES.match("/v1/sessions/session-1/events/stream", "GET")
+    task = _DISTRIBUTED_ROUTES.match(
+        "/v1/distributed/sessions/session-1/tasks/task-1/schedule",
+        "POST",
     )
-    action_session_id, action_task_id, action_id = _distributed_schedule_action_route(
-        "/v1/distributed/sessions/session-1/tasks/task-1/actions/action-1/schedule"
+    action = _DISTRIBUTED_ROUTES.match(
+        "/v1/distributed/sessions/session-1/tasks/task-1/actions/action-1/schedule",
+        "POST",
     )
-    worker_id, worker_action = _distributed_worker_action_route(
-        "/v1/distributed/workers/worker-1/run-once"
+    worker = _DISTRIBUTED_ROUTES.match("/v1/distributed/workers/worker-1/run-once", "POST")
+    lease = _DISTRIBUTED_ROUTES.match(
+        "/v1/distributed/lock-leases/lock-lease-1/release",
+        "POST",
     )
-    lease_id, lease_action = _distributed_lock_lease_route(
-        "/v1/distributed/lock-leases/lock-lease-1/release"
+    console_session = _CONSOLE_ROUTES.match("/console/sessions/session-1/world", "GET")
+    console_domain = _CONSOLE_ROUTES.match("/console/domains/kubernetes/0.2.0", "GET")
+    console_package = _CONSOLE_ROUTES.match(
+        "/console/domain-packages/kubernetes/0.2.0",
+        "GET",
     )
-
-    assert session_id == SessionId("session-1")
-    assert suffix == "events/stream"
-    assert _console_session_route("/console/sessions/session-1/world") == (
-        SessionId("session-1"),
-        "world",
-    )
-    assert _console_domain_route("/console/domains/kubernetes/0.2.0") == (
-        "kubernetes",
-        "0.2.0",
-    )
-    assert _console_domain_package_route("/console/domain-packages/kubernetes/0.2.0") == (
-        "kubernetes",
-        "0.2.0",
-    )
-    assert worker_id == WorkerId("worker-1")
-    assert worker_action == "run-once"
-    assert lease_id == DistributedLockLeaseId("lock-lease-1")
-    assert lease_action == "release"
-    assert _distributed_schedule_session_route(
-        "/v1/distributed/sessions/session-1/schedule"
-    ) == SessionId("session-1")
-    assert task_session_id == SessionId("session-1")
-    assert task_id == TaskId("task-1")
-    assert action_session_id == SessionId("session-1")
-    assert action_task_id == TaskId("task-1")
-    assert action_id == ActionId("action-1")
-    assert _distributed_cancel_route(
-        "/v1/distributed/work-items/work-1/cancel"
-    ) == WorkItemId("work-1")
-    assert _profile_route("/v1/profiles/production-operator") == "production-operator"
-    assert _domain_package_route("/v1/domain-packages/kubernetes/0.2.0") == (
-        "kubernetes",
-        "0.2.0",
+    profile = _DETAIL_GET_ROUTES.match("/v1/profiles/production-operator", "GET")
+    package = _DETAIL_GET_ROUTES.match(
+        "/v1/domain-packages/kubernetes/0.2.0",
+        "GET",
     )
 
+    assert session is not None
+    assert session.name == "session_events_stream"
+    assert session.path_params == {"session_id": "session-1"}
+    assert task is not None
+    assert task.name == "distributed_schedule_task"
+    assert task.path_params == {"session_id": "session-1", "task_id": "task-1"}
+    assert action is not None
+    assert action.name == "distributed_schedule_action"
+    assert action.path_params == {
+        "session_id": "session-1",
+        "task_id": "task-1",
+        "action_id": "action-1",
+    }
+    assert worker is not None
+    assert worker.path_params == {"worker_id": "worker-1", "action": "run-once"}
+    assert lease is not None
+    assert lease.path_params == {"lease_id": "lock-lease-1", "action": "release"}
+    assert console_session is not None
+    assert console_session.path_params == {"session_id": "session-1", "suffix": "world"}
+    assert console_domain is not None
+    assert console_domain.path_params == {"name": "kubernetes", "version": "0.2.0"}
+    assert console_package is not None
+    assert console_package.path_params == {"name": "kubernetes", "version": "0.2.0"}
+    assert profile is not None
+    assert profile.path_params == {"profile": "production-operator"}
+    assert package is not None
+    assert package.path_params == {"name": "kubernetes", "version": "0.2.0"}
 
-def test_agentd_route_helpers_ignore_query_and_trailing_slashes() -> None:
-    assert _session_route("/v1/sessions/session-1/events?limit=1") == (
-        SessionId("session-1"),
-        "events",
+
+def test_agentd_route_tables_ignore_query_and_trailing_slashes() -> None:
+    session = _SESSION_ROUTES.match("/v1/sessions/session-1/events?limit=1", "GET")
+    package = _DETAIL_GET_ROUTES.match("/v1/domain-packages/kubernetes/?tag=ops", "GET")
+    cancelled = _DISTRIBUTED_ROUTES.match(
+        "/v1/distributed/work-items/work-1/cancel/",
+        "POST",
     )
-    assert _domain_package_route("/v1/domain-packages/kubernetes/?tag=ops") == (
-        "kubernetes",
-        None,
-    )
-    assert _distributed_cancel_route("/v1/distributed/work-items/work-1/cancel/") == WorkItemId(
-        "work-1"
-    )
+
+    assert session is not None
+    assert session.name == "session_events"
+    assert session.path_params == {"session_id": "session-1"}
+    assert package is not None
+    assert package.name == "domain_package"
+    assert package.path_params == {"name": "kubernetes"}
+    assert cancelled is not None
+    assert cancelled.path_params == {"work_item_id": "work-1"}
 
 
 def test_agentd_query_helpers_use_starlette_query_params_contract() -> None:
@@ -97,6 +100,44 @@ def test_agentd_query_helpers_use_starlette_query_params_contract() -> None:
         _optional_query_value("/v1/domain-packages?tag=ops&tag=platform", "tag")
     with pytest.raises(ValueError, match="tag must not be empty"):
         _optional_query_value("/v1/domain-packages?tag=", "tag")
+
+
+def test_agentd_query_scalar_helpers_use_pydantic_parsing_with_stable_errors() -> None:
+    assert _optional_bool_query("/v1/sessions/session-1/events/stream?wait=yes", "wait") is True
+    assert _optional_bool_query("/v1/sessions/session-1/events/stream?wait=0", "wait") is False
+    assert _optional_bool_query("/v1/sessions/session-1/events/stream", "wait") is None
+    assert _optional_positive_int_query("/v1/sessions?limit=10", "limit") == 10
+    assert (
+        _optional_float_query(
+            "/v1/sessions/session-1/events/stream?timeout_seconds=0.25",
+            "timeout_seconds",
+            default=10.0,
+            minimum=0.0,
+            maximum=30.0,
+        )
+        == 0.25
+    )
+
+    with pytest.raises(ValueError, match="wait must be a boolean"):
+        _optional_bool_query("/v1/sessions/session-1/events/stream?wait=maybe", "wait")
+    with pytest.raises(ValueError, match="limit must be a positive integer"):
+        _optional_positive_int_query("/v1/sessions?limit=0", "limit")
+    with pytest.raises(ValueError, match="timeout_seconds must be a number"):
+        _optional_float_query(
+            "/v1/sessions/session-1/events/stream?timeout_seconds=abc",
+            "timeout_seconds",
+            default=10.0,
+            minimum=0.0,
+            maximum=30.0,
+        )
+    with pytest.raises(ValueError, match="timeout_seconds must be between 0 and 30"):
+        _optional_float_query(
+            "/v1/sessions/session-1/events/stream?timeout_seconds=31",
+            "timeout_seconds",
+            default=10.0,
+            minimum=0.0,
+            maximum=30.0,
+        )
 
 
 def test_agentd_request_payload_errors_preserve_indexed_pydantic_paths() -> None:
@@ -125,10 +166,40 @@ def test_agentd_path_matching_uses_starlette_route_contract_without_unquoting() 
     ) is None
 
 
-def test_agentd_route_helpers_reject_blank_or_unknown_paths() -> None:
-    assert _console_session_route("/console/sessions/%20") == (SessionId("%20"), "")
-    assert _profile_route("/v1/profiles/") is None
-    assert _distributed_worker_action_route("/v1/distributed/workers/worker-1") == (None, "")
-    assert _distributed_schedule_action_route(
-        "/v1/distributed/sessions/session-1/tasks/task-1/schedule"
-    ) == (None, None, None)
+def test_agentd_route_matcher_uses_starlette_paths_and_preserves_method_contract() -> None:
+    matcher = AgentdRouteMatcher(
+        (
+            AgentdRouteDefinition("health", "/health"),
+            AgentdRouteDefinition("session", "/v1/sessions/{session_id}", ("GET", "POST")),
+        )
+    )
+
+    health = matcher.match("/health?ignored=true", "post")
+    session = matcher.match("/v1/sessions/session-1", "POST")
+
+    assert health is not None
+    assert health.name == "health"
+    assert health.allowed_methods == ("GET",)
+    assert not health.method_allowed
+    assert session is not None
+    assert session.name == "session"
+    assert session.path_params == {"session_id": "session-1"}
+    assert session.allowed_methods == ("GET", "POST")
+    assert session.method_allowed
+    assert matcher.match("/missing", "GET") is None
+
+
+def test_agentd_route_tables_reject_unknown_paths_and_preserve_encoded_segments() -> None:
+    encoded_session = _CONSOLE_ROUTES.match("/console/sessions/%20", "GET")
+    task_schedule = _DISTRIBUTED_ROUTES.match(
+        "/v1/distributed/sessions/session-1/tasks/task-1/schedule",
+        "POST",
+    )
+
+    assert encoded_session is not None
+    assert encoded_session.name == "console_session"
+    assert encoded_session.path_params == {"session_id": "%20"}
+    assert _DETAIL_GET_ROUTES.match("/v1/profiles/", "GET") is None
+    assert _DISTRIBUTED_ROUTES.match("/v1/distributed/workers/worker-1", "POST") is None
+    assert task_schedule is not None
+    assert task_schedule.name == "distributed_schedule_task"

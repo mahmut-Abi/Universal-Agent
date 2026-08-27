@@ -1,35 +1,25 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cache
 
-from pydantic import Field
+from pydantic import Field, TypeAdapter
 from pydantic import ValidationError as PydanticValidationError
 from starlette.datastructures import URL, QueryParams
 from starlette.routing import Match, Route
 
-from universal_agent.core import ActionId, EventId, JsonMapping, SessionId, TaskId
+from universal_agent.core import EventId, JsonMapping, SessionId
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     json_mapping,
+    parse_non_empty_string,
     pydantic_error_details,
 )
-from universal_agent.distributed import (
-    DistributedLockLeaseId,
-    DistributedLockOwnerId,
-    WorkerId,
-    WorkItemId,
-)
+from universal_agent.distributed import DistributedLockOwnerId
 from universal_agent.service import DomainPackageView, DomainView
-from universal_agent.web import (
-    WebCatalogPage,
-    WebConsoleSnapshot,
-    render_web_evidence_explorer,
-    render_web_session_detail,
-    render_web_world_model_explorer,
-)
+from universal_agent.web import WebConsoleSnapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +87,52 @@ class _StateEventRepairPayload:
 @dataclass(frozen=True, slots=True)
 class _SessionResumePayload:
     confirmed: bool | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AgentdRouteDefinition:
+    name: str
+    template: str
+    methods: tuple[str, ...] = ("GET",)
+
+
+@dataclass(frozen=True, slots=True)
+class AgentdRouteMatch:
+    name: str
+    path_params: Mapping[str, str]
+    allowed_methods: tuple[str, ...]
+    method_allowed: bool
+
+
+class AgentdRouteMatcher:
+    """Route matcher backed by Starlette path templates.
+
+    AgentdApp still owns runtime behavior. This module owns HTTP route matching
+    semantics so path parsing stays at the HTTP adapter seam.
+    """
+
+    def __init__(self, routes: tuple[AgentdRouteDefinition, ...]) -> None:
+        self._routes = routes
+
+    def match(self, path: str, method: str) -> AgentdRouteMatch | None:
+        request_method = method.upper()
+        for route in self._routes:
+            params = _match_path(path, route.template)
+            if params is None:
+                continue
+            allowed_methods = tuple(item.upper() for item in route.methods)
+            return AgentdRouteMatch(
+                route.name,
+                params,
+                allowed_methods,
+                request_method in allowed_methods,
+            )
+        return None
+
+
+_BOOL_QUERY_ADAPTER: TypeAdapter[bool] = TypeAdapter(bool)
+_FLOAT_QUERY_ADAPTER: TypeAdapter[float] = TypeAdapter(float)
+_INT_QUERY_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
 
 
 class _DistributedLockAcquireModel(ConfigPayload):
@@ -198,12 +234,10 @@ def _optional_bool_query(path: str, key: str) -> bool | None:
     value = _optional_query_value(path, key)
     if value is None:
         return None
-    normalized = value.lower()
-    if normalized in {"true", "1", "yes"}:
-        return True
-    if normalized in {"false", "0", "no"}:
-        return False
-    raise ValueError(f"{key} must be a boolean")
+    try:
+        return _BOOL_QUERY_ADAPTER.validate_python(value)
+    except PydanticValidationError as exc:
+        raise ValueError(f"{key} must be a boolean") from exc
 
 
 def _optional_float_query(
@@ -218,8 +252,8 @@ def _optional_float_query(
     if value is None:
         return default
     try:
-        parsed = float(value)
-    except ValueError as exc:
+        parsed = _FLOAT_QUERY_ADAPTER.validate_python(value)
+    except PydanticValidationError as exc:
         raise ValueError(f"{key} must be a number") from exc
     if parsed < minimum or parsed > maximum:
         raise ValueError(f"{key} must be between {minimum:g} and {maximum:g}")
@@ -231,8 +265,8 @@ def _optional_positive_int_query(path: str, key: str) -> int | None:
     if value is None:
         return None
     try:
-        parsed = int(value)
-    except ValueError as exc:
+        parsed = _INT_QUERY_ADAPTER.validate_python(value)
+    except PydanticValidationError as exc:
         raise ValueError(f"{key} must be a positive integer") from exc
     if parsed < 1:
         raise ValueError(f"{key} must be a positive integer")
@@ -245,10 +279,7 @@ def _optional_query_value(path: str, key: str) -> str | None:
         return None
     if len(values) != 1:
         raise ValueError(f"{key} must be specified once")
-    value = values[0]
-    if not value.strip():
-        raise ValueError(f"{key} must not be empty")
-    return value
+    return parse_non_empty_string(values[0], key)
 
 
 @cache
@@ -284,91 +315,6 @@ async def _route_endpoint() -> None:
     return None
 
 
-def _non_blank_path_param(params: Mapping[str, str], key: str) -> str | None:
-    value = params.get(key)
-    if value is None or not value.strip():
-        return None
-    return value
-
-
-def _session_route(path: str) -> tuple[SessionId | None, str]:
-    params = _match_path(path, "/v1/sessions/{session_id}")
-    if params is not None:
-        return SessionId(params["session_id"]), ""
-    params = _match_path(path, "/v1/sessions/{session_id}/{suffix}")
-    if params is not None:
-        return SessionId(params["session_id"]), params["suffix"]
-    params = _match_path(path, "/v1/sessions/{session_id}/{first_suffix}/{second_suffix}")
-    if params is not None:
-        suffix = f"{params['first_suffix']}/{params['second_suffix']}"
-        return SessionId(params["session_id"]), suffix
-    return None, ""
-
-
-def _console_session_route(path: str) -> tuple[SessionId | None, str]:
-    params = _match_path(path, "/console/sessions/{session_id}")
-    if params is not None:
-        session_id = _non_blank_path_param(params, "session_id")
-        if session_id is not None:
-            return SessionId(session_id), ""
-    params = _match_path(path, "/console/sessions/{session_id}/{suffix}")
-    if params is not None:
-        session_id = _non_blank_path_param(params, "session_id")
-        if session_id is not None:
-            return SessionId(session_id), params["suffix"]
-    return None, ""
-
-
-def _console_catalog_route(path: str) -> WebCatalogPage | None:
-    params = _match_path(path, "/console/{page}")
-    if params is None:
-        return None
-    try:
-        return WebCatalogPage(params["page"])
-    except ValueError:
-        return None
-
-
-def _console_domain_route(path: str) -> tuple[str | None, str | None]:
-    params = _match_path(path, "/console/domains/{name}")
-    if params is not None:
-        name = _non_blank_path_param(params, "name")
-        if name is not None:
-            return name, None
-    params = _match_path(path, "/console/domains/{name}/{version}")
-    if params is not None:
-        name = _non_blank_path_param(params, "name")
-        version = _non_blank_path_param(params, "version")
-        if name is not None and version is not None:
-            return name, version
-    return None, None
-
-
-def _console_domain_package_route(path: str) -> tuple[str | None, str | None]:
-    params = _match_path(path, "/console/domain-packages/{name}")
-    if params is not None:
-        name = _non_blank_path_param(params, "name")
-        if name is not None:
-            return name, None
-    params = _match_path(path, "/console/domain-packages/{name}/{version}")
-    if params is not None:
-        name = _non_blank_path_param(params, "name")
-        version = _non_blank_path_param(params, "version")
-        if name is not None and version is not None:
-            return name, version
-    return None, None
-
-
-def _distributed_lock_lease_route(path: str) -> tuple[DistributedLockLeaseId | None, str]:
-    params = _match_path(path, "/v1/distributed/lock-leases/{lease_id}/{action}")
-    if params is not None:
-        lease_id = _non_blank_path_param(params, "lease_id")
-        action = _non_blank_path_param(params, "action")
-        if lease_id is not None and action is not None:
-            return DistributedLockLeaseId(lease_id), action
-    return None, ""
-
-
 def _distributed_lock_acquire_payload(body: JsonMapping) -> _DistributedLockAcquirePayload:
     payload = _request_model_payload(
         _DistributedLockAcquireModel,
@@ -381,9 +327,9 @@ def _distributed_lock_acquire_payload(body: JsonMapping) -> _DistributedLockAcqu
         },
     )
     return _DistributedLockAcquirePayload(
-        lock_key=_non_empty_string(payload.lock_key, "distributed lock key"),
+        lock_key=parse_non_empty_string(payload.lock_key, "distributed lock key"),
         owner_id=DistributedLockOwnerId(
-            _non_empty_string(payload.owner_id, "distributed lock owner_id")
+            parse_non_empty_string(payload.owner_id, "distributed lock owner_id")
         ),
         ttl_seconds=payload.ttl_seconds,
         metadata=None if payload.metadata is None else json_mapping(payload.metadata),
@@ -401,7 +347,7 @@ def _distributed_lock_lease_payload(body: JsonMapping) -> _DistributedLockLeaseP
     )
     return _DistributedLockLeasePayload(
         owner_id=DistributedLockOwnerId(
-            _non_empty_string(payload.owner_id, "distributed lock owner_id")
+            parse_non_empty_string(payload.owner_id, "distributed lock owner_id")
         ),
         ttl_seconds=payload.ttl_seconds,
     )
@@ -422,10 +368,10 @@ def _distributed_worker_registration_payload(
     capabilities: list[str] = []
     for index, item in enumerate(payload.capabilities):
         capabilities.append(
-            _non_empty_string(
+            parse_non_empty_string(
                 item,
                 f"distributed worker capabilities[{index}]",
-                empty_message=(
+                empty_template=(
                     f"distributed worker capabilities[{index}] must be a non-empty string"
                 ),
             )
@@ -444,16 +390,6 @@ def _distributed_worker_ttl_seconds(body: JsonMapping) -> float:
         {"ttl_seconds": "distributed worker ttl_seconds must be a positive number"},
     )
     return payload.ttl_seconds
-
-
-def _distributed_worker_action_route(path: str) -> tuple[WorkerId | None, str]:
-    params = _match_path(path, "/v1/distributed/workers/{worker_id}/{action}")
-    if params is not None:
-        worker_id = _non_blank_path_param(params, "worker_id")
-        action = _non_blank_path_param(params, "action")
-        if worker_id is not None and action is not None:
-            return WorkerId(worker_id), action
-    return None, ""
 
 
 def _distributed_worker_run_payload(body: JsonMapping) -> _DistributedWorkerRunPayload:
@@ -562,7 +498,7 @@ def _distributed_reason_payload(
         {**dict(body), "reason": body.get("reason", default)},
         {"reason": f"{field_name} must be a string"},
     )
-    return _non_empty_string(payload.reason, field_name)
+    return parse_non_empty_string(payload.reason, field_name)
 
 
 def _state_event_repair_payload(body: JsonMapping) -> _StateEventRepairPayload:
@@ -630,62 +566,6 @@ def _request_payload_error_message(
         return details.message.removeprefix("Value error, ")
     return str(error)
 
-
-def _non_empty_string(value: str, field_name: str, *, empty_message: str | None = None) -> str:
-    if not value.strip():
-        raise ValueError(empty_message or f"{field_name} must not be empty")
-    return value
-
-
-def _distributed_schedule_session_route(path: str) -> SessionId | None:
-    params = _match_path(path, "/v1/distributed/sessions/{session_id}/schedule")
-    if params is None:
-        return None
-    session_id = _non_blank_path_param(params, "session_id")
-    if session_id is None:
-        return None
-    return SessionId(session_id)
-
-
-def _distributed_schedule_task_route(path: str) -> tuple[SessionId | None, TaskId | None]:
-    params = _match_path(
-        path,
-        "/v1/distributed/sessions/{session_id}/tasks/{task_id}/schedule",
-    )
-    if params is not None:
-        session_id = _non_blank_path_param(params, "session_id")
-        task_id = _non_blank_path_param(params, "task_id")
-        if session_id is not None and task_id is not None:
-            return SessionId(session_id), TaskId(task_id)
-    return None, None
-
-
-def _distributed_schedule_action_route(
-    path: str,
-) -> tuple[SessionId | None, TaskId | None, ActionId | None]:
-    params = _match_path(
-        path,
-        "/v1/distributed/sessions/{session_id}/tasks/{task_id}/actions/{action_id}/schedule",
-    )
-    if params is not None:
-        session_id = _non_blank_path_param(params, "session_id")
-        task_id = _non_blank_path_param(params, "task_id")
-        action_id = _non_blank_path_param(params, "action_id")
-        if session_id is not None and task_id is not None and action_id is not None:
-            return SessionId(session_id), TaskId(task_id), ActionId(action_id)
-    return None, None, None
-
-
-def _distributed_cancel_route(path: str) -> WorkItemId | None:
-    params = _match_path(path, "/v1/distributed/work-items/{work_item_id}/cancel")
-    if params is None:
-        return None
-    work_item_id = _non_blank_path_param(params, "work_item_id")
-    if work_item_id is None:
-        return None
-    return WorkItemId(work_item_id)
-
-
 def _console_domain_view(
     snapshot: WebConsoleSnapshot,
     name: str,
@@ -726,47 +606,3 @@ def _domain_package_not_found_message(name: str, version: str | None) -> str:
     if version is None:
         return f"domain package not found or ambiguous: {name}"
     return f"domain package not found: {name}@{version}"
-
-
-def _console_explorer_renderer(
-    path: str,
-) -> Callable[[WebConsoleSnapshot], str] | None:
-    if path == "/console/evidence":
-        return render_web_evidence_explorer
-    if path == "/console/world":
-        return render_web_world_model_explorer
-    return None
-
-
-def _console_session_renderer(
-    suffix: str,
-) -> Callable[[WebConsoleSnapshot], str] | None:
-    if suffix == "":
-        return render_web_session_detail
-    if suffix == "evidence":
-        return render_web_evidence_explorer
-    if suffix == "world":
-        return render_web_world_model_explorer
-    return None
-
-
-def _profile_route(path: str) -> str | None:
-    params = _match_path(path, "/v1/profiles/{profile}")
-    if params is None:
-        return None
-    return _non_blank_path_param(params, "profile")
-
-
-def _domain_package_route(path: str) -> tuple[str | None, str | None]:
-    params = _match_path(path, "/v1/domain-packages/{name}")
-    if params is not None:
-        name = _non_blank_path_param(params, "name")
-        if name is not None:
-            return name, None
-    params = _match_path(path, "/v1/domain-packages/{name}/{version}")
-    if params is not None:
-        name = _non_blank_path_param(params, "name")
-        version = _non_blank_path_param(params, "version")
-        if name is not None and version is not None:
-            return name, version
-    return None, None

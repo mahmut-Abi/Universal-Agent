@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from universal_agent.agentd.http import (
     HttpRequest,
     HttpResponse,
@@ -9,20 +11,17 @@ from universal_agent.agentd.http import (
     text_response,
 )
 from universal_agent.agentd.routing import (
-    _console_catalog_route,
-    _console_domain_package_route,
+    AgentdRouteDefinition,
+    AgentdRouteMatcher,
     _console_domain_package_view,
-    _console_domain_route,
     _console_domain_view,
-    _console_explorer_renderer,
-    _console_session_renderer,
-    _console_session_route,
     _domain_not_found_message,
     _domain_package_not_found_message,
     _optional_positive_int_query,
     _optional_query_value,
     _optional_session_id_query,
 )
+from universal_agent.core import SessionId
 from universal_agent.evaluation.console import (
     EvaluationConsoleSnapshot,
     build_evaluation_console_snapshot,
@@ -38,11 +37,61 @@ from universal_agent.web import (
     render_web_doctor,
     render_web_domain_detail,
     render_web_domain_package_detail,
+    render_web_evidence_explorer,
     render_web_multi_agent,
     render_web_profile_catalog,
+    render_web_session_detail,
     render_web_sessions,
     render_web_settings,
+    render_web_world_model_explorer,
 )
+from universal_agent.web_types import WebCatalogPage, WebConsoleSnapshot
+
+_CONSOLE_ROUTES = AgentdRouteMatcher(
+    (
+        AgentdRouteDefinition("console_root", "/"),
+        AgentdRouteDefinition("console_root", "/console"),
+        AgentdRouteDefinition("console_settings", "/console/settings"),
+        AgentdRouteDefinition("console_profiles", "/console/profiles"),
+        AgentdRouteDefinition("console_evaluations", "/console/evaluations"),
+        AgentdRouteDefinition("console_doctor", "/console/doctor"),
+        AgentdRouteDefinition("console_distributed", "/console/distributed"),
+        AgentdRouteDefinition("console_multi_agent", "/console/multi-agent"),
+        AgentdRouteDefinition("console_evidence", "/console/evidence"),
+        AgentdRouteDefinition("console_world", "/console/world"),
+        AgentdRouteDefinition(
+            "console_domain_package_version",
+            "/console/domain-packages/{name}/{version}",
+        ),
+        AgentdRouteDefinition("console_domain_package", "/console/domain-packages/{name}"),
+        AgentdRouteDefinition("console_domain_version", "/console/domains/{name}/{version}"),
+        AgentdRouteDefinition("console_domain", "/console/domains/{name}"),
+        AgentdRouteDefinition("console_sessions", "/console/sessions"),
+        AgentdRouteDefinition("console_session_suffix", "/console/sessions/{session_id}/{suffix}"),
+        AgentdRouteDefinition("console_session", "/console/sessions/{session_id}"),
+        AgentdRouteDefinition("console_catalog", "/console/{page}"),
+    )
+)
+
+_STATIC_CONSOLE_RENDERERS: dict[str, Callable[[WebConsoleSnapshot], str]] = {
+    "console_settings": render_web_settings,
+    "console_profiles": render_web_profile_catalog,
+    "console_doctor": lambda snapshot: render_web_doctor(snapshot, snapshot.doctor),
+    "console_distributed": lambda snapshot: render_web_distributed(
+        snapshot,
+        snapshot.distributed_snapshot,
+        snapshot.distributed_health,
+    ),
+    "console_multi_agent": render_web_multi_agent,
+    "console_sessions": render_web_sessions,
+    "console_root": render_web_console,
+}
+
+_SESSION_CONSOLE_RENDERERS: dict[str, Callable[[WebConsoleSnapshot], str]] = {
+    "": render_web_session_detail,
+    "evidence": render_web_evidence_explorer,
+    "world": render_web_world_model_explorer,
+}
 
 
 async def handle_console_route(
@@ -52,39 +101,21 @@ async def handle_console_route(
     method: str,
     path: str,
 ) -> HttpResponse | None:
-    if path == "/console/settings":
-        if method != "GET":
-            return method_not_allowed(("GET",))
+    route = _CONSOLE_ROUTES.match(path, method)
+    if route is None:
+        return None
+
+    catalog = None
+    if route.name == "console_catalog":
         try:
-            snapshot = await build_web_console_snapshot(
-                service,
-                session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
-                event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
-            )
-        except ValueError as exc:
-            return bad_request(str(exc))
-        return text_response(
-            render_web_settings(snapshot),
-            content_type="text/html; charset=utf-8",
-        )
-    if path == "/console/profiles":
-        if method != "GET":
-            return method_not_allowed(("GET",))
-        try:
-            snapshot = await build_web_console_snapshot(
-                service,
-                session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
-                event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
-            )
-        except ValueError as exc:
-            return bad_request(str(exc))
-        return text_response(
-            render_web_profile_catalog(snapshot),
-            content_type="text/html; charset=utf-8",
-        )
-    if path == "/console/evaluations":
-        if method != "GET":
-            return method_not_allowed(("GET",))
+            catalog = WebCatalogPage(route.path_params["page"])
+        except ValueError:
+            return None
+
+    if not route.method_allowed:
+        return method_not_allowed(route.allowed_methods)
+
+    if route.name == "console_evaluations":
         evaluation_snapshot = (
             EvaluationConsoleSnapshot("not configured", ())
             if evaluation_report_dir is None
@@ -94,119 +125,57 @@ async def handle_console_route(
             render_evaluation_console(evaluation_snapshot),
             content_type="text/html; charset=utf-8",
         )
-    if path == "/console/doctor":
-        if method != "GET":
-            return method_not_allowed(("GET",))
-        try:
-            snapshot = await build_web_console_snapshot(
-                service,
-                session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
-                event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
-            )
-        except ValueError as exc:
-            return bad_request(str(exc))
-        return text_response(
-            render_web_doctor(snapshot, snapshot.doctor),
-            content_type="text/html; charset=utf-8",
+
+    if renderer := _STATIC_CONSOLE_RENDERERS.get(route.name):
+        return await _render_console_snapshot(
+            service,
+            request,
+            renderer,
+            session_id=_optional_session_id_query(request.path)
+            if route.name == "console_root"
+            else None,
         )
-    if path == "/console/distributed":
-        if method != "GET":
-            return method_not_allowed(("GET",))
-        try:
-            snapshot = await build_web_console_snapshot(
-                service,
-                session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
-                event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
-            )
-        except ValueError as exc:
-            return bad_request(str(exc))
-        return text_response(
-            render_web_distributed(
-                snapshot,
-                snapshot.distributed_snapshot,
-                snapshot.distributed_health,
+
+    if route.name in {"console_evidence", "console_world"}:
+        is_world_explorer = route.name == "console_world"
+        return await _render_console_snapshot(
+            service,
+            request,
+            render_web_world_model_explorer if is_world_explorer else render_web_evidence_explorer,
+            session_id=_optional_session_id_query(request.path),
+            world_entity_id=(
+                _optional_query_value(request.path, "entity_id") if is_world_explorer else None
             ),
-            content_type="text/html; charset=utf-8",
+            world_relation=(
+                _optional_query_value(request.path, "relation") if is_world_explorer else None
+            ),
         )
-    if path == "/console/multi-agent":
-        if method != "GET":
-            return method_not_allowed(("GET",))
-        try:
-            snapshot = await build_web_console_snapshot(
-                service,
-                session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
-                event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
-            )
-        except ValueError as exc:
-            return bad_request(str(exc))
-        return text_response(
-            render_web_multi_agent(snapshot),
-            content_type="text/html; charset=utf-8",
+
+    if route.name == "console_catalog":
+        assert catalog is not None
+        return await _render_console_snapshot(
+            service,
+            request,
+            lambda snapshot: render_web_catalog(snapshot, catalog),
         )
-    console_explorer = _console_explorer_renderer(path)
-    if console_explorer is not None:
-        if method != "GET":
-            return method_not_allowed(("GET",))
-        is_world_explorer = path == "/console/world"
+
+    if route.name in {"console_domain_package", "console_domain_package_version"}:
+        package_name = route.path_params["name"]
+        package_version = route.path_params.get("version")
         try:
-            snapshot = await build_web_console_snapshot(
-                service,
-                session_id=_optional_session_id_query(request.path),
-                session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
-                event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
-                world_entity_id=(
-                    _optional_query_value(request.path, "entity_id") if is_world_explorer else None
-                ),
-                world_relation=(
-                    _optional_query_value(request.path, "relation") if is_world_explorer else None
-                ),
-            )
-        except StateNotFoundError as exc:
-            return not_found(str(exc))
-        except ValueError as exc:
-            return bad_request(str(exc))
-        return text_response(
-            console_explorer(snapshot),
-            content_type="text/html; charset=utf-8",
-        )
-    console_catalog = _console_catalog_route(path)
-    if console_catalog is not None:
-        if method != "GET":
-            return method_not_allowed(("GET",))
-        try:
-            snapshot = await build_web_console_snapshot(
-                service,
-                session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
-                event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
-            )
-        except ValueError as exc:
-            return bad_request(str(exc))
-        return text_response(
-            render_web_catalog(snapshot, console_catalog),
-            content_type="text/html; charset=utf-8",
-        )
-    console_package_name, console_package_version = _console_domain_package_route(path)
-    if console_package_name is not None:
-        if method != "GET":
-            return method_not_allowed(("GET",))
-        try:
-            snapshot = await build_web_console_snapshot(
-                service,
-                session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
-                event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
-            )
+            snapshot = await _build_console_snapshot(service, request)
         except ValueError as exc:
             return bad_request(str(exc))
         package = _console_domain_package_view(
             snapshot,
-            console_package_name,
-            console_package_version,
+            package_name,
+            package_version,
         )
         if package is None:
             return not_found(
                 _domain_package_not_found_message(
-                    console_package_name,
-                    console_package_version,
+                    package_name,
+                    package_version,
                 )
             )
         return text_response(
@@ -217,21 +186,17 @@ async def handle_console_route(
             ),
             content_type="text/html; charset=utf-8",
         )
-    console_domain_name, console_domain_version = _console_domain_route(path)
-    if console_domain_name is not None:
-        if method != "GET":
-            return method_not_allowed(("GET",))
+
+    if route.name in {"console_domain", "console_domain_version"}:
+        domain_name = route.path_params["name"]
+        domain_version = route.path_params.get("version")
         try:
-            snapshot = await build_web_console_snapshot(
-                service,
-                session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
-                event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
-            )
+            snapshot = await _build_console_snapshot(service, request)
         except ValueError as exc:
             return bad_request(str(exc))
-        domain = _console_domain_view(snapshot, console_domain_name, console_domain_version)
+        domain = _console_domain_view(snapshot, domain_name, domain_version)
         if domain is None:
-            return not_found(_domain_not_found_message(console_domain_name, console_domain_version))
+            return not_found(_domain_not_found_message(domain_name, domain_version))
         return text_response(
             render_web_domain_detail(
                 snapshot,
@@ -240,32 +205,16 @@ async def handle_console_route(
             ),
             content_type="text/html; charset=utf-8",
         )
-    if path == "/console/sessions":
-        if method != "GET":
-            return method_not_allowed(("GET",))
+
+    if route.name in {"console_session", "console_session_suffix"}:
+        session_id = SessionId(route.path_params["session_id"])
+        session_suffix = route.path_params.get("suffix", "")
+        is_world_explorer = session_suffix == "world"
         try:
-            snapshot = await build_web_console_snapshot(
+            snapshot = await _build_console_snapshot(
                 service,
-                session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
-                event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
-            )
-        except ValueError as exc:
-            return bad_request(str(exc))
-        return text_response(
-            render_web_sessions(snapshot),
-            content_type="text/html; charset=utf-8",
-        )
-    console_session_id, console_session_suffix = _console_session_route(path)
-    if console_session_id is not None:
-        if method != "GET":
-            return method_not_allowed(("GET",))
-        is_world_explorer = console_session_suffix == "world"
-        try:
-            snapshot = await build_web_console_snapshot(
-                service,
-                session_id=console_session_id,
-                session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
-                event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
+                request,
+                session_id=session_id,
                 world_entity_id=(
                     _optional_query_value(request.path, "entity_id") if is_world_explorer else None
                 ),
@@ -277,29 +226,53 @@ async def handle_console_route(
             return not_found(str(exc))
         except ValueError as exc:
             return bad_request(str(exc))
-        renderer = _console_session_renderer(console_session_suffix)
+        renderer = _SESSION_CONSOLE_RENDERERS.get(session_suffix)
         if renderer is None:
             return not_found(f"unknown route: {path}")
         return text_response(
             renderer(snapshot),
             content_type="text/html; charset=utf-8",
         )
-    if path in ("/", "/console"):
-        if method != "GET":
-            return method_not_allowed(("GET",))
-        try:
-            snapshot = await build_web_console_snapshot(
-                service,
-                session_id=_optional_session_id_query(request.path),
-                session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
-                event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
-            )
-        except StateNotFoundError as exc:
-            return not_found(str(exc))
-        except ValueError as exc:
-            return bad_request(str(exc))
-        return text_response(
-            render_web_console(snapshot),
-            content_type="text/html; charset=utf-8",
-        )
     return None
+
+
+async def _render_console_snapshot(
+    service: RuntimeService,
+    request: HttpRequest,
+    renderer: Callable[[WebConsoleSnapshot], str],
+    *,
+    session_id: SessionId | None = None,
+    world_entity_id: str | None = None,
+    world_relation: str | None = None,
+) -> HttpResponse:
+    try:
+        snapshot = await _build_console_snapshot(
+            service,
+            request,
+            session_id=session_id,
+            world_entity_id=world_entity_id,
+            world_relation=world_relation,
+        )
+    except StateNotFoundError as exc:
+        return not_found(str(exc))
+    except ValueError as exc:
+        return bad_request(str(exc))
+    return text_response(renderer(snapshot), content_type="text/html; charset=utf-8")
+
+
+async def _build_console_snapshot(
+    service: RuntimeService,
+    request: HttpRequest,
+    *,
+    session_id: SessionId | None = None,
+    world_entity_id: str | None = None,
+    world_relation: str | None = None,
+) -> WebConsoleSnapshot:
+    return await build_web_console_snapshot(
+        service,
+        session_id=session_id,
+        session_limit=_optional_positive_int_query(request.path, "session_limit") or 10,
+        event_limit=_optional_positive_int_query(request.path, "event_limit") or 20,
+        world_entity_id=world_entity_id,
+        world_relation=world_relation,
+    )

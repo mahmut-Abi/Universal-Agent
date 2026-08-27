@@ -36,6 +36,11 @@ _METRIC_CARD_TEMPLATE = _WEB_ENV.from_string(
 <strong>{{ value }}</strong>
 </article>"""
 )
+_METRIC_GRID_TEMPLATE = _WEB_ENV.from_string(
+    '<section class="grid cards" aria-label="{{ label }}">'
+    "{{ cards|join|safe }}"
+    "</section>"
+)
 _TABLE_TEMPLATE = _WEB_ENV.from_string(
     '<div class="table-wrap"><table><thead><tr>'
     "{% for header in headers %}<th>{{ header }}</th>{% endfor %}"
@@ -120,6 +125,10 @@ def _section(title: str, body: str) -> str:
 
 def _metric_card(label: str, value: object) -> str:
     return _METRIC_CARD_TEMPLATE.render(label=label, value=value)
+
+
+def _metric_grid(label: str, cards: tuple[str, ...]) -> str:
+    return _METRIC_GRID_TEMPLATE.render(label=label, cards=cards)
 
 
 def _table(headers: tuple[str, ...], rows: tuple[str, ...]) -> str:

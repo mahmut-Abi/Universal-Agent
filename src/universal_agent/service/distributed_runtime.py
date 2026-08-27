@@ -5,8 +5,8 @@ from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
+from pydantic import field_validator
 
 from universal_agent.core import (
     ActionId,
@@ -27,6 +27,7 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
+    parse_non_empty_string,
     parse_non_empty_string_sequence,
     pydantic_error_details,
 )
@@ -73,8 +74,18 @@ class _GoalWorkSuccessCriterionPayload(ConfigPayload):
 class _GoalWorkPayload(ConfigPayload):
     id: str
     description: str
-    success_criteria: list[_GoalWorkSuccessCriterionPayload] = Field(min_length=1)
+    success_criteria: list[_GoalWorkSuccessCriterionPayload]
     created_at: str | None = None
+
+    @field_validator("success_criteria")
+    @classmethod
+    def _require_success_criteria(
+        cls,
+        value: list[_GoalWorkSuccessCriterionPayload],
+    ) -> list[_GoalWorkSuccessCriterionPayload]:
+        if not value:
+            raise ValueError("goal.success_criteria must not be empty")
+        return value
 
 
 class _TaskWorkPayload(ConfigPayload):
@@ -766,18 +777,18 @@ def goal_task_from_work_payload(payload: Mapping[str, JsonValue]) -> tuple[Goal,
     task_payload = work_payload.task
     return (
         Goal(
-            _non_empty_work_payload_string(goal_payload.description, "goal.description"),
+            parse_non_empty_string(goal_payload.description, "goal.description"),
             _success_criteria_from_payload(goal_payload.success_criteria),
-            id=GoalId(_non_empty_work_payload_string(goal_payload.id, "goal.id")),
+            id=GoalId(parse_non_empty_string(goal_payload.id, "goal.id")),
             created_at=_datetime_payload_field(goal_payload.created_at, "goal.created_at"),
         ),
         Task(
-            _non_empty_work_payload_string(task_payload.description, "task.description"),
+            parse_non_empty_string(task_payload.description, "task.description"),
             parse_non_empty_string_sequence(
                 task_payload.required_criteria,
                 "task.required_criteria",
             ),
-            id=TaskId(_non_empty_work_payload_string(task_payload.id, "task.id")),
+            id=TaskId(parse_non_empty_string(task_payload.id, "task.id")),
             created_at=_datetime_payload_field(task_payload.created_at, "task.created_at"),
         ),
     )
@@ -799,7 +810,7 @@ def _success_criteria_from_payload(
     for index, item in enumerate(items):
         criteria.append(
             SuccessCriterion(
-                _non_empty_work_payload_string(
+                parse_non_empty_string(
                     item.key,
                     f"goal.success_criteria[{index}].key",
                 ),
@@ -807,12 +818,6 @@ def _success_criteria_from_payload(
             )
         )
     return tuple(criteria)
-
-
-def _non_empty_work_payload_string(value: str, field: str) -> str:
-    if not value.strip():
-        raise ValueError(f"{field} must not be empty")
-    return value
 
 
 def _datetime_payload_field(

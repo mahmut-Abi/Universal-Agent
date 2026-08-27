@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from types import MappingProxyType
 
+from pydantic import field_validator
+
 from universal_agent.core import (
     Goal,
     JsonMapping,
@@ -18,7 +20,9 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
+    parse_non_empty_string,
     parse_non_empty_string_sequence,
+    parse_optional_non_empty_string,
     parse_payload,
 )
 
@@ -62,6 +66,16 @@ class _SuccessCriterionPayload(ConfigPayload):
 class _GoalPayload(ConfigPayload):
     description: str
     success_criteria: list[_SuccessCriterionPayload]
+
+    @field_validator("success_criteria")
+    @classmethod
+    def _require_success_criteria(
+        cls,
+        value: list[_SuccessCriterionPayload],
+    ) -> list[_SuccessCriterionPayload]:
+        if not value:
+            raise ValueError("goal.success_criteria must not be empty")
+        return value
 
 
 class _TaskPayload(ConfigPayload):
@@ -217,15 +231,15 @@ def _bearer_token(value: str | None) -> str | None:
 
 def parse_goal_submission(body: JsonMapping) -> GoalSubmission:
     payload = _parse_goal_submission_payload(body)
-    profile_name = _optional_non_empty_string(payload.profile, "profile")
+    profile_name = parse_optional_non_empty_string(payload.profile, "profile")
     goal_payload = payload.goal
     task_payload = payload.task
     goal = Goal(
-        _non_empty_string(goal_payload.description, "goal.description"),
+        parse_non_empty_string(goal_payload.description, "goal.description"),
         _success_criteria(goal_payload.success_criteria),
     )
     task = Task(
-        _non_empty_string(task_payload.description, "task.description"),
+        parse_non_empty_string(task_payload.description, "task.description"),
         parse_non_empty_string_sequence(
             task_payload.required_criteria,
             "task.required_criteria",
@@ -241,29 +255,15 @@ def _parse_goal_submission_payload(body: JsonMapping) -> _GoalSubmissionPayload:
 def _success_criteria(
     items: list[_SuccessCriterionPayload],
 ) -> tuple[SuccessCriterion, ...]:
-    if not items:
-        raise ValueError("goal.success_criteria must not be empty")
     criteria: list[SuccessCriterion] = []
     for index, item in enumerate(items):
         criteria.append(
             SuccessCriterion(
-                _non_empty_string(item.key, f"goal.success_criteria[{index}].key"),
+                parse_non_empty_string(item.key, f"goal.success_criteria[{index}].key"),
                 item.expected,
             )
         )
     return tuple(criteria)
-
-
-def _non_empty_string(value: str, field: str) -> str:
-    if not value.strip():
-        raise ValueError(f"{field} must not be empty")
-    return value
-
-
-def _optional_non_empty_string(value: str | None, field: str) -> str | None:
-    if value is None:
-        return None
-    return _non_empty_string(value, field)
 
 
 def _optional_datetime_field(

@@ -12,9 +12,11 @@ from universal_agent.core.config_validation import (
     parse_json_object,
     parse_json_object_sequence,
     parse_json_value,
+    parse_non_empty_string,
     parse_non_empty_string_sequence,
     parse_optional_bool,
     parse_optional_int,
+    parse_optional_non_empty_string,
     parse_optional_string,
     parse_payload,
     parse_string,
@@ -85,6 +87,9 @@ def test_parse_scalar_helpers_use_strict_pydantic_validation() -> None:
     assert parse_string(None, "reason", default="default reason") == "default reason"
     assert parse_optional_string(None, "name") is None
     assert parse_optional_string("agent", "name") == "agent"
+    assert parse_non_empty_string("agent", "name") == "agent"
+    assert parse_optional_non_empty_string("agent", "name") == "agent"
+    assert parse_optional_non_empty_string(None, "name") is None
     assert parse_bool(True, "enabled") is True
     assert parse_optional_bool(True, "enabled") is True
     assert parse_optional_bool(None, "enabled") is None
@@ -94,6 +99,14 @@ def test_parse_scalar_helpers_use_strict_pydantic_validation() -> None:
 
     with pytest.raises(ValueError, match="name must be a string"):
         parse_string(None, "name")
+    with pytest.raises(ValueError, match="name must not be empty"):
+        parse_non_empty_string("  ", "name")
+    with pytest.raises(ValueError, match="name must be a non-empty string"):
+        parse_optional_non_empty_string(
+            "",
+            "name",
+            empty_template="{path} must be a non-empty string",
+        )
     with pytest.raises(ValueError, match="enabled must be a boolean"):
         parse_bool("yes", "enabled")
     with pytest.raises(ValueError, match="enabled must be a boolean"):
