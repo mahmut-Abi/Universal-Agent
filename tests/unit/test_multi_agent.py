@@ -41,6 +41,8 @@ from universal_agent.multi_agent import (
     decode_agent_delegation_batch_result,
     decode_agent_delegation_spec,
     decode_agent_delegation_state,
+    decode_agent_instance_record,
+    decode_agent_profile_record,
     decode_agent_registry_snapshot,
     decode_agent_task_request,
     decode_agent_task_result,
@@ -302,6 +304,31 @@ def test_agent_task_decoders_reject_invalid_payload_values() -> None:
             )
         )
 
+    with pytest.raises(ValueError, match="expected_output must be an object"):
+        decode_agent_task_request(immutable_json({"goal": "Audit"}))
+
+    with pytest.raises(ValueError, match=r"evidence\[0\] must be a string"):
+        decode_agent_task_result(
+            immutable_json(
+                {
+                    "task_id": "agent-task-1",
+                    "status": "completed",
+                    "evidence": [1],
+                }
+            )
+        )
+
+    with pytest.raises(ValueError, match=r"usage.total_tokens does not match"):
+        decode_agent_task_result(
+            immutable_json(
+                {
+                    "task_id": "agent-task-1",
+                    "status": "completed",
+                    "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 3},
+                }
+            )
+        )
+
 
 def test_agent_registry_distinguishes_profiles_from_instances() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
@@ -349,6 +376,34 @@ def test_agent_registry_snapshot_payload_round_trips_profiles_and_instances() ->
         "Read-only security checks"
     )
     assert restored.instance(AgentId("agent-1")).endpoint == "http://localhost:9000"
+
+
+def test_agent_registry_decoders_reject_invalid_payload_shapes() -> None:
+    with pytest.raises(ValueError, match=r"profile\.domains must be a list"):
+        decode_agent_profile_record(
+            immutable_json(
+                {
+                    "name": "security-auditor",
+                    "version": "1.0.0",
+                    "domains": "kubernetes",
+                }
+            )
+        )
+
+    with pytest.raises(ValueError, match=r"profiles\[0\] must be an object"):
+        decode_agent_registry_snapshot(immutable_json({"profiles": ["bad"]}))
+
+    with pytest.raises(ValueError, match=r"instance\.session_id must be a string"):
+        decode_agent_instance_record(
+            immutable_json(
+                {
+                    "agent_id": "agent-1",
+                    "profile_name": "security-auditor",
+                    "profile_version": "1.0.0",
+                    "session_id": 1,
+                }
+            )
+        )
 
 
 def test_agent_registry_snapshot_decoder_rejects_invalid_status() -> None:

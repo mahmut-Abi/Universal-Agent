@@ -4,9 +4,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from types import MappingProxyType
-from typing import NewType, cast
+from typing import NewType
+
+from pydantic import Field
+from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import DomainIdentity, JsonMapping, SessionId
+from universal_agent.core.config_validation import ConfigPayload
 from universal_agent.multi_agent.contracts import AgentTaskRequest
 
 AgentId = NewType("AgentId", str)
@@ -29,6 +33,34 @@ class AgentInstanceStatus(StrEnum):
     BUSY = "busy"
     OFFLINE = "offline"
     DRAINING = "draining"
+
+
+class _DomainIdentityPayload(ConfigPayload):
+    name: str
+    version: str
+
+
+class _AgentProfileRecordPayload(ConfigPayload):
+    name: str
+    version: str
+    domains: list[_DomainIdentityPayload] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
+    capabilities: list[str] = Field(default_factory=list)
+    description: str = ""
+
+
+class _AgentInstanceRecordPayload(ConfigPayload):
+    agent_id: str
+    profile_name: str
+    profile_version: str
+    status: str = AgentInstanceStatus.READY.value
+    session_id: str | None = None
+    endpoint: str | None = None
+
+
+class _AgentRegistrySnapshotPayload(ConfigPayload):
+    profiles: list[_AgentProfileRecordPayload] = Field(default_factory=list)
+    instances: list[_AgentInstanceRecordPayload] = Field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,16 +133,14 @@ def agent_profile_record_payload(profile: AgentProfileRecord) -> JsonMapping:
 
 
 def decode_agent_profile_record(payload: JsonMapping) -> AgentProfileRecord:
+    parsed = _parse_registry_payload(_AgentProfileRecordPayload, payload, prefix="profile")
     return AgentProfileRecord(
-        name=_string(payload.get("name"), "profile.name"),
-        version=_string(payload.get("version"), "profile.version"),
-        domains=tuple(
-            _decode_domain_identity(item)
-            for item in _mapping_list(payload.get("domains"), "profile.domains")
-        ),
-        permissions=_string_tuple(payload.get("permissions"), "profile.permissions"),
-        capabilities=_string_tuple(payload.get("capabilities"), "profile.capabilities"),
-        description=_string(payload.get("description"), "profile.description", ""),
+        name=parsed.name,
+        version=parsed.version,
+        domains=tuple(DomainIdentity(item.name, item.version) for item in parsed.domains),
+        permissions=tuple(parsed.permissions),
+        capabilities=tuple(parsed.capabilities),
+        description=parsed.description,
     )
 
 
@@ -128,13 +158,14 @@ def agent_instance_record_payload(instance: AgentInstanceRecord) -> JsonMapping:
 
 
 def decode_agent_instance_record(payload: JsonMapping) -> AgentInstanceRecord:
+    parsed = _parse_registry_payload(_AgentInstanceRecordPayload, payload, prefix="instance")
     return AgentInstanceRecord(
-        agent_id=AgentId(_string(payload.get("agent_id"), "instance.agent_id")),
-        profile_name=_string(payload.get("profile_name"), "instance.profile_name"),
-        profile_version=_string(payload.get("profile_version"), "instance.profile_version"),
-        status=_instance_status(payload.get("status")),
-        session_id=_optional_session_id(payload.get("session_id")),
-        endpoint=_optional_string(payload.get("endpoint"), "instance.endpoint"),
+        agent_id=AgentId(parsed.agent_id),
+        profile_name=parsed.profile_name,
+        profile_version=parsed.profile_version,
+        status=_instance_status(parsed.status),
+        session_id=_optional_session_id(parsed.session_id),
+        endpoint=parsed.endpoint,
     )
 
 
@@ -152,14 +183,31 @@ def agent_registry_snapshot_payload(snapshot: AgentRegistrySnapshot) -> JsonMapp
 
 
 def decode_agent_registry_snapshot(payload: JsonMapping) -> AgentRegistrySnapshot:
+    parsed = _parse_registry_payload(_AgentRegistrySnapshotPayload, payload)
     return AgentRegistrySnapshot(
         profiles=tuple(
-            decode_agent_profile_record(item)
-            for item in _mapping_list(payload.get("profiles"), "profiles")
+            AgentProfileRecord(
+                name=item.name,
+                version=item.version,
+                domains=tuple(
+                    DomainIdentity(domain.name, domain.version) for domain in item.domains
+                ),
+                permissions=tuple(item.permissions),
+                capabilities=tuple(item.capabilities),
+                description=item.description,
+            )
+            for item in parsed.profiles
         ),
         instances=tuple(
-            decode_agent_instance_record(item)
-            for item in _mapping_list(payload.get("instances"), "instances")
+            AgentInstanceRecord(
+                agent_id=AgentId(item.agent_id),
+                profile_name=item.profile_name,
+                profile_version=item.profile_version,
+                status=_instance_status(item.status),
+                session_id=_optional_session_id(item.session_id),
+                endpoint=item.endpoint,
+            )
+            for item in parsed.instances
         ),
     )
 
@@ -260,66 +308,90 @@ def _reject_empty_items(values: tuple[str, ...], field_name: str) -> None:
             raise ValueError(f"agent profile {field_name}[{index}] must not be empty")
 
 
-def _decode_domain_identity(payload: JsonMapping) -> DomainIdentity:
-    return DomainIdentity(
-        _string(payload.get("name"), "domain.name"),
-        _string(payload.get("version"), "domain.version"),
-    )
-
-
-def _mapping(value: object, field_name: str) -> JsonMapping:
-    if not isinstance(value, Mapping):
-        raise ValueError(f"{field_name} must be an object")
-    if any(not isinstance(key, str) for key in value):
-        raise ValueError(f"{field_name} keys must be strings")
-    return cast(JsonMapping, value)
-
-
-def _mapping_list(value: object, field_name: str) -> tuple[JsonMapping, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise ValueError(f"{field_name} must be a list")
-    return tuple(_mapping(item, f"{field_name}[{index}]") for index, item in enumerate(value))
-
-
-def _string(value: object, field_name: str, default: str | None = None) -> str:
-    if value is None and default is not None:
-        return default
-    if not isinstance(value, str):
-        raise ValueError(f"{field_name} must be a string")
-    return value
-
-
-def _optional_string(value: object, field_name: str) -> str | None:
+def _optional_session_id(value: str | None) -> SessionId | None:
     if value is None:
         return None
-    return _string(value, field_name)
+    return SessionId(value)
 
 
-def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise ValueError(f"{field_name} must be a list")
-    strings: list[str] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, str):
-            raise ValueError(f"{field_name}[{index}] must be a string")
-        strings.append(item)
-    return tuple(strings)
-
-
-def _optional_session_id(value: object) -> SessionId | None:
-    raw = _optional_string(value, "instance.session_id")
-    if raw is None:
-        return None
-    return SessionId(raw)
-
-
-def _instance_status(value: object) -> AgentInstanceStatus:
-    raw = _string(value, "instance.status", AgentInstanceStatus.READY.value)
+def _instance_status(raw: str) -> AgentInstanceStatus:
     try:
         return AgentInstanceStatus(raw)
     except ValueError as exc:
         raise ValueError(f"unsupported agent instance status: {raw}") from exc
+
+
+def _parse_registry_payload[T: ConfigPayload](
+    payload_type: type[T],
+    payload: Mapping[str, object],
+    *,
+    prefix: str | None = None,
+) -> T:
+    try:
+        return payload_type.model_validate(dict(payload))
+    except PydanticValidationError as exc:
+        raise ValueError(_registry_payload_error_message(exc, prefix=prefix)) from exc
+
+
+def _registry_payload_error_message(
+    error: PydanticValidationError,
+    *,
+    prefix: str | None,
+) -> str:
+    errors = error.errors(include_url=False)
+    if not errors:
+        return str(error)
+    first = errors[0]
+    path = _prefixed_path(_pydantic_error_path(first.get("loc", ())), prefix)
+    error_type = str(first.get("type", ""))
+    expected = _expected_registry_type(error_type, path)
+    if expected is not None:
+        return f"{path} must be {expected}"
+    message = str(first.get("msg", ""))
+    if message:
+        return message.removeprefix("Value error, ")
+    return str(error)
+
+
+def _expected_registry_type(error_type: str, path: str) -> str | None:
+    if error_type == "missing":
+        return _missing_registry_field_type(path)
+    return {
+        "dict_type": "an object",
+        "list_type": "a list",
+        "model_attributes_type": "an object",
+        "model_type": "an object",
+        "string_type": "a string",
+    }.get(error_type)
+
+
+def _missing_registry_field_type(path: str) -> str:
+    if path in {
+        "profile.domains",
+        "profile.permissions",
+        "profile.capabilities",
+        "profiles",
+        "instances",
+    }:
+        return "a list"
+    return "a string"
+
+
+def _prefixed_path(path: str, prefix: str | None) -> str:
+    if prefix is None or not path:
+        return path or (prefix or "")
+    return f"{prefix}.{path}"
+
+
+def _pydantic_error_path(location: object) -> str:
+    parts: list[str] = []
+    if isinstance(location, tuple):
+        for item in location:
+            if isinstance(item, int):
+                if parts:
+                    parts[-1] = f"{parts[-1]}[{item}]"
+                else:
+                    parts.append(f"[{item}]")
+            else:
+                parts.append(str(item))
+    return ".".join(parts)
