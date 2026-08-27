@@ -8,6 +8,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import pytest
+from starlette.testclient import TestClient
 
 from universal_agent import (
     AgentRuntime,
@@ -22,7 +23,13 @@ from universal_agent import (
     ScriptedModelAdapter,
     immutable_json,
 )
-from universal_agent.agentd import AgentdApp, AgentdAuthPolicy, AgentdHttpServer, AgentdServerConfig
+from universal_agent.agentd import (
+    AgentdApp,
+    AgentdAuthPolicy,
+    AgentdHttpServer,
+    AgentdServerConfig,
+    build_agentd_asgi_app,
+)
 from universal_agent.core import JsonMapping, JsonValue
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 
@@ -181,6 +188,31 @@ def test_agentd_http_server_serves_health_goal_and_event_routes() -> None:
     assert isinstance(last_event, dict)
     assert last_event["type"] == "GoalCompleted"
     assert backend.inspect_calls == 1
+
+
+def test_agentd_asgi_app_serves_health_without_socket_server() -> None:
+    app, _ = build_app([])
+
+    with TestClient(build_agentd_asgi_app(app)) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "service": "universal-agent-runtime"}
+
+
+def test_agentd_asgi_app_enforces_configured_body_limit() -> None:
+    app, _ = build_app([])
+
+    with TestClient(build_agentd_asgi_app(app, AgentdServerConfig(max_body_bytes=2))) as client:
+        response = client.post("/v1/sessions", json=goal_submission_body())
+
+    assert response.status_code == 413
+    assert response.json() == {
+        "error": {
+            "code": "payload_too_large",
+            "message": "request body is too large",
+        }
+    }
 
 
 def test_agentd_http_server_enforces_optional_bearer_auth() -> None:

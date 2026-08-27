@@ -119,7 +119,8 @@ Session event reads support cursor semantics:
 ## agentd
 
 `AgentdApp` is a framework-free HTTP-shaped route adapter. `AgentdHttpServer`
-wraps it with the Python standard library HTTP server.
+wraps it with a Starlette ASGI adapter served by uvicorn, while preserving the
+same Runtime API request/response contract for embedded tests and local clients.
 
 Current route families include:
 

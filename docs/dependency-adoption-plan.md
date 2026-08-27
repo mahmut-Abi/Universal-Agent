@@ -39,13 +39,22 @@
 | 剩余 | 可继续评估更深层 dataclass 校验是否值得迁移；当前不建议一次性替换核心 runtime contracts |
 | 风险 | 低；建议继续按模块迁移，避免一次性替换所有 dataclass 构造契约 |
 
-### 3. FastAPI/Starlette + uvicorn → 替换手写 agentd HTTP 服务
+### 3. Starlette + uvicorn → 替换 agentd socket/server 适配层（第一批已完成）
 
 | 项 | 说明 |
 |---|---|
-| 现状 | `agentd/app.py` 2796 行：stdlib http.server 上手写路由、HMAC 中间件、SSE、JSON 序列化 |
-| 收益 | 预计 **-1200~1500 行**；SSE 一等公民；uvicorn 吞吐高于 stdlib 线程模型；自动 OpenAPI 文档（官方 client 可生成）；认证收进 middleware 缩小审计面 |
-| 风险 | 中：依赖树变大；需保证 Runtime API 行为不变（现有 test_agentd_routes 兜底） |
+| 现状 | `AgentdHttpServer` 已从 stdlib `http.server` 切到 Starlette ASGI + uvicorn；`AgentdApp.handle()` 仍作为稳定 Runtime API 路由契约保留 |
+| 收益 | 生产服务边界获得 ASGI/uvicorn 生命周期、并发和 socket 处理；CLI/server 注入测试契约保持兼容 |
+| 剩余 | 后续再按路由族逐步把 `agentd/app.py` 手写路由迁入 Starlette/FastAPI primitives，并在稳定 schema 后补 OpenAPI |
+| 风险 | 中：依赖树变大；需持续保证 Runtime API 行为不变（现有 test_agentd_routes / test_agentd_server 兜底） |
+
+### 4. prometheus-client → 替换手写 Prometheus text exposition（已完成）
+
+| 项 | 说明 |
+|---|---|
+| 现状 | `operations/prometheus.py` 已使用 `CollectorRegistry`、`Gauge` 与 `generate_latest` 生成 Prometheus exposition |
+| 收益 | 指标格式交给官方库维护，避免手写 HELP/TYPE/sample 行细节；Runtime 仍只负责从事件投影 metrics view |
+| 风险 | 低：输出数值使用 prometheus-client 的 float 表达，相关 CLI/agentd 测试已覆盖 |
 
 ---
 
@@ -87,7 +96,8 @@
     Pydantic（host/profile/domain config 层先行）
 
 第二批（产品化冲刺）
-    FastAPI(agentd 重写) + OpenAPI 导出
+    Starlette/uvicorn(agentd server 适配层，已完成)
+    FastAPI/Starlette(agentd route primitives 渐进迁移) + OpenAPI 导出
     → 官方 Python/JS client 由 schema 自动生成
 
 第三批（体验与观测）

@@ -1,11 +1,18 @@
 from __future__ import annotations
 
-import asyncio
 import json
+import socket
 from collections.abc import Mapping
+from contextlib import suppress
 from dataclasses import dataclass
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import MappingProxyType
+
+from starlette.applications import Starlette
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import JSONResponse
+from starlette.responses import Response as StarletteResponse
+from starlette.routing import Route
+from uvicorn import Config, Server
 
 from universal_agent.agentd.app import AgentdApp
 from universal_agent.agentd.http import HttpRequest, HttpResponse
@@ -19,110 +26,158 @@ class AgentdServerConfig:
     max_body_bytes: int = 1_000_000
 
 
-class AgentdHttpServer(ThreadingHTTPServer):
-    """Standard-library HTTP adapter for AgentdApp.
+class AgentdHttpServer:
+    """Uvicorn/Starlette HTTP adapter for AgentdApp.
 
-    The server owns socket/request translation only. Runtime behavior remains
+    The server owns socket/request translation only. Runtime behavior stays
     behind AgentdApp and RuntimeService, preserving the application/runtime seam.
+    The public shape intentionally mirrors the previous local server adapter so
+    CLI tests and embedded callers can keep injecting server runners.
     """
 
     app: AgentdApp
     config: AgentdServerConfig
+    server_address: tuple[str, int]
+    _server: Server
+    _socket: socket.socket
+    _closed: bool
 
     def __init__(self, app: AgentdApp, config: AgentdServerConfig | None = None) -> None:
         config = config or AgentdServerConfig()
         self.app = app
         self.config = config
-        super().__init__((config.host, config.port), agentd_request_handler())
+        self._socket = _bind_socket(config.host, config.port)
+        host, port = _socket_address(self._socket)
+        self.server_address = (host, port)
+        self._closed = False
+        self._server = Server(
+            Config(
+                build_agentd_asgi_app(app, config),
+                host=config.host,
+                port=config.port,
+                access_log=False,
+                lifespan="off",
+                log_level="warning",
+            )
+        )
 
     @property
     def base_url(self) -> str:
-        host = str(self.server_address[0])
-        port = int(self.server_address[1])
+        host, port = self.server_address
         return f"http://{host}:{port}"
 
+    def serve_forever(self) -> None:
+        if self._closed:
+            raise RuntimeError("agentd server socket is closed")
+        self._server.run(sockets=[self._socket])
 
-def agentd_request_handler() -> type[BaseHTTPRequestHandler]:
-    class _AgentdRequestHandler(BaseHTTPRequestHandler):
-        server: AgentdHttpServer
+    def shutdown(self) -> None:
+        self._server.should_exit = True
 
-        def do_GET(self) -> None:
-            self._dispatch()
-
-        def do_POST(self) -> None:
-            self._dispatch()
-
-        def do_PUT(self) -> None:
-            self._dispatch()
-
-        def do_PATCH(self) -> None:
-            self._dispatch()
-
-        def do_DELETE(self) -> None:
-            self._dispatch()
-
-        def log_message(self, format: str, *args: object) -> None:
+    def server_close(self) -> None:
+        if self._closed:
             return
+        self._closed = True
+        with suppress(OSError):
+            self._socket.close()
 
-        def _dispatch(self) -> None:
-            request = self._request()
-            if isinstance(request, HttpResponse):
-                self._write_response(request)
-                return
-            try:
-                response = asyncio.run(self.server.app.handle(request))
-            except Exception as exc:  # pragma: no cover - defensive adapter boundary
-                response = _error_response(500, "internal_error", str(exc))
-            self._write_response(response)
 
-        def _request(self) -> HttpRequest | HttpResponse:
-            body = self._body()
-            if isinstance(body, HttpResponse):
-                return body
-            return HttpRequest(
-                method=self.command,
-                path=self.path,
-                body=body,
-                headers=MappingProxyType(dict(self.headers.items())),
+def build_agentd_asgi_app(app: AgentdApp, config: AgentdServerConfig | None = None) -> Starlette:
+    """Build the ASGI adapter used by the local agentd server."""
+
+    config = config or AgentdServerConfig()
+
+    async def dispatch(request: StarletteRequest) -> StarletteResponse:
+        agentd_request = await _agentd_request(request, config)
+        if isinstance(agentd_request, HttpResponse):
+            return _starlette_response(agentd_request)
+        try:
+            response = await app.handle(agentd_request)
+        except Exception as exc:  # pragma: no cover - defensive adapter boundary
+            response = _error_response(500, "internal_error", str(exc))
+        return _starlette_response(response)
+
+    return Starlette(
+        routes=[
+            Route(
+                "/{path:path}",
+                dispatch,
+                methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
             )
+        ]
+    )
 
-        def _body(self) -> JsonMapping | HttpResponse:
-            length_value = self.headers.get("content-length", "0")
-            try:
-                length = int(length_value)
-            except ValueError:
-                return _error_response(400, "bad_request", "content-length must be an integer")
-            if length < 0:
-                return _error_response(400, "bad_request", "content-length must be non-negative")
-            if length > self.server.config.max_body_bytes:
-                return _error_response(413, "payload_too_large", "request body is too large")
-            if length == 0:
-                return immutable_json()
-            try:
-                raw = self.rfile.read(length)
-                loaded = json.loads(raw.decode("utf-8"))
-            except UnicodeDecodeError:
-                return _error_response(400, "bad_request", "request body must be UTF-8 JSON")
-            except json.JSONDecodeError as exc:
-                return _error_response(400, "bad_request", f"invalid JSON body: {exc.msg}")
-            try:
-                return _json_mapping(loaded)
-            except ValueError as exc:
-                return _error_response(400, "bad_request", str(exc))
 
-        def _write_response(self, response: HttpResponse) -> None:
-            body = _response_body(response)
-            self.send_response(response.status_code)
-            headers = dict(response.headers)
-            if "content-type" not in {key.lower() for key in headers}:
-                headers["content-type"] = "application/json"
-            headers["content-length"] = str(len(body))
-            for key, value in headers.items():
-                self.send_header(key, value)
-            self.end_headers()
-            self.wfile.write(body)
+async def _agentd_request(
+    request: StarletteRequest,
+    config: AgentdServerConfig,
+) -> HttpRequest | HttpResponse:
+    body = await _request_body(request, config.max_body_bytes)
+    if isinstance(body, HttpResponse):
+        return body
+    path = request.url.path
+    if request.url.query:
+        path = f"{path}?{request.url.query}"
+    return HttpRequest(
+        method=request.method,
+        path=path,
+        body=body,
+        headers=MappingProxyType(dict(request.headers.items())),
+    )
 
-    return _AgentdRequestHandler
+
+async def _request_body(
+    request: StarletteRequest,
+    max_body_bytes: int,
+) -> JsonMapping | HttpResponse:
+    length_value = request.headers.get("content-length")
+    if length_value is not None:
+        try:
+            length = int(length_value)
+        except ValueError:
+            return _error_response(400, "bad_request", "content-length must be an integer")
+        if length < 0:
+            return _error_response(400, "bad_request", "content-length must be non-negative")
+        if length > max_body_bytes:
+            return _error_response(413, "payload_too_large", "request body is too large")
+
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > max_body_bytes:
+            return _error_response(413, "payload_too_large", "request body is too large")
+        if chunk:
+            chunks.append(chunk)
+    if not chunks:
+        return immutable_json()
+
+    try:
+        loaded = json.loads(b"".join(chunks).decode("utf-8"))
+    except UnicodeDecodeError:
+        return _error_response(400, "bad_request", "request body must be UTF-8 JSON")
+    except json.JSONDecodeError as exc:
+        return _error_response(400, "bad_request", f"invalid JSON body: {exc.msg}")
+    try:
+        return _json_mapping(loaded)
+    except ValueError as exc:
+        return _error_response(400, "bad_request", str(exc))
+
+
+def _starlette_response(response: HttpResponse) -> StarletteResponse:
+    headers = dict(response.headers)
+    if response.text_body is not None:
+        return StarletteResponse(
+            response.text_body.encode("utf-8"),
+            status_code=response.status_code,
+            headers=headers,
+            media_type=None,
+        )
+    return JSONResponse(
+        _to_json(response.body),
+        status_code=response.status_code,
+        headers=headers,
+    )
 
 
 def _error_response(status_code: int, code: str, message: str) -> HttpResponse:
@@ -130,12 +185,6 @@ def _error_response(status_code: int, code: str, message: str) -> HttpResponse:
         status_code=status_code,
         body=immutable_json({"error": {"code": code, "message": message}}),
     )
-
-
-def _response_body(response: HttpResponse) -> bytes:
-    if response.text_body is not None:
-        return response.text_body.encode("utf-8")
-    return json.dumps(_to_json(response.body), sort_keys=True).encode("utf-8")
 
 
 def _json_mapping(value: object) -> JsonMapping:
@@ -172,3 +221,29 @@ def _to_json(value: object) -> JsonValue:
     if isinstance(value, list | tuple):
         return [_to_json(item) for item in value]
     return str(value)
+
+
+def _bind_socket(host: str, port: int) -> socket.socket:
+    last_error: OSError | None = None
+    for family, socktype, proto, _canonname, address in socket.getaddrinfo(
+        host,
+        port,
+        type=socket.SOCK_STREAM,
+    ):
+        sock = socket.socket(family, socktype, proto)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(address)
+            sock.listen()
+            return sock
+        except OSError as exc:
+            last_error = exc
+            sock.close()
+    if last_error is not None:
+        raise last_error
+    raise OSError(f"could not resolve bind address: {host}:{port}")
+
+
+def _socket_address(sock: socket.socket) -> tuple[str, int]:
+    address = sock.getsockname()
+    return str(address[0]), int(address[1])

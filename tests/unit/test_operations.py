@@ -176,15 +176,15 @@ def test_prometheus_metrics_export_projects_runtime_metrics_text() -> None:
 
     assert exported.endswith("\n")
     assert "# TYPE universal_agent_runtime_sessions gauge\n" in exported
-    assert "universal_agent_runtime_sessions 2\n" in exported
-    assert "universal_agent_runtime_waiting_sessions 1\n" in exported
-    assert "universal_agent_runtime_actions_completed 1\n" in exported
-    assert "universal_agent_runtime_decisions_generated 1\n" in exported
-    assert "universal_agent_runtime_decisions_validated 1\n" in exported
-    assert "universal_agent_runtime_decisions_rejected 1\n" in exported
-    assert "universal_agent_runtime_active_resource_locks 1\n" in exported
-    assert "universal_agent_runtime_model_total_tokens 125\n" in exported
-    assert "universal_agent_runtime_model_estimated_cost_micros 42\n" in exported
+    assert "universal_agent_runtime_sessions 2.0\n" in exported
+    assert "universal_agent_runtime_waiting_sessions 1.0\n" in exported
+    assert "universal_agent_runtime_actions_completed 1.0\n" in exported
+    assert "universal_agent_runtime_decisions_generated 1.0\n" in exported
+    assert "universal_agent_runtime_decisions_validated 1.0\n" in exported
+    assert "universal_agent_runtime_decisions_rejected 1.0\n" in exported
+    assert "universal_agent_runtime_active_resource_locks 1.0\n" in exported
+    assert "universal_agent_runtime_model_total_tokens 125.0\n" in exported
+    assert "universal_agent_runtime_model_estimated_cost_micros 42.0\n" in exported
 
 
 def test_prometheus_metrics_export_sanitizes_metric_prefix() -> None:
@@ -192,7 +192,7 @@ def test_prometheus_metrics_export_sanitizes_metric_prefix() -> None:
 
     exported = build_prometheus_metrics_export(metrics, prefix="123 bad-prefix")
 
-    assert "_123_bad_prefix_sessions 0\n" in exported
+    assert "_123_bad_prefix_sessions 0.0\n" in exported
 
 
 def test_runtime_cost_is_grouped_by_model_usage_events() -> None:

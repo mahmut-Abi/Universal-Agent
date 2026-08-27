@@ -5,7 +5,11 @@ from universal_agent.agentd.http import (
     HttpRequest,
     HttpResponse,
 )
-from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
+from universal_agent.agentd.server import (
+    AgentdHttpServer,
+    AgentdServerConfig,
+    build_agentd_asgi_app,
+)
 
 __all__ = [
     "AgentdApp",
@@ -15,4 +19,5 @@ __all__ = [
     "GoalSubmission",
     "HttpRequest",
     "HttpResponse",
+    "build_agentd_asgi_app",
 ]

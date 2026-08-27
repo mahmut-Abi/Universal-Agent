@@ -97,7 +97,7 @@ is what makes cross-runtime tests exercise the snapshot rather than object ident
   runtime events through one store seam, including `file_journal` and `sqlite_transaction`
   strategies.
 
-This remains usable in-process, while the standard-library HTTP bridge now wraps the same
+This remains usable in-process, while the Starlette ASGI + uvicorn bridge now wraps the same
 `AgentdApp` route adapter for local `agentd` hosting. SSE-formatted event batches now share the same
 cursor semantics as JSON event reads, and agentd/CLI consumers can request bounded wait polling
 for newly appended events; production database persistence and long-lived push delivery are later
@@ -154,9 +154,9 @@ coordination health, work queue, worker and lock projections,
 with a report directory, and `GET /console/settings` returns Runtime settings built from the same
 RuntimeService projections. `AgentdAuthPolicy` can optionally require `Authorization: Bearer ...`
 for all non-health routes while leaving `GET /health` and `GET /ready` public for local probes;
-separate read-only bearer tokens may access `GET` routes but receive `403` for mutating requests. `AgentdHttpServer`
-is the standard-library HTTP bridge for this adapter: it owns socket/body/header translation only and
-does not touch Runtime internals.
+separate read-only bearer tokens may access `GET` routes but receive `403` for mutating requests.
+`AgentdHttpServer` is the Starlette ASGI + uvicorn bridge for this adapter: it owns
+socket/body/header translation only and does not touch Runtime internals.
 
 `agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
 Capability/Tool/Policy/Evaluator/Memory catalogs, `config show`, and session
@@ -169,7 +169,7 @@ It also exposes operations commands for metrics, cost, logs, traces, doctor, aud
 `agent metrics --format prometheus` emits Prometheus text exposition, while
 `agent traces --format otlp` and `agent session traces <id> --format otlp` emit OTLP
 JSON-compatible trace payloads from the same event-derived span projection. `agent serve` starts the
-standard-library `AgentdHttpServer` around the same service and accepts `--auth-token` /
+ASGI-backed `AgentdHttpServer` around the same service and accepts `--auth-token` /
 `--auth-token-env` plus `--read-only-auth-token` / `--read-only-auth-token-env` to enable the same
 optional bearer-token protection without requiring secrets in the process command line.
 `agent serve --evaluation-report-dir` also wires persisted reports into `/console/evaluations`;
@@ -269,8 +269,8 @@ detect accidental split state/event wiring. These adapters are local persistence
   capabilities, tools, delegated execution, runnable examples, an `AgentdApp` route adapter for
   HTTP-shaped goal submission, cursor session listing, JSON and SSE-formatted session/event reads,
   pause/resume/cancel routes, runtime configuration reads with redacted sensitive environment values
-  plus env/file secret-reference availability metadata that never includes secret values, Profile catalog reads, a
-  standard-library `AgentdHttpServer` bridge, file-backed session/event stores for local recovery,
+  plus env/file secret-reference availability metadata that never includes secret values, Profile catalog reads, an
+  ASGI-backed `AgentdHttpServer` bridge, file-backed session/event stores for local recovery,
   a local CLI adapter, and typed `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for
   environment, secret references, limits, memory/file/SQLite store backends,
   Domain identity validation, multi-Domain composition activation, and CLI loading of generated
