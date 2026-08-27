@@ -15,7 +15,7 @@ from universal_agent.evaluation.recording import (
     EvaluationScenarioRecording,
     FileEvaluationReportStore,
 )
-from universal_agent.web_ui import _metric_card, _page, _section, _table
+from universal_agent.web_ui import _hero_block, _HeroPill, _metric_card, _page, _section, _table
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,19 +170,10 @@ def _gate_check_text_lines(reports: tuple[EvaluationReportRecording, ...]) -> li
 
 
 def _hero(snapshot: EvaluationConsoleSnapshot) -> str:
-    return "\n".join(
-        (
-            '<section class="hero">',
-            "<div>",
-            "<p>Universal Agent Runtime</p>",
-            "<h1>Evaluation Console</h1>",
-            f"<span>report_dir={_html(snapshot.report_dir)}</span>",
-            "</div>",
-            '<div class="status">',
-            f'<span class="pill ok">Reports: {len(snapshot.reports)}</span>',
-            "</div>",
-            "</section>",
-        )
+    return _hero_block(
+        "Evaluation Console",
+        detail=f"report_dir={snapshot.report_dir}",
+        pills=(_HeroPill("Reports", len(snapshot.reports)),),
     )
 
 

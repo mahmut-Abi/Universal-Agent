@@ -82,13 +82,13 @@
 | 收益 | 去除三处直接 `fcntl` 调用，获得跨平台文件锁抽象；测试仍覆盖跨进程互斥行为 |
 | 风险 | 低：仅替换文件型本地协调边界，不改变 SQLite 后端和调度语义 |
 
-### 8. Jinja2 → 替换手写 Web 页面外壳拼接（第一批已完成）
+### 8. Jinja2 → 替换手写 Web 页面外壳与 Hero 拼接（持续推进）
 
 | 项 | 说明 |
 |---|---|
-| 现状 | `web_ui._page()`、`_section()`、`_metric_card()`、`_table()` 已用 Jinja2 接管 Web Console 与 Evaluation Console 的页面骨架和公共 section/card/table 片段；Evaluation Console 已复用公共 helper，去除一份重复手写 HTML helper |
-| 收益 | HTML 外壳与高频片段渲染统一到模板 seam，减少重复拼接和 escaping 漏洞面；后续可按页面族迁移 row/detail/hero 模板，不必一次性重写全部 UI |
-| 风险 | 低：渲染内容顺序和现有 URL/section helper 不变，Web/Evaluation/agentd route 测试覆盖 escaping 与关键页面文本 |
+| 现状 | `web_ui._page()`、`_section()`、`_metric_card()`、`_table()` 与 `_hero_block()` 已用 Jinja2 接管 Web Console 与 Evaluation Console 的页面骨架、公共 section/card/table 片段、hero/nav/status pill 片段；Evaluation Console 已复用公共 helper，去除第二套手写 hero HTML |
+| 收益 | HTML 外壳与高频片段渲染统一到模板 seam，减少重复拼接和 escaping 漏洞面；后续可按页面族迁移 row/detail 模板，不必一次性重写全部 UI |
+| 风险 | 低：渲染内容顺序和现有 URL/section helper 不变，Web/Evaluation/agentd route 测试覆盖 escaping、导航链接与关键页面文本 |
 
 ### 9. python-dateutil → 替换手写 ISO datetime 兼容解析（已完成）
 
@@ -123,7 +123,7 @@
 | 库 | 触发条件 | 说明 |
 |---|---|---|
 | Redis 或 PostgreSQL | P6 分布式超过本地原语 | 文件轮询队列 → `FOR UPDATE SKIP LOCKED` / Redis TTL 锁的生产级语义 |
-| Jinja2 | Web section/table helper 继续膨胀 | 页面外壳已完成；后续再迁移高重复 table/card/hero section，不一次性重写全部 UI |
+| Jinja2 | Web row/detail helper 继续膨胀 | 页面外壳与 hero/nav 已完成；后续再迁移高重复 row/detail section，不一次性重写全部 UI |
 
 ---
 
@@ -157,12 +157,12 @@
     PyYAML(Domain Package manifest YAML 兼容，已完成)
     packaging runtime_api compatibility specifier（已完成）
     filelock 文件协调锁（已完成）
-    Jinja2 Web/Evaluation 页面外壳（第一批已完成）
+    Jinja2 Web/Evaluation 页面外壳与 hero/nav（持续推进）
     python-dateutil ISO datetime 解析（已完成）
 
 第四批（触发式）
     Redis/PostgreSQL 分布式后端
-    Jinja2 模板化 web console
+    Jinja2 模板化 web console row/detail 片段
 ```
 
 ## 关联待办（非依赖类，同批考虑）

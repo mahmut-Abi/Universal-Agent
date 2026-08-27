@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from html import escape
 
 from jinja2 import Environment, select_autoescape
@@ -38,6 +39,36 @@ _TABLE_TEMPLATE = _WEB_ENV.from_string(
     "{% for header in headers %}<th>{{ header }}</th>{% endfor %}"
     "</tr></thead><tbody>{{ rows|join|safe }}</tbody></table></div>"
 )
+_HERO_TEMPLATE = _WEB_ENV.from_string(
+    '<section class="hero">\n'
+    "<div>\n"
+    "<p>{{ eyebrow }}</p>\n"
+    "<h1>{{ title }}</h1>\n"
+    "{% if detail %}<span>{{ detail }}</span>{% endif %}\n"
+    "</div>\n"
+    '<div class="status">\n'
+    "{% for link in links %}"
+    '<a class="pill link" href="{{ link.href }}">{{ link.label }}</a>'
+    "{% endfor %}\n"
+    "{% for pill in pills %}"
+    '<span class="pill {{ pill.class_name }}">{{ pill.label }}: {{ pill.value }}</span>'
+    "{% endfor %}\n"
+    "</div>\n"
+    "</section>"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _HeroLink:
+    label: str
+    href: str
+
+
+@dataclass(frozen=True, slots=True)
+class _HeroPill:
+    label: str
+    value: object
+    class_name: str = "ok"
 
 
 def _page(title: str, sections: tuple[str, ...], *, stylesheet: str | None = None) -> str:
@@ -58,6 +89,23 @@ def _metric_card(label: str, value: object) -> str:
 
 def _table(headers: tuple[str, ...], rows: tuple[str, ...]) -> str:
     return _TABLE_TEMPLATE.render(headers=headers, rows=rows)
+
+
+def _hero_block(
+    title: str,
+    *,
+    detail: str = "",
+    links: tuple[_HeroLink, ...] = (),
+    pills: tuple[_HeroPill, ...] = (),
+    eyebrow: str = "Universal Agent Runtime",
+) -> str:
+    return _HERO_TEMPLATE.render(
+        eyebrow=eyebrow,
+        title=title,
+        detail=detail,
+        links=links,
+        pills=pills,
+    )
 
 
 def _html(value: object) -> str:

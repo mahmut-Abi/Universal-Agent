@@ -22,11 +22,13 @@ from universal_agent.evaluation.recording import (
 
 def test_evaluation_console_renders_and_escapes_report_snapshot() -> None:
     report = evaluation_report("daily <suite>")
-    snapshot = EvaluationConsoleSnapshot("/tmp/reports", (report,))
+    snapshot = EvaluationConsoleSnapshot("/tmp/<reports>", (report,))
 
     rendered = render_evaluation_console(snapshot)
 
     assert "Evaluation Console" in rendered
+    assert "report_dir=/tmp/&lt;reports&gt;" in rendered
+    assert "report_dir=/tmp/<reports>" not in rendered
     assert "daily &lt;suite&gt;" in rendered
     assert "daily <suite>" not in rendered
     assert "healthy &lt;workload&gt;" in rendered
