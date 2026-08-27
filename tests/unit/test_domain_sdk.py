@@ -20,6 +20,7 @@ from universal_agent.core import (
     CapabilityDefinition,
     JsonMapping,
     ToolDefinition,
+    write_json_file,
 )
 from universal_agent.evaluation import CriteriaEvaluator
 
@@ -142,3 +143,57 @@ def test_domain_runtime_spec_projects_to_domain_package_scaffold_metadata(
     assert package.manifest.compatibility.domain_api == "agent.nantian.dev/v1alpha1"
     assert package.manifest.tags == ("sdk",)
     assert (package_root / "resources" / "runbook.md").is_file()
+
+
+def test_domain_loader_reads_manifest_json_through_pydantic_payload(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "domain.json"
+    write_json_file(
+        manifest_path,
+        {
+            "apiVersion": "agent.nantian.dev/v1alpha1",
+            "kind": "Domain",
+            "metadata": {
+                "name": "widget",
+                "version": "1.0.0",
+                "description": "Widget inspection Domain",
+            },
+            "spec": {
+                "ontology": ["Widget"],
+                "capabilities": ["inspect_widget"],
+                "evaluators": ["criteria"],
+            },
+        },
+    )
+
+    manifest = DomainLoader().manifest_from_json(manifest_path)
+
+    assert manifest.metadata.name == "widget"
+    assert manifest.ontology == ("Widget",)
+    assert manifest.capability_names == ("inspect_widget",)
+    assert manifest.evaluator_names == ("criteria",)
+
+
+def test_domain_loader_manifest_json_rejects_non_string_references(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "domain.json"
+    write_json_file(
+        manifest_path,
+        {
+            "apiVersion": "agent.nantian.dev/v1alpha1",
+            "kind": "Domain",
+            "metadata": {"name": "widget", "version": "1.0.0"},
+            "spec": {
+                "capabilities": [1],
+                "evaluators": ["criteria"],
+            },
+        },
+    )
+
+    with pytest.raises(
+        DomainValidationError,
+        match=r"invalid domain manifest JSON: spec\.capabilities\[0\] must be a string",
+    ):
+        DomainLoader().manifest_from_json(manifest_path)

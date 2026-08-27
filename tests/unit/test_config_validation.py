@@ -12,10 +12,12 @@ from universal_agent.core.config_validation import (
     parse_json_object,
     parse_json_object_sequence,
     parse_json_value,
+    parse_lower_sha256_hex_digest,
     parse_non_empty_string,
     parse_non_empty_string_sequence,
     parse_optional_bool,
     parse_optional_int,
+    parse_optional_lower_sha256_hex_digest,
     parse_optional_non_empty_string,
     parse_optional_string,
     parse_payload,
@@ -64,12 +66,18 @@ def test_parse_json_object_sequence_accepts_lists_of_immutable_mappings() -> Non
 
 
 def test_parse_string_sequence_reports_indexed_errors() -> None:
+    assert parse_string_sequence(("ok", "done"), "items") == ("ok", "done")
+
     with pytest.raises(ValueError, match=r"items\[1\] must be a string"):
         parse_string_sequence(["ok", 1], "items")
 
 
 def test_parse_non_empty_string_sequence_reports_indexed_empty_values() -> None:
     assert parse_non_empty_string_sequence(["ready"], "checks") == ("ready",)
+    assert parse_non_empty_string_sequence(("ready", "healthy"), "checks") == (
+        "ready",
+        "healthy",
+    )
 
     with pytest.raises(ValueError, match=r"checks\[1\] must not be empty"):
         parse_non_empty_string_sequence(["ready", "  "], "checks")
@@ -80,6 +88,22 @@ def test_parse_non_empty_string_sequence_reports_indexed_empty_values() -> None:
             "checks",
             empty_template="{path} must be a non-empty string",
         )
+
+
+def test_parse_lower_sha256_hex_digest_uses_pydantic_pattern_validation() -> None:
+    digest = "a" * 64
+
+    assert parse_lower_sha256_hex_digest(digest, "manifest_sha256") == digest
+    assert parse_optional_lower_sha256_hex_digest(None, "manifest_sha256") == ""
+    assert parse_optional_lower_sha256_hex_digest("", "manifest_sha256") == ""
+
+    with pytest.raises(
+        ValueError,
+        match="manifest_sha256 must be a lowercase SHA-256 hex digest",
+    ):
+        parse_lower_sha256_hex_digest("A" * 64, "manifest_sha256")
+    with pytest.raises(ValueError, match="manifest_sha256 must be a string"):
+        parse_lower_sha256_hex_digest(123, "manifest_sha256")
 
 
 def test_parse_scalar_helpers_use_strict_pydantic_validation() -> None:

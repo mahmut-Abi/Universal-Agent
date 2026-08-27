@@ -8,6 +8,10 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
+from universal_agent.core.config_validation import (
+    parse_non_empty_string,
+    parse_non_empty_string_sequence,
+)
 from universal_agent.domain.runtime import ActiveDomain, DomainRuntime
 
 DOMAIN_PACKAGE_MANIFEST = "manifest.json"
@@ -235,8 +239,10 @@ class DomainPackageRuntimeActivation:
 
 
 def _require_non_empty(value: str, field_name: str) -> None:
-    if not value.strip():
-        raise DomainPackageValidationError(f"{field_name} must not be empty")
+    try:
+        parse_non_empty_string(value, field_name)
+    except ValueError as exc:
+        raise DomainPackageValidationError(str(exc)) from exc
 
 
 def _runtime_api_specifier(value: str, *, field_name: str) -> SpecifierSet:
@@ -249,9 +255,15 @@ def _runtime_api_specifier(value: str, *, field_name: str) -> SpecifierSet:
 
 
 def _validate_strings(field_name: str, values: Sequence[str]) -> None:
-    for index, value in enumerate(values):
-        if not isinstance(value, str) or not value.strip():
-            raise DomainPackageValidationError(f"{field_name}[{index}] must be a non-empty string")
+    try:
+        parse_non_empty_string_sequence(
+            tuple(values),
+            field_name,
+            empty_template="{path} must be a non-empty string",
+            item_type_template="{path} must be a non-empty string",
+        )
+    except ValueError as exc:
+        raise DomainPackageValidationError(str(exc)) from exc
 
 
 def _validate_package_resources(resources: Sequence[str]) -> None:

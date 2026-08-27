@@ -343,6 +343,32 @@ def test_ecosystem_registry_manifest_rejects_invalid_runtime_api_specifier() -> 
         decode_ecosystem_registry_manifest(cast(JsonMapping, payload))
 
 
+def test_ecosystem_registry_manifest_rejects_invalid_sha256_digest() -> None:
+    payload: dict[str, object] = {
+        "apiVersion": "agent.nantian.dev/v1alpha1",
+        "kind": "EcosystemRegistry",
+        "metadata": {
+            "name": "registry",
+            "version": "1.0.0",
+            "description": "Registry",
+        },
+        "domain_packages": [
+            {
+                "name": "kubernetes",
+                "version": "1.0.0",
+                "description": "Kubernetes",
+                "manifest_sha256": "A" * 64,
+            }
+        ],
+    }
+
+    with pytest.raises(
+        EcosystemRegistryValidationError,
+        match=r"domain_packages\[\]\.manifest_sha256 must be a lowercase SHA-256 hex digest",
+    ):
+        decode_ecosystem_registry_manifest(cast(JsonMapping, payload))
+
+
 def test_ecosystem_registry_index_queries_exported_manifest(tmp_path: Path) -> None:
     domain_root = tmp_path / "domains"
     dataset_root = tmp_path / "datasets"

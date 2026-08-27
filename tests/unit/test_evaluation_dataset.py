@@ -157,6 +157,29 @@ def test_load_evaluation_dataset_rejects_missing_suite_and_unsafe_paths(tmp_path
         decode_evaluation_dataset_manifest(dataset_payload(suite_path="../suite.json"))
 
 
+def test_decode_evaluation_dataset_manifest_reports_indexed_empty_tag_errors() -> None:
+    metadata_payload = dataset_payload(tags=("kubernetes", " "))
+
+    with pytest.raises(
+        EvaluationDatasetValidationError,
+        match=r"metadata\.tags\[1\] must be a non-empty string",
+    ):
+        decode_evaluation_dataset_manifest(metadata_payload)
+
+    suite_payload = dataset_payload()
+    suites = suite_payload["suites"]
+    assert isinstance(suites, list)
+    suite = suites[0]
+    assert isinstance(suite, dict)
+    suite["tags"] = ["smoke", ""]
+
+    with pytest.raises(
+        EvaluationDatasetValidationError,
+        match=r"suite\.tags\[1\] must be a non-empty string",
+    ):
+        decode_evaluation_dataset_manifest(suite_payload)
+
+
 def test_evaluation_dataset_verification_checks_local_manifest_and_suites(
     tmp_path: Path,
 ) -> None:

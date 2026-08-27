@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -19,6 +18,7 @@ from universal_agent.core.config_validation import (
     PydanticJsonValue,
     json_mapping,
     parse_json_object,
+    parse_non_empty_string,
     parse_non_empty_string_sequence,
     parse_payload,
 )
@@ -291,14 +291,14 @@ def decode_evaluation_dataset_manifest(payload: JsonMapping) -> EvaluationDatase
                 name=suite.name,
                 path=suite.path,
                 description=suite.description or "",
-                tags=_string_tuple(suite.tags, "tags"),
+                tags=_string_tuple(suite.tags, "suite.tags"),
             )
             for suite in manifest_payload.suites
         ),
         domains=tuple(
             DomainIdentity(domain.name, domain.version) for domain in manifest_payload.domains
         ),
-        tags=_string_tuple(metadata_payload.tags, "tags"),
+        tags=_string_tuple(metadata_payload.tags, "metadata.tags"),
         metadata=immutable_json(json_mapping(manifest_payload.metadata)),
     )
 
@@ -481,12 +481,16 @@ def _parse_dataset_payload[T: ConfigPayload](
         raise EvaluationDatasetValidationError(str(exc)) from exc
 
 
-def _validate_strings(field_name: str, values: Sequence[str]) -> None:
-    for index, value in enumerate(values):
-        if not isinstance(value, str) or not value.strip():
-            raise EvaluationDatasetValidationError(
-                f"{field_name}[{index}] must be a non-empty string"
-            )
+def _validate_strings(field_name: str, values: tuple[str, ...]) -> None:
+    try:
+        parse_non_empty_string_sequence(
+            values,
+            field_name,
+            empty_template="{path} must be a non-empty string",
+            item_type_template="{path} must be a non-empty string",
+        )
+    except ValueError as exc:
+        raise EvaluationDatasetValidationError(str(exc)) from exc
 
 
 def _validate_relative_path(value: str, field_name: str) -> None:
@@ -496,8 +500,10 @@ def _validate_relative_path(value: str, field_name: str) -> None:
 
 
 def _require_non_empty(value: str, field_name: str) -> None:
-    if not value.strip():
-        raise EvaluationDatasetValidationError(f"{field_name} must not be empty")
+    try:
+        parse_non_empty_string(value, field_name)
+    except ValueError as exc:
+        raise EvaluationDatasetValidationError(str(exc)) from exc
 
 
 def _duplicates(values: tuple[str, ...]) -> tuple[str, ...]:

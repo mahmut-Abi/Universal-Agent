@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, TypeAdapter
+from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints, TypeAdapter
 from pydantic import JsonValue as PydanticJsonValue
 from pydantic import ValidationError as PydanticValidationError
 
@@ -22,10 +22,12 @@ __all__ = [
     "parse_json_object",
     "parse_json_object_sequence",
     "parse_json_value",
+    "parse_lower_sha256_hex_digest",
     "parse_non_empty_string",
     "parse_non_empty_string_sequence",
     "parse_optional_bool",
     "parse_optional_int",
+    "parse_optional_lower_sha256_hex_digest",
     "parse_optional_non_empty_string",
     "parse_optional_string",
     "parse_payload",
@@ -55,6 +57,10 @@ def _non_empty_string_value(value: str) -> str:
 
 
 _PydanticNonEmptyString = Annotated[str, AfterValidator(_non_empty_string_value)]
+_PydanticLowerSha256HexDigest = Annotated[
+    str,
+    StringConstraints(pattern=r"^[0-9a-f]{64}$"),
+]
 
 
 _JSON_OBJECT_ADAPTER: TypeAdapter[dict[str, PydanticJsonValue]] = TypeAdapter(
@@ -75,6 +81,9 @@ _NON_EMPTY_STRING_SEQUENCE_ADAPTER: TypeAdapter[list[_PydanticNonEmptyString]] =
 )
 _STRING_SEQUENCE_ADAPTER: TypeAdapter[list[str]] = TypeAdapter(list[str])
 _STRING_MAPPING_ADAPTER: TypeAdapter[dict[str, str]] = TypeAdapter(dict[str, str])
+_LOWER_SHA256_HEX_DIGEST_ADAPTER: TypeAdapter[_PydanticLowerSha256HexDigest] = TypeAdapter(
+    _PydanticLowerSha256HexDigest
+)
 
 
 def parse_payload[T: BaseModel](
@@ -172,11 +181,27 @@ def parse_optional_non_empty_string(
     return parse_non_empty_string(value, field, empty_template=empty_template)
 
 
+def parse_lower_sha256_hex_digest(value: object, field: str) -> str:
+    try:
+        return _LOWER_SHA256_HEX_DIGEST_ADAPTER.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        details = pydantic_error_details(exc, field)
+        if details.error_type == "string_type":
+            raise ValueError(f"{details.path} must be a string") from exc
+        raise ValueError(f"{details.path} must be a lowercase SHA-256 hex digest") from exc
+
+
+def parse_optional_lower_sha256_hex_digest(value: object, field: str) -> str:
+    if value is None or value == "":
+        return ""
+    return parse_lower_sha256_hex_digest(value, field)
+
+
 def parse_string_sequence(value: object, field: str) -> tuple[str, ...]:
     if value is None:
         return ()
     try:
-        parsed = _STRING_SEQUENCE_ADAPTER.validate_python(value, strict=True)
+        parsed = _STRING_SEQUENCE_ADAPTER.validate_python(_sequence_input(value), strict=True)
     except PydanticValidationError as exc:
         raise ValueError(pydantic_error_message(exc, field)) from exc
     return tuple(parsed)
@@ -192,7 +217,10 @@ def parse_non_empty_string_sequence(
     if value is None:
         return ()
     try:
-        parsed = _NON_EMPTY_STRING_SEQUENCE_ADAPTER.validate_python(value, strict=True)
+        parsed = _NON_EMPTY_STRING_SEQUENCE_ADAPTER.validate_python(
+            _sequence_input(value),
+            strict=True,
+        )
     except PydanticValidationError as exc:
         details = pydantic_error_details(exc, field)
         if details.error_type == "value_error" and details.message.endswith(
@@ -203,6 +231,12 @@ def parse_non_empty_string_sequence(
             raise ValueError(item_type_template.format(path=details.path)) from exc
         raise ValueError(pydantic_error_message(exc, field)) from exc
     return tuple(parsed)
+
+
+def _sequence_input(value: object) -> object:
+    if isinstance(value, tuple):
+        return list(value)
+    return value
 
 
 def parse_bool(value: object, field: str) -> bool:

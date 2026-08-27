@@ -4,6 +4,11 @@ from collections.abc import Iterable
 from typing import Any, Protocol, cast
 
 from universal_agent.core import DomainIdentity
+from universal_agent.core.config_validation import (
+    parse_non_empty_string,
+    parse_non_empty_string_sequence,
+    parse_optional_lower_sha256_hex_digest,
+)
 from universal_agent.domain import DomainPackageCompatibility
 
 
@@ -87,29 +92,30 @@ def _format_domain_identity(identity: DomainIdentity) -> str:
 
 
 def _require_non_empty(value: str, field_name: str) -> None:
-    if not value.strip():
+    try:
+        parse_non_empty_string(value, field_name)
+    except ValueError as exc:
         from universal_agent.ecosystem.models import EcosystemRegistryValidationError
 
-        raise EcosystemRegistryValidationError(f"{field_name} must not be empty")
+        raise EcosystemRegistryValidationError(str(exc)) from exc
 
 
 def _validate_strings(field_name: str, values: tuple[str, ...]) -> None:
-    for index, value in enumerate(values):
-        if not value.strip():
-            from universal_agent.ecosystem.models import EcosystemRegistryValidationError
+    try:
+        parse_non_empty_string_sequence(values, field_name)
+    except ValueError as exc:
+        from universal_agent.ecosystem.models import EcosystemRegistryValidationError
 
-            raise EcosystemRegistryValidationError(f"{field_name}[{index}] must not be empty")
+        raise EcosystemRegistryValidationError(str(exc)) from exc
 
 
 def _validate_optional_sha256(field_name: str, value: str) -> None:
-    if not value:
-        return
-    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+    try:
+        parse_optional_lower_sha256_hex_digest(value, field_name)
+    except ValueError as exc:
         from universal_agent.ecosystem.models import EcosystemRegistryValidationError
 
-        raise EcosystemRegistryValidationError(
-            f"{field_name} must be a lowercase SHA-256 hex digest"
-        )
+        raise EcosystemRegistryValidationError(str(exc)) from exc
 
 
 def _dataset_identities(manifest: object) -> tuple[tuple[str, str], ...]:

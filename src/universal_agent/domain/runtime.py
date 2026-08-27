@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
+from pydantic import Field
+
 from universal_agent.context import DomainContextProvider
 from universal_agent.core import (
     AgentState,
@@ -15,11 +17,17 @@ from universal_agent.core import (
     DomainMetadata,
     Goal,
     JsonMapping,
-    JsonValue,
     SessionId,
     Task,
     ToolDefinition,
     read_json_file,
+)
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    parse_json_object,
+    parse_non_empty_string,
+    parse_non_empty_string_sequence,
+    parse_payload,
 )
 from universal_agent.evaluation import Evaluator
 from universal_agent.evidence import EvidenceExtractor
@@ -321,6 +329,25 @@ class DomainValidationError(ValueError):
     pass
 
 
+class _DomainManifestMetadataPayload(ConfigPayload):
+    name: str
+    version: str
+    description: str = ""
+
+
+class _DomainManifestSpecPayload(ConfigPayload):
+    ontology: list[str] = Field(default_factory=list)
+    capabilities: list[str]
+    evaluators: list[str]
+
+
+class _DomainManifestPayload(ConfigPayload):
+    api_version: str = Field(alias="apiVersion")
+    kind: str
+    metadata: _DomainManifestMetadataPayload
+    spec: _DomainManifestSpecPayload
+
+
 @dataclass(frozen=True, slots=True)
 class DomainRuntimeSpec:
     """Declarative Domain SDK input for assembling a DomainRuntime.
@@ -482,8 +509,10 @@ def build_domain_runtime(spec: DomainRuntimeSpec) -> DeclarativeDomainRuntime:
 
 
 def _require_domain_spec_value(value: str, field_name: str) -> None:
-    if not value.strip():
-        raise DomainValidationError(f"domain runtime spec {field_name} must not be empty")
+    try:
+        parse_non_empty_string(value, f"domain runtime spec {field_name}")
+    except ValueError as exc:
+        raise DomainValidationError(str(exc)) from exc
 
 
 def _require_domain_spec_items(label: str, values: tuple[object, ...]) -> None:
@@ -494,9 +523,15 @@ def _require_domain_spec_items(label: str, values: tuple[object, ...]) -> None:
 
 
 def _validate_domain_spec_names(label: str, names: tuple[str, ...]) -> None:
-    for name in names:
-        if not name.strip():
-            raise DomainValidationError(f"domain runtime spec {label} must not include empty names")
+    try:
+        parse_non_empty_string_sequence(
+            names,
+            label,
+            empty_template=f"domain runtime spec {label} must not include empty names",
+            item_type_template=f"domain runtime spec {label} must not include empty names",
+        )
+    except ValueError as exc:
+        raise DomainValidationError(str(exc)) from exc
     _validate_unique_domain_spec_names(label, names)
 
 
@@ -617,27 +652,43 @@ class DomainLoader:
                 )
 
     def manifest_from_json(self, path: Path) -> DomainManifest:
-        raw = cast(dict[str, JsonValue], read_json_file(path))
+        payload = _domain_manifest_payload(path)
         try:
-            metadata = cast(dict[str, JsonValue], raw["metadata"])
-            specification = cast(dict[str, JsonValue], raw["spec"])
-            capabilities = cast(list[JsonValue], specification["capabilities"])
-            evaluators = cast(list[JsonValue], specification["evaluators"])
-            ontology = cast(list[JsonValue], specification.get("ontology", []))
             return DomainManifest(
-                api_version=str(raw["apiVersion"]),
-                kind=str(raw["kind"]),
+                api_version=parse_non_empty_string(payload.api_version, "apiVersion"),
+                kind=parse_non_empty_string(payload.kind, "kind"),
                 metadata=DomainMetadata(
-                    name=str(metadata["name"]),
-                    version=str(metadata["version"]),
-                    description=str(metadata.get("description", "")),
+                    name=parse_non_empty_string(payload.metadata.name, "metadata.name"),
+                    version=parse_non_empty_string(payload.metadata.version, "metadata.version"),
+                    description=payload.metadata.description,
                 ),
-                ontology=tuple(str(item) for item in ontology),
-                capability_names=tuple(str(item) for item in capabilities),
-                evaluator_names=tuple(str(item) for item in evaluators),
+                ontology=parse_non_empty_string_sequence(
+                    payload.spec.ontology,
+                    "spec.ontology",
+                ),
+                capability_names=parse_non_empty_string_sequence(
+                    payload.spec.capabilities,
+                    "spec.capabilities",
+                ),
+                evaluator_names=parse_non_empty_string_sequence(
+                    payload.spec.evaluators,
+                    "spec.evaluators",
+                ),
             )
-        except (KeyError, TypeError) as exc:
-            raise DomainValidationError("invalid domain manifest JSON") from exc
+        except ValueError as exc:
+            raise DomainValidationError(f"invalid domain manifest JSON: {exc}") from exc
+
+
+def _domain_manifest_payload(path: Path) -> _DomainManifestPayload:
+    try:
+        values = parse_json_object(read_json_file(path), "domain manifest")
+        return parse_payload(
+            _DomainManifestPayload,
+            values,
+            missing_template="{path} is required",
+        )
+    except ValueError as exc:
+        raise DomainValidationError(f"invalid domain manifest JSON: {exc}") from exc
 
 
 def _action_argument_providers(domain: DomainRuntime) -> tuple[ActionArgumentProvider, ...]:
