@@ -2,9 +2,157 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import Annotated
+
+from pydantic import BeforeValidator, Field, TypeAdapter
 
 from universal_agent.core import JsonMapping, JsonValue
+from universal_agent.core.config_validation import ConfigPayload, PydanticJsonValue, json_mapping
+
+
+def _text_or_empty(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def _bool_or_false(value: object) -> bool:
+    return value if isinstance(value, bool) else False
+
+
+def _int_or_zero(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _object_or_empty(value: object) -> Mapping[str, object]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _object_items_or_empty(value: object) -> list[Mapping[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, Mapping)]
+
+
+_JsonText = Annotated[str, BeforeValidator(_text_or_empty)]
+_JsonBool = Annotated[bool, BeforeValidator(_bool_or_false)]
+_JsonInt = Annotated[int, BeforeValidator(_int_or_zero)]
+_JsonObject = Annotated[dict[str, PydanticJsonValue], BeforeValidator(_object_or_empty)]
+_JsonObjects = Annotated[
+    list[dict[str, PydanticJsonValue]],
+    BeforeValidator(_object_items_or_empty),
+]
+
+
+class _ObjectListPayload(ConfigPayload):
+    items: _JsonObjects = Field(default_factory=list)
+
+
+class _MetadataPayload(ConfigPayload):
+    name: _JsonText = ""
+    namespace: _JsonText = ""
+    resource_version: _JsonText = Field(default="", alias="resourceVersion")
+    creation_timestamp: _JsonText = Field(default="", alias="creationTimestamp")
+    generation: _JsonInt = 0
+
+
+class _ConditionPayload(ConfigPayload):
+    type: _JsonText = ""
+    status: _JsonText = ""
+    reason: _JsonText = ""
+    message: _JsonText = ""
+
+
+_Conditions = Annotated[
+    list[_ConditionPayload],
+    BeforeValidator(_object_items_or_empty),
+]
+
+
+class _ConditionsPayload(ConfigPayload):
+    conditions: _Conditions = Field(default_factory=list)
+
+
+_ConditionStatus = Annotated[_ConditionsPayload, BeforeValidator(_object_or_empty)]
+
+
+class _SelectorPayload(ConfigPayload):
+    match_labels: _JsonObject = Field(default_factory=dict, alias="matchLabels")
+
+
+_Selector = Annotated[_SelectorPayload, BeforeValidator(_object_or_empty)]
+
+
+class _WorkloadSpecPayload(ConfigPayload):
+    selector: _Selector = Field(default_factory=_SelectorPayload)
+
+
+class _ContainerStatePayload(ConfigPayload):
+    waiting: _JsonObject = Field(default_factory=dict)
+    running: _JsonObject = Field(default_factory=dict)
+    terminated: _JsonObject = Field(default_factory=dict)
+
+
+_ContainerState = Annotated[_ContainerStatePayload, BeforeValidator(_object_or_empty)]
+
+
+class _ContainerStatusPayload(ConfigPayload):
+    name: _JsonText = ""
+    ready: _JsonBool = False
+    restart_count: _JsonInt = Field(default=0, alias="restartCount")
+    state: _ContainerState = Field(default_factory=_ContainerStatePayload)
+
+
+_ContainerStatuses = Annotated[
+    list[_ContainerStatusPayload],
+    BeforeValidator(_object_items_or_empty),
+]
+
+
+class _PodStatusPayload(ConfigPayload):
+    phase: _JsonText = ""
+    container_statuses: _ContainerStatuses = Field(default_factory=list, alias="containerStatuses")
+
+
+_Metadata = Annotated[_MetadataPayload, BeforeValidator(_object_or_empty)]
+_PodStatus = Annotated[_PodStatusPayload, BeforeValidator(_object_or_empty)]
+
+
+class _PodPayload(ConfigPayload):
+    metadata: _Metadata = Field(default_factory=_MetadataPayload)
+    status: _PodStatus = Field(default_factory=_PodStatusPayload)
+
+
+class _NodePayload(ConfigPayload):
+    status: _ConditionStatus = Field(default_factory=_ConditionsPayload)
+
+
+class _EventObjectPayload(ConfigPayload):
+    kind: _JsonText = ""
+    name: _JsonText = ""
+
+
+_EventObject = Annotated[_EventObjectPayload, BeforeValidator(_object_or_empty)]
+
+
+class _EventPayload(ConfigPayload):
+    type: _JsonText = ""
+    reason: _JsonText = ""
+    message: _JsonText = ""
+    count: _JsonInt = 0
+    first_timestamp: _JsonText = Field(default="", alias="firstTimestamp")
+    last_timestamp: _JsonText = Field(default="", alias="lastTimestamp")
+    event_time: _JsonText = Field(default="", alias="eventTime")
+    metadata: _Metadata = Field(default_factory=_MetadataPayload)
+    involved_object: _EventObject = Field(
+        default_factory=_EventObjectPayload,
+        alias="involvedObject",
+    )
+
+
+_OBJECT_LIST_ADAPTER: TypeAdapter[_ObjectListPayload] = TypeAdapter(_ObjectListPayload)
+_CONDITIONS_ADAPTER: TypeAdapter[list[_ConditionPayload]] = TypeAdapter(list[_ConditionPayload])
+_JSON_OBJECT_ADAPTER: TypeAdapter[dict[str, PydanticJsonValue]] = TypeAdapter(
+    dict[str, PydanticJsonValue]
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,17 +202,15 @@ def normal_kind(value: str) -> str:
 
 
 def items(payload: dict[str, JsonValue]) -> tuple[dict[str, JsonValue], ...]:
-    raw_items = payload.get("items")
-    if not isinstance(raw_items, list):
-        return ()
-    return tuple(json_object(item) for item in raw_items if isinstance(item, dict))
+    parsed = _OBJECT_LIST_ADAPTER.validate_python(payload, strict=True)
+    return tuple(json_object(item) for item in parsed.items)
 
 
 def node_ready(node: dict[str, JsonValue]) -> bool:
-    status = object_value(node.get("status"))
-    for condition in conditions(status.get("conditions")):
-        if condition.get("type") == "Ready":
-            return condition.get("status") == "True"
+    payload = _NodePayload.model_validate(node)
+    for condition in payload.status.conditions:
+        if condition.type == "Ready":
+            return condition.status == "True"
     return False
 
 
@@ -84,10 +230,9 @@ def workload_root_cause(
 
 
 def selector_labels(spec: dict[str, JsonValue]) -> dict[str, str]:
-    selector = object_value(spec.get("selector"))
-    match_labels = object_value(selector.get("matchLabels"))
+    payload = _WorkloadSpecPayload.model_validate(spec)
     labels: dict[str, str] = {}
-    for key, value in match_labels.items():
+    for key, value in payload.selector.match_labels.items():
         if isinstance(value, str) and value.strip():
             labels[key] = value
     return labels
@@ -102,19 +247,20 @@ def pod_summaries(payload: dict[str, JsonValue]) -> list[JsonValue]:
 
 
 def pod_summary(pod: dict[str, JsonValue]) -> JsonValue:
-    metadata = object_value(pod.get("metadata"))
-    status = object_value(pod.get("status"))
-    container_items = container_statuses(status.get("containerStatuses"))
-    ready = bool(container_items) and all(bool_value(item.get("ready")) for item in container_items)
-    restart_count = sum(optional_int(item.get("restartCount")) or 0 for item in container_items)
+    payload = _PodPayload.model_validate(pod)
+    metadata = payload.metadata
+    status = payload.status
+    container_items = tuple(status.container_statuses)
+    ready = bool(container_items) and all(item.ready for item in container_items)
+    restart_count = sum(item.restart_count for item in container_items)
     summary: dict[str, JsonValue] = {
-        "resource": f"pod/{string_value(metadata.get('name'))}",
-        "namespace": string_value(metadata.get("namespace")),
-        "name": string_value(metadata.get("name")),
-        "phase": string_value(status.get("phase")),
+        "resource": f"pod/{metadata.name}",
+        "namespace": metadata.namespace,
+        "name": metadata.name,
+        "phase": status.phase,
         "ready": ready,
         "restart_count": restart_count,
-        "resource_version": string_value(metadata.get("resourceVersion")),
+        "resource_version": metadata.resource_version,
         "containers": [container_summary(item) for item in container_items],
     }
     root_cause = pod_root_cause(summary["phase"], ready, container_items)
@@ -140,16 +286,14 @@ def pod_related_root_cause(pods: list[JsonValue]) -> str | None:
 def pod_root_cause(
     phase: JsonValue,
     ready: bool,
-    container_statuses: tuple[dict[str, JsonValue], ...],
+    container_statuses: tuple[_ContainerStatusPayload, ...],
 ) -> str:
     for status in container_statuses:
-        state = object_value(status.get("state"))
-        waiting = object_value(state.get("waiting"))
-        reason = optional_string(waiting.get("reason"))
+        state = status.state
+        reason = optional_string(state.waiting.get("reason"))
         if reason:
             return snake_case(reason)
-        terminated = object_value(state.get("terminated"))
-        terminated_reason = optional_string(terminated.get("reason"))
+        terminated_reason = optional_string(state.terminated.get("reason"))
         if terminated_reason:
             return snake_case(terminated_reason)
     if phase == "Pending":
@@ -160,55 +304,48 @@ def pod_root_cause(
 
 
 def conditions(value: JsonValue) -> list[dict[str, JsonValue]]:
-    if not isinstance(value, list):
-        return []
-    parsed: list[dict[str, JsonValue]] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        raw = json_object(item)
-        parsed.append(
-            {
-                "type": string_value(raw.get("type")),
-                "status": string_value(raw.get("status")),
-                "reason": string_value(raw.get("reason")),
-                "message": string_value(raw.get("message")),
-            }
-        )
-    return parsed
+    parsed = _CONDITIONS_ADAPTER.validate_python(_object_items_or_empty(value), strict=True)
+    return [
+        {
+            "type": condition.type,
+            "status": condition.status,
+            "reason": condition.reason,
+            "message": condition.message,
+        }
+        for condition in parsed
+    ]
 
 
 def condition_list(value: JsonValue) -> list[JsonValue]:
     return [dict(condition) for condition in conditions(value)]
 
 
-def container_statuses(value: JsonValue) -> tuple[dict[str, JsonValue], ...]:
-    if not isinstance(value, list):
-        return ()
-    return tuple(json_object(item) for item in value if isinstance(item, dict))
+def container_statuses(value: JsonValue) -> tuple[_ContainerStatusPayload, ...]:
+    payload = _PodStatusPayload.model_validate({"containerStatuses": value})
+    return tuple(payload.container_statuses)
 
 
-def container_summary(status: dict[str, JsonValue]) -> JsonValue:
-    state = object_value(status.get("state"))
+def container_summary(status: _ContainerStatusPayload) -> JsonValue:
+    state = status.state
     return {
-        "name": string_value(status.get("name")),
-        "ready": bool_value(status.get("ready")),
-        "restart_count": optional_int(status.get("restartCount")) or 0,
+        "name": status.name,
+        "ready": status.ready,
+        "restart_count": status.restart_count,
         "state": container_state_name(state),
         "reason": container_state_reason(state),
     }
 
 
-def container_state_name(state: dict[str, JsonValue]) -> str:
+def container_state_name(state: _ContainerStatePayload) -> str:
     for name in ("waiting", "running", "terminated"):
-        if isinstance(state.get(name), dict):
+        if getattr(state, name):
             return name
     return "unknown"
 
 
-def container_state_reason(state: dict[str, JsonValue]) -> str:
+def container_state_reason(state: _ContainerStatePayload) -> str:
     for name in ("waiting", "terminated"):
-        details = object_value(state.get(name))
+        details = getattr(state, name)
         reason = optional_string(details.get("reason"))
         if reason:
             return reason
@@ -216,19 +353,18 @@ def container_state_reason(state: dict[str, JsonValue]) -> str:
 
 
 def event_summary(item: dict[str, JsonValue]) -> JsonValue:
-    involved = object_value(item.get("involvedObject"))
-    metadata = object_value(item.get("metadata"))
+    event = _EventPayload.model_validate(item)
     return {
-        "type": string_value(item.get("type")),
-        "reason": string_value(item.get("reason")),
-        "message": string_value(item.get("message")),
-        "count": optional_int(item.get("count")) or 0,
-        "first_timestamp": string_value(item.get("firstTimestamp")),
-        "last_timestamp": string_value(item.get("lastTimestamp")),
-        "event_time": string_value(item.get("eventTime")),
-        "creation_timestamp": string_value(metadata.get("creationTimestamp")),
-        "involved_object_kind": string_value(involved.get("kind")),
-        "involved_object_name": string_value(involved.get("name")),
+        "type": event.type,
+        "reason": event.reason,
+        "message": event.message,
+        "count": event.count,
+        "first_timestamp": event.first_timestamp,
+        "last_timestamp": event.last_timestamp,
+        "event_time": event.event_time,
+        "creation_timestamp": event.metadata.creation_timestamp,
+        "involved_object_kind": event.involved_object.kind,
+        "involved_object_name": event.involved_object.name,
     }
 
 
@@ -296,7 +432,7 @@ def object_value(value: JsonValue | None) -> dict[str, JsonValue]:
 
 
 def json_object(value: object) -> dict[str, JsonValue]:
-    return cast(dict[str, JsonValue], value)
+    return dict(json_mapping(_JSON_OBJECT_ADAPTER.validate_python(value, strict=True)))
 
 
 def snake_case(value: str) -> str:

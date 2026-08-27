@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
 
+from pydantic import Field
+from pydantic import ValidationError as PydanticValidationError
+
 from universal_agent.core import ActionId, EventId, JsonMapping, SessionId, TaskId
+from universal_agent.core.config_validation import ConfigPayload, PydanticJsonValue, json_mapping
 from universal_agent.distributed import (
     DistributedLockLeaseId,
     DistributedLockOwnerId,
@@ -18,6 +23,139 @@ from universal_agent.web import (
     render_web_session_detail,
     render_web_world_model_explorer,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class _DistributedLockAcquirePayload:
+    lock_key: str
+    owner_id: DistributedLockOwnerId
+    ttl_seconds: float
+    metadata: JsonMapping | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _DistributedLockLeasePayload:
+    owner_id: DistributedLockOwnerId
+    ttl_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class _DistributedWorkerRegistrationPayload:
+    capabilities: tuple[str, ...]
+    ttl_seconds: float
+    metadata: JsonMapping | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _DistributedWorkerRunPayload:
+    lease_ttl_seconds: float
+    worker_ttl_seconds: float
+    heartbeat_interval_seconds: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class _DistributedWorkerRunBatchPayload:
+    max_items: int
+    lease_ttl_seconds: float
+    worker_ttl_seconds: float
+    heartbeat_interval_seconds: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class _DistributedSchedulePayload:
+    payload: JsonMapping | None
+    priority: int
+    max_attempts: int
+
+
+@dataclass(frozen=True, slots=True)
+class _DistributedConfirmedSchedulePayload:
+    confirmed: bool
+    priority: int
+    max_attempts: int
+
+
+@dataclass(frozen=True, slots=True)
+class _DistributedScheduleSettingsPayload:
+    priority: int
+    max_attempts: int
+
+
+@dataclass(frozen=True, slots=True)
+class _StateEventRepairPayload:
+    confirmed: bool
+    dry_run: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _SessionResumePayload:
+    confirmed: bool | None = None
+
+
+class _DistributedLockAcquireModel(ConfigPayload):
+    lock_key: str
+    owner_id: str
+    ttl_seconds: float = Field(default=30.0, gt=0)
+    metadata: dict[str, PydanticJsonValue] | None = None
+
+
+class _DistributedLockLeaseModel(ConfigPayload):
+    owner_id: str
+    ttl_seconds: float = Field(default=30.0, gt=0)
+
+
+class _DistributedWorkerRegistrationModel(ConfigPayload):
+    capabilities: list[str] = Field(default_factory=list)
+    metadata: dict[str, PydanticJsonValue] | None = None
+    ttl_seconds: float = Field(default=30.0, gt=0)
+
+
+class _DistributedWorkerTtlModel(ConfigPayload):
+    ttl_seconds: float = Field(default=30.0, gt=0)
+
+
+class _DistributedWorkerRunModel(ConfigPayload):
+    lease_ttl_seconds: float = Field(default=30.0, gt=0)
+    worker_ttl_seconds: float = Field(default=30.0, gt=0)
+    heartbeat_interval_seconds: float | None = Field(default=None, gt=0)
+
+
+class _DistributedWorkerRunBatchModel(_DistributedWorkerRunModel):
+    max_items: int = Field(default=1, ge=1)
+
+
+class _DistributedScheduleModel(ConfigPayload):
+    payload: dict[str, PydanticJsonValue] | None = None
+    priority: int = 0
+    max_attempts: int = 3
+
+
+class _DistributedConfirmedScheduleModel(ConfigPayload):
+    confirmed: bool
+    priority: int = 0
+    max_attempts: int = 3
+
+
+class _DistributedScheduleSettingsModel(ConfigPayload):
+    priority: int = 0
+    max_attempts: int = 3
+
+
+class _DistributedReasonModel(ConfigPayload):
+    reason: str
+
+
+class _StateEventRepairModel(ConfigPayload):
+    confirmed: bool = False
+    dry_run: bool = False
+
+
+class _SessionResumeModel(ConfigPayload):
+    confirmed: bool | None = None
+
+
+class _SessionReasonModel(ConfigPayload):
+    reason: str
 
 
 def _normalize_path(path: str) -> str:
@@ -180,38 +318,81 @@ def _distributed_lock_lease_route(path: str) -> tuple[DistributedLockLeaseId | N
     return None, ""
 
 
-def _distributed_lock_owner_id(body: JsonMapping) -> DistributedLockOwnerId:
-    return DistributedLockOwnerId(
-        _distributed_required_string(
-            body,
-            key="owner_id",
-            field_name="distributed lock owner_id",
-        )
+def _distributed_lock_acquire_payload(body: JsonMapping) -> _DistributedLockAcquirePayload:
+    payload = _request_model_payload(
+        _DistributedLockAcquireModel,
+        body,
+        {
+            "lock_key": "distributed lock key must be a string",
+            "owner_id": "distributed lock owner_id must be a string",
+            "ttl_seconds": "distributed lock ttl_seconds must be a positive number",
+            "metadata": "distributed lock metadata must be an object",
+        },
+    )
+    return _DistributedLockAcquirePayload(
+        lock_key=_non_empty_string(payload.lock_key, "distributed lock key"),
+        owner_id=DistributedLockOwnerId(
+            _non_empty_string(payload.owner_id, "distributed lock owner_id")
+        ),
+        ttl_seconds=payload.ttl_seconds,
+        metadata=None if payload.metadata is None else json_mapping(payload.metadata),
     )
 
 
-def _distributed_lock_ttl_seconds(body: JsonMapping) -> float:
-    value = body.get("ttl_seconds", 30.0)
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise ValueError("distributed lock ttl_seconds must be a positive number")
-    ttl_seconds = float(value)
-    if ttl_seconds <= 0:
-        raise ValueError("distributed lock ttl_seconds must be a positive number")
-    return ttl_seconds
+def _distributed_lock_lease_payload(body: JsonMapping) -> _DistributedLockLeasePayload:
+    payload = _request_model_payload(
+        _DistributedLockLeaseModel,
+        body,
+        {
+            "owner_id": "distributed lock owner_id must be a string",
+            "ttl_seconds": "distributed lock ttl_seconds must be a positive number",
+        },
+    )
+    return _DistributedLockLeasePayload(
+        owner_id=DistributedLockOwnerId(
+            _non_empty_string(payload.owner_id, "distributed lock owner_id")
+        ),
+        ttl_seconds=payload.ttl_seconds,
+    )
 
 
-def _distributed_required_string(
+def _distributed_worker_registration_payload(
     body: JsonMapping,
-    *,
-    key: str,
-    field_name: str,
-) -> str:
-    value = body.get(key)
-    if not isinstance(value, str):
-        raise ValueError(f"{field_name} must be a string")
-    if not value.strip():
-        raise ValueError(f"{field_name} must not be empty")
-    return value
+) -> _DistributedWorkerRegistrationPayload:
+    payload = _request_model_payload(
+        _DistributedWorkerRegistrationModel,
+        body,
+        {
+            "capabilities": "distributed worker capabilities must be a list of strings",
+            "ttl_seconds": "distributed worker ttl_seconds must be a positive number",
+            "metadata": "distributed worker metadata must be an object",
+        },
+    )
+    capabilities: list[str] = []
+    for index, item in enumerate(payload.capabilities):
+        capabilities.append(
+            _non_empty_string(
+                item,
+                f"distributed worker capabilities[{index}]",
+                empty_message=(
+                    f"distributed worker capabilities[{index}] must be a non-empty string"
+                ),
+            )
+        )
+    return _DistributedWorkerRegistrationPayload(
+        capabilities=tuple(capabilities),
+        ttl_seconds=payload.ttl_seconds,
+        metadata=None if payload.metadata is None else json_mapping(payload.metadata),
+    )
+
+
+def _distributed_worker_ttl_seconds(body: JsonMapping) -> float:
+    payload = _request_model_payload(
+        _DistributedWorkerTtlModel,
+        body,
+        {"ttl_seconds": "distributed worker ttl_seconds must be a positive number"},
+    )
+    return payload.ttl_seconds
 
 
 def _distributed_worker_action_route(path: str) -> tuple[WorkerId | None, str]:
@@ -226,73 +407,189 @@ def _distributed_worker_action_route(path: str) -> tuple[WorkerId | None, str]:
     return None, ""
 
 
-def _distributed_worker_capabilities(body: JsonMapping) -> tuple[str, ...]:
-    value = body.get("capabilities", ())
-    if isinstance(value, str) or not isinstance(value, Sequence):
-        raise ValueError("distributed worker capabilities must be a list of strings")
-    capabilities: list[str] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, str) or not item.strip():
-            raise ValueError(f"distributed worker capabilities[{index}] must be a non-empty string")
-        capabilities.append(item)
-    return tuple(capabilities)
+def _distributed_worker_run_payload(body: JsonMapping) -> _DistributedWorkerRunPayload:
+    payload = _request_model_payload(
+        _DistributedWorkerRunModel,
+        body,
+        {
+            "lease_ttl_seconds": "distributed worker lease_ttl_seconds must be a positive number",
+            "worker_ttl_seconds": "distributed worker worker_ttl_seconds must be a positive number",
+            "heartbeat_interval_seconds": (
+                "distributed worker heartbeat_interval_seconds must be a positive number"
+            ),
+        },
+    )
+    return _DistributedWorkerRunPayload(
+        lease_ttl_seconds=payload.lease_ttl_seconds,
+        worker_ttl_seconds=payload.worker_ttl_seconds,
+        heartbeat_interval_seconds=payload.heartbeat_interval_seconds,
+    )
 
 
-def _distributed_ttl_seconds(body: JsonMapping) -> float:
-    value = body.get("ttl_seconds", 30.0)
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise ValueError("distributed worker ttl_seconds must be a positive number")
-    ttl_seconds = float(value)
-    if ttl_seconds <= 0:
-        raise ValueError("distributed worker ttl_seconds must be a positive number")
-    return ttl_seconds
+def _distributed_worker_run_batch_payload(body: JsonMapping) -> _DistributedWorkerRunBatchPayload:
+    payload = _request_model_payload(
+        _DistributedWorkerRunBatchModel,
+        body,
+        {
+            "max_items": "distributed worker max_items must be a positive integer",
+            "lease_ttl_seconds": "distributed worker lease_ttl_seconds must be a positive number",
+            "worker_ttl_seconds": "distributed worker worker_ttl_seconds must be a positive number",
+            "heartbeat_interval_seconds": (
+                "distributed worker heartbeat_interval_seconds must be a positive number"
+            ),
+        },
+    )
+    return _DistributedWorkerRunBatchPayload(
+        max_items=payload.max_items,
+        lease_ttl_seconds=payload.lease_ttl_seconds,
+        worker_ttl_seconds=payload.worker_ttl_seconds,
+        heartbeat_interval_seconds=payload.heartbeat_interval_seconds,
+    )
 
 
-def _distributed_worker_run_seconds(
+def _distributed_schedule_payload(body: JsonMapping) -> _DistributedSchedulePayload:
+    payload = _request_model_payload(
+        _DistributedScheduleModel,
+        body,
+        {
+            "payload": "distributed schedule payload must be an object",
+            "priority": "distributed schedule priority must be an integer",
+            "max_attempts": "distributed schedule max_attempts must be an integer",
+        },
+    )
+    return _DistributedSchedulePayload(
+        payload=None if payload.payload is None else json_mapping(payload.payload),
+        priority=payload.priority,
+        max_attempts=payload.max_attempts,
+    )
+
+
+def _distributed_schedule_settings_payload(
+    body: JsonMapping,
+) -> _DistributedScheduleSettingsPayload:
+    payload = _request_model_payload(
+        _DistributedScheduleSettingsModel,
+        body,
+        {
+            "priority": "distributed schedule priority must be an integer",
+            "max_attempts": "distributed schedule max_attempts must be an integer",
+        },
+    )
+    return _DistributedScheduleSettingsPayload(
+        priority=payload.priority,
+        max_attempts=payload.max_attempts,
+    )
+
+
+def _distributed_confirmed_schedule_payload(
     body: JsonMapping,
     *,
-    field_name: str,
-    default: float,
-) -> float:
-    value = body.get(field_name, default)
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise ValueError(f"distributed worker {field_name} must be a positive number")
-    seconds = float(value)
-    if seconds <= 0:
-        raise ValueError(f"distributed worker {field_name} must be a positive number")
-    return seconds
+    confirmed_field_name: str,
+) -> _DistributedConfirmedSchedulePayload:
+    payload = _request_model_payload(
+        _DistributedConfirmedScheduleModel,
+        body,
+        {
+            "confirmed": f"{confirmed_field_name} must be a boolean",
+            "priority": "distributed schedule priority must be an integer",
+            "max_attempts": "distributed schedule max_attempts must be an integer",
+        },
+    )
+    return _DistributedConfirmedSchedulePayload(
+        confirmed=payload.confirmed,
+        priority=payload.priority,
+        max_attempts=payload.max_attempts,
+    )
 
 
-def _distributed_worker_run_optional_seconds(
-    body: JsonMapping,
-    *,
-    field_name: str,
-) -> float | None:
-    if field_name not in body:
-        return None
-    return _distributed_worker_run_seconds(body, field_name=field_name, default=30.0)
-
-
-def _distributed_worker_run_max_items(body: JsonMapping) -> int:
-    value = body.get("max_items", 1)
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError("distributed worker max_items must be a positive integer")
-    if value < 1:
-        raise ValueError("distributed worker max_items must be a positive integer")
-    return value
-
-
-def _distributed_reason(
+def _distributed_reason_payload(
     body: JsonMapping,
     *,
     default: str,
     field_name: str,
 ) -> str:
-    value = body.get("reason", default)
-    if not isinstance(value, str):
-        raise ValueError(f"{field_name} must be a string")
+    payload = _request_model_payload(
+        _DistributedReasonModel,
+        {**dict(body), "reason": body.get("reason", default)},
+        {"reason": f"{field_name} must be a string"},
+    )
+    return _non_empty_string(payload.reason, field_name)
+
+
+def _state_event_repair_payload(body: JsonMapping) -> _StateEventRepairPayload:
+    payload = _request_model_payload(
+        _StateEventRepairModel,
+        body,
+        {
+            "confirmed": "state/event repair confirmed must be a boolean",
+            "dry_run": "state/event repair dry_run must be a boolean",
+        },
+    )
+    return _StateEventRepairPayload(
+        confirmed=payload.confirmed,
+        dry_run=payload.dry_run,
+    )
+
+
+def _session_resume_payload(body: JsonMapping) -> _SessionResumePayload:
+    payload = _request_model_payload(
+        _SessionResumeModel,
+        body,
+        {"confirmed": "resume confirmed must be a boolean"},
+    )
+    return _SessionResumePayload(confirmed=payload.confirmed)
+
+
+def _session_reason_payload(
+    body: JsonMapping,
+    *,
+    default: str,
+    field_name: str,
+) -> str:
+    payload = _request_model_payload(
+        _SessionReasonModel,
+        {**dict(body), "reason": body.get("reason", default)},
+        {"reason": f"{field_name} must be a string"},
+    )
+    return payload.reason
+
+
+def _request_model_payload[T: ConfigPayload](
+    model_type: type[T],
+    body: Mapping[str, object],
+    field_messages: Mapping[str, str],
+) -> T:
+    try:
+        return model_type.model_validate(dict(body))
+    except PydanticValidationError as exc:
+        raise ValueError(_request_payload_error_message(exc, field_messages)) from exc
+
+
+def _request_payload_error_message(
+    error: PydanticValidationError,
+    field_messages: Mapping[str, str],
+) -> str:
+    errors = error.errors(include_url=False)
+    if not errors:
+        return str(error)
+    first = errors[0]
+    location = first.get("loc", ())
+    if isinstance(location, tuple) and location:
+        field = str(location[0])
+        if field == "capabilities" and len(location) > 1:
+            return f"distributed worker capabilities[{location[1]}] must be a non-empty string"
+        message = field_messages.get(field)
+        if message is not None:
+            return message
+    message = str(first.get("msg", ""))
+    if message:
+        return message.removeprefix("Value error, ")
+    return str(error)
+
+
+def _non_empty_string(value: str, field_name: str, *, empty_message: str | None = None) -> str:
     if not value.strip():
-        raise ValueError(f"{field_name} must not be empty")
+        raise ValueError(empty_message or f"{field_name} must not be empty")
     return value
 
 

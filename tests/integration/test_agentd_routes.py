@@ -766,6 +766,20 @@ async def test_agentd_state_event_repair_route_requires_confirmation_and_reports
             immutable_json({"dry_run": True}),
         )
     )
+    invalid_confirmed = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/doctor/state-events/repair",
+            immutable_json({"confirmed": "true"}),
+        )
+    )
+    invalid_dry_run = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/doctor/state-events/repair",
+            immutable_json({"dry_run": "false"}),
+        )
+    )
     wrong_method = await app.handle(HttpRequest("GET", "/v1/doctor/state-events/repair"))
 
     assert repaired.status_code == 200
@@ -776,6 +790,16 @@ async def test_agentd_state_event_repair_route_requires_confirmation_and_reports
     assert dry_run.body["status"] == "clean"
     assert rejected.status_code == 400
     assert "confirmed=true" in json_string(json_object(rejected.body["error"])["message"])
+    assert invalid_confirmed.status_code == 400
+    assert invalid_confirmed.body["error"] == {
+        "code": "bad_request",
+        "message": "state/event repair confirmed must be a boolean",
+    }
+    assert invalid_dry_run.status_code == 400
+    assert invalid_dry_run.body["error"] == {
+        "code": "bad_request",
+        "message": "state/event repair dry_run must be a boolean",
+    }
     assert wrong_method.status_code == 405
 
 
@@ -1535,6 +1559,19 @@ async def test_agentd_distributed_lock_lifecycle_routes() -> None:
             ),
         )
     )
+    invalid_metadata = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/locks/acquire",
+            immutable_json(
+                {
+                    "lock_key": "session/session-3",
+                    "owner_id": "worker-a",
+                    "metadata": ["not-object"],
+                }
+            ),
+        )
+    )
     missing_service, _ = build_service([])
     missing_coordinator = await AgentdApp(missing_service).handle(
         HttpRequest(
@@ -1569,6 +1606,11 @@ async def test_agentd_distributed_lock_lifecycle_routes() -> None:
     assert invalid_ttl.body["error"] == {
         "code": "bad_request",
         "message": "distributed lock ttl_seconds must be a positive number",
+    }
+    assert invalid_metadata.status_code == 400
+    assert invalid_metadata.body["error"] == {
+        "code": "bad_request",
+        "message": "distributed lock metadata must be an object",
     }
     assert missing_coordinator.status_code == 404
     assert missing_coordinator.body["error"] == {
@@ -1631,6 +1673,13 @@ async def test_agentd_distributed_worker_lifecycle_routes() -> None:
             immutable_json({"ttl_seconds": 0}),
         )
     )
+    invalid_metadata = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/workers/worker-c/register",
+            immutable_json({"metadata": ["not-object"]}),
+        )
+    )
     missing_worker = await app.handle(
         HttpRequest("POST", "/v1/distributed/workers/worker-missing/heartbeat")
     )
@@ -1669,6 +1718,11 @@ async def test_agentd_distributed_worker_lifecycle_routes() -> None:
     assert invalid_ttl.body["error"] == {
         "code": "bad_request",
         "message": "distributed worker ttl_seconds must be a positive number",
+    }
+    assert invalid_metadata.status_code == 400
+    assert invalid_metadata.body["error"] == {
+        "code": "bad_request",
+        "message": "distributed worker metadata must be an object",
     }
     assert missing_worker.status_code == 404
     assert missing_worker.body["error"] == {

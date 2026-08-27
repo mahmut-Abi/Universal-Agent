@@ -204,12 +204,8 @@ class KubectlBackend:
         metadata = k8s.object_value(payload.get("metadata"))
         status = k8s.object_value(payload.get("status"))
         container_statuses = k8s.container_statuses(status.get("containerStatuses"))
-        ready = bool(container_statuses) and all(
-            k8s.bool_value(item.get("ready")) for item in container_statuses
-        )
-        restart_count = sum(
-            k8s.optional_int(item.get("restartCount")) or 0 for item in container_statuses
-        )
+        ready = bool(container_statuses) and all(item.ready for item in container_statuses)
+        restart_count = sum(item.restart_count for item in container_statuses)
         result: dict[str, JsonValue] = {
             "resource": ref.resource,
             "namespace": ref.namespace,

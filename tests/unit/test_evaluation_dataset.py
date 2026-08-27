@@ -81,12 +81,17 @@ def write_dataset(root: Path, payload: JsonMapping) -> Path:
 
 
 def test_decode_evaluation_dataset_manifest_round_trips_catalog_metadata() -> None:
-    manifest = decode_evaluation_dataset_manifest(dataset_payload())
+    payload = dataset_payload()
+    metadata = payload["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["owner_team"] = "platform"
+    manifest = decode_evaluation_dataset_manifest(payload)
     encoded = encode_evaluation_dataset_manifest(manifest)
     decoded = decode_evaluation_dataset_manifest(encoded)
 
     assert decoded.identity == EvaluationDatasetIdentity("kubernetes-remediation", "1.0.0")
     assert decoded.author == "Runtime Team"
+    assert decoded.metadata["owner_team"] == "platform"
     assert decoded.domains == (DomainIdentity("kubernetes", "0.2.0"),)
     assert decoded.tags == ("kubernetes", "regression")
     assert decoded.suites[0].name == "healthy"

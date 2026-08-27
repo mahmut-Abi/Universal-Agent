@@ -8,7 +8,20 @@ from pathlib import Path
 from typing import Protocol
 from urllib.parse import quote
 
+from pydantic import Field
+from pydantic import ValidationError as PydanticValidationError
+
 from universal_agent.core import ErrorCode, ExecutionStatus, JsonMapping, JsonValue, immutable_json
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    PydanticJsonValue,
+)
+from universal_agent.core.config_validation import (
+    json_mapping as _json_mapping,
+)
+from universal_agent.core.config_validation import (
+    parse_json_object as _parse_json_object,
+)
 from universal_agent.evaluation.harness import (
     EvaluationGateReport,
     EvaluationScenarioKind,
@@ -97,6 +110,108 @@ class EvaluationReportRecording:
             raise ValueError(
                 "duplicate evaluation scenario recording names: " + ", ".join(duplicates)
             )
+
+
+class _EvaluationCheckPayload(ConfigPayload):
+    name: str
+    passed: bool
+    message: str
+
+
+class _EvaluationSummaryPayload(ConfigPayload):
+    scenario_count: int
+    passed_count: int
+    failed_count: int
+    goal_completed_count: int
+    task_completed_count: int
+    action_started_count: int
+    action_completed_count: int
+    tool_failure_count: int
+    policy_denial_count: int
+    recovery_planned_count: int
+    human_intervention_count: int
+    resource_lock_acquired_count: int = 0
+    resource_lock_released_count: int = 0
+    resource_conflict_count: int = 0
+    active_resource_lock_count: int = 0
+    execution_duration_ms: int = 0
+    model_call_count: int = 0
+    model_total_token_count: int = 0
+    model_estimated_cost_micros: int = 0
+
+
+class _ReplayMetricsPayload(ConfigPayload):
+    event_count: int
+    action_started_count: int
+    action_completed_count: int
+    tool_failure_count: int
+    policy_denial_count: int
+    confirmation_required_count: int
+    recovery_planned_count: int
+    recovery_exhausted_count: int
+    human_intervention_count: int
+    resource_lock_acquired_count: int = 0
+    resource_lock_released_count: int = 0
+    resource_conflict_count: int = 0
+    active_resource_lock_count: int = 0
+    decision_generated_count: int = 0
+    decision_validated_count: int = 0
+    decision_rejected_count: int = 0
+    model_call_count: int = 0
+    model_total_token_count: int = 0
+    model_estimated_cost_micros: int = 0
+
+
+class _EvaluationScenarioPayload(ConfigPayload):
+    scenario_name: str
+    kind: str = EvaluationScenarioKind.SCENARIO.value
+    tags: list[str] = Field(default_factory=list)
+    passed: bool
+    result_status: str
+    error_code: str | None
+    satisfied_criteria: dict[str, PydanticJsonValue]
+    checks: list[_EvaluationCheckPayload]
+    event_types: list[str]
+    action_capabilities: list[str]
+    audit_capabilities: list[str]
+    evidence_claims: list[str] = Field(default_factory=list)
+    metrics: _ReplayMetricsPayload
+
+
+class _EvaluationGatePayload(ConfigPayload):
+    passed: bool
+    checks: list[_EvaluationCheckPayload]
+
+
+class _EvaluationReportPayload(ConfigPayload):
+    schema_version: int
+    suite_name: str
+    passed: bool
+    summary: _EvaluationSummaryPayload
+    scenarios: list[_EvaluationScenarioPayload]
+    gate: _EvaluationGatePayload | None = None
+
+
+class _ReplayAuditEntryPayload(ConfigPayload):
+    capability: str
+    tool_name: str
+    policy_effect: str
+    status: str
+    error_code: str | None
+
+
+class _ReplayRecordingPayload(ConfigPayload):
+    schema_version: int
+    scenario_name: str
+    result_status: str
+    error_code: str | None
+    satisfied_criteria: dict[str, PydanticJsonValue]
+    event_types: list[str]
+    action_capabilities: list[str]
+    action_statuses: list[str]
+    policy_effects: list[str]
+    audit_entries: list[_ReplayAuditEntryPayload]
+    metrics: _ReplayMetricsPayload
 
 
 @dataclass(frozen=True, slots=True)
@@ -423,19 +538,16 @@ def encode_evaluation_report(recording: EvaluationReportRecording) -> JsonObject
 
 
 def decode_evaluation_report(payload: Mapping[str, JsonValue]) -> EvaluationReportRecording:
-    version = _int(_required(payload, "schema_version"), "schema_version")
+    report = _parse_recording_payload(_EvaluationReportPayload, payload)
+    version = report.schema_version
     if version not in (1, 2, EVALUATION_REPORT_SCHEMA_VERSION):
         raise ValueError(f"unsupported evaluation report schema version: {version}")
-    gate = payload.get("gate")
     return EvaluationReportRecording(
-        suite_name=_string(_required(payload, "suite_name"), "suite_name"),
-        passed=_bool(_required(payload, "passed"), "passed"),
-        summary=_decode_evaluation_summary(_object(_required(payload, "summary"), "summary")),
-        scenarios=tuple(
-            _decode_evaluation_scenario(_object(item, "scenarios[]"))
-            for item in _list(_required(payload, "scenarios"), "scenarios")
-        ),
-        gate=None if gate is None else _decode_evaluation_gate(_object(gate, "gate")),
+        suite_name=report.suite_name,
+        passed=report.passed,
+        summary=_decode_evaluation_summary(report.summary),
+        scenarios=tuple(_decode_evaluation_scenario(item) for item in report.scenarios),
+        gate=None if report.gate is None else _decode_evaluation_gate(report.gate),
     )
 
 
@@ -465,37 +577,26 @@ def encode_replay_recording(recording: ReplayRecording) -> JsonObject:
 
 
 def decode_replay_recording(payload: Mapping[str, JsonValue]) -> ReplayRecording:
-    version = _int(_required(payload, "schema_version"), "schema_version")
+    recording = _parse_recording_payload(_ReplayRecordingPayload, payload)
+    version = recording.schema_version
     if version != REPLAY_RECORDING_SCHEMA_VERSION:
         raise ValueError(f"unsupported replay recording schema version: {version}")
     return ReplayRecording(
-        scenario_name=_string(_required(payload, "scenario_name"), "scenario_name"),
-        result_status=ExecutionStatus(
-            _string(_required(payload, "result_status"), "result_status")
-        ),
-        error_code=_optional_error(_required(payload, "error_code")),
-        satisfied_criteria=immutable_json(
-            _object(_required(payload, "satisfied_criteria"), "satisfied_criteria")
-        ),
-        event_types=_string_tuple(_required(payload, "event_types"), "event_types"),
-        action_capabilities=_string_tuple(
-            _required(payload, "action_capabilities"),
-            "action_capabilities",
-        ),
-        action_statuses=_string_tuple(_required(payload, "action_statuses"), "action_statuses"),
-        policy_effects=_string_tuple(_required(payload, "policy_effects"), "policy_effects"),
-        audit_entries=tuple(
-            _decode_audit_entry(_object(item, "audit_entries[]"))
-            for item in _list(_required(payload, "audit_entries"), "audit_entries")
-        ),
-        metrics=_decode_metrics(_object(_required(payload, "metrics"), "metrics")),
+        scenario_name=recording.scenario_name,
+        result_status=ExecutionStatus(recording.result_status),
+        error_code=_optional_error(recording.error_code),
+        satisfied_criteria=immutable_json(_json_mapping(recording.satisfied_criteria)),
+        event_types=_string_tuple(recording.event_types),
+        action_capabilities=_string_tuple(recording.action_capabilities),
+        action_statuses=_string_tuple(recording.action_statuses),
+        policy_effects=_string_tuple(recording.policy_effects),
+        audit_entries=tuple(_decode_audit_entry(item) for item in recording.audit_entries),
+        metrics=_decode_metrics(recording.metrics),
     )
 
 
 def json_mapping(value: object) -> JsonMapping:
-    if isinstance(value, dict) and all(isinstance(key, str) for key in value):
-        return value
-    raise ValueError("expected a JSON object")
+    return _parse_json_object(value, "evaluation recording")
 
 
 def _encode_evaluation_summary(summary: EvaluationSummaryRecording) -> JsonObject:
@@ -522,79 +623,27 @@ def _encode_evaluation_summary(summary: EvaluationSummaryRecording) -> JsonObjec
     }
 
 
-def _decode_evaluation_summary(payload: JsonObject) -> EvaluationSummaryRecording:
+def _decode_evaluation_summary(payload: _EvaluationSummaryPayload) -> EvaluationSummaryRecording:
     return EvaluationSummaryRecording(
-        scenario_count=_int(_required(payload, "scenario_count"), "summary.scenario_count"),
-        passed_count=_int(_required(payload, "passed_count"), "summary.passed_count"),
-        failed_count=_int(_required(payload, "failed_count"), "summary.failed_count"),
-        goal_completed_count=_int(
-            _required(payload, "goal_completed_count"),
-            "summary.goal_completed_count",
-        ),
-        task_completed_count=_int(
-            _required(payload, "task_completed_count"),
-            "summary.task_completed_count",
-        ),
-        action_started_count=_int(
-            _required(payload, "action_started_count"),
-            "summary.action_started_count",
-        ),
-        action_completed_count=_int(
-            _required(payload, "action_completed_count"),
-            "summary.action_completed_count",
-        ),
-        tool_failure_count=_int(
-            _required(payload, "tool_failure_count"),
-            "summary.tool_failure_count",
-        ),
-        policy_denial_count=_int(
-            _required(payload, "policy_denial_count"),
-            "summary.policy_denial_count",
-        ),
-        recovery_planned_count=_int(
-            _required(payload, "recovery_planned_count"),
-            "summary.recovery_planned_count",
-        ),
-        human_intervention_count=_int(
-            _required(payload, "human_intervention_count"),
-            "summary.human_intervention_count",
-        ),
-        resource_lock_acquired_count=_optional_int(
-            payload,
-            "resource_lock_acquired_count",
-            "summary.resource_lock_acquired_count",
-        ),
-        resource_lock_released_count=_optional_int(
-            payload,
-            "resource_lock_released_count",
-            "summary.resource_lock_released_count",
-        ),
-        resource_conflict_count=_optional_int(
-            payload,
-            "resource_conflict_count",
-            "summary.resource_conflict_count",
-        ),
-        active_resource_lock_count=_optional_int(
-            payload,
-            "active_resource_lock_count",
-            "summary.active_resource_lock_count",
-        ),
-        execution_duration_ms=_optional_int(
-            payload,
-            "execution_duration_ms",
-            "summary.execution_duration_ms",
-        ),
-        model_call_count=_optional_int(payload, "model_call_count", "summary.model_call_count"),
-        model_total_token_count=_optional_int(
-            payload,
-            "model_total_token_count",
-            "summary.model_total_token_count",
-        ),
-        model_estimated_cost_micros=_optional_int(
-            payload,
-            "model_estimated_cost_micros",
-            "summary.model_estimated_cost_micros",
-        ),
+        scenario_count=payload.scenario_count,
+        passed_count=payload.passed_count,
+        failed_count=payload.failed_count,
+        goal_completed_count=payload.goal_completed_count,
+        task_completed_count=payload.task_completed_count,
+        action_started_count=payload.action_started_count,
+        action_completed_count=payload.action_completed_count,
+        tool_failure_count=payload.tool_failure_count,
+        policy_denial_count=payload.policy_denial_count,
+        recovery_planned_count=payload.recovery_planned_count,
+        human_intervention_count=payload.human_intervention_count,
+        resource_lock_acquired_count=payload.resource_lock_acquired_count,
+        resource_lock_released_count=payload.resource_lock_released_count,
+        resource_conflict_count=payload.resource_conflict_count,
+        active_resource_lock_count=payload.active_resource_lock_count,
+        execution_duration_ms=payload.execution_duration_ms,
+        model_call_count=payload.model_call_count,
+        model_total_token_count=payload.model_total_token_count,
+        model_estimated_cost_micros=payload.model_estimated_cost_micros,
     )
 
 
@@ -616,40 +665,21 @@ def _encode_evaluation_scenario(scenario: EvaluationScenarioRecording) -> JsonOb
     }
 
 
-def _decode_evaluation_scenario(payload: JsonObject) -> EvaluationScenarioRecording:
+def _decode_evaluation_scenario(payload: _EvaluationScenarioPayload) -> EvaluationScenarioRecording:
     return EvaluationScenarioRecording(
-        scenario_name=_string(_required(payload, "scenario_name"), "scenario.scenario_name"),
-        kind=EvaluationScenarioKind(
-            _string(payload.get("kind", EvaluationScenarioKind.SCENARIO.value), "scenario.kind")
-        ),
-        tags=_optional_string_tuple(payload, "tags", "scenario.tags"),
-        passed=_bool(_required(payload, "passed"), "scenario.passed"),
-        result_status=ExecutionStatus(
-            _string(_required(payload, "result_status"), "scenario.result_status")
-        ),
-        error_code=_optional_error(_required(payload, "error_code")),
-        satisfied_criteria=immutable_json(
-            _object(_required(payload, "satisfied_criteria"), "scenario.satisfied_criteria")
-        ),
-        checks=tuple(
-            _decode_evaluation_check(_object(item, "checks[]"))
-            for item in _list(_required(payload, "checks"), "checks")
-        ),
-        event_types=_string_tuple(_required(payload, "event_types"), "scenario.event_types"),
-        action_capabilities=_string_tuple(
-            _required(payload, "action_capabilities"),
-            "scenario.action_capabilities",
-        ),
-        audit_capabilities=_string_tuple(
-            _required(payload, "audit_capabilities"),
-            "scenario.audit_capabilities",
-        ),
-        evidence_claims=_optional_string_tuple(
-            payload,
-            "evidence_claims",
-            "scenario.evidence_claims",
-        ),
-        metrics=_decode_metrics(_object(_required(payload, "metrics"), "scenario.metrics")),
+        scenario_name=payload.scenario_name,
+        kind=EvaluationScenarioKind(payload.kind),
+        tags=_string_tuple(payload.tags),
+        passed=payload.passed,
+        result_status=ExecutionStatus(payload.result_status),
+        error_code=_optional_error(payload.error_code),
+        satisfied_criteria=immutable_json(_json_mapping(payload.satisfied_criteria)),
+        checks=tuple(_decode_evaluation_check(item) for item in payload.checks),
+        event_types=_string_tuple(payload.event_types),
+        action_capabilities=_string_tuple(payload.action_capabilities),
+        audit_capabilities=_string_tuple(payload.audit_capabilities),
+        evidence_claims=_string_tuple(payload.evidence_claims),
+        metrics=_decode_metrics(payload.metrics),
     )
 
 
@@ -660,13 +690,10 @@ def _encode_evaluation_gate(gate: EvaluationGateRecording) -> JsonObject:
     }
 
 
-def _decode_evaluation_gate(payload: JsonObject) -> EvaluationGateRecording:
+def _decode_evaluation_gate(payload: _EvaluationGatePayload) -> EvaluationGateRecording:
     return EvaluationGateRecording(
-        passed=_bool(_required(payload, "passed"), "gate.passed"),
-        checks=tuple(
-            _decode_evaluation_check(_object(item, "gate.checks[]"))
-            for item in _list(_required(payload, "checks"), "gate.checks")
-        ),
+        passed=payload.passed,
+        checks=tuple(_decode_evaluation_check(item) for item in payload.checks),
     )
 
 
@@ -674,11 +701,11 @@ def _encode_evaluation_check(check: EvaluationCheckRecording) -> JsonObject:
     return {"name": check.name, "passed": check.passed, "message": check.message}
 
 
-def _decode_evaluation_check(payload: JsonObject) -> EvaluationCheckRecording:
+def _decode_evaluation_check(payload: _EvaluationCheckPayload) -> EvaluationCheckRecording:
     return EvaluationCheckRecording(
-        name=_string(_required(payload, "name"), "check.name"),
-        passed=_bool(_required(payload, "passed"), "check.passed"),
-        message=_string(_required(payload, "message"), "check.message"),
+        name=payload.name,
+        passed=payload.passed,
+        message=payload.message,
     )
 
 
@@ -706,101 +733,37 @@ def _encode_metrics(metrics: ReplayMetrics) -> JsonObject:
     }
 
 
-def _decode_audit_entry(payload: JsonObject) -> ReplayAuditEntry:
+def _decode_audit_entry(payload: _ReplayAuditEntryPayload) -> ReplayAuditEntry:
     return ReplayAuditEntry(
-        capability=_string(_required(payload, "capability"), "audit_entry.capability"),
-        tool_name=_string(_required(payload, "tool_name"), "audit_entry.tool_name"),
-        policy_effect=_string(_required(payload, "policy_effect"), "audit_entry.policy_effect"),
-        status=_string(_required(payload, "status"), "audit_entry.status"),
-        error_code=_optional_error(_required(payload, "error_code")),
+        capability=payload.capability,
+        tool_name=payload.tool_name,
+        policy_effect=payload.policy_effect,
+        status=payload.status,
+        error_code=_optional_error(payload.error_code),
     )
 
 
-def _decode_metrics(payload: JsonObject) -> ReplayMetrics:
+def _decode_metrics(payload: _ReplayMetricsPayload) -> ReplayMetrics:
     return ReplayMetrics(
-        event_count=_int(_required(payload, "event_count"), "metrics.event_count"),
-        action_started_count=_int(
-            _required(payload, "action_started_count"),
-            "metrics.action_started_count",
-        ),
-        action_completed_count=_int(
-            _required(payload, "action_completed_count"),
-            "metrics.action_completed_count",
-        ),
-        tool_failure_count=_int(
-            _required(payload, "tool_failure_count"),
-            "metrics.tool_failure_count",
-        ),
-        policy_denial_count=_int(
-            _required(payload, "policy_denial_count"),
-            "metrics.policy_denial_count",
-        ),
-        confirmation_required_count=_int(
-            _required(payload, "confirmation_required_count"),
-            "metrics.confirmation_required_count",
-        ),
-        recovery_planned_count=_int(
-            _required(payload, "recovery_planned_count"),
-            "metrics.recovery_planned_count",
-        ),
-        recovery_exhausted_count=_int(
-            _required(payload, "recovery_exhausted_count"),
-            "metrics.recovery_exhausted_count",
-        ),
-        human_intervention_count=_int(
-            _required(payload, "human_intervention_count"),
-            "metrics.human_intervention_count",
-        ),
-        resource_lock_acquired_count=_optional_int(
-            payload,
-            "resource_lock_acquired_count",
-            "metrics.resource_lock_acquired_count",
-        ),
-        resource_lock_released_count=_optional_int(
-            payload,
-            "resource_lock_released_count",
-            "metrics.resource_lock_released_count",
-        ),
-        resource_conflict_count=_optional_int(
-            payload,
-            "resource_conflict_count",
-            "metrics.resource_conflict_count",
-        ),
-        active_resource_lock_count=_optional_int(
-            payload,
-            "active_resource_lock_count",
-            "metrics.active_resource_lock_count",
-        ),
-        decision_generated_count=_optional_int(
-            payload,
-            "decision_generated_count",
-            "metrics.decision_generated_count",
-        ),
-        decision_validated_count=_optional_int(
-            payload,
-            "decision_validated_count",
-            "metrics.decision_validated_count",
-        ),
-        decision_rejected_count=_optional_int(
-            payload,
-            "decision_rejected_count",
-            "metrics.decision_rejected_count",
-        ),
-        model_call_count=_optional_int(
-            payload,
-            "model_call_count",
-            "metrics.model_call_count",
-        ),
-        model_total_token_count=_optional_int(
-            payload,
-            "model_total_token_count",
-            "metrics.model_total_token_count",
-        ),
-        model_estimated_cost_micros=_optional_int(
-            payload,
-            "model_estimated_cost_micros",
-            "metrics.model_estimated_cost_micros",
-        ),
+        event_count=payload.event_count,
+        action_started_count=payload.action_started_count,
+        action_completed_count=payload.action_completed_count,
+        tool_failure_count=payload.tool_failure_count,
+        policy_denial_count=payload.policy_denial_count,
+        confirmation_required_count=payload.confirmation_required_count,
+        recovery_planned_count=payload.recovery_planned_count,
+        recovery_exhausted_count=payload.recovery_exhausted_count,
+        human_intervention_count=payload.human_intervention_count,
+        resource_lock_acquired_count=payload.resource_lock_acquired_count,
+        resource_lock_released_count=payload.resource_lock_released_count,
+        resource_conflict_count=payload.resource_conflict_count,
+        active_resource_lock_count=payload.active_resource_lock_count,
+        decision_generated_count=payload.decision_generated_count,
+        decision_validated_count=payload.decision_validated_count,
+        decision_rejected_count=payload.decision_rejected_count,
+        model_call_count=payload.model_call_count,
+        model_total_token_count=payload.model_total_token_count,
+        model_estimated_cost_micros=payload.model_estimated_cost_micros,
     )
 
 
@@ -816,69 +779,69 @@ def _to_json(value: object) -> JsonValue:
     return str(value)
 
 
-def _required(payload: Mapping[str, JsonValue], key: str) -> JsonValue:
-    try:
-        return payload[key]
-    except KeyError as exc:
-        raise ValueError(f"missing required field: {key}") from exc
+def _string_tuple(value: Sequence[str]) -> tuple[str, ...]:
+    return tuple(value)
 
 
-def _object(value: JsonValue, field: str) -> JsonObject:
-    if isinstance(value, dict):
-        return value
-    raise ValueError(f"{field} must be an object")
-
-
-def _list(value: JsonValue, field: str) -> list[JsonValue]:
-    if isinstance(value, list):
-        return value
-    raise ValueError(f"{field} must be a list")
-
-
-def _string(value: JsonValue, field: str) -> str:
-    if isinstance(value, str):
-        return value
-    raise ValueError(f"{field} must be a string")
-
-
-def _string_tuple(value: JsonValue, field: str) -> tuple[str, ...]:
-    return tuple(_string(item, f"{field}[]") for item in _list(value, field))
-
-
-def _optional_string_tuple(
-    payload: Mapping[str, JsonValue],
-    key: str,
-    field: str,
-) -> tuple[str, ...]:
-    value = payload.get(key)
-    if value is None:
-        return ()
-    return _string_tuple(value, field)
-
-
-def _int(value: JsonValue, field: str) -> int:
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value
-    raise ValueError(f"{field} must be an integer")
-
-
-def _bool(value: JsonValue, field: str) -> bool:
-    if isinstance(value, bool):
-        return value
-    raise ValueError(f"{field} must be a boolean")
-
-
-def _optional_int(payload: Mapping[str, JsonValue], key: str, field: str) -> int:
-    value = payload.get(key)
-    if value is None:
-        return 0
-    return _int(value, field)
-
-
-def _optional_error(value: JsonValue) -> ErrorCode | None:
+def _optional_error(value: str | None) -> ErrorCode | None:
     if value is None:
         return None
-    return ErrorCode(_string(value, "error_code"))
+    return ErrorCode(value)
+
+
+def _parse_recording_payload[T: ConfigPayload](
+    model_type: type[T],
+    payload: Mapping[str, JsonValue],
+) -> T:
+    try:
+        return model_type.model_validate(dict(payload))
+    except PydanticValidationError as exc:
+        raise ValueError(_recording_error_message(exc)) from exc
+
+
+def _recording_error_message(error: PydanticValidationError) -> str:
+    errors = error.errors(include_url=False)
+    if not errors:
+        return str(error)
+    first = errors[0]
+    path = _pydantic_error_path(first.get("loc", ()))
+    error_type = str(first.get("type", ""))
+    if error_type == "missing":
+        return f"missing required field: {path}"
+    expected = _expected_error_type(error_type)
+    if expected is not None:
+        return f"{path} must be {expected}"
+    message = str(first.get("msg", ""))
+    if message:
+        return message.removeprefix("Value error, ")
+    return str(error)
+
+
+def _pydantic_error_path(location: object) -> str:
+    parts: list[str] = []
+    if isinstance(location, tuple):
+        for item in location:
+            if isinstance(item, int):
+                if parts:
+                    parts[-1] = f"{parts[-1]}[{item}]"
+                else:
+                    parts.append(f"[{item}]")
+            else:
+                parts.append(str(item))
+    return ".".join(parts)
+
+
+def _expected_error_type(error_type: str) -> str | None:
+    return {
+        "bool_type": "a boolean",
+        "dict_type": "an object",
+        "int_type": "an integer",
+        "invalid-json-value": "JSON-compatible",
+        "list_type": "a list",
+        "model_attributes_type": "an object",
+        "model_type": "an object",
+        "string_type": "a string",
+    }.get(error_type)
 
 
 def _validate_non_empty_name(field: str, value: str) -> None:

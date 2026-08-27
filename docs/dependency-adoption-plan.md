@@ -29,14 +29,14 @@
 | 预估 | 改动 ~100 行，ROI 最高的单点改动 |
 | 风险 | 低 |
 
-### 2. Pydantic v2 → 替换手写校验/解析层（第一批已完成）
+### 2. Pydantic v2 → 替换手写校验/解析层（持续推进）
 
 | 项 | 说明 |
 |---|---|
-| 现状 | 已用 Pydantic v2 接管 `host/config.py`、`profile/config.py`、`domain/package_codec.py`、`persistence/codec.py` 的 JSON/config payload 类型解析；公共 dataclass API、持久化 schema version 与 legacy 默认值保留 |
+| 现状 | 已用 Pydantic v2 接管 `host/config.py`、`profile/config.py`、`domain/package_codec.py`、`persistence/codec.py` 的 JSON/config payload 类型解析，并开始接管 `agentd/routing.py` 中分布式、doctor 与 session 路由的简单 HTTP payload 校验、`agentd/server.py` 的 request body JSON object 校验、`domains/kubernetes/resources.py` 的 Kubernetes 资源摘要解析，以及 `evaluation/dataset.py` 的 dataset manifest、`evaluation/scenario_config.py` 的 suite/scenario config、`evaluation/recording.py` 的 report/replay recording codec 解析；公共 dataclass API、持久化 schema version 与 legacy 默认值保留 |
 | 收益 | 预计 **-1500~2500 行**；pydantic-core（Rust）解析快一个量级；错误信息标准化 |
 | 合规性 | 零风险：AGENTS.md §6 明文列出 Pydantic 为首选方案之一 |
-| 剩余 | 可继续评估更深层 dataclass 校验是否值得迁移；当前不建议一次性替换核心 runtime contracts |
+| 剩余 | 可继续评估 agentd 其他请求体是否值得按模块迁移；当前不建议一次性替换核心 runtime contracts |
 | 风险 | 低；建议继续按模块迁移，避免一次性替换所有 dataclass 构造契约 |
 
 ### 3. Starlette + uvicorn → 替换 agentd socket/server 适配层（第一批已完成）

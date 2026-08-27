@@ -7,9 +7,13 @@ from typing import Protocol
 from urllib.parse import quote
 
 import httpx
+from pydantic import TypeAdapter
 
 from universal_agent.core import JsonMapping, JsonValue, immutable_json
+from universal_agent.core.config_validation import PydanticJsonValue
 from universal_agent.domains.kubernetes import resources as k8s
+
+_JSON_VALUE_ADAPTER: TypeAdapter[PydanticJsonValue] = TypeAdapter(PydanticJsonValue)
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,12 +259,8 @@ class KubernetesApiBackend:
         metadata = k8s.object_value(payload.get("metadata"))
         status = k8s.object_value(payload.get("status"))
         container_statuses = k8s.container_statuses(status.get("containerStatuses"))
-        ready = bool(container_statuses) and all(
-            k8s.bool_value(item.get("ready")) for item in container_statuses
-        )
-        restart_count = sum(
-            k8s.optional_int(item.get("restartCount")) or 0 for item in container_statuses
-        )
+        ready = bool(container_statuses) and all(item.ready for item in container_statuses)
+        restart_count = sum(item.restart_count for item in container_statuses)
         result: dict[str, JsonValue] = {
             "resource": ref.resource,
             "namespace": ref.namespace,
@@ -462,14 +462,4 @@ def _decode_optional_json(text: str) -> JsonValue:
         loaded: object = json.loads(text)
     except json.JSONDecodeError:
         return None
-    return _json_value(loaded)
-
-
-def _json_value(value: object) -> JsonValue:
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, list):
-        return [_json_value(item) for item in value]
-    if isinstance(value, dict):
-        return {str(key): _json_value(item) for key, item in value.items()}
-    return str(value)
+    return _JSON_VALUE_ADAPTER.validate_python(loaded, strict=True)

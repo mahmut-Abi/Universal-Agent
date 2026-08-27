@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from universal_agent.core import DomainIdentity, JsonMapping, JsonValue, immutable_json
+from pydantic import Field
+
+from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    PydanticJsonValue,
+    json_mapping,
+    parse_json_object,
+    parse_payload,
+)
 from universal_agent.evaluation.scenario_config import load_evaluation_suite_config
 
 EVALUATION_DATASET_MANIFEST = "dataset.json"
@@ -22,6 +31,35 @@ class EvaluationDatasetNotFoundError(LookupError):
 
 class AmbiguousEvaluationDatasetError(ValueError):
     pass
+
+
+class _EvaluationDatasetMetadataPayload(ConfigPayload):
+    name: str
+    version: str
+    description: str
+    author: str | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class _EvaluationDatasetDomainPayload(ConfigPayload):
+    name: str
+    version: str
+
+
+class _EvaluationDatasetSuitePayload(ConfigPayload):
+    name: str
+    path: str
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class _EvaluationDatasetManifestPayload(ConfigPayload):
+    api_version_camel: str | None = Field(default=None, alias="apiVersion")
+    api_version: str | None = None
+    kind: str
+    metadata: dict[str, PydanticJsonValue]
+    domains: list[_EvaluationDatasetDomainPayload] = Field(default_factory=list)
+    suites: list[_EvaluationDatasetSuitePayload]
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,18 +268,32 @@ def verify_evaluation_dataset_registry(
 
 
 def decode_evaluation_dataset_manifest(payload: JsonMapping) -> EvaluationDatasetManifest:
-    metadata = _mapping(payload, "metadata")
+    manifest_payload = _parse_dataset_payload(_EvaluationDatasetManifestPayload, payload)
+    metadata_payload = _parse_dataset_payload(
+        _EvaluationDatasetMetadataPayload,
+        json_mapping(manifest_payload.metadata),
+    )
     return EvaluationDatasetManifest(
-        api_version=_api_version(payload),
-        kind=_string(payload, "kind"),
-        name=_string(metadata, "name", field_name="metadata.name"),
-        version=_string(metadata, "version", field_name="metadata.version"),
-        description=_string(metadata, "description", field_name="metadata.description"),
-        author=_optional_string(metadata, "author", field_name="metadata.author"),
-        suites=_suite_refs(payload),
-        domains=_identity_tuple(payload, "domains"),
-        tags=_string_tuple(metadata, "tags"),
-        metadata=immutable_json(metadata),
+        api_version=_api_version(manifest_payload),
+        kind=manifest_payload.kind,
+        name=metadata_payload.name,
+        version=metadata_payload.version,
+        description=metadata_payload.description,
+        author=metadata_payload.author,
+        suites=tuple(
+            EvaluationDatasetSuiteRef(
+                name=suite.name,
+                path=suite.path,
+                description=suite.description or "",
+                tags=_string_tuple(suite.tags, "tags"),
+            )
+            for suite in manifest_payload.suites
+        ),
+        domains=tuple(
+            DomainIdentity(domain.name, domain.version) for domain in manifest_payload.domains
+        ),
+        tags=_string_tuple(metadata_payload.tags, "tags"),
+        metadata=immutable_json(json_mapping(manifest_payload.metadata)),
     )
 
 
@@ -383,102 +435,41 @@ def _load_json_object(path: Path) -> JsonMapping:
         ) from exc
     if not isinstance(loaded, dict):
         raise EvaluationDatasetValidationError("evaluation dataset manifest must be a JSON object")
-    return _json_mapping(loaded, "evaluation dataset manifest")
+    try:
+        return parse_json_object(loaded, "evaluation dataset manifest")
+    except ValueError as exc:
+        raise EvaluationDatasetValidationError(str(exc)) from exc
 
 
-def _mapping(payload: JsonMapping, key: str) -> JsonMapping:
-    value = payload.get(key)
-    if not isinstance(value, Mapping):
-        raise EvaluationDatasetValidationError(f"{key} must be an object")
-    return _json_mapping(value, key)
-
-
-def _api_version(payload: JsonMapping) -> str:
-    camel = payload.get("apiVersion")
-    snake = payload.get("api_version")
+def _api_version(payload: _EvaluationDatasetManifestPayload) -> str:
+    camel = payload.api_version_camel
+    snake = payload.api_version
     if camel is not None and snake is not None and camel != snake:
         raise EvaluationDatasetValidationError("apiVersion and api_version must match")
     value = camel if camel is not None else snake
-    return _string_value(value, "apiVersion")
-
-
-def _suite_refs(payload: JsonMapping) -> tuple[EvaluationDatasetSuiteRef, ...]:
-    suites = payload.get("suites")
-    if not isinstance(suites, list):
-        raise EvaluationDatasetValidationError("suites must be a list of objects")
-    refs: list[EvaluationDatasetSuiteRef] = []
-    for index, item in enumerate(suites):
-        if not isinstance(item, Mapping):
-            raise EvaluationDatasetValidationError(f"suites[{index}] must be an object")
-        suite = _json_mapping(item, f"suites[{index}]")
-        refs.append(
-            EvaluationDatasetSuiteRef(
-                name=_string(suite, "name", field_name=f"suites[{index}].name"),
-                path=_string(suite, "path", field_name=f"suites[{index}].path"),
-                description=_optional_string(
-                    suite,
-                    "description",
-                    field_name=f"suites[{index}].description",
-                )
-                or "",
-                tags=_string_tuple(suite, "tags"),
-            )
-        )
-    return tuple(refs)
-
-
-def _identity_tuple(payload: JsonMapping, key: str) -> tuple[DomainIdentity, ...]:
-    value = payload.get(key, ())
-    if not isinstance(value, list | tuple):
-        raise EvaluationDatasetValidationError(f"{key} must be a list of domain objects")
-    identities: list[DomainIdentity] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, Mapping):
-            raise EvaluationDatasetValidationError(f"{key}[{index}] must be an object")
-        domain = _json_mapping(item, f"{key}[{index}]")
-        identities.append(
-            DomainIdentity(
-                _string(domain, "name", field_name=f"{key}[{index}].name"),
-                _string(domain, "version", field_name=f"{key}[{index}].version"),
-            )
-        )
-    return tuple(identities)
-
-
-def _string(payload: JsonMapping, key: str, *, field_name: str | None = None) -> str:
-    value = payload.get(key)
-    return _string_value(value, field_name or key)
-
-
-def _string_value(value: object, field_name: str) -> str:
-    if not isinstance(value, str):
-        raise EvaluationDatasetValidationError(f"{field_name} must be a string")
-    _require_non_empty(value, field_name)
+    if value is None:
+        raise EvaluationDatasetValidationError("apiVersion must be a string")
+    _require_non_empty(value, "apiVersion")
     return value
 
 
-def _optional_string(
-    payload: JsonMapping,
-    key: str,
-    *,
-    field_name: str | None = None,
-) -> str | None:
-    value = payload.get(key)
-    if value is None:
-        return None
-    return _string_value(value, field_name or key)
-
-
-def _string_tuple(payload: JsonMapping, key: str) -> tuple[str, ...]:
-    value = payload.get(key, ())
-    if not isinstance(value, list | tuple):
-        raise EvaluationDatasetValidationError(f"{key} must be a list of strings")
+def _string_tuple(value: Sequence[str], key: str) -> tuple[str, ...]:
     items: list[str] = []
     for index, item in enumerate(value):
         if not isinstance(item, str) or not item.strip():
             raise EvaluationDatasetValidationError(f"{key}[{index}] must be a non-empty string")
         items.append(item)
     return tuple(items)
+
+
+def _parse_dataset_payload[T: ConfigPayload](
+    model_type: type[T],
+    payload: JsonMapping,
+) -> T:
+    try:
+        return parse_payload(model_type, payload)
+    except ValueError as exc:
+        raise EvaluationDatasetValidationError(str(exc)) from exc
 
 
 def _validate_strings(field_name: str, values: Sequence[str]) -> None:
@@ -508,25 +499,6 @@ def _duplicates(values: tuple[str, ...]) -> tuple[str, ...]:
             duplicates.add(value)
         seen.add(value)
     return tuple(sorted(duplicates))
-
-
-def _json_mapping(values: Mapping[str, JsonValue], field: str) -> dict[str, JsonValue]:
-    payload: dict[str, JsonValue] = {}
-    for key, value in values.items():
-        if not isinstance(key, str):
-            raise EvaluationDatasetValidationError(f"{field} keys must be strings")
-        payload[key] = _json_value(value, f"{field}.{key}")
-    return payload
-
-
-def _json_value(value: object, field: str) -> JsonValue:
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, list):
-        return [_json_value(item, f"{field}[]") for item in value]
-    if isinstance(value, Mapping):
-        return _json_mapping(value, field)
-    raise EvaluationDatasetValidationError(f"{field} must be JSON-compatible")
 
 
 def _format_identity(identity: EvaluationDatasetIdentity) -> str:

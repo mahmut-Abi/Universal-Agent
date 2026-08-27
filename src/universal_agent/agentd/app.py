@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
 
 from universal_agent.agentd.console_routes import handle_console_route
@@ -57,20 +56,21 @@ from universal_agent.agentd.representations import (
 )
 from universal_agent.agentd.routing import (
     _distributed_cancel_route,
+    _distributed_confirmed_schedule_payload,
+    _distributed_lock_acquire_payload,
+    _distributed_lock_lease_payload,
     _distributed_lock_lease_route,
-    _distributed_lock_owner_id,
-    _distributed_lock_ttl_seconds,
-    _distributed_reason,
-    _distributed_required_string,
+    _distributed_reason_payload,
     _distributed_schedule_action_route,
+    _distributed_schedule_payload,
     _distributed_schedule_session_route,
+    _distributed_schedule_settings_payload,
     _distributed_schedule_task_route,
-    _distributed_ttl_seconds,
     _distributed_worker_action_route,
-    _distributed_worker_capabilities,
-    _distributed_worker_run_max_items,
-    _distributed_worker_run_optional_seconds,
-    _distributed_worker_run_seconds,
+    _distributed_worker_registration_payload,
+    _distributed_worker_run_batch_payload,
+    _distributed_worker_run_payload,
+    _distributed_worker_ttl_seconds,
     _domain_package_route,
     _normalize_path,
     _optional_event_cursor,
@@ -78,7 +78,10 @@ from universal_agent.agentd.routing import (
     _optional_query_value,
     _optional_session_cursor,
     _profile_route,
+    _session_reason_payload,
+    _session_resume_payload,
     _session_route,
+    _state_event_repair_payload,
 )
 from universal_agent.agentd.session_representations import (
     session_body,
@@ -253,58 +256,41 @@ class AgentdApp:
                 return method_not_allowed(("POST",))
             try:
                 if distributed_worker_action == "register":
-                    metadata = request.body.get("metadata")
-                    if metadata is not None and not isinstance(metadata, Mapping):
-                        return bad_request("distributed worker metadata must be an object")
+                    registration_payload = _distributed_worker_registration_payload(request.body)
                     lifecycle = self._service.distributed_register_worker(
                         distributed_worker_id,
-                        capabilities=_distributed_worker_capabilities(request.body),
-                        metadata=None if metadata is None else immutable_json(metadata),
-                        ttl_seconds=_distributed_ttl_seconds(request.body),
+                        capabilities=registration_payload.capabilities,
+                        metadata=registration_payload.metadata,
+                        ttl_seconds=registration_payload.ttl_seconds,
                     )
                 elif distributed_worker_action == "heartbeat":
+                    ttl_seconds = _distributed_worker_ttl_seconds(request.body)
                     lifecycle = self._service.distributed_heartbeat_worker(
                         distributed_worker_id,
-                        ttl_seconds=_distributed_ttl_seconds(request.body),
+                        ttl_seconds=ttl_seconds,
                     )
                 elif distributed_worker_action == "run-once":
+                    worker_run_payload = _distributed_worker_run_payload(request.body)
                     worker_run = await self._service.distributed_run_worker_once(
                         distributed_worker_id,
-                        lease_ttl_seconds=_distributed_worker_run_seconds(
-                            request.body,
-                            field_name="lease_ttl_seconds",
-                            default=30.0,
-                        ),
-                        worker_ttl_seconds=_distributed_worker_run_seconds(
-                            request.body,
-                            field_name="worker_ttl_seconds",
-                            default=30.0,
-                        ),
-                        heartbeat_interval_seconds=_distributed_worker_run_optional_seconds(
-                            request.body,
-                            field_name="heartbeat_interval_seconds",
+                        lease_ttl_seconds=worker_run_payload.lease_ttl_seconds,
+                        worker_ttl_seconds=worker_run_payload.worker_ttl_seconds,
+                        heartbeat_interval_seconds=(
+                            worker_run_payload.heartbeat_interval_seconds
                         ),
                     )
                     if worker_run is None:
                         return not_found("distributed runtime coordinator is not configured")
                     return json_response(distributed_worker_run_body(worker_run))
                 elif distributed_worker_action == "run":
+                    worker_batch_payload = _distributed_worker_run_batch_payload(request.body)
                     worker_runs = await self._service.distributed_run_worker_until_idle(
                         distributed_worker_id,
-                        max_items=_distributed_worker_run_max_items(request.body),
-                        lease_ttl_seconds=_distributed_worker_run_seconds(
-                            request.body,
-                            field_name="lease_ttl_seconds",
-                            default=30.0,
-                        ),
-                        worker_ttl_seconds=_distributed_worker_run_seconds(
-                            request.body,
-                            field_name="worker_ttl_seconds",
-                            default=30.0,
-                        ),
-                        heartbeat_interval_seconds=_distributed_worker_run_optional_seconds(
-                            request.body,
-                            field_name="heartbeat_interval_seconds",
+                        max_items=worker_batch_payload.max_items,
+                        lease_ttl_seconds=worker_batch_payload.lease_ttl_seconds,
+                        worker_ttl_seconds=worker_batch_payload.worker_ttl_seconds,
+                        heartbeat_interval_seconds=(
+                            worker_batch_payload.heartbeat_interval_seconds
                         ),
                     )
                     if worker_runs is None:
@@ -313,7 +299,7 @@ class AgentdApp:
                 elif distributed_worker_action == "drain":
                     lifecycle = self._service.distributed_drain_worker(
                         distributed_worker_id,
-                        reason=_distributed_reason(
+                        reason=_distributed_reason_payload(
                             request.body,
                             default="worker draining from agentd",
                             field_name="distributed worker drain reason",
@@ -322,7 +308,7 @@ class AgentdApp:
                 elif distributed_worker_action == "offline":
                     lifecycle = self._service.distributed_mark_worker_offline(
                         distributed_worker_id,
-                        reason=_distributed_reason(
+                        reason=_distributed_reason_payload(
                             request.body,
                             default="worker offline from agentd",
                             field_name="distributed worker offline reason",
@@ -340,19 +326,13 @@ class AgentdApp:
         if path == "/v1/distributed/locks/acquire":
             if method != "POST":
                 return method_not_allowed(("POST",))
-            metadata = request.body.get("metadata")
-            if metadata is not None and not isinstance(metadata, Mapping):
-                return bad_request("distributed lock metadata must be an object")
             try:
+                lock_payload = _distributed_lock_acquire_payload(request.body)
                 lock_lifecycle = self._service.distributed_acquire_lock(
-                    lock_key=_distributed_required_string(
-                        request.body,
-                        key="lock_key",
-                        field_name="distributed lock key",
-                    ),
-                    owner_id=_distributed_lock_owner_id(request.body),
-                    ttl_seconds=_distributed_lock_ttl_seconds(request.body),
-                    metadata=None if metadata is None else immutable_json(metadata),
+                    lock_key=lock_payload.lock_key,
+                    owner_id=lock_payload.owner_id,
+                    ttl_seconds=lock_payload.ttl_seconds,
+                    metadata=lock_payload.metadata,
                 )
             except DistributedLockConflictError as exc:
                 return conflict(str(exc))
@@ -366,16 +346,17 @@ class AgentdApp:
             if method != "POST":
                 return method_not_allowed(("POST",))
             try:
+                lease_payload = _distributed_lock_lease_payload(request.body)
                 if distributed_lock_action == "heartbeat":
                     lock_lifecycle = self._service.distributed_heartbeat_lock(
                         distributed_lock_lease_id,
-                        owner_id=_distributed_lock_owner_id(request.body),
-                        ttl_seconds=_distributed_lock_ttl_seconds(request.body),
+                        owner_id=lease_payload.owner_id,
+                        ttl_seconds=lease_payload.ttl_seconds,
                     )
                 elif distributed_lock_action == "release":
                     lock_lifecycle = self._service.distributed_release_lock(
                         distributed_lock_lease_id,
-                        owner_id=_distributed_lock_owner_id(request.body),
+                        owner_id=lease_payload.owner_id,
                     )
                 else:
                     return not_found(f"unknown route: {path}")
@@ -389,13 +370,8 @@ class AgentdApp:
         if path == "/v1/distributed/goals":
             if method != "POST":
                 return method_not_allowed(("POST",))
-            priority = request.body.get("priority", 0)
-            if not isinstance(priority, int):
-                return bad_request("distributed schedule priority must be an integer")
-            max_attempts = request.body.get("max_attempts", 3)
-            if not isinstance(max_attempts, int):
-                return bad_request("distributed schedule max_attempts must be an integer")
             try:
+                schedule = _distributed_schedule_settings_payload(request.body)
                 submission = parse_goal_submission(request.body)
             except ValueError as exc:
                 return bad_request(str(exc))
@@ -407,8 +383,8 @@ class AgentdApp:
                 scheduling = self._service.distributed_schedule_goal(
                     submission.goal,
                     submission.task,
-                    priority=priority,
-                    max_attempts=max_attempts,
+                    priority=schedule.priority,
+                    max_attempts=schedule.max_attempts,
                 )
             except ValueError as exc:
                 return bad_request(str(exc))
@@ -418,24 +394,19 @@ class AgentdApp:
         if path == "/v1/distributed/pending-actions/schedule":
             if method != "POST":
                 return method_not_allowed(("POST",))
-            confirmed = request.body.get("confirmed")
-            if not isinstance(confirmed, bool):
-                return bad_request(
-                    "distributed pending-action schedule confirmed must be a boolean"
-                )
-            if not confirmed:
-                return bad_request("distributed pending-action schedule requires confirmed=true")
-            priority = request.body.get("priority", 0)
-            if not isinstance(priority, int):
-                return bad_request("distributed schedule priority must be an integer")
-            max_attempts = request.body.get("max_attempts", 3)
-            if not isinstance(max_attempts, int):
-                return bad_request("distributed schedule max_attempts must be an integer")
             try:
+                pending_action_schedule = _distributed_confirmed_schedule_payload(
+                    request.body,
+                    confirmed_field_name="distributed pending-action schedule confirmed",
+                )
+                if not pending_action_schedule.confirmed:
+                    return bad_request(
+                        "distributed pending-action schedule requires confirmed=true"
+                    )
                 pending_scheduling = await self._service.distributed_schedule_pending_actions(
-                    confirmed=confirmed,
-                    priority=priority,
-                    max_attempts=max_attempts,
+                    confirmed=pending_action_schedule.confirmed,
+                    priority=pending_action_schedule.priority,
+                    max_attempts=pending_action_schedule.max_attempts,
                 )
             except ValueError as exc:
                 return bad_request(str(exc))
@@ -457,25 +428,20 @@ class AgentdApp:
         ):
             if method != "POST":
                 return method_not_allowed(("POST",))
-            confirmed = request.body.get("confirmed")
-            if not isinstance(confirmed, bool):
-                return bad_request("distributed schedule-action confirmed must be a boolean")
-            if not confirmed:
-                return bad_request("distributed schedule-action requires confirmed=true")
-            priority = request.body.get("priority", 0)
-            if not isinstance(priority, int):
-                return bad_request("distributed schedule priority must be an integer")
-            max_attempts = request.body.get("max_attempts", 3)
-            if not isinstance(max_attempts, int):
-                return bad_request("distributed schedule max_attempts must be an integer")
             try:
+                action_schedule = _distributed_confirmed_schedule_payload(
+                    request.body,
+                    confirmed_field_name="distributed schedule-action confirmed",
+                )
+                if not action_schedule.confirmed:
+                    return bad_request("distributed schedule-action requires confirmed=true")
                 scheduling = self._service.distributed_schedule_action(
                     distributed_schedule_action_session_id,
                     distributed_schedule_action_task_id,
                     distributed_schedule_action_id,
-                    confirmed=confirmed,
-                    priority=priority,
-                    max_attempts=max_attempts,
+                    confirmed=action_schedule.confirmed,
+                    priority=action_schedule.priority,
+                    max_attempts=action_schedule.max_attempts,
                 )
             except ValueError as exc:
                 return bad_request(str(exc))
@@ -491,22 +457,14 @@ class AgentdApp:
         ):
             if method != "POST":
                 return method_not_allowed(("POST",))
-            payload = request.body.get("payload")
-            if payload is not None and not isinstance(payload, Mapping):
-                return bad_request("distributed schedule payload must be an object")
-            priority = request.body.get("priority", 0)
-            if not isinstance(priority, int):
-                return bad_request("distributed schedule priority must be an integer")
-            max_attempts = request.body.get("max_attempts", 3)
-            if not isinstance(max_attempts, int):
-                return bad_request("distributed schedule max_attempts must be an integer")
             try:
+                task_schedule = _distributed_schedule_payload(request.body)
                 scheduling = self._service.distributed_schedule_task(
                     distributed_schedule_task_session_id,
                     distributed_schedule_task_id,
-                    payload=None if payload is None else immutable_json(payload),
-                    priority=priority,
-                    max_attempts=max_attempts,
+                    payload=task_schedule.payload,
+                    priority=task_schedule.priority,
+                    max_attempts=task_schedule.max_attempts,
                 )
             except ValueError as exc:
                 return bad_request(str(exc))
@@ -517,21 +475,13 @@ class AgentdApp:
         if distributed_schedule_session_id is not None:
             if method != "POST":
                 return method_not_allowed(("POST",))
-            payload = request.body.get("payload")
-            if payload is not None and not isinstance(payload, Mapping):
-                return bad_request("distributed schedule payload must be an object")
-            priority = request.body.get("priority", 0)
-            if not isinstance(priority, int):
-                return bad_request("distributed schedule priority must be an integer")
-            max_attempts = request.body.get("max_attempts", 3)
-            if not isinstance(max_attempts, int):
-                return bad_request("distributed schedule max_attempts must be an integer")
             try:
+                session_schedule = _distributed_schedule_payload(request.body)
                 scheduling = self._service.distributed_schedule_session(
                     distributed_schedule_session_id,
-                    payload=None if payload is None else immutable_json(payload),
-                    priority=priority,
-                    max_attempts=max_attempts,
+                    payload=session_schedule.payload,
+                    priority=session_schedule.priority,
+                    max_attempts=session_schedule.max_attempts,
                 )
             except ValueError as exc:
                 return bad_request(str(exc))
@@ -564,21 +514,20 @@ class AgentdApp:
         if distributed_cancel_work_item_id is not None:
             if method != "POST":
                 return method_not_allowed(("POST",))
-            reason = request.body.get(
-                "reason",
-                "distributed work item cancelled from agentd",
-            )
-            if not isinstance(reason, str):
-                return bad_request("distributed cancel reason must be a string")
-            if not reason.strip():
-                return bad_request("distributed cancel reason must not be empty")
             try:
+                cancel_reason = _distributed_reason_payload(
+                    request.body,
+                    default="distributed work item cancelled from agentd",
+                    field_name="distributed cancel reason",
+                )
                 cancellation = self._service.distributed_cancel_work_item(
                     distributed_cancel_work_item_id,
-                    reason=reason,
+                    reason=cancel_reason,
                 )
             except WorkItemNotFoundError as exc:
                 return not_found(str(exc))
+            except ValueError as exc:
+                return bad_request(str(exc))
             if cancellation is None:
                 return not_found("distributed runtime coordinator is not configured")
             return json_response(distributed_cancellation_body(cancellation))
@@ -612,16 +561,11 @@ class AgentdApp:
         if path == "/v1/doctor/state-events/repair":
             if method != "POST":
                 return method_not_allowed(("POST",))
-            confirmed = request.body.get("confirmed", False)
-            if not isinstance(confirmed, bool):
-                return bad_request("state/event repair confirmed must be a boolean")
-            dry_run = request.body.get("dry_run", False)
-            if not isinstance(dry_run, bool):
-                return bad_request("state/event repair dry_run must be a boolean")
             try:
+                repair_payload = _state_event_repair_payload(request.body)
                 report = await self._service.repair_state_event_consistency(
-                    confirmed=confirmed,
-                    dry_run=dry_run,
+                    confirmed=repair_payload.confirmed,
+                    dry_run=repair_payload.dry_run,
                 )
             except ValueError as exc:
                 return bad_request(str(exc))
@@ -767,37 +711,51 @@ class AgentdApp:
         if session_id is not None and suffix == "pause":
             if method != "POST":
                 return method_not_allowed(("POST",))
-            reason = request.body.get("reason", "session paused")
-            if not isinstance(reason, str):
-                return bad_request("pause reason must be a string")
             try:
-                run = await self._service.pause_session(session_id, reason=reason)
+                pause_reason = _session_reason_payload(
+                    request.body,
+                    default="session paused",
+                    field_name="pause reason",
+                )
+                run = await self._service.pause_session(session_id, reason=pause_reason)
                 return json_response(runtime_run_body(run))
+            except ValueError as exc:
+                return bad_request(str(exc))
             except StateNotFoundError as exc:
                 return not_found(str(exc))
         if session_id is not None and suffix == "resume":
             if method != "POST":
                 return method_not_allowed(("POST",))
-            confirmed = request.body.get("confirmed")
-            if confirmed is not None and not isinstance(confirmed, bool):
-                return bad_request("resume confirmed must be a boolean")
             try:
+                resume_payload = _session_resume_payload(request.body)
                 session = await self._service.get_session(session_id)
-                if session.pending_action is not None and confirmed is None:
+                if session.pending_action is not None and resume_payload.confirmed is None:
                     return bad_request("resume requires boolean confirmed for pending action")
-                run = await self._service.resume_session(session_id, confirmed=confirmed)
+                run = await self._service.resume_session(
+                    session_id,
+                    confirmed=resume_payload.confirmed,
+                )
                 return json_response(runtime_run_body(run))
+            except ValueError as exc:
+                return bad_request(str(exc))
             except StateNotFoundError as exc:
                 return not_found(str(exc))
         if session_id is not None and suffix == "cancel":
             if method != "POST":
                 return method_not_allowed(("POST",))
-            reason = request.body.get("reason", "session cancelled")
-            if not isinstance(reason, str):
-                return bad_request("cancel reason must be a string")
             try:
-                run = await self._service.cancel_session(session_id, reason=reason)
+                session_cancel_reason = _session_reason_payload(
+                    request.body,
+                    default="session cancelled",
+                    field_name="cancel reason",
+                )
+                run = await self._service.cancel_session(
+                    session_id,
+                    reason=session_cancel_reason,
+                )
                 return json_response(runtime_run_body(run))
+            except ValueError as exc:
+                return bad_request(str(exc))
             except StateNotFoundError as exc:
                 return not_found(str(exc))
 

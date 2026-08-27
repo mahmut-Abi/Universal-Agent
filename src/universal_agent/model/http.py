@@ -5,6 +5,8 @@ from collections.abc import Mapping
 from typing import Protocol
 
 import httpx
+from pydantic import Field
+from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import (
     CapabilitySummary,
@@ -19,11 +21,35 @@ from universal_agent.core import (
     immutable_json,
     validate_argument_contract,
 )
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    PydanticJsonValue,
+    parse_json_object,
+)
 from universal_agent.model.adapter import ModelUsage
 
 
 class JsonHttpModelError(RuntimeError):
     pass
+
+
+class _DecisionPayload(ConfigPayload):
+    type: str
+    reason: str
+    capability: str | None = None
+    target: str | None = None
+    arguments: dict[str, PydanticJsonValue] = Field(default_factory=dict)
+    expected_observations: list[str] = Field(default_factory=list)
+    message: str | None = None
+
+
+class _UsagePayload(ConfigPayload):
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    prompt_tokens: int | None = Field(default=None, ge=0)
+    completion_tokens: int | None = Field(default=None, ge=0)
+    estimated_cost_micros: int = Field(default=0, ge=0)
+    currency: str | None = None
 
 
 class JsonHttpModelTransport(Protocol):
@@ -498,16 +524,14 @@ def _decision_payload(response: JsonMapping) -> JsonMapping:
 
 
 def _decode_decision(payload: JsonMapping) -> Decision:
-    decision_type = DecisionType(_required_string(payload, "type"))
-    reason = _required_string(payload, "reason")
-    capability = _optional_string(payload.get("capability"), "capability")
-    target = _optional_string(payload.get("target"), "target")
-    arguments = _optional_mapping(payload.get("arguments"), "arguments")
-    expected_observations = _optional_string_tuple(
-        payload.get("expected_observations"),
-        "expected_observations",
-    )
-    message = _optional_string(payload.get("message"), "message")
+    parsed = _parse_value_payload(_DecisionPayload, payload)
+    decision_type = DecisionType(_non_empty_string(parsed.type, "type"))
+    reason = _non_empty_string(parsed.reason, "reason")
+    capability = _optional_non_empty_string(parsed.capability, "capability")
+    target = _optional_non_empty_string(parsed.target, "target")
+    arguments = immutable_json(parsed.arguments)
+    expected_observations = _string_tuple(parsed.expected_observations, "expected_observations")
+    message = _optional_non_empty_string(parsed.message, "message")
     return Decision(
         decision_type,
         reason,
@@ -541,26 +565,18 @@ def _decode_usage(provider: str, model: str, value: JsonValue) -> ModelUsage | N
         return None
     if not isinstance(value, Mapping):
         raise JsonHttpModelError("model usage must be an object")
-    usage = _json_mapping(value, "usage")
-    input_tokens = _optional_non_negative_int(
-        usage.get("input_tokens", usage.get("prompt_tokens", 0)),
-        "usage.input_tokens",
+    usage = _parse_model_payload(_UsagePayload, value, "usage")
+    input_tokens = usage.input_tokens if usage.input_tokens is not None else usage.prompt_tokens
+    output_tokens = (
+        usage.output_tokens if usage.output_tokens is not None else usage.completion_tokens
     )
-    output_tokens = _optional_non_negative_int(
-        usage.get("output_tokens", usage.get("completion_tokens", 0)),
-        "usage.output_tokens",
-    )
-    estimated_cost_micros = _optional_non_negative_int(
-        usage.get("estimated_cost_micros", 0),
-        "usage.estimated_cost_micros",
-    )
-    currency = _optional_string(usage.get("currency"), "usage.currency") or "USD"
+    currency = _optional_non_empty_string(usage.currency, "usage.currency") or "USD"
     return ModelUsage(
         provider,
         model,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        estimated_cost_micros=estimated_cost_micros,
+        input_tokens=input_tokens or 0,
+        output_tokens=output_tokens or 0,
+        estimated_cost_micros=usage.estimated_cost_micros,
         currency=currency,
     )
 
@@ -716,48 +732,23 @@ def _openai_decision_json_schema() -> dict[str, JsonValue]:
     }
 
 
-def _required_string(payload: JsonMapping, field_name: str) -> str:
-    value = payload.get(field_name)
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{field_name} must be a non-empty string")
-    return value
-
-
-def _optional_string(value: JsonValue, field_name: str) -> str | None:
+def _optional_non_empty_string(value: str | None, field_name: str) -> str | None:
     if value is None:
         return None
-    if not isinstance(value, str) or not value.strip():
+    return _non_empty_string(value, field_name)
+
+
+def _non_empty_string(value: str, field_name: str) -> str:
+    if not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
     return value
 
 
-def _optional_mapping(value: JsonValue, field_name: str) -> JsonMapping:
-    if value is None:
-        return immutable_json()
-    if not isinstance(value, Mapping):
-        raise ValueError(f"{field_name} must be an object")
-    return _json_mapping(value, field_name)
-
-
-def _optional_string_tuple(value: JsonValue, field_name: str) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise ValueError(f"{field_name} must be a list")
-    result: list[str] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, str) or not item.strip():
-            raise ValueError(f"{field_name}[{index}] must be a non-empty string")
-        result.append(item)
-    return tuple(result)
-
-
-def _optional_non_negative_int(value: JsonValue, field_name: str) -> int:
-    if value is None:
-        return 0
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        raise JsonHttpModelError(f"{field_name} must be a non-negative integer")
-    return value
+def _string_tuple(values: list[str], field_name: str) -> tuple[str, ...]:
+    items: list[str] = []
+    for index, item in enumerate(values):
+        items.append(_non_empty_string(item, f"{field_name}[{index}]"))
+    return tuple(items)
 
 
 def _validate_headers(headers: Mapping[str, str]) -> None:
@@ -769,21 +760,76 @@ def _validate_headers(headers: Mapping[str, str]) -> None:
 
 
 def _json_mapping(value: object, field_name: str) -> JsonMapping:
-    if not isinstance(value, Mapping):
-        raise JsonHttpModelError(f"{field_name} must be an object")
-    result: dict[str, JsonValue] = {}
-    for key, item in value.items():
-        if not isinstance(key, str):
-            raise JsonHttpModelError(f"{field_name} keys must be strings")
-        result[key] = _json_value(item, f"{field_name}.{key}")
-    return immutable_json(result)
+    candidate = dict(value) if isinstance(value, Mapping) else value
+    try:
+        return immutable_json(parse_json_object(candidate, field_name))
+    except ValueError as exc:
+        raise JsonHttpModelError(str(exc)) from exc
 
 
-def _json_value(value: object, field_name: str) -> JsonValue:
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, list):
-        return [_json_value(item, f"{field_name}[]") for item in value]
-    if isinstance(value, Mapping):
-        return dict(_json_mapping(value, field_name))
-    raise JsonHttpModelError(f"{field_name} must be JSON-compatible")
+def _parse_value_payload[T: ConfigPayload](
+    model_type: type[T],
+    payload: Mapping[str, JsonValue],
+) -> T:
+    try:
+        return model_type.model_validate(dict(payload))
+    except PydanticValidationError as exc:
+        raise ValueError(_model_payload_error_message(exc)) from exc
+
+
+def _parse_model_payload[T: ConfigPayload](
+    model_type: type[T],
+    payload: Mapping[str, JsonValue],
+    field_name: str,
+) -> T:
+    try:
+        return model_type.model_validate(dict(payload))
+    except PydanticValidationError as exc:
+        raise JsonHttpModelError(_model_payload_error_message(exc, field_name)) from exc
+
+
+def _model_payload_error_message(
+    error: PydanticValidationError,
+    prefix: str | None = None,
+) -> str:
+    errors = error.errors(include_url=False)
+    if not errors:
+        return str(error)
+    first = errors[0]
+    path = _pydantic_error_path(first.get("loc", ()), prefix)
+    error_type = str(first.get("type", ""))
+    if error_type == "missing":
+        return f"{path} is required"
+    expected = _expected_error_type(error_type)
+    if expected is not None:
+        return f"{path} must be {expected}"
+    message = str(first.get("msg", ""))
+    if message:
+        return message.removeprefix("Value error, ")
+    return str(error)
+
+
+def _pydantic_error_path(location: object, prefix: str | None) -> str:
+    parts: list[str] = [prefix] if prefix else []
+    if isinstance(location, tuple):
+        for item in location:
+            if isinstance(item, int):
+                if parts:
+                    parts[-1] = f"{parts[-1]}[{item}]"
+                else:
+                    parts.append(f"[{item}]")
+            else:
+                parts.append(str(item))
+    return ".".join(parts)
+
+
+def _expected_error_type(error_type: str) -> str | None:
+    if error_type == "greater_than_equal":
+        return "a non-negative integer"
+    return {
+        "dict_type": "an object",
+        "int_type": "an integer",
+        "invalid-json-value": "JSON-compatible",
+        "list_type": "a list",
+        "string_type": "a string",
+    }.get(error_type)

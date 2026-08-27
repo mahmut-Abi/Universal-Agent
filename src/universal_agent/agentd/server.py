@@ -17,6 +17,7 @@ from uvicorn import Config, Server
 from universal_agent.agentd.app import AgentdApp
 from universal_agent.agentd.http import HttpRequest, HttpResponse
 from universal_agent.core import JsonMapping, JsonValue, immutable_json
+from universal_agent.core.config_validation import parse_json_object
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,9 +160,9 @@ async def _request_body(
     except json.JSONDecodeError as exc:
         return _error_response(400, "bad_request", f"invalid JSON body: {exc.msg}")
     try:
-        return _json_mapping(loaded)
+        return immutable_json(parse_json_object(loaded, "request body"))
     except ValueError as exc:
-        return _error_response(400, "bad_request", str(exc))
+        return _error_response(400, "bad_request", _request_body_error_message(str(exc)))
 
 
 def _starlette_response(response: HttpResponse) -> StarletteResponse:
@@ -187,30 +188,10 @@ def _error_response(status_code: int, code: str, message: str) -> HttpResponse:
     )
 
 
-def _json_mapping(value: object) -> JsonMapping:
-    if not isinstance(value, dict):
-        raise ValueError("request body must be a JSON object")
-    payload: dict[str, JsonValue] = {}
-    for key, item in value.items():
-        if not isinstance(key, str):
-            raise ValueError("request body keys must be strings")
-        payload[key] = _json_value(item)
-    return immutable_json(payload)
-
-
-def _json_value(value: object) -> JsonValue:
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, list):
-        return [_json_value(item) for item in value]
-    if isinstance(value, dict):
-        payload: dict[str, JsonValue] = {}
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise ValueError("request body keys must be strings")
-            payload[key] = _json_value(item)
-        return payload
-    raise ValueError(f"request body contains non-JSON value: {type(value).__name__}")
+def _request_body_error_message(message: str) -> str:
+    if message == "request body must be an object":
+        return "request body must be a JSON object"
+    return message
 
 
 def _to_json(value: object) -> JsonValue:

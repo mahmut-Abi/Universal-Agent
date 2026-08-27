@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from pydantic import Field
+
 from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    PydanticJsonValue,
+    json_mapping,
+    parse_payload,
+)
 from universal_agent.domain import DomainPackageCompatibility
 from universal_agent.ecosystem.models import (
     EcosystemDomainPackageRef,
@@ -20,6 +29,81 @@ from universal_agent.ecosystem.validation import _require_non_empty
 
 if TYPE_CHECKING:
     from universal_agent.ecosystem.registry_index import EcosystemRegistryIndex
+
+
+class _EcosystemRegistryMetadataPayload(ConfigPayload):
+    name: str
+    version: str
+    description: str
+
+
+class _EcosystemRegistryIdentityPayload(ConfigPayload):
+    name: str
+    version: str
+
+
+class _EcosystemRegistryCompatibilityPayload(ConfigPayload):
+    runtime_api: str | None = None
+    domain_api: str | None = None
+
+
+class _EcosystemRegistryDomainPackagePayload(ConfigPayload):
+    name: str
+    version: str
+    description: str
+    author: str | None = None
+    entrypoint: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    capability_names: list[str] = Field(default_factory=list)
+    required_tools: list[str] = Field(default_factory=list)
+    resources: list[str] = Field(default_factory=list)
+    dependencies: list[_EcosystemRegistryIdentityPayload] = Field(default_factory=list)
+    compatibility: dict[str, PydanticJsonValue] | None = None
+    security: dict[str, PydanticJsonValue] | None = None
+    root_path: str | None = None
+    manifest_path: str | None = None
+    manifest_sha256: str | None = None
+
+
+class _EcosystemRegistryDatasetSuitePayload(ConfigPayload):
+    name: str
+    path: str
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class _EcosystemRegistryEvaluationDatasetPayload(ConfigPayload):
+    name: str
+    version: str
+    description: str
+    author: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    domains: list[_EcosystemRegistryIdentityPayload] = Field(default_factory=list)
+    suites: list[_EcosystemRegistryDatasetSuitePayload] = Field(default_factory=list)
+    root_path: str | None = None
+    manifest_path: str | None = None
+    manifest_sha256: str | None = None
+
+
+class _EcosystemRegistryProfilePayload(ConfigPayload):
+    name: str
+    version: str
+    description: str
+    domains: list[_EcosystemRegistryIdentityPayload] = Field(default_factory=list)
+    path: str | None = None
+    config_sha256: str | None = None
+
+
+class _EcosystemRegistryManifestPayload(ConfigPayload):
+    api_version_camel: str | None = Field(default=None, alias="apiVersion")
+    api_version: str | None = None
+    kind: str
+    metadata: dict[str, PydanticJsonValue]
+    domain_packages: list[_EcosystemRegistryDomainPackagePayload] = Field(default_factory=list)
+    evaluation_datasets: list[_EcosystemRegistryEvaluationDatasetPayload] = Field(
+        default_factory=list
+    )
+    profiles: list[_EcosystemRegistryProfilePayload] = Field(default_factory=list)
 
 
 def encode_ecosystem_registry_manifest(manifest: EcosystemRegistryManifest) -> dict[str, Any]:
@@ -99,17 +183,25 @@ def encode_ecosystem_registry_manifest(manifest: EcosystemRegistryManifest) -> d
 
 
 def decode_ecosystem_registry_manifest(payload: JsonMapping) -> EcosystemRegistryManifest:
-    metadata = _mapping(payload, "metadata")
+    manifest_payload = _parse_registry_payload(_EcosystemRegistryManifestPayload, payload)
+    metadata_payload = _parse_registry_payload(
+        _EcosystemRegistryMetadataPayload,
+        json_mapping(manifest_payload.metadata),
+    )
     return EcosystemRegistryManifest(
-        api_version=_api_version(payload),
-        kind=_string(payload, "kind"),
-        name=_string(metadata, "name", field_name="metadata.name"),
-        version=_string(metadata, "version", field_name="metadata.version"),
-        description=_string(metadata, "description", field_name="metadata.description"),
-        domain_packages=_domain_package_refs(payload),
-        evaluation_datasets=_evaluation_dataset_refs(payload),
-        profiles=_profile_refs(payload),
-        metadata=immutable_json(metadata),
+        api_version=_api_version(manifest_payload),
+        kind=manifest_payload.kind,
+        name=metadata_payload.name,
+        version=metadata_payload.version,
+        description=metadata_payload.description,
+        domain_packages=tuple(
+            _domain_package_ref(item) for item in manifest_payload.domain_packages
+        ),
+        evaluation_datasets=tuple(
+            _evaluation_dataset_ref(item) for item in manifest_payload.evaluation_datasets
+        ),
+        profiles=tuple(_profile_ref(item) for item in manifest_payload.profiles),
+        metadata=immutable_json(json_mapping(manifest_payload.metadata)),
     )
 
 
@@ -156,327 +248,129 @@ def write_ecosystem_registry_manifest(
     return EcosystemRegistryWriteResult(manifest, output, overwritten)
 
 
-def _domain_package_refs(payload: JsonMapping) -> tuple[EcosystemDomainPackageRef, ...]:
-    return tuple(
-        EcosystemDomainPackageRef(
-            name=_string(item, "name", field_name=f"domain_packages[{index}].name"),
-            version=_string(item, "version", field_name=f"domain_packages[{index}].version"),
-            description=_string(
-                item,
-                "description",
-                field_name=f"domain_packages[{index}].description",
-            ),
-            author=_optional_string(item, "author", field_name=f"domain_packages[{index}].author"),
-            entrypoint=_optional_string(
-                item,
-                "entrypoint",
-                field_name=f"domain_packages[{index}].entrypoint",
-            ),
-            tags=_string_tuple(item, "tags", field_name=f"domain_packages[{index}].tags"),
-            capability_names=_string_tuple(
-                item,
-                "capability_names",
-                field_name=f"domain_packages[{index}].capability_names",
-            ),
-            required_tools=_string_tuple(
-                item,
-                "required_tools",
-                field_name=f"domain_packages[{index}].required_tools",
-            ),
-            resources=_string_tuple(
-                item,
-                "resources",
-                field_name=f"domain_packages[{index}].resources",
-            ),
-            dependencies=_identity_tuple(
-                item,
-                "dependencies",
-                field_name=f"domain_packages[{index}].dependencies",
-            ),
-            compatibility=_compatibility(
-                item,
-                field_name=f"domain_packages[{index}].compatibility",
-            ),
-            security=_optional_mapping(
-                item,
-                "security",
-                field_name=f"domain_packages[{index}].security",
-            )
-            or immutable_json(),
-            root_path=_optional_string_allow_empty(
-                item,
-                "root_path",
-                field_name=f"domain_packages[{index}].root_path",
-            )
-            or "",
-            manifest_path=_optional_string_allow_empty(
-                item,
-                "manifest_path",
-                field_name=f"domain_packages[{index}].manifest_path",
-            )
-            or "",
-            manifest_sha256=_optional_string_allow_empty(
-                item,
-                "manifest_sha256",
-                field_name=f"domain_packages[{index}].manifest_sha256",
-            )
-            or "",
-        )
-        for index, item in enumerate(_object_list(payload, "domain_packages"))
+def _domain_package_ref(
+    payload: _EcosystemRegistryDomainPackagePayload,
+) -> EcosystemDomainPackageRef:
+    return EcosystemDomainPackageRef(
+        name=payload.name,
+        version=payload.version,
+        description=payload.description,
+        author=payload.author,
+        entrypoint=payload.entrypoint,
+        tags=_string_tuple(payload.tags, "domain_packages[].tags"),
+        capability_names=_string_tuple(
+            payload.capability_names,
+            "domain_packages[].capability_names",
+        ),
+        required_tools=_string_tuple(
+            payload.required_tools,
+            "domain_packages[].required_tools",
+        ),
+        resources=_string_tuple(payload.resources, "domain_packages[].resources"),
+        dependencies=_identity_tuple(payload.dependencies),
+        compatibility=_compatibility(payload.compatibility),
+        security=(
+            immutable_json()
+            if payload.security is None
+            else immutable_json(json_mapping(payload.security))
+        ),
+        root_path=payload.root_path or "",
+        manifest_path=payload.manifest_path or "",
+        manifest_sha256=payload.manifest_sha256 or "",
     )
 
 
-def _evaluation_dataset_refs(payload: JsonMapping) -> tuple[EcosystemEvaluationDatasetRef, ...]:
-    return tuple(
-        EcosystemEvaluationDatasetRef(
-            name=_string(item, "name", field_name=f"evaluation_datasets[{index}].name"),
-            version=_string(item, "version", field_name=f"evaluation_datasets[{index}].version"),
-            description=_string(
-                item,
-                "description",
-                field_name=f"evaluation_datasets[{index}].description",
-            ),
-            author=_optional_string(
-                item,
-                "author",
-                field_name=f"evaluation_datasets[{index}].author",
-            ),
-            tags=_string_tuple(item, "tags", field_name=f"evaluation_datasets[{index}].tags"),
-            domains=_identity_tuple(
-                item,
-                "domains",
-                field_name=f"evaluation_datasets[{index}].domains",
-            ),
-            suites=_dataset_suite_refs(item, f"evaluation_datasets[{index}].suites"),
-            root_path=_optional_string_allow_empty(
-                item,
-                "root_path",
-                field_name=f"evaluation_datasets[{index}].root_path",
-            )
-            or "",
-            manifest_path=_optional_string_allow_empty(
-                item,
-                "manifest_path",
-                field_name=f"evaluation_datasets[{index}].manifest_path",
-            )
-            or "",
-            manifest_sha256=_optional_string_allow_empty(
-                item,
-                "manifest_sha256",
-                field_name=f"evaluation_datasets[{index}].manifest_sha256",
-            )
-            or "",
-        )
-        for index, item in enumerate(_object_list(payload, "evaluation_datasets"))
+def _evaluation_dataset_ref(
+    payload: _EcosystemRegistryEvaluationDatasetPayload,
+) -> EcosystemEvaluationDatasetRef:
+    return EcosystemEvaluationDatasetRef(
+        name=payload.name,
+        version=payload.version,
+        description=payload.description,
+        author=payload.author,
+        tags=_string_tuple(payload.tags, "evaluation_datasets[].tags"),
+        domains=_identity_tuple(payload.domains),
+        suites=tuple(_dataset_suite_ref(suite) for suite in payload.suites),
+        root_path=payload.root_path or "",
+        manifest_path=payload.manifest_path or "",
+        manifest_sha256=payload.manifest_sha256 or "",
     )
 
 
-def _dataset_suite_refs(
-    payload: JsonMapping,
-    field_name: str,
-) -> tuple[EcosystemEvaluationDatasetSuiteRef, ...]:
-    return tuple(
-        EcosystemEvaluationDatasetSuiteRef(
-            name=_string(item, "name", field_name=f"{field_name}[{index}].name"),
-            path=_string(item, "path", field_name=f"{field_name}[{index}].path"),
-            description=_optional_string_allow_empty(
-                item,
-                "description",
-                field_name=f"{field_name}[{index}].description",
-            )
-            or "",
-            tags=_string_tuple(item, "tags", field_name=f"{field_name}[{index}].tags"),
-        )
-        for index, item in enumerate(_object_list(payload, "suites", field_name=field_name))
+def _dataset_suite_ref(
+    payload: _EcosystemRegistryDatasetSuitePayload,
+) -> EcosystemEvaluationDatasetSuiteRef:
+    return EcosystemEvaluationDatasetSuiteRef(
+        name=payload.name,
+        path=payload.path,
+        description=payload.description or "",
+        tags=_string_tuple(payload.tags, "evaluation_datasets[].suites[].tags"),
     )
 
 
-def _profile_refs(payload: JsonMapping) -> tuple[EcosystemProfileRef, ...]:
-    return tuple(
-        EcosystemProfileRef(
-            name=_string(item, "name", field_name=f"profiles[{index}].name"),
-            version=_string(item, "version", field_name=f"profiles[{index}].version"),
-            description=_string_allow_empty(
-                item, "description", field_name=f"profiles[{index}].description"
-            ),
-            domains=_identity_tuple(item, "domains", field_name=f"profiles[{index}].domains"),
-            path=_optional_string_allow_empty(item, "path", field_name=f"profiles[{index}].path")
-            or "",
-            config_sha256=_optional_string_allow_empty(
-                item,
-                "config_sha256",
-                field_name=f"profiles[{index}].config_sha256",
-            )
-            or "",
-        )
-        for index, item in enumerate(_object_list(payload, "profiles"))
+def _profile_ref(payload: _EcosystemRegistryProfilePayload) -> EcosystemProfileRef:
+    return EcosystemProfileRef(
+        name=payload.name,
+        version=payload.version,
+        description=payload.description,
+        domains=_identity_tuple(payload.domains),
+        path=payload.path or "",
+        config_sha256=payload.config_sha256 or "",
     )
 
 
-def _mapping(payload: JsonMapping, key: str) -> JsonMapping:
-    value = payload.get(key)
-    if not isinstance(value, dict):
-        raise EcosystemRegistryValidationError(f"{key} must be an object")
-    return immutable_json(value)
-
-
-def _optional_mapping(
-    payload: JsonMapping,
-    key: str,
-    *,
-    field_name: str | None = None,
-) -> JsonMapping | None:
-    value = payload.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, dict):
-        raise EcosystemRegistryValidationError(f"{field_name or key} must be an object")
-    return immutable_json(value)
-
-
-def _api_version(payload: JsonMapping) -> str:
-    camel = payload.get("apiVersion")
-    snake = payload.get("api_version")
+def _api_version(payload: _EcosystemRegistryManifestPayload) -> str:
+    camel = payload.api_version_camel
+    snake = payload.api_version
     if camel is not None and snake is not None and camel != snake:
         raise EcosystemRegistryValidationError("apiVersion and api_version must match")
     value = camel if camel is not None else snake
-    return _string_value(value, "apiVersion")
+    if value is None:
+        raise EcosystemRegistryValidationError("apiVersion must be a string")
+    _require_non_empty(value, "apiVersion")
+    return value
 
 
 def _compatibility(
-    payload: JsonMapping,
-    *,
-    field_name: str,
+    value: dict[str, PydanticJsonValue] | None,
 ) -> DomainPackageCompatibility:
-    compatibility = _optional_mapping(payload, "compatibility", field_name=field_name)
-    if compatibility is None:
+    if value is None:
         return DomainPackageCompatibility()
+    payload = _parse_registry_payload(
+        _EcosystemRegistryCompatibilityPayload,
+        json_mapping(value),
+    )
     return DomainPackageCompatibility(
-        runtime_api=_optional_string(
-            compatibility,
-            "runtime_api",
-            field_name=f"{field_name}.runtime_api",
-        ),
-        domain_api=_optional_string(
-            compatibility,
-            "domain_api",
-            field_name=f"{field_name}.domain_api",
-        ),
+        runtime_api=payload.runtime_api,
+        domain_api=payload.domain_api,
     )
 
 
-def _object_list(
-    payload: JsonMapping,
-    key: str,
-    *,
-    field_name: str | None = None,
-) -> tuple[JsonMapping, ...]:
-    value = payload.get(key, ())
-    if not isinstance(value, list | tuple):
-        raise EcosystemRegistryValidationError(f"{field_name or key} must be a list")
-    items: list[JsonMapping] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, dict):
-            raise EcosystemRegistryValidationError(
-                f"{field_name or key}[{index}] must be an object"
-            )
-        items.append(immutable_json(item))
-    return tuple(items)
-
-
-def _string(payload: JsonMapping, key: str, *, field_name: str | None = None) -> str:
-    return _string_value(payload.get(key), field_name or key)
-
-
-def _string_allow_empty(
-    payload: JsonMapping,
-    key: str,
-    *,
-    field_name: str | None = None,
-) -> str:
-    value = payload.get(key)
-    if not isinstance(value, str):
-        raise EcosystemRegistryValidationError(f"{field_name or key} must be a string")
-    return value
-
-
-def _optional_string_allow_empty(
-    payload: JsonMapping,
-    key: str,
-    *,
-    field_name: str | None = None,
-) -> str | None:
-    value = payload.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise EcosystemRegistryValidationError(f"{field_name or key} must be a string")
-    return value
-
-
-def _string_value(value: object, field_name: str) -> str:
-    if not isinstance(value, str):
-        raise EcosystemRegistryValidationError(f"{field_name} must be a string")
-    _require_non_empty(value, field_name)
-    return value
-
-
-def _optional_string(
-    payload: JsonMapping,
-    key: str,
-    *,
-    field_name: str | None = None,
-) -> str | None:
-    value = payload.get(key)
-    if value is None:
-        return None
-    return _string_value(value, field_name or key)
-
-
-def _string_tuple(
-    payload: JsonMapping,
-    key: str,
-    *,
-    field_name: str | None = None,
-) -> tuple[str, ...]:
-    value = payload.get(key, ())
-    if not isinstance(value, list | tuple):
-        raise EcosystemRegistryValidationError(f"{field_name or key} must be a list of strings")
+def _string_tuple(value: Sequence[str], field_name: str) -> tuple[str, ...]:
     items: list[str] = []
     for index, item in enumerate(value):
         if not isinstance(item, str) or not item.strip():
             raise EcosystemRegistryValidationError(
-                f"{field_name or key}[{index}] must be a non-empty string"
+                f"{field_name}[{index}] must be a non-empty string"
             )
         items.append(item)
     return tuple(items)
 
 
 def _identity_tuple(
-    payload: JsonMapping,
-    key: str,
-    *,
-    field_name: str | None = None,
+    values: Sequence[_EcosystemRegistryIdentityPayload],
 ) -> tuple[DomainIdentity, ...]:
-    value = payload.get(key, ())
-    if not isinstance(value, list | tuple):
-        raise EcosystemRegistryValidationError(
-            f"{field_name or key} must be a list of domain identity objects"
-        )
-    identities: list[DomainIdentity] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, dict):
-            raise EcosystemRegistryValidationError(
-                f"{field_name or key}[{index}] must be an object"
-            )
-        identity = immutable_json(item)
-        identities.append(
-            DomainIdentity(
-                _string(identity, "name", field_name=f"{field_name or key}[{index}].name"),
-                _string(identity, "version", field_name=f"{field_name or key}[{index}].version"),
-            )
-        )
-    return tuple(identities)
+    return tuple(DomainIdentity(item.name, item.version) for item in values)
+
+
+def _parse_registry_payload[T: ConfigPayload](
+    model_type: type[T],
+    payload: JsonMapping,
+) -> T:
+    try:
+        return parse_payload(model_type, payload)
+    except ValueError as exc:
+        raise EcosystemRegistryValidationError(str(exc)) from exc
 
 
 def _identity_body(identity: DomainIdentity) -> dict[str, str]:
