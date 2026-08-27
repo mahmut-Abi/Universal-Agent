@@ -48,6 +48,25 @@ the relevant focused tests and the full static gates before commit.
 .venv/bin/python -m pytest tests/unit/test_ecosystem_catalog.py -q
 ```
 
+## Live Kubernetes Gate
+
+Live Kubernetes tests are opt-in and skipped by default. They call the configured
+OpenAI-compatible model provider and Kubernetes backend, so run them only against
+a profile and workload that are safe to inspect:
+
+```bash
+export UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE=.universal-agent/kubernetes-production-profile.json
+export UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE_NAME=production-operator
+export UNIVERSAL_AGENT_LIVE_KUBERNETES_WORKLOAD=deployment/api
+export UNIVERSAL_AGENT_LIVE_KUBERNETES_NAMESPACE=prod
+.venv/bin/python -m pytest tests/live/test_kubernetes_live_operator.py -q
+```
+
+The default live test runs `kubernetes check` and requires
+`contract.status=ok`. Set `UNIVERSAL_AGENT_LIVE_KUBERNETES_RUN=true` only when
+you intentionally want the test to submit the runtime-owned remediation goal; a
+production mutation must still stop at the explicit confirmation boundary.
+
 ## Executable Examples
 
 Examples are organized by roadmap slice. Useful entry points:

@@ -32,6 +32,9 @@ packages = ["src/universal_agent"]
 addopts = "-q"
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+  "live: tests that contact external model providers or Kubernetes clusters",
+]
 
 [tool.ruff]
 target-version = "py312"

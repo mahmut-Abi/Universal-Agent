@@ -136,6 +136,24 @@ Expected:
 If this fails, fix the model endpoint, API key, response format, or provider
 prompt behavior before touching the cluster.
 
+## 4.1 Optional Live Test Gate
+
+The repository includes opt-in live tests that are skipped unless the live
+environment variables are set. Use them when wiring a real model endpoint and
+cluster profile into local CI:
+
+```bash
+export UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE=.universal-agent/kubernetes-production-profile.json
+export UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE_NAME=production-operator
+export UNIVERSAL_AGENT_LIVE_KUBERNETES_WORKLOAD=deployment/api
+export UNIVERSAL_AGENT_LIVE_KUBERNETES_NAMESPACE=prod
+.venv/bin/python -m pytest tests/live/test_kubernetes_live_operator.py -q
+```
+
+This gate runs `kubernetes check` and requires `contract.status=ok`. Set
+`UNIVERSAL_AGENT_LIVE_KUBERNETES_RUN=true` only when intentionally submitting
+the Runtime-owned remediation goal against the live profile.
+
 ## 5. Run The Pre-Run Gate
 
 Run the combined production gate. It runs model probe first, then read-only
