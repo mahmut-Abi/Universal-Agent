@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Protocol, cast
+from typing import Protocol
 
 from universal_agent.core import (
     ErrorCode,
@@ -16,6 +16,14 @@ from universal_agent.core import (
     JsonValue,
     SuccessCriterion,
     Task,
+)
+from universal_agent.core.config_validation import (
+    parse_int,
+    parse_json_object,
+    parse_json_object_sequence,
+    parse_optional_int,
+    parse_string,
+    parse_string_sequence,
 )
 from universal_agent.multi_agent.contracts import (
     AgentTaskId,
@@ -128,10 +136,11 @@ def agent_delegation_spec_payload(spec: AgentDelegationSpec) -> JsonMapping:
 
 def decode_agent_delegation_spec(payload: JsonMapping) -> AgentDelegationSpec:
     return AgentDelegationSpec(
-        request=decode_agent_task_request(_mapping(payload.get("request"), "request")),
+        request=decode_agent_task_request(parse_json_object(payload.get("request"), "request")),
         agent_id=_optional_agent_id(payload.get("agent_id")),
         depends_on=tuple(
-            AgentTaskId(value) for value in _string_list(payload.get("depends_on"), "depends_on")
+            AgentTaskId(value)
+            for value in parse_string_sequence(payload.get("depends_on"), "depends_on")
         ),
     )
 
@@ -153,13 +162,16 @@ def decode_agent_delegation_batch_result(payload: JsonMapping) -> AgentDelegatio
         status=_batch_status_value(payload.get("status")),
         results=tuple(
             decode_agent_task_result(item)
-            for item in _mapping_list(payload.get("results"), "results")
+            for item in parse_json_object_sequence(payload.get("results"), "results")
         ),
         skipped_task_ids=tuple(
             AgentTaskId(value)
-            for value in _string_list(payload.get("skipped_task_ids"), "skipped_task_ids")
+            for value in parse_string_sequence(
+                payload.get("skipped_task_ids"),
+                "skipped_task_ids",
+            )
         ),
-        reason=_string(payload.get("reason"), "reason", ""),
+        reason=parse_string(payload.get("reason"), "reason", default=""),
     )
 
 
@@ -182,13 +194,13 @@ def decode_agent_delegation_state(payload: JsonMapping) -> AgentDelegationState:
     return AgentDelegationState(
         tasks=tuple(
             AgentDelegationTaskState(
-                task_id=AgentTaskId(_string(item.get("task_id"), "tasks.task_id")),
-                child_count=_int(item.get("child_count"), "tasks.child_count", 0),
-                delegation_depth=_optional_int(
+                task_id=AgentTaskId(parse_string(item.get("task_id"), "tasks.task_id")),
+                child_count=parse_int(item.get("child_count"), "tasks.child_count", default=0),
+                delegation_depth=parse_optional_int(
                     item.get("delegation_depth"), "tasks.delegation_depth"
                 ),
             )
-            for item in _mapping_list(payload.get("tasks"), "tasks")
+            for item in parse_json_object_sequence(payload.get("tasks"), "tasks")
         )
     )
 
@@ -512,7 +524,7 @@ def _agent_task_usage_from_events(events: tuple[object, ...]) -> AgentTaskUsage:
         input_tokens += _non_negative_int(data.get("input_tokens"))
         output_tokens += _non_negative_int(data.get("output_tokens"))
         estimated_cost_micros += _non_negative_int(data.get("estimated_cost_micros"))
-        currency = _string(data.get("currency"), "currency", "USD")
+        currency = parse_string(data.get("currency"), "currency", default="USD")
         if currency:
             currencies.add(currency)
     return AgentTaskUsage(
@@ -538,71 +550,20 @@ def _aggregate_currency(currencies: set[str]) -> str:
     return "MIXED"
 
 
-def _mapping(value: object, field_name: str) -> JsonMapping:
-    if not isinstance(value, Mapping):
-        raise ValueError(f"{field_name} must be an object")
-    if any(not isinstance(key, str) for key in value):
-        raise ValueError(f"{field_name} keys must be strings")
-    return cast(JsonMapping, value)
-
-
-def _mapping_list(value: object, field_name: str) -> tuple[JsonMapping, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise ValueError(f"{field_name} must be a list")
-    return tuple(_mapping(item, f"{field_name}[{index}]") for index, item in enumerate(value))
-
-
-def _string(value: object, field_name: str, default: str | None = None) -> str:
-    if value is None and default is not None:
-        return default
-    if not isinstance(value, str):
-        raise ValueError(f"{field_name} must be a string")
-    return value
-
-
-def _int(value: object, field_name: str, default: int) -> int:
-    if value is None:
-        return default
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{field_name} must be an integer")
-    return value
-
-
-def _optional_int(value: object, field_name: str) -> int | None:
-    if value is None:
-        return None
-    return _int(value, field_name, 0)
-
-
 def _optional_str(value: object | None) -> JsonValue:
     if value is None:
         return None
     return str(value)
 
 
-def _string_list(value: object, field_name: str) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise ValueError(f"{field_name} must be a list")
-    strings: list[str] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, str):
-            raise ValueError(f"{field_name}[{index}] must be a string")
-        strings.append(item)
-    return tuple(strings)
-
-
 def _optional_agent_id(value: object) -> AgentId | None:
     if value is None:
         return None
-    return AgentId(_string(value, "agent_id"))
+    return AgentId(parse_string(value, "agent_id"))
 
 
 def _batch_status_value(value: object) -> AgentDelegationBatchStatus:
-    raw = _string(value, "status")
+    raw = parse_string(value, "status")
     try:
         return AgentDelegationBatchStatus(raw)
     except ValueError as exc:

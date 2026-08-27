@@ -14,6 +14,11 @@ from universal_agent.core import (
     dumps_json,
     immutable_json,
 )
+from universal_agent.core.config_validation import (
+    parse_optional_string,
+    parse_string,
+    parse_string_sequence,
+)
 from universal_agent.evidence import EvidenceId
 from universal_agent.multi_agent.contracts import AgentTaskConstraints, AgentTaskId
 from universal_agent.multi_agent.registry import AgentId
@@ -100,7 +105,7 @@ def conflict_resolution_payload(resolution: ConflictResolution) -> JsonMapping:
 
 def decode_conflict_resolution(payload: JsonMapping) -> ConflictResolution:
     return ConflictResolution(
-        resource_key=_string(payload.get("resource_key"), "resource_key"),
+        resource_key=parse_string(payload.get("resource_key"), "resource_key"),
         status=_conflict_resolution_status(payload.get("status")),
         selected_proposal_id=_optional_agent_proposal_id(
             payload.get("selected_proposal_id"),
@@ -108,22 +113,24 @@ def decode_conflict_resolution(payload: JsonMapping) -> ConflictResolution:
         ),
         rejected_proposal_ids=tuple(
             AgentProposalId(value)
-            for value in _string_tuple(
+            for value in parse_string_sequence(
                 payload.get("rejected_proposal_ids"), "rejected_proposal_ids"
             )
         ),
         review_proposal_ids=tuple(
             AgentProposalId(value)
-            for value in _string_tuple(payload.get("review_proposal_ids"), "review_proposal_ids")
+            for value in parse_string_sequence(
+                payload.get("review_proposal_ids"), "review_proposal_ids"
+            )
         ),
         supporting_evidence_ids=tuple(
             EvidenceId(value)
-            for value in _string_tuple(
+            for value in parse_string_sequence(
                 payload.get("supporting_evidence_ids"),
                 "supporting_evidence_ids",
             )
         ),
-        reason=_string(payload.get("reason"), "reason", ""),
+        reason=parse_string(payload.get("reason"), "reason", default=""),
     )
 
 
@@ -291,42 +298,15 @@ def _optional_str(value: object | None) -> str | None:
     return str(value)
 
 
-def _string(value: object, field_name: str, default: str | None = None) -> str:
-    if value is None and default is not None:
-        return default
-    if not isinstance(value, str):
-        raise ValueError(f"{field_name} must be a string")
-    return value
-
-
-def _optional_string(value: object, field_name: str) -> str | None:
-    if value is None:
-        return None
-    return _string(value, field_name)
-
-
-def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise ValueError(f"{field_name} must be a list")
-    strings: list[str] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, str):
-            raise ValueError(f"{field_name}[{index}] must be a string")
-        strings.append(item)
-    return tuple(strings)
-
-
 def _optional_agent_proposal_id(value: object, field_name: str) -> AgentProposalId | None:
-    raw = _optional_string(value, field_name)
+    raw = parse_optional_string(value, field_name)
     if raw is None:
         return None
     return AgentProposalId(raw)
 
 
 def _conflict_resolution_status(value: object) -> ConflictResolutionStatus:
-    raw = _string(value, "status")
+    raw = parse_string(value, "status")
     try:
         return ConflictResolutionStatus(raw)
     except ValueError as exc:

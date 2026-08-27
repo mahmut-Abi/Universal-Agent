@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import cast
 
 from universal_agent.core import JsonMapping
+from universal_agent.core.config_validation import (
+    parse_json_object_sequence,
+    parse_optional_bool,
+    parse_string,
+    parse_string_sequence,
+)
 from universal_agent.evidence import EvidenceId
 from universal_agent.multi_agent.conflicts import (
     ConflictResolution,
@@ -160,10 +164,11 @@ def decode_agent_result_merge(payload: JsonMapping) -> AgentResultMerge:
         status=_merge_status_value(payload.get("status")),
         results=tuple(
             decode_agent_task_result(item)
-            for item in _mapping_list(payload.get("results"), "results")
+            for item in parse_json_object_sequence(payload.get("results"), "results")
         ),
         evidence_ids=tuple(
-            EvidenceId(value) for value in _string_tuple(payload.get("evidence"), "evidence")
+            EvidenceId(value)
+            for value in parse_string_sequence(payload.get("evidence"), "evidence")
         ),
         completed_task_ids=_agent_task_ids(payload.get("completed_task_ids"), "completed_task_ids"),
         waiting_task_ids=_agent_task_ids(payload.get("waiting_task_ids"), "waiting_task_ids"),
@@ -175,11 +180,14 @@ def decode_agent_result_merge(payload: JsonMapping) -> AgentResultMerge:
         ),
         conflict_resolutions=tuple(
             decode_conflict_resolution(item)
-            for item in _mapping_list(payload.get("conflict_resolutions"), "conflict_resolutions")
+            for item in parse_json_object_sequence(
+                payload.get("conflict_resolutions"),
+                "conflict_resolutions",
+            )
         ),
-        reason=_string(payload.get("reason"), "reason", ""),
+        reason=parse_string(payload.get("reason"), "reason", default=""),
     )
-    passed = _optional_bool(payload.get("passed"), "passed")
+    passed = parse_optional_bool(payload.get("passed"), "passed")
     if passed is not None and passed is not merge.passed:
         raise ValueError("agent result merge passed flag does not match status")
     return merge
@@ -282,57 +290,12 @@ def _duplicate_task_ids(task_ids: tuple[AgentTaskId, ...]) -> tuple[str, ...]:
     return tuple(sorted(duplicates))
 
 
-def _mapping(value: object, field_name: str) -> JsonMapping:
-    if not isinstance(value, Mapping):
-        raise ValueError(f"{field_name} must be an object")
-    if any(not isinstance(key, str) for key in value):
-        raise ValueError(f"{field_name} keys must be strings")
-    return cast(JsonMapping, value)
-
-
-def _mapping_list(value: object, field_name: str) -> tuple[JsonMapping, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise ValueError(f"{field_name} must be a list")
-    return tuple(_mapping(item, f"{field_name}[{index}]") for index, item in enumerate(value))
-
-
-def _string(value: object, field_name: str, default: str | None = None) -> str:
-    if value is None and default is not None:
-        return default
-    if not isinstance(value, str):
-        raise ValueError(f"{field_name} must be a string")
-    return value
-
-
-def _optional_bool(value: object, field_name: str) -> bool | None:
-    if value is None:
-        return None
-    if not isinstance(value, bool):
-        raise ValueError(f"{field_name} must be a boolean")
-    return value
-
-
-def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise ValueError(f"{field_name} must be a list")
-    strings: list[str] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, str):
-            raise ValueError(f"{field_name}[{index}] must be a string")
-        strings.append(item)
-    return tuple(strings)
-
-
 def _agent_task_ids(value: object, field_name: str) -> tuple[AgentTaskId, ...]:
-    return tuple(AgentTaskId(item) for item in _string_tuple(value, field_name))
+    return tuple(AgentTaskId(item) for item in parse_string_sequence(value, field_name))
 
 
 def _merge_status_value(value: object) -> AgentResultMergeStatus:
-    raw = _string(value, "status")
+    raw = parse_string(value, "status")
     try:
         return AgentResultMergeStatus(raw)
     except ValueError as exc:

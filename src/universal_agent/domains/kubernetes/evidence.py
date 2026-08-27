@@ -1,9 +1,26 @@
 from __future__ import annotations
 
-from typing import cast
+from collections.abc import Mapping
+from typing import Annotated
+
+from pydantic import BeforeValidator, TypeAdapter
 
 from universal_agent.core import JsonMapping, JsonValue, ObservationStatus
+from universal_agent.core.config_validation import PydanticJsonValue, json_mapping
 from universal_agent.evidence import Evidence, EvidenceContext
+
+
+def _object_items_or_empty(value: object) -> list[Mapping[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, Mapping)]
+
+
+_PodEvidenceItems = Annotated[
+    list[dict[str, PydanticJsonValue]],
+    BeforeValidator(_object_items_or_empty),
+]
+_POD_EVIDENCE_ITEMS_ADAPTER: TypeAdapter[_PodEvidenceItems] = TypeAdapter(_PodEvidenceItems)
 
 
 class KubernetesEvidenceExtractor:
@@ -28,15 +45,9 @@ def _pod_evidence(
     workload_subject: str,
     raw_pods: JsonValue | None,
 ) -> list[Evidence]:
-    if not isinstance(raw_pods, list):
-        return []
-
     evidence: list[Evidence] = []
     pod_resources: list[JsonValue] = []
-    for raw_pod in raw_pods:
-        if not isinstance(raw_pod, dict):
-            continue
-        pod = cast(JsonMapping, raw_pod)
+    for pod in _pod_mappings(raw_pods):
         pod_resource = _valid_resource(pod.get("resource"), expected_kind="pod")
         if pod_resource is None:
             continue
@@ -49,6 +60,11 @@ def _pod_evidence(
     if pod_resources:
         evidence.append(_evidence(context, workload_subject, "relation:owns", pod_resources))
     return evidence
+
+
+def _pod_mappings(raw_pods: object) -> tuple[JsonMapping, ...]:
+    parsed = _POD_EVIDENCE_ITEMS_ADAPTER.validate_python(raw_pods, strict=True)
+    return tuple(json_mapping(item) for item in parsed)
 
 
 def _diagnostic_evidence(context: EvidenceContext, subject: str) -> list[Evidence]:

@@ -12,13 +12,14 @@ from universal_agent.agentd.routing import (
     _distributed_schedule_session_route,
     _distributed_schedule_task_route,
     _distributed_worker_action_route,
+    _distributed_worker_registration_payload,
     _domain_package_route,
     _match_path,
     _optional_query_value,
     _profile_route,
     _session_route,
 )
-from universal_agent.core import ActionId, SessionId, TaskId
+from universal_agent.core import ActionId, SessionId, TaskId, immutable_json
 from universal_agent.distributed import DistributedLockLeaseId, WorkerId, WorkItemId
 
 
@@ -96,6 +97,14 @@ def test_agentd_query_helpers_use_starlette_query_params_contract() -> None:
         _optional_query_value("/v1/domain-packages?tag=ops&tag=platform", "tag")
     with pytest.raises(ValueError, match="tag must not be empty"):
         _optional_query_value("/v1/domain-packages?tag=", "tag")
+
+
+def test_agentd_request_payload_errors_preserve_indexed_pydantic_paths() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"distributed worker capabilities\[0\] must be a non-empty string",
+    ):
+        _distributed_worker_registration_payload(immutable_json({"capabilities": [1]}))
 
 
 def test_agentd_path_matching_uses_starlette_route_contract_without_unquoting() -> None:

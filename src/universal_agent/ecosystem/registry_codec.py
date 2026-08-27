@@ -18,6 +18,7 @@ from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     json_mapping,
+    parse_non_empty_string_sequence,
     parse_payload,
 )
 from universal_agent.domain import DomainPackageCompatibility, DomainPackageValidationError
@@ -354,15 +355,16 @@ def _compatibility(
         raise EcosystemRegistryValidationError(str(exc)) from exc
 
 
-def _string_tuple(value: Sequence[str], field_name: str) -> tuple[str, ...]:
-    items: list[str] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, str) or not item.strip():
-            raise EcosystemRegistryValidationError(
-                f"{field_name}[{index}] must be a non-empty string"
-            )
-        items.append(item)
-    return tuple(items)
+def _string_tuple(value: list[str], field_name: str) -> tuple[str, ...]:
+    try:
+        return parse_non_empty_string_sequence(
+            value,
+            field_name,
+            empty_template="{path} must be a non-empty string",
+            item_type_template="{path} must be a non-empty string",
+        )
+    except ValueError as exc:
+        raise EcosystemRegistryValidationError(str(exc)) from exc
 
 
 def _identity_tuple(

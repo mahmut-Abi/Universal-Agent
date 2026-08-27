@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +12,7 @@ from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     json_mapping,
+    parse_non_empty_string_sequence,
     parse_payload,
 )
 from universal_agent.domain.package_models import (
@@ -343,12 +343,13 @@ def _api_version(payload: _DomainPackageManifestPayload) -> str:
     return value
 
 
-def _string_tuple(value: Sequence[str], key: str) -> tuple[str, ...]:
-    if not isinstance(value, list | tuple):
-        raise DomainPackageValidationError(f"{key} must be a list of strings")
-    items: list[str] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, str) or not item.strip():
-            raise DomainPackageValidationError(f"{key}[{index}] must be a non-empty string")
-        items.append(item)
-    return tuple(items)
+def _string_tuple(value: list[str], key: str) -> tuple[str, ...]:
+    try:
+        return parse_non_empty_string_sequence(
+            value,
+            key,
+            empty_template="{path} must be a non-empty string",
+            item_type_template="{path} must be a non-empty string",
+        )
+    except ValueError as exc:
+        raise DomainPackageValidationError(str(exc)) from exc

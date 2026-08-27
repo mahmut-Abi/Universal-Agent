@@ -26,6 +26,7 @@ from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     parse_json_object,
+    parse_non_empty_string_sequence,
     parse_payload,
 )
 from universal_agent.model.adapter import ModelUsage
@@ -575,7 +576,11 @@ def _decode_decision(payload: JsonMapping) -> Decision:
     capability = _optional_non_empty_string(parsed.capability, "capability")
     target = _optional_non_empty_string(parsed.target, "target")
     arguments = immutable_json(parsed.arguments)
-    expected_observations = _string_tuple(parsed.expected_observations, "expected_observations")
+    expected_observations = parse_non_empty_string_sequence(
+        parsed.expected_observations,
+        "expected_observations",
+        empty_template="{path} must be a non-empty string",
+    )
     message = _optional_non_empty_string(parsed.message, "message")
     return Decision(
         decision_type,
@@ -775,13 +780,6 @@ def _non_empty_string(value: str, field_name: str) -> str:
     if not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
     return value
-
-
-def _string_tuple(values: list[str], field_name: str) -> tuple[str, ...]:
-    items: list[str] = []
-    for index, item in enumerate(values):
-        items.append(_non_empty_string(item, f"{field_name}[{index}]"))
-    return tuple(items)
 
 
 def _validate_headers(headers: Mapping[str, str]) -> None:

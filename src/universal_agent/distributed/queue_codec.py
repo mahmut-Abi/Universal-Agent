@@ -6,7 +6,11 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import ActionId, SessionId, TaskId, immutable_json
-from universal_agent.core.config_validation import PydanticJsonValue, json_mapping
+from universal_agent.core.config_validation import (
+    PydanticJsonValue,
+    json_mapping,
+    pydantic_error_details,
+)
 from universal_agent.distributed.queue_models import (
     LeaseId,
     WorkerId,
@@ -142,12 +146,11 @@ def _parse_queue_payload[T: _QueueCodecPayload](
 
 
 def _work_queue_file_payload_error_message(error: PydanticValidationError) -> str:
-    errors = error.errors(include_url=False)
-    if not errors:
-        return str(error)
-    first = errors[0]
-    path = _pydantic_error_path(first.get("loc", ()))
-    error_type = str(first.get("type", ""))
+    details = pydantic_error_details(error)
+    path = details.path
+    error_type = details.error_type
+    if not error_type:
+        return details.message
     if not path and error_type in {"model_attributes_type", "model_type"}:
         return "file work queue payload must be an object"
     if path == "items" and error_type == "list_type":
@@ -160,17 +163,15 @@ def _work_queue_file_payload_error_message(error: PydanticValidationError) -> st
         return f"file work queue {path} must be an object"
     if path == "version" and error_type in {"int_type", "missing"}:
         return "file work queue version must be an integer"
-    message = str(first.get("msg", ""))
-    return message or str(error)
+    return details.message or str(error)
 
 
 def _queue_payload_error_message(error: PydanticValidationError) -> str:
-    errors = error.errors(include_url=False)
-    if not errors:
-        return str(error)
-    first = errors[0]
-    path = _pydantic_error_path(first.get("loc", ()))
-    error_type = str(first.get("type", ""))
+    details = pydantic_error_details(error)
+    path = details.path
+    error_type = details.error_type
+    if not error_type:
+        return details.message
     if path == "lease" and error_type in {"dict_type", "model_attributes_type", "model_type"}:
         return "lease must be an object"
     if "datetime" in error_type:
@@ -178,24 +179,9 @@ def _queue_payload_error_message(error: PydanticValidationError) -> str:
     expected = _expected_error_type(error_type, path)
     if expected is not None:
         return f"{path} must be {expected}"
-    message = str(first.get("msg", ""))
-    if message:
-        return message.removeprefix("Value error, ")
+    if details.message:
+        return details.message.removeprefix("Value error, ")
     return str(error)
-
-
-def _pydantic_error_path(location: object) -> str:
-    parts: list[str] = []
-    if isinstance(location, tuple):
-        for item in location:
-            if isinstance(item, int):
-                if parts:
-                    parts[-1] = f"{parts[-1]}[{item}]"
-                else:
-                    parts.append(f"[{item}]")
-            else:
-                parts.append(str(item))
-    return ".".join(parts)
 
 
 def _expected_error_type(error_type: str, path: str) -> str | None:

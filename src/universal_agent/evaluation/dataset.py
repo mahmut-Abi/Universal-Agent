@@ -19,6 +19,7 @@ from universal_agent.core.config_validation import (
     PydanticJsonValue,
     json_mapping,
     parse_json_object,
+    parse_non_empty_string_sequence,
     parse_payload,
 )
 from universal_agent.evaluation.scenario_config import load_evaluation_suite_config
@@ -458,13 +459,16 @@ def _api_version(payload: _EvaluationDatasetManifestPayload) -> str:
     return value
 
 
-def _string_tuple(value: Sequence[str], key: str) -> tuple[str, ...]:
-    items: list[str] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, str) or not item.strip():
-            raise EvaluationDatasetValidationError(f"{key}[{index}] must be a non-empty string")
-        items.append(item)
-    return tuple(items)
+def _string_tuple(value: list[str], key: str) -> tuple[str, ...]:
+    try:
+        return parse_non_empty_string_sequence(
+            value,
+            key,
+            empty_template="{path} must be a non-empty string",
+            item_type_template="{path} must be a non-empty string",
+        )
+    except ValueError as exc:
+        raise EvaluationDatasetValidationError(str(exc)) from exc
 
 
 def _parse_dataset_payload[T: ConfigPayload](

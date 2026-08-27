@@ -15,7 +15,12 @@ from universal_agent.core import (
     immutable_json,
     parse_iso_datetime,
 )
-from universal_agent.core.config_validation import ConfigPayload, PydanticJsonValue, parse_payload
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    PydanticJsonValue,
+    parse_non_empty_string_sequence,
+    parse_payload,
+)
 
 
 def _empty_json() -> JsonMapping:
@@ -221,7 +226,10 @@ def parse_goal_submission(body: JsonMapping) -> GoalSubmission:
     )
     task = Task(
         _non_empty_string(task_payload.description, "task.description"),
-        _string_tuple(task_payload.required_criteria, "task.required_criteria"),
+        parse_non_empty_string_sequence(
+            task_payload.required_criteria,
+            "task.required_criteria",
+        ),
     )
     return GoalSubmission(goal, task, profile_name)
 
@@ -244,18 +252,6 @@ def _success_criteria(
             )
         )
     return tuple(criteria)
-
-
-def _string_tuple(
-    items: list[str],
-    field: str,
-) -> tuple[str, ...]:
-    values: list[str] = []
-    for index, item in enumerate(items):
-        if not item.strip():
-            raise ValueError(f"{field}[{index}] must not be empty")
-        values.append(item)
-    return tuple(values)
 
 
 def _non_empty_string(value: str, field: str) -> str:

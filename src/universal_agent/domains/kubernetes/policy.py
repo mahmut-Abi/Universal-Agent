@@ -1,6 +1,19 @@
 from __future__ import annotations
 
+from pydantic import ValidationError as PydanticValidationError
+
 from universal_agent.core import PolicyContext, PolicyEffect, PolicyResult
+from universal_agent.core.config_validation import ConfigPayload, pydantic_error_details
+
+
+class _KubernetesEnvironmentPayload(ConfigPayload):
+    environment: str
+
+
+class _ScaleWorkloadArgumentsPayload(ConfigPayload):
+    name: str
+    namespace: str
+    replicas: int
 
 
 class KubernetesScalePolicy:
@@ -13,8 +26,8 @@ class KubernetesScalePolicy:
         if context.capability.name != "scale_workload":
             return None
 
-        environment = context.environment.get("environment")
-        if not isinstance(environment, str) or not environment:
+        environment = _environment_name(context)
+        if environment is None:
             return PolicyResult(
                 PolicyEffect.DENY,
                 "Kubernetes mutation requires an identified environment",
@@ -28,15 +41,18 @@ class KubernetesScalePolicy:
             )
 
         target = context.target
-        name = context.arguments.get("name")
-        namespace = context.arguments.get("namespace")
-        replicas = context.arguments.get("replicas")
         if not isinstance(target, str) or not target.startswith("deployment/"):
             return PolicyResult(
                 PolicyEffect.DENY,
                 "scale_workload requires a deployment target",
                 self.name,
             )
+        arguments = _scale_workload_arguments(context, self.name)
+        if isinstance(arguments, PolicyResult):
+            return arguments
+        name = arguments.name
+        namespace = arguments.namespace
+        replicas = arguments.replicas
         if not isinstance(name, str) or not name or target != f"deployment/{name}":
             return PolicyResult(
                 PolicyEffect.DENY,
@@ -85,6 +101,42 @@ class KubernetesScalePolicy:
             PolicyEffect.ALLOW,
             "bounded Kubernetes workload scaling allowed",
             self.name,
+        )
+
+
+def _environment_name(context: PolicyContext) -> str | None:
+    try:
+        payload = _KubernetesEnvironmentPayload.model_validate(dict(context.environment))
+    except PydanticValidationError:
+        return None
+    environment = payload.environment.strip()
+    return environment or None
+
+
+def _scale_workload_arguments(
+    context: PolicyContext,
+    policy_name: str,
+) -> _ScaleWorkloadArgumentsPayload | PolicyResult:
+    try:
+        return _ScaleWorkloadArgumentsPayload.model_validate(dict(context.arguments))
+    except PydanticValidationError as exc:
+        field = pydantic_error_details(exc).path
+        if field == "namespace":
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "scale_workload requires a namespace",
+                policy_name,
+            )
+        if field == "replicas":
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "scale_workload replicas must be an integer",
+                policy_name,
+            )
+        return PolicyResult(
+            PolicyEffect.DENY,
+            "scale_workload target does not match the workload name",
+            policy_name,
         )
 
 

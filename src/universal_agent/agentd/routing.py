@@ -10,7 +10,12 @@ from starlette.datastructures import URL, QueryParams
 from starlette.routing import Match, Route
 
 from universal_agent.core import ActionId, EventId, JsonMapping, SessionId, TaskId
-from universal_agent.core.config_validation import ConfigPayload, PydanticJsonValue, json_mapping
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    PydanticJsonValue,
+    json_mapping,
+    pydantic_error_details,
+)
 from universal_agent.distributed import (
     DistributedLockLeaseId,
     DistributedLockOwnerId,
@@ -613,21 +618,16 @@ def _request_payload_error_message(
     error: PydanticValidationError,
     field_messages: Mapping[str, str],
 ) -> str:
-    errors = error.errors(include_url=False)
-    if not errors:
-        return str(error)
-    first = errors[0]
-    location = first.get("loc", ())
-    if isinstance(location, tuple) and location:
-        field = str(location[0])
-        if field == "capabilities" and len(location) > 1:
-            return f"distributed worker capabilities[{location[1]}] must be a non-empty string"
-        message = field_messages.get(field)
+    details = pydantic_error_details(error)
+    path = details.path
+    if path:
+        if path.startswith("capabilities["):
+            return f"distributed worker {path} must be a non-empty string"
+        message = field_messages.get(path.partition("[")[0].partition(".")[0])
         if message is not None:
             return message
-    message = str(first.get("msg", ""))
-    if message:
-        return message.removeprefix("Value error, ")
+    if details.message:
+        return details.message.removeprefix("Value error, ")
     return str(error)
 
 

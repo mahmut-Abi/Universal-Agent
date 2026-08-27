@@ -19,7 +19,12 @@ from universal_agent.core import (
     immutable_json,
     utc_now,
 )
-from universal_agent.core.config_validation import ConfigPayload, PydanticJsonValue, json_mapping
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    PydanticJsonValue,
+    json_mapping,
+    pydantic_error_details,
+)
 from universal_agent.evidence import EvidenceId
 
 AGENT_TASK_API_VERSION = "agent.nantian.dev/v1"
@@ -371,18 +376,16 @@ def _parse_contract_payload[T: ConfigPayload](
 
 
 def _contract_payload_error_message(error: PydanticValidationError) -> str:
-    errors = error.errors(include_url=False)
-    if not errors:
-        return str(error)
-    first = errors[0]
-    path = _pydantic_error_path(first.get("loc", ()))
-    error_type = str(first.get("type", ""))
+    details = pydantic_error_details(error)
+    path = details.path
+    error_type = details.error_type
+    if not error_type:
+        return details.message
     expected = _expected_contract_type(error_type, path)
     if expected is not None:
         return f"{path} must be {expected}"
-    message = str(first.get("msg", ""))
-    if message:
-        return message.removeprefix("Value error, ")
+    if details.message:
+        return details.message.removeprefix("Value error, ")
     return str(error)
 
 
@@ -412,20 +415,6 @@ def _missing_contract_field_type(path: str) -> str:
     }:
         return "a list"
     return "a string"
-
-
-def _pydantic_error_path(location: object) -> str:
-    parts: list[str] = []
-    if isinstance(location, tuple):
-        for item in location:
-            if isinstance(item, int):
-                if parts:
-                    parts[-1] = f"{parts[-1]}[{item}]"
-                else:
-                    parts.append(f"[{item}]")
-            else:
-                parts.append(str(item))
-    return ".".join(parts)
 
 
 def _reject_empty_items(values: tuple[str, ...], field_name: str) -> None:

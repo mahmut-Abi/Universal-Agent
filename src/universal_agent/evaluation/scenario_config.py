@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,6 +22,7 @@ from universal_agent.core.config_validation import (
     json_mapping,
     parse_json_object,
     parse_payload,
+    parse_string_sequence,
 )
 from universal_agent.evaluation.harness import (
     EvaluationQualityGate,
@@ -252,14 +253,14 @@ def _optional_error_code(value: str | None) -> ErrorCode | None:
     return ErrorCode(value)
 
 
-def _optional_string_tuple(value: Sequence[str] | None, field: str) -> tuple[str, ...] | None:
+def _optional_string_tuple(value: list[str] | None, field: str) -> tuple[str, ...] | None:
     if value is None:
         return None
     return _string_tuple(value, field)
 
 
-def _string_tuple(value: Sequence[str], field: str) -> tuple[str, ...]:
-    return tuple(value)
+def _string_tuple(value: list[str], field: str) -> tuple[str, ...]:
+    return parse_string_sequence(value, field)
 
 
 def _parse_config_payload[T: ConfigPayload](

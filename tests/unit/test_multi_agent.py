@@ -393,6 +393,21 @@ def test_agent_registry_decoders_reject_invalid_payload_shapes() -> None:
     with pytest.raises(ValueError, match=r"profiles\[0\] must be an object"):
         decode_agent_registry_snapshot(immutable_json({"profiles": ["bad"]}))
 
+    with pytest.raises(ValueError, match=r"profiles\[0\]\.domains\[0\]\.name must be a string"):
+        decode_agent_registry_snapshot(
+            immutable_json(
+                {
+                    "profiles": [
+                        {
+                            "name": "security-auditor",
+                            "version": "1.0.0",
+                            "domains": [{"name": 1, "version": "0.2.0"}],
+                        }
+                    ]
+                }
+            )
+        )
+
     with pytest.raises(ValueError, match=r"instance\.session_id must be a string"):
         decode_agent_instance_record(
             immutable_json(

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import StrEnum
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import AfterValidator, BaseModel, ConfigDict, TypeAdapter
 from pydantic import JsonValue as PydanticJsonValue
 from pydantic import ValidationError as PydanticValidationError
 
@@ -11,12 +13,23 @@ from universal_agent.core.models import JsonMapping, JsonValue
 
 __all__ = [
     "ConfigPayload",
+    "PydanticErrorDetails",
     "PydanticJsonValue",
     "enum_value",
     "json_mapping",
+    "parse_bool",
+    "parse_int",
     "parse_json_object",
+    "parse_json_object_sequence",
     "parse_json_value",
+    "parse_non_empty_string_sequence",
+    "parse_optional_bool",
+    "parse_optional_int",
+    "parse_optional_string",
     "parse_payload",
+    "parse_string",
+    "parse_string_sequence",
+    "pydantic_error_details",
     "pydantic_error_message",
     "string_mapping",
 ]
@@ -26,10 +39,36 @@ class ConfigPayload(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
 
 
+@dataclass(frozen=True, slots=True)
+class PydanticErrorDetails:
+    path: str
+    error_type: str
+    message: str
+
+
+def _non_empty_string_value(value: str) -> str:
+    if not value.strip():
+        raise ValueError("must not be empty")
+    return value
+
+
+_PydanticNonEmptyString = Annotated[str, AfterValidator(_non_empty_string_value)]
+
+
 _JSON_OBJECT_ADAPTER: TypeAdapter[dict[str, PydanticJsonValue]] = TypeAdapter(
     dict[str, PydanticJsonValue]
 )
+_JSON_OBJECT_SEQUENCE_ADAPTER: TypeAdapter[list[dict[str, PydanticJsonValue]]] = TypeAdapter(
+    list[dict[str, PydanticJsonValue]]
+)
 _JSON_VALUE_ADAPTER: TypeAdapter[PydanticJsonValue] = TypeAdapter(PydanticJsonValue)
+_BOOL_ADAPTER: TypeAdapter[bool] = TypeAdapter(bool)
+_INT_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
+_STRING_ADAPTER: TypeAdapter[str] = TypeAdapter(str)
+_NON_EMPTY_STRING_SEQUENCE_ADAPTER: TypeAdapter[list[_PydanticNonEmptyString]] = TypeAdapter(
+    list[_PydanticNonEmptyString]
+)
+_STRING_SEQUENCE_ADAPTER: TypeAdapter[list[str]] = TypeAdapter(list[str])
 _STRING_MAPPING_ADAPTER: TypeAdapter[dict[str, str]] = TypeAdapter(dict[str, str])
 
 
@@ -55,11 +94,27 @@ def parse_payload[T: BaseModel](
 
 
 def parse_json_object(value: object, field: str) -> JsonMapping:
+    values: object = dict(value) if isinstance(value, Mapping) else value
     try:
-        parsed = _JSON_OBJECT_ADAPTER.validate_python(value, strict=True)
+        parsed = _JSON_OBJECT_ADAPTER.validate_python(values, strict=True)
     except PydanticValidationError as exc:
         raise ValueError(pydantic_error_message(exc, field)) from exc
     return json_mapping(parsed)
+
+
+def parse_json_object_sequence(value: object, field: str) -> tuple[JsonMapping, ...]:
+    if value is None:
+        return ()
+    values: object = (
+        [dict(item) if isinstance(item, Mapping) else item for item in value]
+        if isinstance(value, list)
+        else value
+    )
+    try:
+        parsed = _JSON_OBJECT_SEQUENCE_ADAPTER.validate_python(values, strict=True)
+    except PydanticValidationError as exc:
+        raise ValueError(pydantic_error_message(exc, field)) from exc
+    return tuple(json_mapping(item) for item in parsed)
 
 
 def parse_json_value(value: object, field: str) -> JsonValue:
@@ -67,6 +122,82 @@ def parse_json_value(value: object, field: str) -> JsonValue:
         return _JSON_VALUE_ADAPTER.validate_python(value, strict=True)
     except PydanticValidationError as exc:
         raise ValueError(pydantic_error_message(exc, field)) from exc
+
+
+def parse_string(value: object, field: str, *, default: str | None = None) -> str:
+    if value is None and default is not None:
+        return default
+    try:
+        return _STRING_ADAPTER.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        raise ValueError(pydantic_error_message(exc, field)) from exc
+
+
+def parse_optional_string(value: object, field: str) -> str | None:
+    if value is None:
+        return None
+    return parse_string(value, field)
+
+
+def parse_string_sequence(value: object, field: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    try:
+        parsed = _STRING_SEQUENCE_ADAPTER.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        raise ValueError(pydantic_error_message(exc, field)) from exc
+    return tuple(parsed)
+
+
+def parse_non_empty_string_sequence(
+    value: object,
+    field: str,
+    *,
+    empty_template: str = "{path} must not be empty",
+    item_type_template: str | None = None,
+) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    try:
+        parsed = _NON_EMPTY_STRING_SEQUENCE_ADAPTER.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        details = pydantic_error_details(exc, field)
+        if details.error_type == "value_error" and details.message.endswith(
+            "must not be empty"
+        ):
+            raise ValueError(empty_template.format(path=details.path)) from exc
+        if details.error_type == "string_type" and item_type_template is not None:
+            raise ValueError(item_type_template.format(path=details.path)) from exc
+        raise ValueError(pydantic_error_message(exc, field)) from exc
+    return tuple(parsed)
+
+
+def parse_bool(value: object, field: str) -> bool:
+    try:
+        return _BOOL_ADAPTER.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        raise ValueError(pydantic_error_message(exc, field)) from exc
+
+
+def parse_optional_bool(value: object, field: str) -> bool | None:
+    if value is None:
+        return None
+    return parse_bool(value, field)
+
+
+def parse_int(value: object, field: str, *, default: int | None = None) -> int:
+    if value is None and default is not None:
+        return default
+    try:
+        return _INT_ADAPTER.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        raise ValueError(pydantic_error_message(exc, field)) from exc
+
+
+def parse_optional_int(value: object, field: str) -> int | None:
+    if value is None:
+        return None
+    return parse_int(value, field)
 
 
 def json_mapping(value: Mapping[str, PydanticJsonValue]) -> JsonMapping:
@@ -100,24 +231,36 @@ def pydantic_error_message(
     missing_template: str | None = None,
     expected_types: Mapping[str, str] | None = None,
 ) -> str:
-    errors = error.errors(include_url=False)
-    if not errors:
-        return str(error)
-    first = errors[0]
-    path = _pydantic_error_path(first.get("loc", ()), field)
-    error_type = str(first.get("type", ""))
+    details = pydantic_error_details(error, field)
+    path = details.path
+    error_type = details.error_type
+    if not error_type:
+        return details.message
     if error_type == "value_error":
-        message = str(first.get("msg", ""))
-        return message.removeprefix("Value error, ")
+        return details.message.removeprefix("Value error, ")
     if error_type == "missing" and missing_template is not None:
         return missing_template.format(path=path)
     expected = _expected_error_type(error_type, path, expected_types)
     if expected is not None:
         return f"{path} must be {expected}"
-    message = str(first.get("msg", ""))
-    if message:
-        return f"{path}: {message}" if path else message
+    if details.message:
+        return f"{path}: {details.message}" if path else details.message
     return str(error)
+
+
+def pydantic_error_details(
+    error: PydanticValidationError,
+    field: str | None = None,
+) -> PydanticErrorDetails:
+    errors = error.errors(include_url=False)
+    if not errors:
+        return PydanticErrorDetails("", "", str(error))
+    first = errors[0]
+    return PydanticErrorDetails(
+        path=_pydantic_error_path(first.get("loc", ()), field),
+        error_type=str(first.get("type", "")),
+        message=str(first.get("msg", "")),
+    )
 
 
 def _pydantic_error_path(location: object, field: str | None) -> str:

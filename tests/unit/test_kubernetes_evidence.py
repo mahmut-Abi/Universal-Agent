@@ -30,6 +30,8 @@ def test_kubernetes_workload_observation_projects_pod_world_facts() -> None:
                 "healthy": False,
                 "root_cause": "crash_loop_back_off",
                 "pods": [
+                    "ignored",
+                    {"resource": "service/api"},
                     {
                         "resource": "pod/api-123",
                         "namespace": "prod",

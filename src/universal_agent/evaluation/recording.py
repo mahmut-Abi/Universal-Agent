@@ -22,6 +22,7 @@ from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     parse_payload,
+    parse_string_sequence,
 )
 from universal_agent.core.config_validation import (
     json_mapping as _json_mapping,
@@ -782,8 +783,8 @@ def _to_json(value: object) -> JsonValue:
     return str(value)
 
 
-def _string_tuple(value: Sequence[str]) -> tuple[str, ...]:
-    return tuple(value)
+def _string_tuple(value: list[str]) -> tuple[str, ...]:
+    return parse_string_sequence(value, "evaluation recording string list")
 
 
 def _optional_error(value: str | None) -> ErrorCode | None:

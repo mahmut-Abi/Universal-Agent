@@ -10,7 +10,7 @@ from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import DomainIdentity, JsonMapping, SessionId
-from universal_agent.core.config_validation import ConfigPayload
+from universal_agent.core.config_validation import ConfigPayload, pydantic_error_details
 from universal_agent.multi_agent.contracts import AgentTaskRequest
 
 AgentId = NewType("AgentId", str)
@@ -338,18 +338,16 @@ def _registry_payload_error_message(
     *,
     prefix: str | None,
 ) -> str:
-    errors = error.errors(include_url=False)
-    if not errors:
-        return str(error)
-    first = errors[0]
-    path = _prefixed_path(_pydantic_error_path(first.get("loc", ())), prefix)
-    error_type = str(first.get("type", ""))
+    details = pydantic_error_details(error, prefix)
+    path = details.path
+    error_type = details.error_type
+    if not error_type:
+        return details.message
     expected = _expected_registry_type(error_type, path)
     if expected is not None:
         return f"{path} must be {expected}"
-    message = str(first.get("msg", ""))
-    if message:
-        return message.removeprefix("Value error, ")
+    if details.message:
+        return details.message.removeprefix("Value error, ")
     return str(error)
 
 
@@ -375,23 +373,3 @@ def _missing_registry_field_type(path: str) -> str:
     }:
         return "a list"
     return "a string"
-
-
-def _prefixed_path(path: str, prefix: str | None) -> str:
-    if prefix is None or not path:
-        return path or (prefix or "")
-    return f"{prefix}.{path}"
-
-
-def _pydantic_error_path(location: object) -> str:
-    parts: list[str] = []
-    if isinstance(location, tuple):
-        for item in location:
-            if isinstance(item, int):
-                if parts:
-                    parts[-1] = f"{parts[-1]}[{item}]"
-                else:
-                    parts.append(f"[{item}]")
-            else:
-                parts.append(str(item))
-    return ".".join(parts)
