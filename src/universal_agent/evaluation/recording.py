@@ -8,7 +8,6 @@ from typing import Protocol
 from urllib.parse import quote
 
 from pydantic import Field
-from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import (
     ErrorCode,
@@ -22,6 +21,7 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
+    parse_payload,
 )
 from universal_agent.core.config_validation import (
     json_mapping as _json_mapping,
@@ -796,55 +796,7 @@ def _parse_recording_payload[T: ConfigPayload](
     model_type: type[T],
     payload: Mapping[str, JsonValue],
 ) -> T:
-    try:
-        return model_type.model_validate(dict(payload))
-    except PydanticValidationError as exc:
-        raise ValueError(_recording_error_message(exc)) from exc
-
-
-def _recording_error_message(error: PydanticValidationError) -> str:
-    errors = error.errors(include_url=False)
-    if not errors:
-        return str(error)
-    first = errors[0]
-    path = _pydantic_error_path(first.get("loc", ()))
-    error_type = str(first.get("type", ""))
-    if error_type == "missing":
-        return f"missing required field: {path}"
-    expected = _expected_error_type(error_type)
-    if expected is not None:
-        return f"{path} must be {expected}"
-    message = str(first.get("msg", ""))
-    if message:
-        return message.removeprefix("Value error, ")
-    return str(error)
-
-
-def _pydantic_error_path(location: object) -> str:
-    parts: list[str] = []
-    if isinstance(location, tuple):
-        for item in location:
-            if isinstance(item, int):
-                if parts:
-                    parts[-1] = f"{parts[-1]}[{item}]"
-                else:
-                    parts.append(f"[{item}]")
-            else:
-                parts.append(str(item))
-    return ".".join(parts)
-
-
-def _expected_error_type(error_type: str) -> str | None:
-    return {
-        "bool_type": "a boolean",
-        "dict_type": "an object",
-        "int_type": "an integer",
-        "invalid-json-value": "JSON-compatible",
-        "list_type": "a list",
-        "model_attributes_type": "an object",
-        "model_type": "an object",
-        "string_type": "a string",
-    }.get(error_type)
+    return parse_payload(model_type, payload, missing_template="missing required field: {path}")
 
 
 def _validate_non_empty_name(field: str, value: str) -> None:

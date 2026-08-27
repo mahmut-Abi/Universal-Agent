@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import Field
-from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import (
     ErrorCode,
@@ -22,6 +21,7 @@ from universal_agent.core.config_validation import (
     PydanticJsonValue,
     json_mapping,
     parse_json_object,
+    parse_payload,
 )
 from universal_agent.evaluation.harness import (
     EvaluationQualityGate,
@@ -266,54 +266,7 @@ def _parse_config_payload[T: ConfigPayload](
     model_type: type[T],
     values: Mapping[str, JsonValue],
 ) -> T:
-    try:
-        return model_type.model_validate(dict(values))
-    except PydanticValidationError as exc:
-        raise ValueError(_scenario_config_error_message(exc)) from exc
-
-
-def _scenario_config_error_message(error: PydanticValidationError) -> str:
-    errors = error.errors(include_url=False)
-    if not errors:
-        return str(error)
-    first = errors[0]
-    path = _pydantic_error_path(first.get("loc", ()))
-    error_type = str(first.get("type", ""))
-    if error_type == "missing":
-        return f"{path} is required"
-    expected = _expected_error_type(error_type)
-    if expected is not None:
-        return f"{path} must be {expected}"
-    message = str(first.get("msg", ""))
-    if message:
-        return message.removeprefix("Value error, ")
-    return str(error)
-
-
-def _pydantic_error_path(location: object) -> str:
-    parts: list[str] = []
-    if isinstance(location, tuple):
-        for item in location:
-            if isinstance(item, int):
-                if parts:
-                    parts[-1] = f"{parts[-1]}[{item}]"
-                else:
-                    parts.append(f"[{item}]")
-            else:
-                parts.append(str(item))
-    return ".".join(parts)
-
-
-def _expected_error_type(error_type: str) -> str | None:
-    return {
-        "bool_type": "a boolean",
-        "dict_type": "an object",
-        "float_type": "a number",
-        "int_type": "an integer",
-        "invalid-json-value": "JSON-compatible",
-        "list_type": "a list",
-        "string_type": "a string",
-    }.get(error_type)
+    return parse_payload(model_type, values, missing_template="{path} is required")
 
 
 __all__ = [

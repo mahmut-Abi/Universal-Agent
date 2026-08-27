@@ -33,11 +33,23 @@ _JSON_VALUE_ADAPTER: TypeAdapter[PydanticJsonValue] = TypeAdapter(PydanticJsonVa
 _STRING_MAPPING_ADAPTER: TypeAdapter[dict[str, str]] = TypeAdapter(dict[str, str])
 
 
-def parse_payload[T: BaseModel](model_type: type[T], values: Mapping[str, JsonValue]) -> T:
+def parse_payload[T: BaseModel](
+    model_type: type[T],
+    values: Mapping[str, JsonValue],
+    *,
+    missing_template: str | None = None,
+    expected_types: Mapping[str, str] | None = None,
+) -> T:
     try:
         return model_type.model_validate(dict(values))
     except PydanticValidationError as exc:
-        raise ValueError(pydantic_error_message(exc)) from exc
+        raise ValueError(
+            pydantic_error_message(
+                exc,
+                missing_template=missing_template,
+                expected_types=expected_types,
+            )
+        ) from exc
 
 
 def parse_json_object(value: object, field: str) -> JsonMapping:
@@ -82,6 +94,9 @@ def string_mapping(value: object, field: str) -> Mapping[str, str]:
 def pydantic_error_message(
     error: PydanticValidationError,
     field: str | None = None,
+    *,
+    missing_template: str | None = None,
+    expected_types: Mapping[str, str] | None = None,
 ) -> str:
     errors = error.errors(include_url=False)
     if not errors:
@@ -92,7 +107,9 @@ def pydantic_error_message(
     if error_type == "value_error":
         message = str(first.get("msg", ""))
         return message.removeprefix("Value error, ")
-    expected = _expected_error_type(error_type, path)
+    if error_type == "missing" and missing_template is not None:
+        return missing_template.format(path=path)
+    expected = _expected_error_type(error_type, path, expected_types)
     if expected is not None:
         return f"{path} must be {expected}"
     message = str(first.get("msg", ""))
@@ -115,9 +132,15 @@ def _pydantic_error_path(location: object, field: str | None) -> str:
     return ".".join(part for part in parts if part)
 
 
-def _expected_error_type(error_type: str, path: str) -> str | None:
+def _expected_error_type(
+    error_type: str,
+    path: str,
+    expected_types: Mapping[str, str] | None,
+) -> str | None:
     if error_type == "missing":
         return _expected_missing_field(path)
+    if expected_types is not None and error_type in expected_types:
+        return expected_types[error_type]
     return {
         "bool_type": "a boolean",
         "dict_type": "an object",
@@ -125,6 +148,8 @@ def _expected_error_type(error_type: str, path: str) -> str | None:
         "int_type": "an integer",
         "invalid-json-value": "JSON-compatible",
         "list_type": "a list",
+        "model_attributes_type": "an object",
+        "model_type": "an object",
         "string_type": "a string",
     }.get(error_type)
 
