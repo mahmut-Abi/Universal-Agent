@@ -41,3 +41,13 @@ def test_parse_payload_uses_custom_missing_template() -> None:
 def test_parse_payload_formats_common_pydantic_type_errors() -> None:
     with pytest.raises(ValueError, match="items must be a list"):
         parse_payload(_ExamplePayload, {"name": "ok", "items": "bad"})
+
+
+def test_parse_payload_prefixes_error_paths_and_accepts_expected_type_overrides() -> None:
+    with pytest.raises(ValueError, match="provider\\.items must be custom list"):
+        parse_payload(
+            _ExamplePayload,
+            {"name": "ok", "items": "bad"},
+            field="provider",
+            expected_types={"list_type": "custom list"},
+        )

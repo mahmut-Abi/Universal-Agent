@@ -37,6 +37,7 @@ def parse_payload[T: BaseModel](
     model_type: type[T],
     values: Mapping[str, JsonValue],
     *,
+    field: str | None = None,
     missing_template: str | None = None,
     expected_types: Mapping[str, str] | None = None,
 ) -> T:
@@ -46,6 +47,7 @@ def parse_payload[T: BaseModel](
         raise ValueError(
             pydantic_error_message(
                 exc,
+                field,
                 missing_template=missing_template,
                 expected_types=expected_types,
             )

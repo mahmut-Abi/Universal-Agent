@@ -5,7 +5,6 @@ from typing import Protocol
 
 import httpx
 from pydantic import Field
-from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import (
     CapabilitySummary,
@@ -27,6 +26,7 @@ from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     parse_json_object,
+    parse_payload,
 )
 from universal_agent.model.adapter import ModelUsage
 
@@ -87,6 +87,9 @@ class _OpenAIChatChoicePayload(ConfigPayload):
 
 class _OpenAIChatCompletionPayload(ConfigPayload):
     choices: list[_OpenAIChatChoicePayload] = Field(default_factory=list)
+
+
+_MODEL_PAYLOAD_EXPECTED_TYPES = {"greater_than_equal": "a non-negative integer"}
 
 
 class JsonHttpModelTransport(Protocol):
@@ -801,10 +804,12 @@ def _parse_value_payload[T: ConfigPayload](
     model_type: type[T],
     payload: Mapping[str, JsonValue],
 ) -> T:
-    try:
-        return model_type.model_validate(dict(payload))
-    except PydanticValidationError as exc:
-        raise ValueError(_model_payload_error_message(exc)) from exc
+    return parse_payload(
+        model_type,
+        payload,
+        missing_template="{path} is required",
+        expected_types=_MODEL_PAYLOAD_EXPECTED_TYPES,
+    )
 
 
 def _parse_model_payload[T: ConfigPayload](
@@ -813,57 +818,12 @@ def _parse_model_payload[T: ConfigPayload](
     field_name: str,
 ) -> T:
     try:
-        return model_type.model_validate(dict(payload))
-    except PydanticValidationError as exc:
-        raise JsonHttpModelError(_model_payload_error_message(exc, field_name)) from exc
-
-
-def _model_payload_error_message(
-    error: PydanticValidationError,
-    prefix: str | None = None,
-) -> str:
-    errors = error.errors(include_url=False)
-    if not errors:
-        return str(error)
-    first = errors[0]
-    path = _pydantic_error_path(first.get("loc", ()), prefix)
-    error_type = str(first.get("type", ""))
-    if error_type == "missing":
-        return f"{path} is required"
-    expected = _expected_error_type(error_type)
-    if expected is not None:
-        return f"{path} must be {expected}"
-    message = str(first.get("msg", ""))
-    if message:
-        return message.removeprefix("Value error, ")
-    return str(error)
-
-
-def _pydantic_error_path(location: object, prefix: str | None) -> str:
-    parts: list[str] = [prefix] if prefix else []
-    if isinstance(location, tuple):
-        for item in location:
-            if isinstance(item, int):
-                if parts:
-                    parts[-1] = f"{parts[-1]}[{item}]"
-                else:
-                    parts.append(f"[{item}]")
-            else:
-                parts.append(str(item))
-    return ".".join(parts)
-
-
-def _expected_error_type(error_type: str) -> str | None:
-    if error_type == "greater_than_equal":
-        return "a non-negative integer"
-    return {
-        "bool_type": "a boolean",
-        "dict_type": "an object",
-        "float_type": "a number",
-        "int_type": "an integer",
-        "invalid-json-value": "JSON-compatible",
-        "list_type": "a list",
-        "model_attributes_type": "an object",
-        "model_type": "an object",
-        "string_type": "a string",
-    }.get(error_type)
+        return parse_payload(
+            model_type,
+            payload,
+            field=field_name,
+            missing_template="{path} is required",
+            expected_types=_MODEL_PAYLOAD_EXPECTED_TYPES,
+        )
+    except ValueError as exc:
+        raise JsonHttpModelError(str(exc)) from exc
