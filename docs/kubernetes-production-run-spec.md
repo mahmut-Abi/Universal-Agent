@@ -67,7 +67,10 @@ The command must:
   Kubernetes-specific logic to the Kernel;
 - construct a Runtime-owned `Goal` with `healthy=true`, `resource=<workload>`,
   and optional `namespace=<namespace>` success criteria;
-- construct a `Task` that names the workload and namespace;
+- construct an initial `Task` that verifies only the requested workload scope
+  (`resource` and optional `namespace`), leaving `healthy=true` as a Goal-level
+  completion criterion so unhealthy workloads can progress into diagnosis and
+  remediation tasks;
 - keep mutation authorization in deterministic policy code;
 - deny `scale_workload` before tool execution if the model proposes a resource
   or namespace outside the requested workload scope;

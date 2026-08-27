@@ -448,7 +448,9 @@ optional bearer-token secret resolution at the CLI/host boundary. See
 shapes. For Deployment-like workloads with `spec.selector.matchLabels`, both real backends include
 selector labels plus matching Pod summaries in `inspect_workload` observations, allowing
 CrashLoopBackOff and container readiness evidence to surface before a separate Pod inspection is
-chosen. Profile configs can now opt in with `domain.backend = "kubectl"` or
+chosen. The production `kubernetes run` entrypoint keeps `healthy=true` as a Goal-level criterion
+and uses scope-only initial Task criteria, so unhealthy workloads can advance into diagnosis and
+policy-gated remediation instead of looping on the first inspection. Profile configs can now opt in with `domain.backend = "kubectl"` or
 `domain.backend = "kubernetes_api"` and backend-specific settings; the local CLI writes those forms
 with `agent init --domain-backend kubectl` or `agent init --domain-backend kubernetes_api` and still
 defaults to the fake backend. The read-only `KubernetesDomain` remains available, while `KubernetesRemediationDomain` adds the policy-gated mutation path. Multi-domain operation now

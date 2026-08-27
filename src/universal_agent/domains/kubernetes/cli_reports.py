@@ -374,7 +374,7 @@ def kubernetes_model_probe_context(
     )
     task = Task(
         kubernetes_remediation_task_description(workload, namespace),
-        tuple(item.key for item in goal.success_criteria),
+        kubernetes_initial_task_required_criteria(namespace),
     )
     return DecisionContext(
         session_id=SessionId("probe-session"),
@@ -725,7 +725,7 @@ async def run_kubernetes_remediation(
     )
     task = Task(
         kubernetes_remediation_task_description(workload, namespace),
-        tuple(item.key for item in criteria),
+        kubernetes_initial_task_required_criteria(namespace),
     )
     return await service.run_goal(goal, task)
 
@@ -896,6 +896,13 @@ def kubernetes_remediation_success_criteria(
     if namespace is not None:
         criteria.append(SuccessCriterion("namespace", namespace))
     return tuple(criteria)
+
+
+def kubernetes_initial_task_required_criteria(namespace: str | None) -> tuple[str, ...]:
+    required = ["resource"]
+    if namespace is not None:
+        required.append("namespace")
+    return tuple(required)
 
 
 def kubernetes_remediation_goal_description(workload: str, namespace: str | None) -> str:

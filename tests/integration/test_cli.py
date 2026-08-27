@@ -86,6 +86,34 @@ class CliBackend:
         return immutable_json({"resource": resource, "mutation_applied": True})
 
 
+class UnhealthyCliBackend(CliBackend):
+    async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
+        self.inspect_calls += 1
+        name = str(arguments.get("name") or "example")
+        resource = name if "/" in name else f"deployment/{name}"
+        namespace = str(arguments.get("namespace") or "default")
+        if capability == "inspect_workload":
+            return immutable_json(
+                {
+                    "resource": resource,
+                    "namespace": namespace,
+                    "healthy": False,
+                    "desired_replicas": 3,
+                    "ready_replicas": 1,
+                    "resource_version": "rv-before",
+                }
+            )
+        if capability == "inspect_pod":
+            return immutable_json(
+                {
+                    "resource": "pod/api-123",
+                    "namespace": namespace,
+                    "root_cause": "under_replicated",
+                }
+            )
+        raise AssertionError(f"unexpected inspection capability: {capability}")
+
+
 def inspect_workload(
     *,
     name: str = "example",
@@ -160,6 +188,7 @@ def cli_profile() -> AgentProfile:
 def build_cli_service(
     decisions: list[Decision],
     *,
+    backend: CliBackend | None = None,
     usage: list[ModelUsage] | None = None,
     distributed_coordinator: DistributedRuntimeCoordinator | None = None,
     domain_packages: DomainPackageRegistry | None = None,
@@ -167,7 +196,7 @@ def build_cli_service(
     config: RuntimeConfig | None = None,
     secret_resolution: SecretResolutionReport | None = None,
 ) -> tuple[RuntimeService, CliBackend]:
-    backend = CliBackend()
+    backend = backend or CliBackend()
     components = RuntimeBuilder().build(
         DomainLoader().load(KubernetesRemediationDomain(backend, backend))
     )
@@ -1758,10 +1787,74 @@ async def test_cli_kubernetes_run_submits_production_workload_goal() -> None:
         "Inspect Kubernetes workload deployment/api in namespace prod and determine whether "
         "remediation is required."
     )
-    assert session["tasks"][0]["required_criteria"] == ["healthy", "resource", "namespace"]
+    assert session["tasks"][0]["required_criteria"] == ["resource", "namespace"]
     assert session["satisfied_criteria"]["resource"] == "deployment/api"
     assert session["satisfied_criteria"]["namespace"] == "prod"
     assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cli_kubernetes_run_unhealthy_workload_reaches_confirmation() -> None:
+    service, backend = build_cli_service(
+        [
+            inspect_workload(
+                name="api",
+                namespace="prod",
+                expected_observations=("healthy", "resource", "namespace"),
+            ),
+            Decision(
+                DecisionType.EXECUTE,
+                "Inspect failed pod before remediation",
+                capability="inspect_pod",
+                target="pod/api-123",
+                arguments=immutable_json({"name": "api-123", "namespace": "prod"}),
+                expected_observations=("root_cause",),
+            ),
+            scale_workload(name="api", namespace="prod"),
+        ],
+        backend=UnhealthyCliBackend(),
+        environment="production",
+    )
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "--profile-config",
+            "profile.json",
+            "kubernetes",
+            "run",
+            "production-operator",
+            "--workload",
+            "deployment/api",
+            "--namespace",
+            "prod",
+            "--skip-preflight",
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+    run = payload["run"]
+    assert isinstance(run, dict)
+    session = run["session"]
+    assert isinstance(session, dict)
+
+    assert status == 0
+    assert payload["status"] == "waiting"
+    assert payload["next_step"]["type"] == "confirm_pending_action"
+    assert run["result"]["status"] == "waiting"
+    assert [item["description"] for item in session["tasks"]] == [
+        "Inspect Kubernetes workload deployment/api in namespace prod and determine whether "
+        "remediation is required.",
+        "Diagnose unhealthy Kubernetes workload",
+        "Scale the under-replicated Kubernetes workload",
+    ]
+    assert session["tasks"][0]["required_criteria"] == ["resource", "namespace"]
+    assert session["pending_action"]["capability"] == "scale_workload"
+    assert session["pending_action"]["arguments"]["resource_version"] == "rv-before"
+    assert session["pending_action"]["arguments"]["current_replicas"] == 3
+    assert backend.inspect_calls == 2
+    assert backend.mutation_calls == 0
 
 
 @pytest.mark.asyncio
