@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import sys
-from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime
+from collections.abc import Callable, Sequence
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TextIO, cast
@@ -30,7 +28,6 @@ from universal_agent.agentd.representations import (
     distributed_worker_run_body,
     doctor_body,
     domain_body,
-    domain_package_body,
     evaluator_body,
     event_batch_body,
     health_body,
@@ -39,7 +36,6 @@ from universal_agent.agentd.representations import (
     metrics_body,
     multi_agent_body,
     policy_body,
-    profile_body,
     ready_body,
     runtime_run_body,
     session_batch_body,
@@ -55,19 +51,30 @@ from universal_agent.agentd.session_representations import (
     session_explorer_body,
     session_world_body,
 )
+from universal_agent.cli_catalog_commands import (
+    _dispatch_domain_packages,
+    _dispatch_profile,
+)
+from universal_agent.cli_ecosystem import _dispatch_ecosystem
+from universal_agent.cli_evaluation import _dispatch_eval
+from universal_agent.cli_init import _dispatch_init
+from universal_agent.cli_io import (
+    CliExit,
+    _optional_bool,
+    _parse_optional_datetime,
+    _success_criteria,
+    _write_error,
+    _write_json,
+    _write_text,
+)
+from universal_agent.cli_parser import build_parser
 from universal_agent.core import (
     ActionId,
-    DomainIdentity,
-    ErrorCode,
     EventId,
-    ExecutionStatus,
     Goal,
-    JsonValue,
     SessionId,
-    SuccessCriterion,
     Task,
     TaskId,
-    immutable_json,
 )
 from universal_agent.distributed import (
     DistributedLockConflictError,
@@ -80,19 +87,10 @@ from universal_agent.distributed import (
     WorkItemNotFoundError,
 )
 from universal_agent.domain import (
-    DomainPackage,
-    DomainPackageCompatibility,
     DomainPackageNotFoundError,
-    DomainPackageRuntimeActivation,
-    DomainPackageScaffoldResult,
-    DomainPackageScaffoldSpec,
-    DomainPackageVerificationReport,
-    load_domain_package_runtime,
-    scaffold_domain_package,
 )
 from universal_agent.domains.kubernetes.cli import (
     LOCAL_PROFILE_NAME,
-    add_kubernetes_command,
     dispatch_kubernetes,
     is_kubernetes_probe_service_command,
 )
@@ -105,82 +103,16 @@ from universal_agent.domains.kubernetes.cli import (
 from universal_agent.domains.kubernetes.cli import (
     build_default_service as build_kubernetes_default_service,
 )
-from universal_agent.domains.kubernetes.cli import (
-    profile_domain_config as kubernetes_profile_domain_config,
-)
 from universal_agent.ecosystem import (
-    EcosystemCatalog,
-    EcosystemCatalogVerificationReport,
-    EcosystemInstallPlan,
-    EcosystemInstallResult,
-    EcosystemRegistryIndex,
-    EcosystemRegistryManifest,
     EcosystemRegistryNotFoundError,
     EcosystemRegistryStoreNotFoundError,
-    EcosystemRegistryTrustPolicy,
-    FileEcosystemRegistryStore,
-    encode_ecosystem_registry_manifest,
-    install_ecosystem,
-    load_ecosystem_catalog,
-    load_ecosystem_registry_index,
-    load_ecosystem_registry_manifest,
-    plan_ecosystem_install,
-    write_ecosystem_registry_manifest,
-)
-from universal_agent.evaluation.console import (
-    build_evaluation_console_snapshot,
-    render_evaluation_console,
-    render_evaluation_console_text,
 )
 from universal_agent.evaluation.dataset import (
-    EvaluationDataset,
-    EvaluationDatasetIdentity,
     EvaluationDatasetNotFoundError,
-    EvaluationDatasetRegistry,
-    EvaluationDatasetVerificationReport,
-)
-from universal_agent.evaluation.harness import (
-    EvaluationQualityGate,
-    EvaluationScenario,
-    EvaluationScenarioKind,
-    EvaluationScenarioSelector,
-    EvaluationSuite,
-    ScenarioExpectations,
-)
-from universal_agent.evaluation.recording import (
-    EvaluationCheckRecording,
-    EvaluationGateRecording,
-    EvaluationReportComparison,
-    EvaluationReportComparisonCheck,
-    EvaluationReportRecording,
-    EvaluationScenarioRecording,
-    EvaluationSummaryRecording,
-    FileEvaluationReportStore,
-    FileReplayRecordingStore,
-    ReplayRecordingNotFoundError,
-    compare_evaluation_reports,
-    decode_evaluation_report,
-    encode_evaluation_junit_xml,
-    encode_replay_recording,
-    json_mapping,
-)
-from universal_agent.evaluation.replay import (
-    DeterministicReplayHarness,
-    ReplayCheck,
-    ReplayRecording,
-    ReplayReport,
-)
-from universal_agent.evaluation.runner import EvaluationRunner, EvaluationRunResult
-from universal_agent.evaluation.scenario_config import (
-    EvaluationSuiteConfig,
-    load_evaluation_suite_config,
 )
 from universal_agent.host import build_configured_model_adapter
 from universal_agent.profile import (
-    ProfileCatalogEntry,
-    ProfileCatalogVerificationReport,
     ProfileConfigNotFoundError,
-    load_profile_catalog,
 )
 from universal_agent.runtime import (
     RuntimeEventBatch,
@@ -202,9 +134,6 @@ __all__ = [
 ServerRunner = Callable[[AgentdHttpServer], None]
 
 
-class CliExit(Exception):
-    def __init__(self, status: int) -> None:
-        self.status = status
 
 
 def build_default_service() -> RuntimeService:
@@ -265,472 +194,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     return asyncio.run(run_cli(argv))
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="agent")
-    parser.add_argument(
-        "--profile-config",
-        help="Load an Agent Profile JSON config before dispatching the command.",
-    )
-    commands = parser.add_subparsers(dest="command", required=True)
-
-    commands.add_parser("version")
-    commands.add_parser("health")
-    commands.add_parser("ready")
-    metrics = commands.add_parser("metrics")
-    metrics.add_argument("--format", choices=("json", "prometheus"), default="json")
-    commands.add_parser("cost")
-    commands.add_parser("logs")
-    traces = commands.add_parser("traces")
-    traces.add_argument("--format", choices=("runtime", "otlp"), default="runtime")
-    commands.add_parser("doctor")
-    commands.add_parser("audit")
-    commands.add_parser("multi-agent")
-    repair = commands.add_parser("repair")
-    repair_commands = repair.add_subparsers(dest="repair_command", required=True)
-    repair_state_events = repair_commands.add_parser("state-events")
-    repair_state_events.add_argument("--confirmed", choices=("true", "false"), default="false")
-    repair_state_events.add_argument("--dry-run", action="store_true")
-
-    distributed = commands.add_parser("distributed")
-    distributed_commands = distributed.add_subparsers(
-        dest="distributed_command",
-        required=True,
-    )
-    distributed_commands.add_parser("snapshot")
-    distributed_commands.add_parser("health")
-    distributed_commands.add_parser("expire")
-    distributed_prune = distributed_commands.add_parser("prune-terminal")
-    distributed_prune.add_argument("--before")
-    distributed_schedule = distributed_commands.add_parser("schedule-session")
-    distributed_schedule.add_argument("session_id")
-    distributed_schedule.add_argument("--priority", type=int, default=0)
-    distributed_schedule.add_argument("--max-attempts", type=int, default=3)
-    distributed_schedule_goal = distributed_commands.add_parser("schedule-goal")
-    distributed_schedule_goal.add_argument("profile")
-    distributed_schedule_goal.add_argument("goal")
-    distributed_schedule_goal.add_argument("--task", default="Run goal")
-    distributed_schedule_goal.add_argument(
-        "--success",
-        action="append",
-        default=[],
-        help="Goal success criterion as KEY=JSON. Repeat for multiple criteria.",
-    )
-    distributed_schedule_goal.add_argument("--priority", type=int, default=0)
-    distributed_schedule_goal.add_argument("--max-attempts", type=int, default=3)
-    distributed_schedule_task = distributed_commands.add_parser("schedule-task")
-    distributed_schedule_task.add_argument("session_id")
-    distributed_schedule_task.add_argument("task_id")
-    distributed_schedule_task.add_argument("--priority", type=int, default=0)
-    distributed_schedule_task.add_argument("--max-attempts", type=int, default=3)
-    distributed_schedule_action = distributed_commands.add_parser("schedule-action")
-    distributed_schedule_action.add_argument("session_id")
-    distributed_schedule_action.add_argument("task_id")
-    distributed_schedule_action.add_argument("action_id")
-    distributed_schedule_action.add_argument(
-        "--confirmed", choices=("true", "false"), required=True
-    )
-    distributed_schedule_action.add_argument("--priority", type=int, default=0)
-    distributed_schedule_action.add_argument("--max-attempts", type=int, default=3)
-    distributed_pending_actions = distributed_commands.add_parser("schedule-pending-actions")
-    distributed_pending_actions.add_argument(
-        "--confirmed", choices=("true", "false"), required=True
-    )
-    distributed_pending_actions.add_argument("--priority", type=int, default=0)
-    distributed_pending_actions.add_argument("--max-attempts", type=int, default=3)
-    distributed_cancel = distributed_commands.add_parser("cancel")
-    distributed_cancel.add_argument("work_item_id")
-    distributed_cancel.add_argument(
-        "--reason",
-        default="distributed work item cancelled from CLI",
-    )
-    distributed_register = distributed_commands.add_parser("worker-register")
-    distributed_register.add_argument("worker_id")
-    distributed_register.add_argument("--capability", action="append", default=[])
-    distributed_register.add_argument("--ttl-seconds", type=float, default=30.0)
-
-    distributed_heartbeat = distributed_commands.add_parser("worker-heartbeat")
-    distributed_heartbeat.add_argument("worker_id")
-    distributed_heartbeat.add_argument("--ttl-seconds", type=float, default=30.0)
-
-    distributed_worker_run = distributed_commands.add_parser("worker-run-once")
-    distributed_worker_run.add_argument("worker_id")
-    distributed_worker_run.add_argument("--lease-ttl-seconds", type=float, default=30.0)
-    distributed_worker_run.add_argument("--worker-ttl-seconds", type=float, default=30.0)
-    distributed_worker_run.add_argument("--heartbeat-interval-seconds", type=float)
-    distributed_worker_run_batch = distributed_commands.add_parser("worker-run")
-    distributed_worker_run_batch.add_argument("worker_id")
-    distributed_worker_run_batch.add_argument("--max-items", type=int, default=1)
-    distributed_worker_run_batch.add_argument("--lease-ttl-seconds", type=float, default=30.0)
-    distributed_worker_run_batch.add_argument("--worker-ttl-seconds", type=float, default=30.0)
-    distributed_worker_run_batch.add_argument("--heartbeat-interval-seconds", type=float)
-
-    distributed_drain = distributed_commands.add_parser("worker-drain")
-    distributed_drain.add_argument("worker_id")
-    distributed_drain.add_argument("--reason", default="worker draining from CLI")
-
-    distributed_offline = distributed_commands.add_parser("worker-offline")
-    distributed_offline.add_argument("worker_id")
-    distributed_offline.add_argument("--reason", default="worker offline from CLI")
-
-    distributed_lock_acquire = distributed_commands.add_parser("lock-acquire")
-    distributed_lock_acquire.add_argument("lock_key")
-    distributed_lock_acquire.add_argument("--owner-id", required=True)
-    distributed_lock_acquire.add_argument("--ttl-seconds", type=float, default=30.0)
-
-    distributed_lock_heartbeat = distributed_commands.add_parser("lock-heartbeat")
-    distributed_lock_heartbeat.add_argument("lease_id")
-    distributed_lock_heartbeat.add_argument("--owner-id", required=True)
-    distributed_lock_heartbeat.add_argument("--ttl-seconds", type=float, default=30.0)
-
-    distributed_lock_release = distributed_commands.add_parser("lock-release")
-    distributed_lock_release.add_argument("lease_id")
-    distributed_lock_release.add_argument("--owner-id", required=True)
-
-    init = commands.add_parser("init")
-    init.add_argument("--output", default="profile.json")
-    init.add_argument("--profile", default=LOCAL_PROFILE_NAME)
-    init.add_argument("--environment", default="local")
-    init.add_argument("--store-backend", choices=("memory", "file", "sqlite"), default="file")
-    init.add_argument("--store-path", default=".universal-agent/store")
-    init.add_argument(
-        "--distributed-queue-backend",
-        choices=("memory", "file", "sqlite"),
-        default="memory",
-    )
-    init.add_argument("--distributed-queue-path", default=".universal-agent/work-queue.json")
-    init.add_argument(
-        "--distributed-locks-backend", choices=("memory", "file", "sqlite"), default="memory"
-    )
-    init.add_argument("--distributed-locks-path", default=".universal-agent/distributed-locks.json")
-    init.add_argument(
-        "--distributed-workers-backend",
-        choices=("memory", "file", "sqlite"),
-        default="memory",
-    )
-    init.add_argument("--distributed-workers-path", default=".universal-agent/workers.json")
-    init.add_argument("--distributed-terminal-retention-seconds", type=float)
-    init.add_argument(
-        "--domain-backend",
-        choices=("fake", "kubectl", "kubernetes_api"),
-        default="fake",
-    )
-    init.add_argument("--kubectl-namespace", default="default")
-    init.add_argument("--kubectl-context")
-    init.add_argument("--kubectl-kubeconfig")
-    init.add_argument("--kubectl-timeout-seconds", type=float, default=10.0)
-    init.add_argument("--kubernetes-api-server")
-    init.add_argument("--kubernetes-api-namespace", default="default")
-    init.add_argument("--kubernetes-api-token-env")
-    init.add_argument("--kubernetes-api-token-file")
-    init.add_argument("--kubernetes-api-token-secret", default="kubernetes_api_token")
-    init.add_argument("--kubernetes-api-timeout-seconds", type=float, default=10.0)
-    init.add_argument(
-        "--model-provider",
-        choices=("scripted", "json_http", "openai_chat_completions", "openai_responses"),
-        default="scripted",
-    )
-    init.add_argument("--model-name", default="scripted")
-    init.add_argument("--model-endpoint")
-    init.add_argument("--model-api-key-env")
-    init.add_argument("--model-api-key-file")
-    init.add_argument("--model-api-key-secret", default="model_api_key")
-    init.add_argument("--model-timeout-seconds", type=float, default=30.0)
-    init.add_argument(
-        "--model-response-format",
-        choices=("json_schema", "json_object", "prompt_json"),
-        help=(
-            "Response format for openai_chat_completions profiles. "
-            "Use prompt_json for legacy-compatible providers without response_format support."
-        ),
-    )
-    init.add_argument("--model-header", action="append", default=[])
-    init.add_argument("--force", action="store_true")
-
-    config = commands.add_parser("config")
-    config_commands = config.add_subparsers(dest="config_command", required=True)
-    config_commands.add_parser("show")
-
-    serve = commands.add_parser("serve")
-    serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=8765)
-    serve.add_argument("--auth-token")
-    serve.add_argument("--auth-token-env")
-    serve.add_argument("--read-only-auth-token")
-    serve.add_argument("--read-only-auth-token-env")
-    serve.add_argument("--evaluation-report-dir")
-
-    run = commands.add_parser("run")
-    run.add_argument("profile")
-    run.add_argument("goal")
-    run.add_argument("--task", default="Run goal")
-    run.add_argument(
-        "--success",
-        action="append",
-        default=[],
-        help="Goal success criterion as KEY=JSON. Repeat for multiple criteria.",
-    )
-
-    add_kubernetes_command(commands)
-
-    tui = commands.add_parser("tui")
-    tui.add_argument("--session-id")
-    tui.add_argument("--session-limit", type=int, default=5)
-    tui.add_argument("--event-limit", type=int, default=12)
-
-    ecosystem = commands.add_parser("ecosystem")
-    ecosystem_commands = ecosystem.add_subparsers(dest="ecosystem_command", required=True)
-    ecosystem_catalog = ecosystem_commands.add_parser("catalog")
-    ecosystem_catalog.add_argument("--domain-package-dir")
-    ecosystem_catalog.add_argument("--dataset-dir")
-    ecosystem_catalog.add_argument("--profile-dir")
-    ecosystem_verify = ecosystem_commands.add_parser("verify")
-    ecosystem_verify.add_argument("--domain-package-dir")
-    ecosystem_verify.add_argument("--dataset-dir")
-    ecosystem_verify.add_argument("--profile-dir")
-    ecosystem_export = ecosystem_commands.add_parser("export")
-    ecosystem_export.add_argument("--domain-package-dir")
-    ecosystem_export.add_argument("--dataset-dir")
-    ecosystem_export.add_argument("--profile-dir")
-    ecosystem_export.add_argument("--name", default="local-ecosystem")
-    ecosystem_export.add_argument("--version", default="0.1.0")
-    ecosystem_export.add_argument(
-        "--description",
-        default="Local Universal Agent ecosystem registry",
-    )
-    ecosystem_export.add_argument("--output")
-    ecosystem_export.add_argument("--force", action="store_true")
-    ecosystem_registry = ecosystem_commands.add_parser("registry")
-    ecosystem_registry.add_argument("manifest")
-    ecosystem_registry.add_argument("--verify", action="store_true")
-    ecosystem_install = ecosystem_commands.add_parser("install")
-    ecosystem_install.add_argument("manifest")
-    ecosystem_install.add_argument("--base-path")
-    ecosystem_install.add_argument("--no-verify", action="store_true")
-    ecosystem_install.add_argument("--plan-only", action="store_true")
-    ecosystem_install.add_argument("--allow-unverified-signatures", action="store_true")
-    ecosystem_store = ecosystem_commands.add_parser("store")
-    ecosystem_store_commands = ecosystem_store.add_subparsers(
-        dest="ecosystem_store_command",
-        required=True,
-    )
-    ecosystem_store_save = ecosystem_store_commands.add_parser("save")
-    ecosystem_store_save.add_argument("manifest")
-    ecosystem_store_save.add_argument("--store-dir", required=True)
-    ecosystem_store_save.add_argument("--force", action="store_true")
-    ecosystem_store_list = ecosystem_store_commands.add_parser("list")
-    ecosystem_store_list.add_argument("--store-dir", required=True)
-    ecosystem_store_show = ecosystem_store_commands.add_parser("show")
-    ecosystem_store_show.add_argument("name")
-    ecosystem_store_show.add_argument("version")
-    ecosystem_store_show.add_argument("--store-dir", required=True)
-    ecosystem_store_show.add_argument("--verify", action="store_true")
-
-    evaluate = commands.add_parser("eval")
-    eval_commands = evaluate.add_subparsers(dest="eval_command", required=True)
-
-    eval_list = eval_commands.add_parser("list")
-    eval_list.add_argument("profile")
-    eval_list.add_argument("--suite", default="local evaluation suite")
-    eval_list.add_argument("--suite-file")
-    _add_evaluation_selector_arguments(eval_list)
-
-    eval_run = eval_commands.add_parser("run")
-    eval_run.add_argument("profile")
-    eval_run.add_argument("--suite", default="local evaluation suite")
-    eval_run.add_argument("--suite-file")
-    eval_run.add_argument("--report-dir")
-    eval_run.add_argument("--format", choices=("json", "junit"), default="json")
-    eval_run.add_argument("--min-pass-rate", type=float)
-    eval_run.add_argument("--min-goal-completion-rate", type=float)
-    eval_run.add_argument("--min-task-success-rate", type=float)
-    eval_run.add_argument("--min-action-success-rate", type=float)
-    eval_run.add_argument("--max-tool-failure-rate", type=float)
-    eval_run.add_argument("--max-policy-denial-rate", type=float)
-    eval_run.add_argument("--max-average-recoveries", type=float)
-    eval_run.add_argument("--max-human-intervention-rate", type=float)
-    eval_run.add_argument("--max-average-actions", type=float)
-    eval_run.add_argument("--max-average-active-resource-locks", type=float)
-    eval_run.add_argument("--max-average-duration-ms", type=float)
-    eval_run.add_argument("--max-average-model-calls", type=float)
-    eval_run.add_argument("--max-average-model-tokens", type=float)
-    eval_run.add_argument("--max-resource-conflict-rate", type=float)
-    eval_run.add_argument("--max-total-model-cost-micros", type=int)
-    eval_run.add_argument("--fail-on-fail", action="store_true")
-    _add_evaluation_selector_arguments(eval_run)
-
-    eval_replay = eval_commands.add_parser("replay")
-    eval_replay.add_argument("profile")
-    eval_replay.add_argument("--suite", default="local evaluation suite")
-    eval_replay.add_argument("--suite-file")
-    eval_replay.add_argument("--recording-dir", required=True)
-    eval_replay.add_argument("--update", action="store_true")
-    eval_replay.add_argument("--fail-on-fail", action="store_true")
-    _add_evaluation_selector_arguments(eval_replay)
-
-    eval_recordings = eval_commands.add_parser("recordings")
-    eval_recordings.add_argument("--recording-dir", required=True)
-
-    eval_compare = eval_commands.add_parser("compare")
-    eval_compare.add_argument("expected")
-    eval_compare.add_argument("actual")
-    eval_compare.add_argument("--fail-on-fail", action="store_true")
-
-    eval_reports = eval_commands.add_parser("reports")
-    eval_reports.add_argument("--report-dir", required=True)
-
-    eval_console = eval_commands.add_parser("console")
-    eval_console.add_argument("--report-dir", required=True)
-    eval_console.add_argument("--format", choices=("html", "text"), default="html")
-
-    eval_datasets = eval_commands.add_parser("datasets")
-    eval_datasets.add_argument("--dataset-dir", required=True)
-    eval_datasets.add_argument("--tag")
-    eval_datasets.add_argument("--domain")
-    eval_datasets.add_argument("--verify", action="store_true")
-
-    eval_dataset = eval_commands.add_parser("dataset")
-    eval_dataset.add_argument("name")
-    eval_dataset.add_argument("version", nargs="?")
-    eval_dataset.add_argument("--dataset-dir", required=True)
-
-    domain = commands.add_parser("domain")
-    domain_commands = domain.add_subparsers(dest="domain_command", required=True)
-    domain_commands.add_parser("list")
-
-    domain_packages = commands.add_parser("domain-packages")
-    domain_package_commands = domain_packages.add_subparsers(
-        dest="domain_packages_command",
-        required=True,
-    )
-    domain_package_list = domain_package_commands.add_parser("list")
-    domain_package_list.add_argument("--tag")
-    domain_package_show = domain_package_commands.add_parser("show")
-    domain_package_show.add_argument("name")
-    domain_package_show.add_argument("version", nargs="?")
-    domain_package_verify = domain_package_commands.add_parser("verify")
-    domain_package_verify.add_argument("--local-paths", action="store_true")
-    domain_package_load_runtime = domain_package_commands.add_parser("load-runtime")
-    domain_package_load_runtime.add_argument("path")
-    domain_package_load_runtime.add_argument("--skip-local-paths", action="store_true")
-    domain_package_scaffold = domain_package_commands.add_parser("scaffold")
-    domain_package_scaffold.add_argument("name")
-    domain_package_scaffold.add_argument("--description", required=True)
-    domain_package_scaffold.add_argument("--output", required=True)
-    domain_package_scaffold.add_argument("--version", default="0.1.0")
-    domain_package_scaffold.add_argument("--api-version", default="agent.nantian.dev/v1alpha1")
-    domain_package_scaffold.add_argument("--author")
-    domain_package_scaffold.add_argument("--entrypoint")
-    domain_package_scaffold.add_argument("--ontology", action="append", default=[])
-    domain_package_scaffold.add_argument("--capability", action="append", default=[])
-    domain_package_scaffold.add_argument("--tool", action="append", default=[])
-    domain_package_scaffold.add_argument("--policy", action="append", default=[])
-    domain_package_scaffold.add_argument("--procedure", action="append", default=[])
-    domain_package_scaffold.add_argument("--knowledge", action="append", default=[])
-    domain_package_scaffold.add_argument("--evaluator", action="append", default=[])
-    domain_package_scaffold.add_argument("--context-provider", action="append", default=[])
-    domain_package_scaffold.add_argument("--prompt", action="append", default=[])
-    domain_package_scaffold.add_argument("--resource", action="append", default=[])
-    domain_package_scaffold.add_argument("--dependency", action="append", default=[])
-    domain_package_scaffold.add_argument("--required-tool", action="append", default=[])
-    domain_package_scaffold.add_argument("--runtime-api")
-    domain_package_scaffold.add_argument("--domain-api")
-    domain_package_scaffold.add_argument(
-        "--side-effects",
-        choices=("none", "reversible", "destructive"),
-        default="none",
-    )
-    domain_package_scaffold.add_argument("--requires-confirmation", action="store_true")
-    domain_package_scaffold.add_argument("--tag", action="append", default=[])
-    domain_package_scaffold.add_argument("--runtime-stub", action="store_true")
-    domain_package_scaffold.add_argument("--force", action="store_true")
-
-    profile = commands.add_parser("profile")
-    profile_commands = profile.add_subparsers(dest="profile_command", required=True)
-    profile_commands.add_parser("list")
-    profile_show = profile_commands.add_parser("show")
-    profile_show.add_argument("profile")
-    profile_verify = profile_commands.add_parser("verify")
-    profile_verify.add_argument("--profile-dir", required=True)
-
-    capabilities = commands.add_parser("capabilities")
-    capabilities_commands = capabilities.add_subparsers(
-        dest="capabilities_command",
-        required=True,
-    )
-    capabilities_commands.add_parser("list")
-
-    tools = commands.add_parser("tools")
-    tools_commands = tools.add_subparsers(dest="tools_command", required=True)
-    tools_commands.add_parser("list")
-
-    policies = commands.add_parser("policies")
-    policies_commands = policies.add_subparsers(dest="policies_command", required=True)
-    policies_commands.add_parser("list")
-
-    evaluators = commands.add_parser("evaluators")
-    evaluators_commands = evaluators.add_subparsers(dest="evaluators_command", required=True)
-    evaluators_commands.add_parser("list")
-
-    memory = commands.add_parser("memory")
-    memory_commands = memory.add_subparsers(dest="memory_command", required=True)
-    memory_commands.add_parser("list")
-
-    session = commands.add_parser("session")
-    session_commands = session.add_subparsers(dest="session_command", required=True)
-
-    list_sessions = session_commands.add_parser("list")
-    list_sessions.add_argument("--after")
-    list_sessions.add_argument("--limit", type=int)
-
-    show = session_commands.add_parser("show")
-    show.add_argument("session_id")
-
-    diagnostics = session_commands.add_parser("diagnostics")
-    diagnostics.add_argument("session_id")
-
-    evidence = session_commands.add_parser("evidence")
-    evidence.add_argument("session_id")
-
-    world = session_commands.add_parser("world")
-    world.add_argument("session_id")
-    world.add_argument("--entity")
-    world.add_argument("--relation")
-
-    events = session_commands.add_parser("events")
-    events.add_argument("session_id")
-    events.add_argument("--after")
-    events.add_argument("--limit", type=int)
-    events.add_argument("--format", choices=("json", "sse"), default="json")
-    events.add_argument("--wait", action="store_true")
-    events.add_argument("--timeout-seconds", type=float, default=10.0)
-    events.add_argument("--poll-interval-seconds", type=float, default=0.25)
-
-    audit = session_commands.add_parser("audit")
-    audit.add_argument("session_id")
-
-    cost = session_commands.add_parser("cost")
-    cost.add_argument("session_id")
-
-    logs = session_commands.add_parser("logs")
-    logs.add_argument("session_id")
-
-    traces = session_commands.add_parser("traces")
-    traces.add_argument("session_id")
-    traces.add_argument("--format", choices=("runtime", "otlp"), default="runtime")
-
-    pause = session_commands.add_parser("pause")
-    pause.add_argument("session_id")
-    pause.add_argument("--reason", default="session paused from CLI")
-
-    resume = session_commands.add_parser("resume")
-    resume.add_argument("session_id")
-    resume.add_argument("--confirmed", choices=("true", "false"))
-
-    cancel = session_commands.add_parser("cancel")
-    cancel.add_argument("session_id")
-    cancel.add_argument("--reason", default="session cancelled from CLI")
-
-    return parser
 
 
 def _service_from_args(args: argparse.Namespace) -> RuntimeService:
@@ -742,14 +205,6 @@ def _service_from_args(args: argparse.Namespace) -> RuntimeService:
     return build_configured_service(profile_config)
 
 
-def _add_evaluation_selector_arguments(command: argparse.ArgumentParser) -> None:
-    command.add_argument(
-        "--kind",
-        action="append",
-        choices=tuple(item.value for item in EvaluationScenarioKind),
-    )
-    command.add_argument("--tag", action="append")
-    command.add_argument("--exclude-tag", action="append")
 
 
 async def _dispatch(
@@ -1103,601 +558,38 @@ async def _dispatch_tui(
     _write_text(out, render_tui_snapshot(snapshot))
 
 
-def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:
-    command = cast(str, args.ecosystem_command)
-    if command == "catalog":
-        catalog = _load_ecosystem_catalog_from_args(args)
-        _write_json(out, _ecosystem_catalog_body(catalog))
-        return
-    if command == "verify":
-        catalog = _load_ecosystem_catalog_from_args(args)
-        _write_json(out, _ecosystem_verification_body(catalog))
-        return
-    if command == "export":
-        catalog = _load_ecosystem_catalog_from_args(args)
-        manifest = catalog.registry_manifest(
-            name=cast(str, args.name),
-            version=cast(str, args.version),
-            description=cast(str, args.description),
-        )
-        output = cast(str | None, args.output)
-        if output is None:
-            _write_json(out, encode_ecosystem_registry_manifest(manifest))
-            return
-        write_result = write_ecosystem_registry_manifest(
-            output,
-            manifest,
-            overwrite=cast(bool, args.force),
-        )
-        _write_json(
-            out,
-            {
-                "status": "updated" if write_result.overwritten else "created",
-                "path": str(write_result.path),
-                "manifest": encode_ecosystem_registry_manifest(write_result.manifest),
-            },
-        )
-        return
-    if command == "registry":
-        index = load_ecosystem_registry_index(cast(str, args.manifest))
-        if cast(bool, args.verify):
-            _write_json(out, _ecosystem_verification_report_body(index.verify()))
-            return
-        _write_json(out, encode_ecosystem_registry_manifest(index.manifest))
-        return
-    if command == "install":
-        index = load_ecosystem_registry_index(cast(str, args.manifest))
-        base_path = cast(str | None, args.base_path)
-        verify = not cast(bool, args.no_verify)
-        trust_policy = EcosystemRegistryTrustPolicy(
-            allow_unverified_signatures=cast(bool, args.allow_unverified_signatures)
-        )
-        if cast(bool, args.plan_only):
-            plan = plan_ecosystem_install(
-                index,
-                base_path=base_path,
-                verify=verify,
-                trust_policy=trust_policy,
-            )
-            _write_json(out, _ecosystem_install_plan_body(plan))
-            return
-        install_result = install_ecosystem(
-            index,
-            base_path=base_path,
-            verify=verify,
-            trust_policy=trust_policy,
-        )
-        _write_json(out, _ecosystem_install_result_body(install_result))
-        return
-    if command == "store":
-        _dispatch_ecosystem_store(args, out)
-        return
-    raise ValueError(f"unknown ecosystem command: {command}")
 
 
-def _dispatch_ecosystem_store(args: argparse.Namespace, out: TextIO) -> None:
-    store = FileEcosystemRegistryStore(cast(str, args.store_dir))
-    command = cast(str, args.ecosystem_store_command)
-    if command == "save":
-        manifest = load_ecosystem_registry_manifest(cast(str, args.manifest))
-        write_result = store.save(manifest, overwrite=cast(bool, args.force))
-        _write_json(
-            out,
-            {
-                "status": "updated" if write_result.overwritten else "created",
-                "path": str(write_result.path),
-                "manifest": _ecosystem_registry_summary_body(write_result.manifest),
-            },
-        )
-        return
-    if command == "list":
-        manifests = store.list_manifests()
-        _write_json(
-            out,
-            {
-                "registry_count": len(manifests),
-                "registries": [_ecosystem_registry_summary_body(item) for item in manifests],
-            },
-        )
-        return
-    if command == "show":
-        manifest = store.load(cast(str, args.name), cast(str, args.version))
-        if cast(bool, args.verify):
-            _write_json(
-                out, _ecosystem_verification_report_body(EcosystemRegistryIndex(manifest).verify())
-            )
-            return
-        _write_json(out, encode_ecosystem_registry_manifest(manifest))
-        return
-    raise ValueError(f"unknown ecosystem store command: {command}")
 
 
-def _load_ecosystem_catalog_from_args(args: argparse.Namespace) -> EcosystemCatalog:
-    return load_ecosystem_catalog(
-        domain_package_root=cast(str | None, args.domain_package_dir),
-        evaluation_dataset_root=cast(str | None, args.dataset_dir),
-        profile_root=cast(str | None, args.profile_dir),
-    )
 
 
-async def _dispatch_eval(
-    args: argparse.Namespace,
-    service: RuntimeService,
-    out: TextIO,
-) -> None:
-    command = cast(str, args.eval_command)
-    if command == "list":
-        profile = cast(str, args.profile)
-        if not service.accepts_profile(profile):
-            raise ValueError(f"unknown profile: {profile}")
-        suite = _evaluation_suite(args)
-        scenarios = suite.select(_evaluation_selector(args))
-        _write_json(out, _evaluation_list_body(suite, scenarios))
-        return
-    if command == "run":
-        profile = cast(str, args.profile)
-        if not service.accepts_profile(profile):
-            raise ValueError(f"unknown profile: {profile}")
-        report_dir = cast(str | None, args.report_dir)
-        suite_config = _evaluation_suite_config(args)
-        result = await EvaluationRunner(
-            service,
-            report_store=None if report_dir is None else FileEvaluationReportStore(report_dir),
-        ).run_suite(
-            suite_config.suite,
-            selector=_evaluation_selector(args),
-            gate=_evaluation_quality_gate(args, suite_config.quality_gate),
-        )
-        if cast(str, args.format) == "junit":
-            _write_text(out, encode_evaluation_junit_xml(result.recording))
-            _write_text(out, "\n")
-        else:
-            _write_json(out, _evaluation_run_body(result, report_dir))
-        if cast(bool, args.fail_on_fail) and not result.passed:
-            raise CliExit(1)
-        return
-    if command == "replay":
-        payload = await _dispatch_eval_replay(args, service)
-        _write_json(out, payload)
-        if cast(bool, args.fail_on_fail) and not cast(bool, payload["passed"]):
-            raise CliExit(1)
-        return
-    if command == "recordings":
-        recording_dir = cast(str, args.recording_dir)
-        recordings = FileReplayRecordingStore(recording_dir).list_recordings()
-        _write_json(out, _replay_recordings_body(recording_dir, recordings))
-        return
-    if command == "compare":
-        comparison = compare_evaluation_reports(
-            _load_evaluation_report(Path(cast(str, args.expected))),
-            _load_evaluation_report(Path(cast(str, args.actual))),
-        )
-        _write_json(out, _evaluation_comparison_body(comparison))
-        if cast(bool, args.fail_on_fail) and not comparison.passed:
-            raise CliExit(1)
-        return
-    if command == "reports":
-        report_dir = cast(str, args.report_dir)
-        reports = FileEvaluationReportStore(report_dir).list_reports()
-        _write_json(out, _evaluation_reports_body(report_dir, reports))
-        return
-    if command == "console":
-        report_dir = cast(str, args.report_dir)
-        snapshot = build_evaluation_console_snapshot(report_dir)
-        if cast(str, args.format) == "text":
-            _write_text(out, render_evaluation_console_text(snapshot))
-            return
-        _write_text(out, render_evaluation_console(snapshot))
-        return
-    if command == "datasets":
-        registry = _evaluation_dataset_registry(args)
-        if cast(bool, args.verify):
-            _write_json(out, evaluation_dataset_verification_body(registry.verify()))
-            return
-        domain = cast(str | None, args.domain)
-        _write_json(
-            out,
-            {
-                "datasets": [
-                    _evaluation_dataset_body(dataset)
-                    for dataset in registry.list(
-                        tag=cast(str | None, args.tag),
-                        domain=None if domain is None else _parse_domain_identity(domain),
-                    )
-                ]
-            },
-        )
-        return
-    if command == "dataset":
-        registry = _evaluation_dataset_registry(args)
-        version = cast(str | None, args.version)
-        dataset = (
-            registry.get_by_name(cast(str, args.name))
-            if version is None
-            else registry.get(EvaluationDatasetIdentity(cast(str, args.name), version))
-        )
-        _write_json(out, _evaluation_dataset_body(dataset))
-        return
-    raise ValueError(f"unknown eval command: {command}")
 
 
-def _evaluation_dataset_registry(args: argparse.Namespace) -> EvaluationDatasetRegistry:
-    registry = EvaluationDatasetRegistry()
-    registry.discover(Path(cast(str, args.dataset_dir)))
-    return registry
 
 
-def _evaluation_selector(args: argparse.Namespace) -> EvaluationScenarioSelector | None:
-    kinds = cast(list[str] | None, args.kind)
-    tags = cast(list[str] | None, args.tag)
-    exclude_tags = cast(list[str] | None, args.exclude_tag)
-    if kinds is None and tags is None and exclude_tags is None:
-        return None
-    return EvaluationScenarioSelector(
-        kinds=None if kinds is None else tuple(EvaluationScenarioKind(item) for item in kinds),
-        tags=tuple(tags or ()),
-        exclude_tags=tuple(exclude_tags or ()),
-    )
 
 
-async def _dispatch_eval_replay(
-    args: argparse.Namespace,
-    service: RuntimeService,
-) -> dict[str, object]:
-    profile = cast(str, args.profile)
-    if not service.accepts_profile(profile):
-        raise ValueError(f"unknown profile: {profile}")
-    suite = _evaluation_suite(args)
-    scenarios = suite.select(_evaluation_selector(args))
-    if not scenarios:
-        raise ValueError("evaluation replay selected no scenarios")
-
-    recording_dir = cast(str, args.recording_dir)
-    store = FileReplayRecordingStore(recording_dir)
-    harness = DeterministicReplayHarness(service)
-    if cast(bool, args.update):
-        recordings = []
-        for scenario in scenarios:
-            recording = await harness.record(scenario)
-            store.save(recording)
-            recordings.append(recording)
-        return {
-            "mode": "record",
-            "passed": True,
-            "suite_name": suite.name,
-            "recording_dir": recording_dir,
-            "scenario_count": len(recordings),
-            "scenarios": [encode_replay_recording(item) for item in recordings],
-        }
-
-    reports = []
-    for scenario in scenarios:
-        try:
-            expected = store.load(scenario.name)
-        except ReplayRecordingNotFoundError as exc:
-            raise ValueError(str(exc)) from exc
-        reports.append(await harness.replay(scenario, expected))
-    return {
-        "mode": "replay",
-        "passed": all(report.passed for report in reports),
-        "suite_name": suite.name,
-        "recording_dir": recording_dir,
-        "scenario_count": len(reports),
-        "scenarios": [_replay_report_body(report) for report in reports],
-    }
 
 
-def _evaluation_suite(args: argparse.Namespace) -> EvaluationSuite:
-    return _evaluation_suite_config(args).suite
 
 
-def _evaluation_suite_config(args: argparse.Namespace) -> EvaluationSuiteConfig:
-    suite_file = cast(str | None, args.suite_file)
-    if suite_file is not None:
-        return load_evaluation_suite_config(suite_file)
-    return EvaluationSuiteConfig(_local_evaluation_suite(cast(str, args.suite)))
 
 
-def _evaluation_quality_gate(
-    args: argparse.Namespace,
-    suite_gate: EvaluationQualityGate | None,
-) -> EvaluationQualityGate | None:
-    overrides = {
-        "min_pass_rate": cast(float | None, args.min_pass_rate),
-        "min_goal_completion_rate": cast(float | None, args.min_goal_completion_rate),
-        "min_task_success_rate": cast(float | None, args.min_task_success_rate),
-        "min_action_success_rate": cast(float | None, args.min_action_success_rate),
-        "max_tool_failure_rate": cast(float | None, args.max_tool_failure_rate),
-        "max_policy_denial_rate": cast(float | None, args.max_policy_denial_rate),
-        "max_average_recoveries_per_scenario": cast(
-            float | None,
-            args.max_average_recoveries,
-        ),
-        "max_human_intervention_rate": cast(float | None, args.max_human_intervention_rate),
-        "max_average_actions_per_scenario": cast(float | None, args.max_average_actions),
-        "max_average_active_resource_locks_per_scenario": cast(
-            float | None,
-            args.max_average_active_resource_locks,
-        ),
-        "max_average_execution_duration_ms_per_scenario": cast(
-            float | None,
-            args.max_average_duration_ms,
-        ),
-        "max_average_model_calls_per_scenario": cast(float | None, args.max_average_model_calls),
-        "max_average_model_tokens_per_scenario": cast(
-            float | None,
-            args.max_average_model_tokens,
-        ),
-        "max_resource_conflict_rate": cast(float | None, args.max_resource_conflict_rate),
-    }
-    cost_override = cast(int | None, args.max_total_model_cost_micros)
-    if (
-        suite_gate is None
-        and cost_override is None
-        and all(value is None for value in overrides.values())
-    ):
-        return None
-    base = EvaluationQualityGate() if suite_gate is None else suite_gate
-    return EvaluationQualityGate(
-        min_pass_rate=overrides["min_pass_rate"]
-        if overrides["min_pass_rate"] is not None
-        else base.min_pass_rate,
-        min_goal_completion_rate=overrides["min_goal_completion_rate"]
-        if overrides["min_goal_completion_rate"] is not None
-        else base.min_goal_completion_rate,
-        min_task_success_rate=overrides["min_task_success_rate"]
-        if overrides["min_task_success_rate"] is not None
-        else base.min_task_success_rate,
-        min_action_success_rate=overrides["min_action_success_rate"]
-        if overrides["min_action_success_rate"] is not None
-        else base.min_action_success_rate,
-        max_tool_failure_rate=overrides["max_tool_failure_rate"]
-        if overrides["max_tool_failure_rate"] is not None
-        else base.max_tool_failure_rate,
-        max_policy_denial_rate=overrides["max_policy_denial_rate"]
-        if overrides["max_policy_denial_rate"] is not None
-        else base.max_policy_denial_rate,
-        max_average_recoveries_per_scenario=overrides["max_average_recoveries_per_scenario"]
-        if overrides["max_average_recoveries_per_scenario"] is not None
-        else base.max_average_recoveries_per_scenario,
-        max_human_intervention_rate=overrides["max_human_intervention_rate"]
-        if overrides["max_human_intervention_rate"] is not None
-        else base.max_human_intervention_rate,
-        max_resource_conflict_rate=overrides["max_resource_conflict_rate"]
-        if overrides["max_resource_conflict_rate"] is not None
-        else base.max_resource_conflict_rate,
-        max_average_active_resource_locks_per_scenario=overrides[
-            "max_average_active_resource_locks_per_scenario"
-        ]
-        if overrides["max_average_active_resource_locks_per_scenario"] is not None
-        else base.max_average_active_resource_locks_per_scenario,
-        max_average_actions_per_scenario=overrides["max_average_actions_per_scenario"]
-        if overrides["max_average_actions_per_scenario"] is not None
-        else base.max_average_actions_per_scenario,
-        max_average_execution_duration_ms_per_scenario=overrides[
-            "max_average_execution_duration_ms_per_scenario"
-        ]
-        if overrides["max_average_execution_duration_ms_per_scenario"] is not None
-        else base.max_average_execution_duration_ms_per_scenario,
-        max_average_model_calls_per_scenario=overrides["max_average_model_calls_per_scenario"]
-        if overrides["max_average_model_calls_per_scenario"] is not None
-        else base.max_average_model_calls_per_scenario,
-        max_average_model_tokens_per_scenario=overrides["max_average_model_tokens_per_scenario"]
-        if overrides["max_average_model_tokens_per_scenario"] is not None
-        else base.max_average_model_tokens_per_scenario,
-        max_total_model_estimated_cost_micros=cost_override
-        if cost_override is not None
-        else base.max_total_model_estimated_cost_micros,
-    )
 
 
-def _local_evaluation_suite(name: str) -> EvaluationSuite:
-    goal = Goal("Evaluate workload health", (SuccessCriterion("healthy", True),))
-    task = Task("Inspect workload", ("healthy",))
-    return EvaluationSuite(
-        name,
-        (
-            EvaluationScenario(
-                "healthy workload",
-                goal,
-                task,
-                ScenarioExpectations(
-                    expected_status=ExecutionStatus.COMPLETED,
-                    expected_criteria=immutable_json({"healthy": True}),
-                    required_events=("GoalCompleted", "EvaluationCompleted"),
-                    required_evidence_claims=("healthy",),
-                    required_capabilities=("inspect_workload",),
-                    max_actions=1,
-                ),
-                kind=EvaluationScenarioKind.REGRESSION,
-                tags=("smoke", "kubernetes"),
-            ),
-            EvaluationScenario(
-                "invalid scale policy",
-                goal,
-                task,
-                ScenarioExpectations(
-                    expected_status=ExecutionStatus.FAILED,
-                    expected_error_code=ErrorCode.POLICY_DENIED,
-                    forbidden_events=("ActionStarted",),
-                    required_audit_capabilities=("scale_workload",),
-                    policy_denial_count=1,
-                    max_actions=0,
-                ),
-                kind=EvaluationScenarioKind.POLICY,
-                tags=("policy", "kubernetes"),
-            ),
-        ),
-        tags=("local", "kubernetes"),
-    )
 
 
-def _dispatch_profile(
-    args: argparse.Namespace,
-    service: RuntimeService,
-    out: TextIO,
-) -> None:
-    command = cast(str, args.profile_command)
-    if command == "list":
-        _write_json(out, {"profiles": [profile_body(item) for item in service.profiles()]})
-        return
-    if command == "show":
-        profile = cast(str, args.profile)
-        if not service.accepts_profile(profile):
-            raise ValueError(f"unknown profile: {profile}")
-        _write_json(out, profile_body(service.profile(profile)))
-        return
-    if command == "verify":
-        catalog = load_profile_catalog(cast(str, args.profile_dir))
-        _write_json(out, profile_catalog_verification_body(catalog.verify()))
-        return
-    raise ValueError(f"unknown profile command: {command}")
 
 
-def _dispatch_domain_packages(
-    args: argparse.Namespace,
-    service: RuntimeService,
-    out: TextIO,
-) -> None:
-    command = cast(str, args.domain_packages_command)
-    if command == "list":
-        tag = cast(str | None, args.tag)
-        _write_json(
-            out,
-            {
-                "domain_packages": [
-                    domain_package_body(item) for item in service.domain_packages(tag=tag)
-                ]
-            },
-        )
-        return
-    if command == "show":
-        _write_json(
-            out,
-            domain_package_body(
-                service.domain_package(cast(str, args.name), cast(str | None, args.version))
-            ),
-        )
-        return
-    if command == "verify":
-        _write_json(
-            out,
-            domain_package_verification_body(
-                service.domain_package_verification(
-                    verify_paths=cast(bool, args.local_paths),
-                )
-            ),
-        )
-        return
-    if command == "load-runtime":
-        activation = load_domain_package_runtime(
-            Path(cast(str, args.path)),
-            verify_paths=not cast(bool, args.skip_local_paths),
-        )
-        _write_json(out, domain_package_runtime_activation_body(activation))
-        return
-    if command == "scaffold":
-        result = scaffold_domain_package(
-            Path(cast(str, args.output)),
-            _domain_package_scaffold_spec(args),
-            overwrite=cast(bool, args.force),
-        )
-        _write_json(out, domain_package_scaffold_body(result))
-        return
-    raise ValueError(f"unknown domain package command: {command}")
 
 
-def _domain_package_scaffold_spec(args: argparse.Namespace) -> DomainPackageScaffoldSpec:
-    return DomainPackageScaffoldSpec(
-        name=cast(str, args.name),
-        version=cast(str, args.version),
-        description=cast(str, args.description),
-        api_version=cast(str, args.api_version),
-        author=cast(str | None, args.author),
-        entrypoint=cast(str | None, args.entrypoint),
-        ontology=tuple(cast(list[str], args.ontology)),
-        capabilities=tuple(cast(list[str], args.capability)),
-        tools=tuple(cast(list[str], args.tool)),
-        policies=tuple(cast(list[str], args.policy)),
-        procedures=tuple(cast(list[str], args.procedure)),
-        knowledge=tuple(cast(list[str], args.knowledge)),
-        evaluators=tuple(cast(list[str], args.evaluator)),
-        context_providers=tuple(cast(list[str], args.context_provider)),
-        prompts=tuple(cast(list[str], args.prompt)),
-        resources=tuple(cast(list[str], args.resource)),
-        dependencies=tuple(
-            _parse_domain_identity(item) for item in cast(list[str], args.dependency)
-        ),
-        required_tools=tuple(cast(list[str], args.required_tool)),
-        compatibility=DomainPackageCompatibility(
-            runtime_api=cast(str | None, args.runtime_api),
-            domain_api=cast(str | None, args.domain_api),
-        ),
-        security=immutable_json(
-            {
-                "side_effects": cast(str, args.side_effects),
-                "requires_confirmation": cast(bool, args.requires_confirmation),
-            }
-        ),
-        tags=tuple(cast(list[str], args.tag)),
-        runtime_stub=cast(bool, args.runtime_stub),
-    )
 
 
-def _parse_domain_identity(value: str) -> DomainIdentity:
-    if "@" not in value:
-        raise ValueError(f"domain package dependency must be name@version: {value}")
-    name, version = value.split("@", 1)
-    if not name.strip() or not version.strip():
-        raise ValueError(f"domain package dependency must be name@version: {value}")
-    return DomainIdentity(name, version)
 
 
-def domain_package_scaffold_body(result: DomainPackageScaffoldResult) -> dict[str, object]:
-    package = result.package
-    return {
-        "status": "updated" if result.overwritten else "created",
-        "name": package.identity.name,
-        "version": package.identity.version,
-        "root_path": str(package.root_path),
-        "manifest_path": str(package.manifest_path),
-        "created_paths": [str(path) for path in result.created_paths],
-        "written_paths": [str(path) for path in result.written_paths],
-        "runtime_stub_paths": [str(path) for path in result.runtime_stub_paths],
-    }
 
 
-def domain_package_runtime_activation_body(
-    activation: DomainPackageRuntimeActivation,
-) -> dict[str, object]:
-    package = activation.package
-    active = activation.active_domain
-    return {
-        "status": "loaded",
-        "metadata_verified": True,
-        "package": {
-            "name": package.identity.name,
-            "version": package.identity.version,
-            "entrypoint": package.manifest.entrypoint,
-            "root_path": str(package.root_path),
-            "manifest_path": str(package.manifest_path),
-        },
-        "active_domain": {
-            "name": active.identity.name,
-            "version": active.identity.version,
-            "description": active.manifest.metadata.description,
-            "capability_names": [capability.name for capability in active.capabilities],
-            "tool_names": [tool.definition.name for tool in active.tools],
-            "policy_names": [policy.name for policy in active.policies],
-            "evaluator_names": [evaluator.name for evaluator in active.evaluators],
-            "context_provider_names": [provider.name for provider in active.context_providers],
-            "evidence_extractor_count": len(active.evidence_extractors),
-            "world_updater_count": len(active.world_updaters),
-            "task_expander_count": len(active.task_expanders),
-            "recovery_rule_count": len(active.recovery_rules),
-            "memory_count": len(active.memories),
-        },
-    }
 
 
 def _dispatch_config(
@@ -1712,293 +604,22 @@ def _dispatch_config(
     raise ValueError(f"unknown config command: {command}")
 
 
-def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
-    output = Path(cast(str, args.output))
-    if output.exists() and not cast(bool, args.force):
-        raise ValueError(f"profile config already exists: {output}")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    profile_name = cast(str, args.profile)
-    payload = _profile_config_payload(
-        profile_name=profile_name,
-        environment=cast(str, args.environment),
-        store_backend=cast(str, args.store_backend),
-        store_path=cast(str, args.store_path),
-        distributed_queue_backend=cast(str, args.distributed_queue_backend),
-        distributed_queue_path=cast(str, args.distributed_queue_path),
-        distributed_locks_backend=cast(str, args.distributed_locks_backend),
-        distributed_locks_path=cast(str, args.distributed_locks_path),
-        distributed_workers_backend=cast(str, args.distributed_workers_backend),
-        distributed_workers_path=cast(str, args.distributed_workers_path),
-        distributed_terminal_retention_seconds=cast(
-            float | None, args.distributed_terminal_retention_seconds
-        ),
-        domain_backend=cast(str, args.domain_backend),
-        kubectl_namespace=cast(str, args.kubectl_namespace),
-        kubectl_context=cast(str | None, args.kubectl_context),
-        kubectl_kubeconfig=cast(str | None, args.kubectl_kubeconfig),
-        kubectl_timeout_seconds=cast(float, args.kubectl_timeout_seconds),
-        kubernetes_api_server=cast(str | None, args.kubernetes_api_server),
-        kubernetes_api_namespace=cast(str, args.kubernetes_api_namespace),
-        kubernetes_api_token_env=cast(str | None, args.kubernetes_api_token_env),
-        kubernetes_api_token_file=cast(str | None, args.kubernetes_api_token_file),
-        kubernetes_api_token_secret=cast(str, args.kubernetes_api_token_secret),
-        kubernetes_api_timeout_seconds=cast(float, args.kubernetes_api_timeout_seconds),
-        model_provider=cast(str, args.model_provider),
-        model_name=cast(str, args.model_name),
-        model_endpoint=cast(str | None, args.model_endpoint),
-        model_api_key_env=cast(str | None, args.model_api_key_env),
-        model_api_key_file=cast(str | None, args.model_api_key_file),
-        model_api_key_secret=cast(str, args.model_api_key_secret),
-        model_timeout_seconds=cast(float, args.model_timeout_seconds),
-        model_response_format=cast(str | None, args.model_response_format),
-        model_headers=_parse_key_value_options(cast(list[str], args.model_header), "model-header"),
-    )
-    tmp_path = output.with_name(output.name + ".tmp")
-    with tmp_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True)
-        handle.write("\n")
-    tmp_path.replace(output)
-    _write_json(out, {"status": "created", "profile": profile_name, "path": str(output)})
 
 
-def _profile_config_payload(
-    *,
-    profile_name: str,
-    environment: str,
-    store_backend: str,
-    store_path: str,
-    distributed_queue_backend: str,
-    distributed_queue_path: str,
-    distributed_locks_backend: str,
-    distributed_locks_path: str,
-    distributed_workers_backend: str,
-    distributed_workers_path: str,
-    distributed_terminal_retention_seconds: float | None,
-    domain_backend: str,
-    kubectl_namespace: str,
-    kubectl_context: str | None,
-    kubectl_kubeconfig: str | None,
-    kubectl_timeout_seconds: float,
-    kubernetes_api_server: str | None,
-    kubernetes_api_namespace: str,
-    kubernetes_api_token_env: str | None,
-    kubernetes_api_token_file: str | None,
-    kubernetes_api_token_secret: str,
-    kubernetes_api_timeout_seconds: float,
-    model_provider: str,
-    model_name: str,
-    model_endpoint: str | None,
-    model_api_key_env: str | None,
-    model_api_key_file: str | None,
-    model_api_key_secret: str,
-    model_timeout_seconds: float,
-    model_response_format: str | None,
-    model_headers: dict[str, str],
-) -> dict[str, object]:
-    model_secret_source = _single_secret_source(
-        "--model-api-key",
-        env_key=model_api_key_env,
-        file_path=model_api_key_file,
-    )
-    kubernetes_api_token_source = _single_secret_source(
-        "--kubernetes-api-token",
-        env_key=kubernetes_api_token_env,
-        file_path=kubernetes_api_token_file,
-    )
-    domain = kubernetes_profile_domain_config(
-        domain_backend=domain_backend,
-        kubectl_namespace=kubectl_namespace,
-        kubectl_context=kubectl_context,
-        kubectl_kubeconfig=kubectl_kubeconfig,
-        kubectl_timeout_seconds=kubectl_timeout_seconds,
-        kubernetes_api_server=kubernetes_api_server,
-        kubernetes_api_namespace=kubernetes_api_namespace,
-        kubernetes_api_token_secret=(
-            kubernetes_api_token_secret if kubernetes_api_token_source is not None else None
-        ),
-        kubernetes_api_timeout_seconds=kubernetes_api_timeout_seconds,
-    )
-    store: dict[str, str] = {"backend": store_backend}
-    if store_backend != "memory":
-        store["path"] = store_path
-    distributed_queue: dict[str, str] = {"backend": distributed_queue_backend}
-    if distributed_queue_backend != "memory":
-        distributed_queue["path"] = distributed_queue_path
-    distributed_locks: dict[str, str] = {"backend": distributed_locks_backend}
-    if distributed_locks_backend != "memory":
-        distributed_locks["path"] = distributed_locks_path
-    distributed_workers: dict[str, str] = {"backend": distributed_workers_backend}
-    if distributed_workers_backend != "memory":
-        distributed_workers["path"] = distributed_workers_path
-    runtime: dict[str, object] = {
-        "environment": {"environment": environment},
-        "model": _profile_model_config(
-            model_provider=model_provider,
-            model_name=model_name,
-            model_endpoint=model_endpoint,
-            model_api_key_source=model_secret_source,
-            model_api_key_secret=model_api_key_secret,
-            model_timeout_seconds=model_timeout_seconds,
-            model_response_format=model_response_format,
-            model_headers=model_headers,
-        ),
-        "store": store,
-        "distributed_queue": distributed_queue,
-        "distributed_locks": distributed_locks,
-        "distributed_workers": distributed_workers,
-        "limits": {"max_iterations": 20, "max_recovery_steps": 8},
-        "domain": domain,
-    }
-    secrets: dict[str, dict[str, object]] = {}
-    if model_secret_source is not None:
-        _add_secret(secrets, model_api_key_secret, model_secret_source)
-    if kubernetes_api_token_source is not None:
-        _add_secret(secrets, kubernetes_api_token_secret, kubernetes_api_token_source)
-    if secrets:
-        runtime["secrets"] = secrets
-    if distributed_terminal_retention_seconds is not None:
-        runtime["distributed_terminal_retention_seconds"] = distributed_terminal_retention_seconds
-    return {
-        "name": profile_name,
-        "version": "0.1.0",
-        "description": "Local Kubernetes profile",
-        "domain": domain,
-        "runtime": runtime,
-    }
 
 
-def _single_secret_source(
-    label: str,
-    *,
-    env_key: str | None,
-    file_path: str | None,
-) -> tuple[str, str] | None:
-    if env_key is not None and file_path is not None:
-        raise ValueError(f"{label} accepts either env or file, not both")
-    if env_key is not None:
-        return ("env", env_key)
-    if file_path is not None:
-        return ("file", file_path)
-    return None
 
 
-def _add_secret(
-    secrets: dict[str, dict[str, object]],
-    name: str,
-    source: tuple[str, str],
-) -> None:
-    source_name, key = source
-    if not name.strip():
-        raise ValueError("secret name must not be empty")
-    if not key.strip():
-        raise ValueError(f"secret {name} {source_name} key must not be empty")
-    if name in secrets:
-        raise ValueError(f"duplicate runtime secret: {name}")
-    secrets[name] = {"source": source_name, "key": key, "required": True}
 
 
-def _profile_model_config(
-    *,
-    model_provider: str,
-    model_name: str,
-    model_endpoint: str | None,
-    model_api_key_source: tuple[str, str] | None,
-    model_api_key_secret: str,
-    model_timeout_seconds: float,
-    model_response_format: str | None,
-    model_headers: dict[str, str],
-) -> dict[str, object]:
-    model: dict[str, object] = {
-        "provider": model_provider,
-        "name": model_name,
-        "timeout_seconds": model_timeout_seconds,
-    }
-    if model_provider == "scripted":
-        if model_endpoint is not None:
-            raise ValueError("scripted model does not accept --model-endpoint")
-        if model_api_key_source is not None:
-            raise ValueError("scripted model does not accept model API key secrets")
-        if model_response_format is not None:
-            raise ValueError("scripted model does not accept --model-response-format")
-        if model_headers:
-            raise ValueError("scripted model does not accept --model-header")
-        return model
-    if model_provider == "json_http":
-        if model_endpoint is None or not model_endpoint.strip():
-            raise ValueError("json_http model requires --model-endpoint")
-        if model_response_format is not None:
-            raise ValueError("json_http model does not accept --model-response-format")
-        model["endpoint"] = model_endpoint
-    elif model_provider in {"openai_chat_completions", "openai_responses"}:
-        if model_name == "scripted":
-            raise ValueError(f"{model_provider} model requires --model-name")
-        if model_api_key_source is None:
-            raise ValueError(f"{model_provider} model requires model API key secret")
-        if model_endpoint is not None:
-            if not model_endpoint.strip():
-                raise ValueError(f"{model_provider} model endpoint must not be empty")
-            model["endpoint"] = model_endpoint
-        if model_response_format is not None:
-            if model_provider != "openai_chat_completions":
-                raise ValueError(f"{model_provider} model does not accept --model-response-format")
-            model["response_format"] = model_response_format
-    else:
-        raise ValueError(f"unsupported model provider: {model_provider}")
-    if model_api_key_source is not None:
-        model["api_key_secret"] = model_api_key_secret
-    if model_headers:
-        model["headers"] = model_headers
-    return model
 
 
-def _parse_key_value_options(values: Sequence[str], label: str) -> dict[str, str]:
-    parsed: dict[str, str] = {}
-    for value in values:
-        key, separator, option_value = value.partition("=")
-        if not separator or not key.strip() or not option_value.strip():
-            raise ValueError(f"{label} must be KEY=VALUE")
-        if key in parsed:
-            raise ValueError(f"duplicate {label}: {key}")
-        parsed[key] = option_value
-    return parsed
 
 
-def _success_criteria(values: Sequence[str]) -> tuple[SuccessCriterion, ...]:
-    if not values:
-        return (SuccessCriterion("healthy", True),)
-    parsed: dict[str, JsonValue] = {}
-    for value in values:
-        key, separator, raw_expected = value.partition("=")
-        if not separator or not key.strip() or not raw_expected.strip():
-            raise ValueError("success criterion must be KEY=JSON")
-        key = key.strip()
-        if key in parsed:
-            raise ValueError(f"duplicate success criterion: {key}")
-        parsed[key] = _parse_success_json_value(raw_expected, key)
-    return tuple(SuccessCriterion(key, expected) for key, expected in parsed.items())
 
 
-def _parse_success_json_value(value: str, key: str) -> JsonValue:
-    try:
-        loaded: object = json.loads(value)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"success criterion {key} must be valid JSON") from exc
-    return _json_value(loaded, f"success.{key}")
 
 
-def _json_value(value: object, field: str) -> JsonValue:
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, list):
-        return [_json_value(item, f"{field}[]") for item in value]
-    if isinstance(value, Mapping):
-        result: dict[str, JsonValue] = {}
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise ValueError(f"{field} keys must be strings")
-            result[key] = _json_value(item, f"{field}.{key}")
-        return result
-    raise ValueError(f"{field} must be JSON-compatible")
 
 
 def _dispatch_serve(
@@ -2212,456 +833,74 @@ async def _stream_events_for_cli(
     return batch
 
 
-def _load_evaluation_report(path: Path) -> EvaluationReportRecording:
-    with path.open("r", encoding="utf-8") as handle:
-        return decode_evaluation_report(json_mapping(json.load(handle)))
-
-
-def _evaluation_run_body(
-    result: EvaluationRunResult,
-    report_dir: str | None,
-) -> dict[str, object]:
-    return {
-        "passed": result.passed,
-        "suite": _evaluation_report_body(result.recording),
-        "gate": (
-            None if result.recording.gate is None else _evaluation_gate_body(result.recording.gate)
-        ),
-        "report_dir": report_dir,
-    }
-
-
-def _evaluation_reports_body(
-    report_dir: str,
-    reports: tuple[EvaluationReportRecording, ...],
-) -> dict[str, object]:
-    return {
-        "report_dir": report_dir,
-        "report_count": len(reports),
-        "reports": [_evaluation_report_summary_body(item) for item in reports],
-    }
-
-
-def _evaluation_report_summary_body(recording: EvaluationReportRecording) -> dict[str, object]:
-    return {
-        "suite_name": recording.suite_name,
-        "passed": recording.passed,
-        "scenario_count": recording.summary.scenario_count,
-        "passed_count": recording.summary.passed_count,
-        "failed_count": recording.summary.failed_count,
-        "gate_passed": None if recording.gate is None else recording.gate.passed,
-        "failed_scenarios": [
-            scenario.scenario_name for scenario in recording.scenarios if not scenario.passed
-        ],
-        "execution_duration_ms": recording.summary.execution_duration_ms,
-        "model_total_token_count": recording.summary.model_total_token_count,
-        "model_estimated_cost_micros": recording.summary.model_estimated_cost_micros,
-    }
-
-
-def _evaluation_list_body(
-    suite: EvaluationSuite,
-    scenarios: tuple[EvaluationScenario, ...],
-) -> dict[str, object]:
-    return {
-        "suite_name": suite.name,
-        "suite_tags": list(suite.tags),
-        "scenario_count": len(scenarios),
-        "scenarios": [_evaluation_scenario_definition_body(item) for item in scenarios],
-    }
-
-
-def _ecosystem_catalog_body(catalog: EcosystemCatalog) -> dict[str, object]:
-    summary = catalog.summary
-    return {
-        "summary": {
-            "domain_package_count": summary.domain_package_count,
-            "evaluation_dataset_count": summary.evaluation_dataset_count,
-            "profile_count": summary.profile_count,
-            "total_items": summary.total_items,
-        },
-        "domain_packages": [
-            _ecosystem_domain_package_body(package) for package in catalog.domain_packages
-        ],
-        "evaluation_datasets": [
-            _evaluation_dataset_body(dataset) for dataset in catalog.evaluation_datasets
-        ],
-        "profiles": [_ecosystem_profile_body(entry) for entry in catalog.profiles],
-    }
-
-
-def _ecosystem_verification_body(catalog: EcosystemCatalog) -> dict[str, object]:
-    return _ecosystem_verification_report_body(catalog.verify())
-
-
-def _ecosystem_verification_report_body(
-    report: EcosystemCatalogVerificationReport,
-) -> dict[str, object]:
-    return {
-        "passed": report.passed,
-        "failed_check_count": len(report.failed_checks),
-        "checks": [
-            {
-                "name": check.name,
-                "passed": check.passed,
-                "message": check.message,
-            }
-            for check in report.checks
-        ],
-    }
-
-
-def _ecosystem_registry_summary_body(manifest: EcosystemRegistryManifest) -> dict[str, object]:
-    return {
-        "name": manifest.name,
-        "version": manifest.version,
-        "description": manifest.description,
-        "summary": {
-            "domain_package_count": manifest.summary.domain_package_count,
-            "evaluation_dataset_count": manifest.summary.evaluation_dataset_count,
-            "profile_count": manifest.summary.profile_count,
-            "total_items": manifest.summary.total_items,
-        },
-    }
-
-
-def _ecosystem_install_plan_body(plan: EcosystemInstallPlan) -> dict[str, object]:
-    return {
-        "status": "planned",
-        "domain_package_count": len(plan.domain_packages.candidates),
-        "evaluation_dataset_count": len(plan.evaluation_datasets),
-        "profile_count": len(plan.profiles),
-        "domain_packages": [
-            _ecosystem_domain_package_body(candidate.package)
-            for candidate in plan.domain_packages.candidates
-        ],
-        "evaluation_datasets": [
-            _evaluation_dataset_body(candidate.dataset) for candidate in plan.evaluation_datasets
-        ],
-        "profiles": [_ecosystem_profile_body(candidate.entry) for candidate in plan.profiles],
-    }
-
-
-def _ecosystem_install_result_body(result: EcosystemInstallResult) -> dict[str, object]:
-    domain_package_registry_count = len(result.domain_packages.identities())
-    return {
-        "status": "installed",
-        "domain_package_count": len(result.installed_domain_packages),
-        "evaluation_dataset_count": len(result.installed_evaluation_datasets),
-        "profile_count": len(result.installed_profiles),
-        "registry_count": domain_package_registry_count,
-        "domain_package_registry_count": domain_package_registry_count,
-        "evaluation_dataset_registry_count": len(result.evaluation_datasets.identities()),
-        "profile_registry_count": len(result.profiles.all()),
-        "domain_packages": [
-            _ecosystem_domain_package_body(package) for package in result.installed_domain_packages
-        ],
-        "evaluation_datasets": [
-            _evaluation_dataset_body(dataset) for dataset in result.installed_evaluation_datasets
-        ],
-        "profiles": [_ecosystem_profile_body(entry) for entry in result.installed_profiles],
-    }
-
-
-def _ecosystem_domain_package_body(package: DomainPackage) -> dict[str, object]:
-    manifest = package.manifest
-    return {
-        "name": package.identity.name,
-        "version": package.identity.version,
-        "description": manifest.description,
-        "author": manifest.author,
-        "entrypoint": manifest.entrypoint,
-        "tags": list(manifest.tags),
-        "ontology": list(manifest.ontology),
-        "capability_names": list(manifest.capabilities),
-        "tool_names": list(manifest.tools),
-        "policy_names": list(manifest.policies),
-        "procedure_names": list(manifest.procedures),
-        "knowledge_names": list(manifest.knowledge),
-        "evaluator_names": list(manifest.evaluators),
-        "context_provider_names": list(manifest.context_providers),
-        "prompt_names": list(manifest.prompts),
-        "resource_names": list(manifest.resources),
-        "dependencies": [
-            {"name": dependency.name, "version": dependency.version}
-            for dependency in manifest.dependencies
-        ],
-        "required_tools": list(manifest.required_tools),
-        "compatibility": {
-            "runtime_api": manifest.compatibility.runtime_api,
-            "domain_api": manifest.compatibility.domain_api,
-        },
-        "security": dict(manifest.security),
-        "root_path": str(package.root_path),
-        "manifest_path": str(package.manifest_path),
-    }
-
-
-def domain_package_verification_body(
-    report: DomainPackageVerificationReport,
-) -> dict[str, object]:
-    return {
-        "passed": report.passed,
-        "failed_check_count": len(report.failed_checks),
-        "checks": [
-            {
-                "name": check.name,
-                "passed": check.passed,
-                "message": check.message,
-            }
-            for check in report.checks
-        ],
-    }
-
-
-def evaluation_dataset_verification_body(
-    report: EvaluationDatasetVerificationReport,
-) -> dict[str, object]:
-    return {
-        "passed": report.passed,
-        "failed_check_count": len(report.failed_checks),
-        "checks": [
-            {
-                "name": check.name,
-                "passed": check.passed,
-                "message": check.message,
-            }
-            for check in report.checks
-        ],
-    }
-
-
-def profile_catalog_verification_body(
-    report: ProfileCatalogVerificationReport,
-) -> dict[str, object]:
-    return {
-        "passed": report.passed,
-        "failed_check_count": len(report.failed_checks),
-        "checks": [
-            {
-                "name": check.name,
-                "passed": check.passed,
-                "message": check.message,
-            }
-            for check in report.checks
-        ],
-    }
-
-
-def _ecosystem_profile_body(entry: ProfileCatalogEntry) -> dict[str, object]:
-    profile = entry.profile
-    return {
-        "name": profile.name,
-        "version": profile.version,
-        "description": profile.description,
-        "domains": [
-            {"name": domain.name, "version": domain.version}
-            for domain in profile.configured_domains()
-        ],
-        "path": str(entry.path),
-    }
-
-
-def _evaluation_dataset_body(dataset: EvaluationDataset) -> dict[str, object]:
-    return {
-        "name": dataset.identity.name,
-        "version": dataset.identity.version,
-        "description": dataset.manifest.description,
-        "author": dataset.manifest.author,
-        "tags": list(dataset.manifest.tags),
-        "domains": [
-            {"name": domain.name, "version": domain.version} for domain in dataset.manifest.domains
-        ],
-        "suite_count": len(dataset.manifest.suites),
-        "suites": [
-            {
-                "name": suite.name,
-                "path": suite.path,
-                "description": suite.description,
-                "tags": list(suite.tags),
-                "suite_path": str(dataset.suite_path(suite)),
-            }
-            for suite in dataset.manifest.suites
-        ],
-        "root_path": str(dataset.root_path),
-        "manifest_path": str(dataset.manifest_path),
-    }
-
-
-def _evaluation_scenario_definition_body(scenario: EvaluationScenario) -> dict[str, object]:
-    return {
-        "scenario_name": scenario.name,
-        "kind": scenario.kind.value,
-        "tags": list(scenario.tags),
-        "goal": {
-            "description": scenario.goal.description,
-            "success_criteria": [item.key for item in scenario.goal.success_criteria],
-        },
-        "task": {
-            "description": scenario.task.description,
-            "required_criteria": list(scenario.task.required_criteria),
-        },
-    }
-
-
-def _evaluation_report_body(recording: EvaluationReportRecording) -> dict[str, object]:
-    return {
-        "suite_name": recording.suite_name,
-        "passed": recording.passed,
-        "summary": _evaluation_summary_body(recording.summary),
-        "scenarios": [_evaluation_scenario_body(item) for item in recording.scenarios],
-    }
-
-
-def _evaluation_summary_body(summary: EvaluationSummaryRecording) -> dict[str, object]:
-    return {
-        "scenario_count": summary.scenario_count,
-        "passed_count": summary.passed_count,
-        "failed_count": summary.failed_count,
-        "goal_completed_count": summary.goal_completed_count,
-        "task_completed_count": summary.task_completed_count,
-        "action_started_count": summary.action_started_count,
-        "action_completed_count": summary.action_completed_count,
-        "tool_failure_count": summary.tool_failure_count,
-        "policy_denial_count": summary.policy_denial_count,
-        "recovery_planned_count": summary.recovery_planned_count,
-        "human_intervention_count": summary.human_intervention_count,
-        "resource_conflict_count": summary.resource_conflict_count,
-        "active_resource_lock_count": summary.active_resource_lock_count,
-        "execution_duration_ms": summary.execution_duration_ms,
-        "model_call_count": summary.model_call_count,
-        "model_total_token_count": summary.model_total_token_count,
-        "model_estimated_cost_micros": summary.model_estimated_cost_micros,
-    }
-
-
-def _evaluation_scenario_body(scenario: EvaluationScenarioRecording) -> dict[str, object]:
-    return {
-        "scenario_name": scenario.scenario_name,
-        "kind": scenario.kind.value,
-        "tags": list(scenario.tags),
-        "passed": scenario.passed,
-        "result_status": scenario.result_status.value,
-        "error_code": None if scenario.error_code is None else scenario.error_code.value,
-        "satisfied_criteria": dict(scenario.satisfied_criteria),
-        "checks": [_evaluation_check_body(check) for check in scenario.checks],
-        "event_types": list(scenario.event_types),
-        "action_capabilities": list(scenario.action_capabilities),
-        "audit_capabilities": list(scenario.audit_capabilities),
-        "evidence_claims": list(scenario.evidence_claims),
-    }
-
-
-def _evaluation_gate_body(gate: EvaluationGateRecording) -> dict[str, object]:
-    return {
-        "passed": gate.passed,
-        "checks": [_evaluation_check_body(check) for check in gate.checks],
-    }
-
-
-def _evaluation_check_body(check: EvaluationCheckRecording) -> dict[str, object]:
-    return {"name": check.name, "passed": check.passed, "message": check.message}
-
-
-def _replay_report_body(report: ReplayReport) -> dict[str, object]:
-    return {
-        "scenario_name": report.actual.scenario_name,
-        "passed": report.passed,
-        "checks": [_replay_check_body(check) for check in report.checks],
-        "failed_checks": [_replay_check_body(check) for check in report.failed_checks],
-        "expected": encode_replay_recording(report.expected),
-        "actual": encode_replay_recording(report.actual),
-    }
-
-
-def _replay_recordings_body(
-    recording_dir: str,
-    recordings: tuple[ReplayRecording, ...],
-) -> dict[str, object]:
-    return {
-        "recording_dir": recording_dir,
-        "recording_count": len(recordings),
-        "recordings": [_replay_recording_summary_body(item) for item in recordings],
-    }
-
-
-def _replay_recording_summary_body(recording: ReplayRecording) -> dict[str, object]:
-    return {
-        "scenario_name": recording.scenario_name,
-        "result_status": recording.result_status.value,
-        "error_code": None if recording.error_code is None else recording.error_code.value,
-        "event_count": recording.metrics.event_count,
-        "action_started_count": recording.metrics.action_started_count,
-        "policy_denial_count": recording.metrics.policy_denial_count,
-        "recovery_planned_count": recording.metrics.recovery_planned_count,
-        "resource_conflict_count": recording.metrics.resource_conflict_count,
-        "model_total_token_count": recording.metrics.model_total_token_count,
-        "model_estimated_cost_micros": recording.metrics.model_estimated_cost_micros,
-        "action_capabilities": list(recording.action_capabilities),
-        "policy_effects": list(recording.policy_effects),
-        "audit_capabilities": [item.capability for item in recording.audit_entries],
-    }
-
-
-def _replay_check_body(check: ReplayCheck) -> dict[str, object]:
-    return {"name": check.name, "passed": check.passed, "message": check.message}
-
-
-def _evaluation_comparison_body(comparison: EvaluationReportComparison) -> dict[str, object]:
-    return {
-        "passed": comparison.passed,
-        "checks": [_comparison_check_body(check) for check in comparison.checks],
-        "failed_checks": [_comparison_check_body(check) for check in comparison.failed_checks],
-    }
-
-
-def _comparison_check_body(check: EvaluationReportComparisonCheck) -> dict[str, object]:
-    return {
-        "name": check.name,
-        "passed": check.passed,
-        "message": check.message,
-    }
-
-
-def _write_json(out: TextIO, payload: object) -> None:
-    json.dump(_json_safe(payload), out, indent=2, sort_keys=True)
-    out.write("\n")
-
-
-def _write_text(out: TextIO, payload: str) -> None:
-    out.write(payload)
-
-
-def _write_error(out: TextIO, code: str, message: str) -> None:
-    _write_json(out, {"error": {"code": code, "message": message}})
-
-
-def _json_safe(value: object) -> object:
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, Mapping):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
-        return [_json_safe(item) for item in value]
-    return str(value)
-
-
-def _optional_bool(value: str | None) -> bool | None:
-    if value is None:
-        return None
-    return value == "true"
-
-
-def _parse_optional_datetime(value: str | None) -> datetime | None:
-    if value is None:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise ValueError("--before must be an ISO 8601 datetime") from exc
-    if parsed.tzinfo is None:
-        raise ValueError("--before must include a timezone")
-    return parsed
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def _package_version() -> str:
