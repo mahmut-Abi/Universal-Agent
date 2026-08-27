@@ -6,13 +6,31 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pydantic import Field
+
 from universal_agent.core import JsonValue
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    PydanticJsonValue,
+    json_mapping,
+    parse_json_object,
+    parse_payload,
+)
 
 if TYPE_CHECKING:
     from universal_agent.host.config import DomainConfig, RuntimeConfig
 
 PROFILE_CONFIG_FILE = "profile.json"
 PROFILE_CONFIG_SUFFIX = ".profile.json"
+
+
+class _ProfileConfigPayload(ConfigPayload):
+    name: str
+    version: str
+    description: str = ""
+    domain: dict[str, PydanticJsonValue] = Field(default_factory=dict)
+    runtime: dict[str, PydanticJsonValue] = Field(default_factory=dict)
+    domains: list[dict[str, PydanticJsonValue]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,25 +66,25 @@ class ProfileConfig:
     def from_json_file(cls, path: str | Path) -> ProfileConfig:
         with Path(path).open("r", encoding="utf-8") as handle:
             loaded: object = json.load(handle)
-        payload = _object(_json_value(loaded, "profile config file"), "profile config file")
-        return cls.from_mapping(payload)
+        return cls.from_mapping(parse_json_object(loaded, "profile config file"))
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> ProfileConfig:
+        payload = parse_payload(_ProfileConfigPayload, values)
         domain_config = _domain_config_type()
         runtime_config = _runtime_config_type()
-        domains = _domain_configs(values.get("domains"), domain_config)
+        domains = _domain_configs(payload.domains, domain_config)
         domain = (
             domains[0]
             if domains
-            else domain_config.from_mapping(_object(values.get("domain", {}), "domain"))
+            else domain_config.from_mapping(json_mapping(payload.domain))
         )
         config = cls(
-            name=_string(values.get("name"), "name"),
-            version=_string(values.get("version"), "version"),
-            description=_string(values.get("description", ""), "description"),
+            name=payload.name,
+            version=payload.version,
+            description=payload.description,
             domain=domain,
-            runtime=runtime_config.from_mapping(_object(values.get("runtime", {}), "runtime")),
+            runtime=runtime_config.from_mapping(json_mapping(payload.runtime)),
             domains=domains,
         )
         config.validate()
@@ -275,21 +293,13 @@ def _profile_config_paths(root: Path) -> tuple[Path, ...]:
     return paths
 
 
-def _object(value: JsonValue, field: str) -> Mapping[str, JsonValue]:
-    if isinstance(value, dict):
-        return value
-    raise ValueError(f"{field} must be an object")
-
-
 def _domain_configs(
-    value: JsonValue,
+    value: list[dict[str, PydanticJsonValue]] | None,
     domain_config: type[DomainConfig],
 ) -> tuple[DomainConfig, ...]:
     if value is None:
         return ()
-    return tuple(
-        domain_config.from_mapping(_object(item, "domains[]")) for item in _list(value, "domains")
-    )
+    return tuple(domain_config.from_mapping(json_mapping(item)) for item in value)
 
 
 def _duplicate_domain_configs(domains: tuple[DomainConfig, ...]) -> tuple[str, ...]:
@@ -311,33 +321,6 @@ def _domain_identities(
 
 def _profile_identity(profile: AgentProfile) -> str:
     return f"{profile.name}@{profile.version}"
-
-
-def _json_value(value: object, field: str) -> JsonValue:
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, list):
-        return [_json_value(item, f"{field}[]") for item in value]
-    if isinstance(value, dict):
-        payload: dict[str, JsonValue] = {}
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise ValueError(f"{field} keys must be strings")
-            payload[key] = _json_value(item, f"{field}.{key}")
-        return payload
-    raise ValueError(f"{field} must be JSON-compatible")
-
-
-def _string(value: JsonValue, field: str) -> str:
-    if isinstance(value, str):
-        return value
-    raise ValueError(f"{field} must be a string")
-
-
-def _list(value: JsonValue, field: str) -> list[JsonValue]:
-    if isinstance(value, list):
-        return value
-    raise ValueError(f"{field} must be a list")
 
 
 def _domain_config_type() -> type[DomainConfig]:

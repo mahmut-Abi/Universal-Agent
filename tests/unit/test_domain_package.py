@@ -188,6 +188,18 @@ def test_decode_domain_package_manifest_accepts_structured_ecosystem_metadata() 
     assert manifest.tags == ("ops",)
 
 
+def test_decode_domain_package_manifest_preserves_custom_metadata() -> None:
+    payload = package_payload()
+    metadata = payload["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["owner_team"] = "platform"
+
+    manifest = decode_domain_package_manifest(payload)
+
+    assert manifest.metadata["owner_team"] == "platform"
+    assert manifest.metadata["name"] == "kubernetes"
+
+
 def test_decode_domain_package_manifest_accepts_legacy_snake_case_api_version() -> None:
     payload = package_payload()
     payload["api_version"] = payload.pop("apiVersion")

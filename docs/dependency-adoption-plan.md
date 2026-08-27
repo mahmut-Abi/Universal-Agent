@@ -1,15 +1,16 @@
 # 第三方库引入计划（2026-08-26）
 
 - 文档性质：技术规划与决策依据，供后期按批次执行
-- 结论前提：项目**没有任何文档禁止引入第三方依赖**。`pyproject.toml` 的
-  `dependencies = []` 是当前实现状态而非规则；AGENTS.md 反模式清单仅反对
+- 结论前提：项目**没有任何文档禁止引入第三方依赖**。早期
+  `dependencies = []` 是历史实现状态而非规则；AGENTS.md 反模式清单仅反对
   "vector database dependency everywhere" 与架构边界违规，不反对常规依赖。
 - 执行纪律：每次引入遵循 AGENTS.md §21（先测试后行为、保持公共契约稳定）；
   若引入构成新的架构边界，同步更新架构设计文档（§86 工程规则）。
 
 ## 现状基线
 
-- 源码约 39.7k 行，零运行时依赖，mypy strict + ruff 全量约束
+- 源码约 39.7k 行，已引入 `httpx`、`jsonschema`、`pydantic` 等基础运行时依赖，
+  mypy strict + ruff 全量约束
 - 已出现 4 个超 2000 行文件：`agentd/app.py`(2796)、`web.py`(2728)、
   `cli.py`(2781)、`service/runtime.py`(2222) —— 违反 AGENTS.md §17.1 小模块偏好
 - 主要瓶颈是**代码量增长速度**，非性能（主循环为 I/O 密集：LLM 秒级、kubectl 子进程、HTTP）
@@ -28,14 +29,15 @@
 | 预估 | 改动 ~100 行，ROI 最高的单点改动 |
 | 风险 | 低 |
 
-### 2. Pydantic v2 → 替换手写校验/解析层
+### 2. Pydantic v2 → 替换手写校验/解析层（进行中）
 
 | 项 | 说明 |
 |---|---|
-| 现状 | `_string/_int/_bool/_optional_*` 手写解析器散布于 `host/config.py`(7 处)、`domain/package.py`(5 处)、`profile/config.py`、`persistence/codec.py`；各 dataclass 手写 `validate()` |
+| 现状 | 已用 Pydantic v2 接管 `host/config.py`、`profile/config.py`、`domain/package_codec.py` 的 JSON/config payload 类型解析；公共 dataclass API 和跨字段 `validate()` 规则保留 |
 | 收益 | 预计 **-1500~2500 行**；pydantic-core（Rust）解析快一个量级；错误信息标准化 |
 | 合规性 | 零风险：AGENTS.md §6 明文列出 Pydantic 为首选方案之一 |
-| 风险 | 低；建议从 config 层渐进迁移 |
+| 剩余 | `persistence/codec.py` 仍有手写 JSON 结构解码，可继续渐进迁移 |
+| 风险 | 低；建议继续按模块迁移，避免一次性替换所有 dataclass 构造契约 |
 
 ### 3. FastAPI/Starlette + uvicorn → 替换手写 agentd HTTP 服务
 
@@ -52,7 +54,7 @@
 | 库 | 目标模块 | 收益 | 备注 |
 |---|---|---|---|
 | Textual | `tui.py` | 683 行一次性静态打印 → 真 TUI（现状无 curses/事件循环/刷新，见 cli.py:1192 仅"建快照→渲染→退出"） | headless 测试模式保住可测性；现有 `build_tui_snapshot` 直接复用为数据层 |
-| jsonschema | `tools/runtime.py:181` | `validate_tool_arguments` 为 JSON Schema 子集手写实现 → 全规范合规（oneOf/pattern 等） | 删维护负担 |
+| jsonschema | `core/arguments.py` / `tools/runtime.py:181` | 已由 `Draft202012Validator` 接管 capability/tool argument schema 校验；`tools/runtime.py` 继续通过统一 contract 入口调用 | 后续可补充 `oneOf/pattern` 等覆盖用例 |
 | opentelemetry-sdk | `operations/runtime.py:544+` | OTel 形状投影（span/OTLP JSON）变真 span 推送，对接已有 Tempo/Grafana 监控栈 | 观测闭环；README 列 "OpenTelemetry exporters" 为未来工作 |
 | Typer + Rich | `cli.py` | argparse 样板约 -30%；内省命令表格化输出 | 与 Textual 同批做体验统一 |
 

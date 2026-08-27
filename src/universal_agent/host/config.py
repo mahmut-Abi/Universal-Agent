@@ -6,7 +6,18 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
+from pydantic import Field, field_validator
+
 from universal_agent.core import DomainIdentity, JsonMapping, JsonValue, immutable_json
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    PydanticJsonValue,
+    enum_value,
+    json_mapping,
+    parse_json_object,
+    parse_payload,
+    string_mapping,
+)
 
 
 class StoreBackend(StrEnum):
@@ -27,6 +38,68 @@ class ModelProvider(StrEnum):
     OPENAI_RESPONSES = "openai_responses"
 
 
+class _SecretRefPayload(ConfigPayload):
+    source: SecretSource = SecretSource.ENV
+    key: str
+    required: bool = True
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def _parse_source(cls, value: object) -> SecretSource:
+        return enum_value(SecretSource, value, "source")
+
+
+class _StoreConfigPayload(ConfigPayload):
+    backend: StoreBackend = StoreBackend.MEMORY
+    path: str | None = None
+
+    @field_validator("backend", mode="before")
+    @classmethod
+    def _parse_backend(cls, value: object) -> StoreBackend:
+        return enum_value(StoreBackend, value, "backend")
+
+
+class _RuntimeLimitsConfigPayload(ConfigPayload):
+    max_iterations: int = 20
+    max_recovery_steps: int = 8
+
+
+class _DomainConfigPayload(ConfigPayload):
+    name: str | None = None
+    version: str | None = None
+    backend: str | None = None
+    settings: dict[str, PydanticJsonValue] = Field(default_factory=dict)
+
+
+class _ModelConfigPayload(ConfigPayload):
+    provider: ModelProvider = ModelProvider.SCRIPTED
+    name: str = "scripted"
+    endpoint: str | None = None
+    api_key_secret: str | None = None
+    timeout_seconds: float = 30.0
+    headers: dict[str, str] = Field(default_factory=dict)
+    response_format: str | None = None
+
+    @field_validator("provider", mode="before")
+    @classmethod
+    def _parse_provider(cls, value: object) -> ModelProvider:
+        return enum_value(ModelProvider, value, "provider")
+
+
+class _RuntimeConfigPayload(ConfigPayload):
+    environment: dict[str, PydanticJsonValue] = Field(default_factory=dict)
+    secrets: dict[str, dict[str, PydanticJsonValue]] | None = None
+    model: dict[str, PydanticJsonValue] = Field(default_factory=dict)
+    store: dict[str, PydanticJsonValue] = Field(default_factory=dict)
+    distributed_queue: dict[str, PydanticJsonValue] = Field(default_factory=dict)
+    distributed_locks: dict[str, PydanticJsonValue] = Field(default_factory=dict)
+    distributed_workers: dict[str, PydanticJsonValue] = Field(default_factory=dict)
+    distributed_terminal_retention_seconds: float | None = None
+    limits: dict[str, PydanticJsonValue] = Field(default_factory=dict)
+    domain: dict[str, PydanticJsonValue] = Field(default_factory=dict)
+    domains: list[dict[str, PydanticJsonValue]] | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class SecretRef:
     name: str
@@ -44,11 +117,12 @@ class SecretRef:
 
     @classmethod
     def from_mapping(cls, name: str, values: Mapping[str, JsonValue]) -> SecretRef:
+        payload = parse_payload(_SecretRefPayload, values)
         ref = cls(
             name=name,
-            source=SecretSource(_string(values.get("source", SecretSource.ENV.value), "source")),
-            key=_string(values.get("key"), "key"),
-            required=_bool(values.get("required", True), "required"),
+            source=payload.source,
+            key=payload.key,
+            required=payload.required,
         )
         ref.validate()
         return ref
@@ -79,9 +153,8 @@ class StoreConfig:
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> StoreConfig:
-        backend = StoreBackend(_string(values.get("backend", StoreBackend.MEMORY.value), "backend"))
-        path = _optional_string(values.get("path"), "path")
-        config = cls(backend, path)
+        payload = parse_payload(_StoreConfigPayload, values)
+        config = cls(payload.backend, payload.path)
         config.validate()
         return config
 
@@ -101,9 +174,10 @@ class RuntimeLimitsConfig:
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> RuntimeLimitsConfig:
+        payload = parse_payload(_RuntimeLimitsConfigPayload, values)
         config = cls(
-            max_iterations=_int(values.get("max_iterations", 20), "max_iterations"),
-            max_recovery_steps=_int(values.get("max_recovery_steps", 8), "max_recovery_steps"),
+            max_iterations=payload.max_iterations,
+            max_recovery_steps=payload.max_recovery_steps,
         )
         config.validate()
         return config
@@ -124,11 +198,12 @@ class DomainConfig:
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> DomainConfig:
+        payload = parse_payload(_DomainConfigPayload, values)
         config = cls(
-            name=_optional_string(values.get("name"), "name"),
-            version=_optional_string(values.get("version"), "version"),
-            backend=_optional_string(values.get("backend"), "backend"),
-            settings=immutable_json(_object(values.get("settings", {}), "settings")),
+            name=payload.name,
+            version=payload.version,
+            backend=payload.backend,
+            settings=immutable_json(json_mapping(payload.settings)),
         )
         config.validate()
         return config
@@ -224,16 +299,15 @@ class ModelConfig:
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> ModelConfig:
+        payload = parse_payload(_ModelConfigPayload, values)
         config = cls(
-            provider=ModelProvider(
-                _string(values.get("provider", ModelProvider.SCRIPTED.value), "provider")
-            ),
-            name=_string(values.get("name", "scripted"), "name"),
-            endpoint=_optional_string(values.get("endpoint"), "endpoint"),
-            api_key_secret=_optional_string(values.get("api_key_secret"), "api_key_secret"),
-            timeout_seconds=_float(values.get("timeout_seconds", 30.0), "timeout_seconds"),
-            headers=immutable_json(_string_mapping(values.get("headers", {}), "headers")),
-            response_format=_optional_string(values.get("response_format"), "response_format"),
+            provider=payload.provider,
+            name=payload.name,
+            endpoint=payload.endpoint,
+            api_key_secret=payload.api_key_secret,
+            timeout_seconds=payload.timeout_seconds,
+            headers=immutable_json(payload.headers),
+            response_format=payload.response_format,
         )
         config.validate()
         return config
@@ -243,7 +317,7 @@ class ModelConfig:
             raise ValueError("model name must not be empty")
         if self.timeout_seconds <= 0:
             raise ValueError("model timeout_seconds must be positive")
-        _string_mapping(self.headers, "model headers")
+        string_mapping(self.headers, "model headers")
         if self.provider is ModelProvider.SCRIPTED:
             if self.endpoint is not None:
                 raise ValueError("scripted model does not accept endpoint")
@@ -300,36 +374,27 @@ class RuntimeConfig:
     def from_json_file(cls, path: str | Path) -> RuntimeConfig:
         with Path(path).open("r", encoding="utf-8") as handle:
             loaded: object = json.load(handle)
-        payload = _object(_json_value(loaded, "runtime config file"), "runtime config file")
-        return cls.from_mapping(payload)
+        return cls.from_mapping(parse_json_object(loaded, "runtime config file"))
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> RuntimeConfig:
-        domains = _domain_configs(values.get("domains"))
+        payload = parse_payload(_RuntimeConfigPayload, values)
+        domains = _domain_configs(payload.domains)
         domain = (
             domains[0]
             if domains
-            else DomainConfig.from_mapping(_object(values.get("domain", {}), "domain"))
+            else DomainConfig.from_mapping(json_mapping(payload.domain))
         )
         config = cls(
-            environment=immutable_json(_object(values.get("environment", {}), "environment")),
-            secrets=_secret_refs(values.get("secrets")),
-            model=ModelConfig.from_mapping(_object(values.get("model", {}), "model")),
-            store=StoreConfig.from_mapping(_object(values.get("store", {}), "store")),
-            distributed_queue=StoreConfig.from_mapping(
-                _object(values.get("distributed_queue", {}), "distributed_queue")
-            ),
-            distributed_locks=StoreConfig.from_mapping(
-                _object(values.get("distributed_locks", {}), "distributed_locks")
-            ),
-            distributed_workers=StoreConfig.from_mapping(
-                _object(values.get("distributed_workers", {}), "distributed_workers")
-            ),
-            distributed_terminal_retention_seconds=_optional_float(
-                values.get("distributed_terminal_retention_seconds"),
-                "distributed_terminal_retention_seconds",
-            ),
-            limits=RuntimeLimitsConfig.from_mapping(_object(values.get("limits", {}), "limits")),
+            environment=immutable_json(json_mapping(payload.environment)),
+            secrets=_secret_refs(payload.secrets),
+            model=ModelConfig.from_mapping(json_mapping(payload.model)),
+            store=StoreConfig.from_mapping(json_mapping(payload.store)),
+            distributed_queue=StoreConfig.from_mapping(json_mapping(payload.distributed_queue)),
+            distributed_locks=StoreConfig.from_mapping(json_mapping(payload.distributed_locks)),
+            distributed_workers=StoreConfig.from_mapping(json_mapping(payload.distributed_workers)),
+            distributed_terminal_retention_seconds=payload.distributed_terminal_retention_seconds,
+            limits=RuntimeLimitsConfig.from_mapping(json_mapping(payload.limits)),
             domain=domain,
             domains=domains,
         )
@@ -376,28 +441,20 @@ class RuntimeConfig:
         return (self.domain,)
 
 
-def _object(value: JsonValue, field: str) -> Mapping[str, JsonValue]:
-    if isinstance(value, dict):
-        return value
-    raise ValueError(f"{field} must be an object")
-
-
-def _secret_refs(value: JsonValue) -> tuple[SecretRef, ...]:
-    if value is None:
-        return ()
-    secrets = _object(value, "secrets")
-    return tuple(
-        SecretRef.from_mapping(name, _object(body, f"secrets.{name}"))
-        for name, body in sorted(secrets.items())
-    )
-
-
-def _domain_configs(value: JsonValue) -> tuple[DomainConfig, ...]:
+def _secret_refs(
+    value: Mapping[str, Mapping[str, PydanticJsonValue]] | None,
+) -> tuple[SecretRef, ...]:
     if value is None:
         return ()
     return tuple(
-        DomainConfig.from_mapping(_object(item, "domains[]")) for item in _list(value, "domains")
+        SecretRef.from_mapping(name, json_mapping(body)) for name, body in sorted(value.items())
     )
+
+
+def _domain_configs(value: list[dict[str, PydanticJsonValue]] | None) -> tuple[DomainConfig, ...]:
+    if value is None:
+        return ()
+    return tuple(DomainConfig.from_mapping(json_mapping(item)) for item in value)
 
 
 def _duplicate_domain_configs(domains: tuple[DomainConfig, ...]) -> tuple[str, ...]:
@@ -412,73 +469,3 @@ def _duplicates(values: tuple[str, ...]) -> tuple[str, ...]:
             duplicates.add(value)
         seen.add(value)
     return tuple(sorted(duplicates))
-
-
-def _json_value(value: object, field: str) -> JsonValue:
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, list):
-        return [_json_value(item, f"{field}[]") for item in value]
-    if isinstance(value, dict):
-        payload: dict[str, JsonValue] = {}
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise ValueError(f"{field} keys must be strings")
-            payload[key] = _json_value(item, f"{field}.{key}")
-        return payload
-    raise ValueError(f"{field} must be JSON-compatible")
-
-
-def _string(value: JsonValue, field: str) -> str:
-    if isinstance(value, str):
-        return value
-    raise ValueError(f"{field} must be a string")
-
-
-def _optional_string(value: JsonValue, field: str) -> str | None:
-    if value is None:
-        return None
-    return _string(value, field)
-
-
-def _int(value: JsonValue, field: str) -> int:
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value
-    raise ValueError(f"{field} must be an integer")
-
-
-def _optional_float(value: JsonValue, field: str) -> float | None:
-    if value is None:
-        return None
-    return _float(value, field)
-
-
-def _float(value: JsonValue, field: str) -> float:
-    if isinstance(value, int | float) and not isinstance(value, bool):
-        return float(value)
-    raise ValueError(f"{field} must be a number")
-
-
-def _bool(value: JsonValue, field: str) -> bool:
-    if isinstance(value, bool):
-        return value
-    raise ValueError(f"{field} must be a boolean")
-
-
-def _list(value: JsonValue, field: str) -> list[JsonValue]:
-    if isinstance(value, list):
-        return value
-    raise ValueError(f"{field} must be a list")
-
-
-def _string_mapping(
-    value: JsonValue | Mapping[str, JsonValue],
-    field: str,
-) -> Mapping[str, str]:
-    values = value if isinstance(value, Mapping) else _object(value, field)
-    result: dict[str, str] = {}
-    for key, item in values.items():
-        if not isinstance(item, str):
-            raise ValueError(f"{field}.{key} must be a string")
-        result[key] = item
-    return result

@@ -19,6 +19,7 @@ from universal_agent.core import (
     new_session_id,
     runtime_primitives,
     utc_now,
+    validate_argument_contract,
 )
 from universal_agent.memory import MemoryKind, MemoryRecord
 from universal_agent.state import InMemoryStateStore, StateNotFoundError
@@ -109,6 +110,47 @@ def test_basic_context_exposes_capabilities_not_tools() -> None:
     assert context.goal_success_criteria == (SuccessCriterion("healthy", True),)
     assert context.current_task_required_criteria == ("healthy",)
     assert context.policy_summary == ("read-only",)
+
+
+def test_argument_contract_uses_jsonschema_keywords_beyond_runtime_subset() -> None:
+    schema = immutable_json(
+        {
+            "type": "object",
+            "required": ["namespace"],
+            "properties": {
+                "namespace": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+                "selector": {
+                    "oneOf": [
+                        {"type": "string", "minLength": 1},
+                        {"type": "null"},
+                    ],
+                },
+            },
+            "additionalProperties": False,
+        }
+    )
+
+    accepted = validate_argument_contract(
+        required_arguments=(),
+        argument_schema=schema,
+        arguments=immutable_json({"namespace": "prod-1", "selector": None}),
+    )
+    pattern_error = validate_argument_contract(
+        required_arguments=(),
+        argument_schema=schema,
+        arguments=immutable_json({"namespace": "Prod!"}),
+    )
+    one_of_error = validate_argument_contract(
+        required_arguments=(),
+        argument_schema=schema,
+        arguments=immutable_json({"namespace": "prod-1", "selector": ""}),
+    )
+
+    assert accepted is None
+    assert pattern_error is not None
+    assert "does not match" in pattern_error
+    assert one_of_error is not None
+    assert "not valid under any of the given schemas" in one_of_error
 
 
 def test_basic_context_projects_world_entities_and_relations() -> None:

@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from pydantic import Field
+
 from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    PydanticJsonValue,
+    json_mapping,
+    parse_payload,
+)
 from universal_agent.domain.package_models import (
     DOMAIN_PACKAGE_MANIFEST,
     DomainPackage,
@@ -17,6 +26,46 @@ from universal_agent.domain.package_models import (
     _require_non_empty,
 )
 from universal_agent.domain.runtime import DomainRuntimeSpec
+
+
+class _DomainPackageMetadataPayload(ConfigPayload):
+    name: str
+    version: str
+    description: str
+    author: str | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class _DomainPackageCompatibilityPayload(ConfigPayload):
+    runtime_api: str | None = None
+    domain_api: str | None = None
+
+
+class _DomainPackageDependencyPayload(ConfigPayload):
+    name: str
+    version: str
+
+
+class _DomainPackageManifestPayload(ConfigPayload):
+    api_version_camel: str | None = Field(default=None, alias="apiVersion")
+    api_version: str | None = None
+    kind: str
+    metadata: dict[str, PydanticJsonValue]
+    entrypoint: str | None = None
+    ontology: list[str] = Field(default_factory=list)
+    capabilities: list[str] = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
+    policies: list[str] = Field(default_factory=list)
+    procedures: list[str] = Field(default_factory=list)
+    knowledge: list[str] = Field(default_factory=list)
+    evaluators: list[str] = Field(default_factory=list)
+    context_providers: list[str] = Field(default_factory=list)
+    prompts: list[str] = Field(default_factory=list)
+    resources: list[str] = Field(default_factory=list)
+    dependencies: list[_DomainPackageDependencyPayload] = Field(default_factory=list)
+    required_tools: list[str] = Field(default_factory=list)
+    compatibility: dict[str, PydanticJsonValue] | None = None
+    security: dict[str, PydanticJsonValue] | None = None
 
 
 def load_domain_package(path: Path) -> DomainPackage:
@@ -169,47 +218,58 @@ def encode_domain_package_manifest(manifest: DomainPackageManifest) -> dict[str,
 
 
 def decode_domain_package_manifest(payload: JsonMapping) -> DomainPackageManifest:
-    metadata = _mapping(payload, "metadata")
-    compatibility = _optional_mapping(payload, "compatibility")
+    manifest_payload = _parse_domain_payload(_DomainPackageManifestPayload, payload)
+    metadata_payload = _parse_domain_payload(
+        _DomainPackageMetadataPayload,
+        json_mapping(manifest_payload.metadata),
+    )
+    compatibility_payload = (
+        None
+        if manifest_payload.compatibility is None
+        else _parse_domain_payload(
+            _DomainPackageCompatibilityPayload,
+            json_mapping(manifest_payload.compatibility),
+        )
+    )
     return DomainPackageManifest(
-        api_version=_api_version(payload),
-        kind=_string(payload, "kind"),
-        name=_string(metadata, "name", field_name="metadata.name"),
-        version=_string(metadata, "version", field_name="metadata.version"),
-        description=_string(metadata, "description", field_name="metadata.description"),
-        author=_optional_string(metadata, "author", field_name="metadata.author"),
-        entrypoint=_optional_string(payload, "entrypoint"),
-        ontology=_string_tuple(payload, "ontology"),
-        capabilities=_string_tuple(payload, "capabilities"),
-        tools=_string_tuple(payload, "tools"),
-        policies=_string_tuple(payload, "policies"),
-        procedures=_string_tuple(payload, "procedures"),
-        knowledge=_string_tuple(payload, "knowledge"),
-        evaluators=_string_tuple(payload, "evaluators"),
-        context_providers=_string_tuple(payload, "context_providers"),
-        prompts=_string_tuple(payload, "prompts"),
-        resources=_string_tuple(payload, "resources"),
-        dependencies=_identity_tuple(payload, "dependencies"),
-        required_tools=_string_tuple(payload, "required_tools"),
+        api_version=_api_version(manifest_payload),
+        kind=manifest_payload.kind,
+        name=metadata_payload.name,
+        version=metadata_payload.version,
+        description=metadata_payload.description,
+        author=metadata_payload.author,
+        entrypoint=manifest_payload.entrypoint,
+        ontology=_string_tuple(manifest_payload.ontology, "ontology"),
+        capabilities=_string_tuple(manifest_payload.capabilities, "capabilities"),
+        tools=_string_tuple(manifest_payload.tools, "tools"),
+        policies=_string_tuple(manifest_payload.policies, "policies"),
+        procedures=_string_tuple(manifest_payload.procedures, "procedures"),
+        knowledge=_string_tuple(manifest_payload.knowledge, "knowledge"),
+        evaluators=_string_tuple(manifest_payload.evaluators, "evaluators"),
+        context_providers=_string_tuple(
+            manifest_payload.context_providers,
+            "context_providers",
+        ),
+        prompts=_string_tuple(manifest_payload.prompts, "prompts"),
+        resources=_string_tuple(manifest_payload.resources, "resources"),
+        dependencies=tuple(
+            DomainIdentity(dependency.name, dependency.version)
+            for dependency in manifest_payload.dependencies
+        ),
+        required_tools=_string_tuple(manifest_payload.required_tools, "required_tools"),
         compatibility=DomainPackageCompatibility(
             runtime_api=(
-                None
-                if compatibility is None
-                else _optional_string(
-                    compatibility, "runtime_api", field_name="compatibility.runtime_api"
-                )
+                None if compatibility_payload is None else compatibility_payload.runtime_api
             ),
-            domain_api=(
-                None
-                if compatibility is None
-                else _optional_string(
-                    compatibility, "domain_api", field_name="compatibility.domain_api"
-                )
-            ),
+            domain_api=None if compatibility_payload is None else compatibility_payload.domain_api,
         ),
-        security=_optional_mapping(payload, "security") or immutable_json(),
-        tags=_string_tuple(metadata, "tags"),
-        metadata=immutable_json(metadata),
+        security=(
+            immutable_json()
+            if manifest_payload.security is None
+            else immutable_json(json_mapping(manifest_payload.security))
+        ),
+        tags=_string_tuple(metadata_payload.tags, "tags"),
+        metadata=immutable_json(json_mapping(manifest_payload.metadata)),
     )
 
 
@@ -239,54 +299,29 @@ def _load_json_object(path: Path) -> JsonMapping:
     return immutable_json(loaded)
 
 
-def _mapping(payload: JsonMapping, key: str) -> JsonMapping:
-    value = payload.get(key)
-    if not isinstance(value, dict):
-        raise DomainPackageValidationError(f"{key} must be an object")
-    return immutable_json(value)
+def _parse_domain_payload[T: ConfigPayload](
+    model_type: type[T],
+    payload: JsonMapping,
+) -> T:
+    try:
+        return parse_payload(model_type, payload)
+    except ValueError as exc:
+        raise DomainPackageValidationError(str(exc)) from exc
 
 
-def _optional_mapping(payload: JsonMapping, key: str) -> JsonMapping | None:
-    value = payload.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, dict):
-        raise DomainPackageValidationError(f"{key} must be an object")
-    return immutable_json(value)
-
-
-def _api_version(payload: JsonMapping) -> str:
-    camel = payload.get("apiVersion")
-    snake = payload.get("api_version")
+def _api_version(payload: _DomainPackageManifestPayload) -> str:
+    camel = payload.api_version_camel
+    snake = payload.api_version
     if camel is not None and snake is not None and camel != snake:
         raise DomainPackageValidationError("apiVersion and api_version must match")
     value = camel if camel is not None else snake
-    return _string_value(value, "apiVersion")
-
-
-def _string(payload: JsonMapping, key: str, *, field_name: str | None = None) -> str:
-    value = payload.get(key)
-    return _string_value(value, field_name or key)
-
-
-def _string_value(value: object, field_name: str) -> str:
-    if not isinstance(value, str):
-        raise DomainPackageValidationError(f"{field_name} must be a string")
-    _require_non_empty(value, field_name)
+    if value is None:
+        raise DomainPackageValidationError("apiVersion must be a string")
+    _require_non_empty(value, "apiVersion")
     return value
 
 
-def _optional_string(
-    payload: JsonMapping, key: str, *, field_name: str | None = None
-) -> str | None:
-    value = payload.get(key)
-    if value is None:
-        return None
-    return _string_value(value, field_name or key)
-
-
-def _string_tuple(payload: JsonMapping, key: str) -> tuple[str, ...]:
-    value = payload.get(key, ())
+def _string_tuple(value: Sequence[str], key: str) -> tuple[str, ...]:
     if not isinstance(value, list | tuple):
         raise DomainPackageValidationError(f"{key} must be a list of strings")
     items: list[str] = []
@@ -295,21 +330,3 @@ def _string_tuple(payload: JsonMapping, key: str) -> tuple[str, ...]:
             raise DomainPackageValidationError(f"{key}[{index}] must be a non-empty string")
         items.append(item)
     return tuple(items)
-
-
-def _identity_tuple(payload: JsonMapping, key: str) -> tuple[DomainIdentity, ...]:
-    value = payload.get(key, ())
-    if not isinstance(value, list | tuple):
-        raise DomainPackageValidationError(f"{key} must be a list of dependency objects")
-    identities: list[DomainIdentity] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, dict):
-            raise DomainPackageValidationError(f"{key}[{index}] must be an object")
-        dependency = immutable_json(item)
-        identities.append(
-            DomainIdentity(
-                _string(dependency, "name", field_name=f"{key}[{index}].name"),
-                _string(dependency, "version", field_name=f"{key}[{index}].version"),
-            )
-        )
-    return tuple(identities)
