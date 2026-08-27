@@ -1,0 +1,122 @@
+from __future__ import annotations
+
+from collections.abc import Iterable
+from typing import Any, Protocol, cast
+
+from universal_agent.core import DomainIdentity
+from universal_agent.domain import DomainPackageCompatibility
+
+
+class _HasEvaluationDatasets(Protocol):
+    evaluation_datasets: Iterable[Any]
+
+
+class _HasProfiles(Protocol):
+    profiles: Iterable[Any]
+
+
+def _identity_body(identity: DomainIdentity) -> dict[str, str]:
+    return {"name": identity.name, "version": identity.version}
+
+
+def _compatibility_body(compatibility: DomainPackageCompatibility) -> dict[str, str]:
+    body: dict[str, str] = {}
+    if compatibility.runtime_api is not None:
+        body["runtime_api"] = compatibility.runtime_api
+    if compatibility.domain_api is not None:
+        body["domain_api"] = compatibility.domain_api
+    return body
+
+
+def _dependency_cycles(
+    dependencies: dict[DomainIdentity, tuple[DomainIdentity, ...]],
+) -> tuple[str, ...]:
+    cycles: list[str] = []
+
+    def visit(
+        node: DomainIdentity,
+        path: tuple[DomainIdentity, ...],
+        visiting: frozenset[DomainIdentity],
+    ) -> None:
+        if node in visiting:
+            cycle = (*path[path.index(node) :], node)
+            cycles.append(" -> ".join(_format_domain_identity(item) for item in cycle))
+            return
+        for dependency in dependencies.get(node, ()):
+            if dependency in dependencies:
+                visit(dependency, (*path, dependency), visiting | {node})
+
+    for identity in sorted(dependencies, key=lambda item: (item.name, item.version)):
+        visit(identity, (identity,), frozenset())
+    return tuple(dict.fromkeys(cycles))
+
+
+def _reject_duplicates(label: str, identities: tuple[str, ...]) -> None:
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for identity in identities:
+        if identity in seen:
+            duplicates.append(identity)
+            continue
+        seen.add(identity)
+    if duplicates:
+        from universal_agent.ecosystem.models import EcosystemRegistryValidationError
+
+        raise EcosystemRegistryValidationError(
+            f"duplicate {label} references: {', '.join(dict.fromkeys(duplicates))}"
+        )
+
+
+def _missing_registry_item_message(label: str, name: str, version: str | None) -> str:
+    if version is None:
+        return f"{label} not found in ecosystem registry: {name}"
+    return f"{label} not found in ecosystem registry: {name}@{version}"
+
+
+def _ambiguous_registry_item_message(
+    label: str,
+    name: str,
+    matches: Iterable[Any],
+) -> str:
+    versions = ", ".join(sorted(str(getattr(item, "version", "")) for item in matches))
+    return f"{label} {name} has multiple versions in ecosystem registry: {versions}"
+
+
+def _format_domain_identity(identity: DomainIdentity) -> str:
+    return f"{identity.name}@{identity.version}"
+
+
+def _require_non_empty(value: str, field_name: str) -> None:
+    if not value.strip():
+        from universal_agent.ecosystem.models import EcosystemRegistryValidationError
+
+        raise EcosystemRegistryValidationError(f"{field_name} must not be empty")
+
+
+def _validate_strings(field_name: str, values: tuple[str, ...]) -> None:
+    for index, value in enumerate(values):
+        if not value.strip():
+            from universal_agent.ecosystem.models import EcosystemRegistryValidationError
+
+            raise EcosystemRegistryValidationError(f"{field_name}[{index}] must not be empty")
+
+
+def _validate_optional_sha256(field_name: str, value: str) -> None:
+    if not value:
+        return
+    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+        from universal_agent.ecosystem.models import EcosystemRegistryValidationError
+
+        raise EcosystemRegistryValidationError(
+            f"{field_name} must be a lowercase SHA-256 hex digest"
+        )
+
+
+def _dataset_identities(manifest: object) -> tuple[tuple[str, str], ...]:
+    datasets = cast(_HasEvaluationDatasets, manifest).evaluation_datasets
+    return tuple((str(dataset.name), str(dataset.version)) for dataset in datasets)
+
+
+def _profile_identities(manifest: object) -> tuple[tuple[str, str], ...]:
+    profiles = cast(_HasProfiles, manifest).profiles
+    return tuple((str(profile.name), str(profile.version)) for profile in profiles)
