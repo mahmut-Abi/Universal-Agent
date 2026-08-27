@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from universal_agent.agentd.routing import (
     _console_domain_package_route,
     _console_domain_route,
@@ -11,6 +13,8 @@ from universal_agent.agentd.routing import (
     _distributed_schedule_task_route,
     _distributed_worker_action_route,
     _domain_package_route,
+    _match_path,
+    _optional_query_value,
     _profile_route,
     _session_route,
 )
@@ -81,6 +85,35 @@ def test_agentd_route_helpers_ignore_query_and_trailing_slashes() -> None:
     assert _distributed_cancel_route("/v1/distributed/work-items/work-1/cancel/") == WorkItemId(
         "work-1"
     )
+
+
+def test_agentd_query_helpers_use_starlette_query_params_contract() -> None:
+    assert _optional_query_value("/v1/domain-packages?tag=ops", "tag") == "ops"
+    assert _optional_query_value("/v1/domain-packages?tag=ops%20team", "tag") == "ops team"
+    assert _optional_query_value("/v1/domain-packages", "tag") is None
+
+    with pytest.raises(ValueError, match="tag must be specified once"):
+        _optional_query_value("/v1/domain-packages?tag=ops&tag=platform", "tag")
+    with pytest.raises(ValueError, match="tag must not be empty"):
+        _optional_query_value("/v1/domain-packages?tag=", "tag")
+
+
+def test_agentd_path_matching_uses_starlette_route_contract_without_unquoting() -> None:
+    assert _match_path(
+        "/v1/sessions/session-1/events/stream?limit=1",
+        "/v1/sessions/{session_id}/{first_suffix}/{second_suffix}",
+    ) == {
+        "session_id": "session-1",
+        "first_suffix": "events",
+        "second_suffix": "stream",
+    }
+    assert _match_path("/console/sessions/a%2Fb", "/console/sessions/{session_id}") == {
+        "session_id": "a%2Fb"
+    }
+    assert _match_path(
+        "/v1/sessions/session-1/events",
+        "/v1/sessions/{session_id}/{first_suffix}/{second_suffix}",
+    ) is None
 
 
 def test_agentd_route_helpers_reject_blank_or_unknown_paths() -> None:

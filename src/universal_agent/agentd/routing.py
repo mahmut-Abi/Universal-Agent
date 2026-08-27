@@ -3,12 +3,11 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import cache
-from re import Pattern
-from urllib.parse import parse_qs, urlsplit
 
 from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
-from starlette.routing import compile_path
+from starlette.datastructures import URL, QueryParams
+from starlette.routing import Match, Route
 
 from universal_agent.core import ActionId, EventId, JsonMapping, SessionId, TaskId
 from universal_agent.core.config_validation import ConfigPayload, PydanticJsonValue, json_mapping
@@ -162,7 +161,7 @@ class _SessionReasonModel(ConfigPayload):
 
 
 def _normalize_path(path: str) -> str:
-    normalized = urlsplit(path).path
+    normalized = URL(path).path
     if not normalized.startswith("/"):
         normalized = "/" + normalized
     normalized = normalized.rstrip("/")
@@ -236,8 +235,8 @@ def _optional_positive_int_query(path: str, key: str) -> int | None:
 
 
 def _optional_query_value(path: str, key: str) -> str | None:
-    values = parse_qs(urlsplit(path).query, keep_blank_values=True).get(key)
-    if values is None:
+    values = QueryParams(URL(path).query).getlist(key)
+    if not values:
         return None
     if len(values) != 1:
         raise ValueError(f"{key} must be specified once")
@@ -248,24 +247,36 @@ def _optional_query_value(path: str, key: str) -> str | None:
 
 
 @cache
-def _compiled_route_path(template: str) -> Pattern[str]:
-    regex, _, _ = compile_path(template)
-    return regex
+def _route(template: str) -> Route:
+    return Route(template, _route_endpoint, methods=["GET"])
 
 
 def _match_path(path: str, template: str) -> Mapping[str, str] | None:
-    route_path = _route_path(path)
-    match = _compiled_route_path(template).match(route_path)
-    if match is None:
+    match, child_scope = _route(template).matches(
+        {
+            "type": "http",
+            "path": _route_path(path),
+            "root_path": "",
+            "method": "GET",
+        }
+    )
+    if match is not Match.FULL:
         return None
-    return match.groupdict()
+    params = child_scope.get("path_params", {})
+    if not isinstance(params, Mapping):
+        return None
+    return {str(key): str(value) for key, value in params.items()}
 
 
 def _route_path(path: str) -> str:
-    parsed_path = urlsplit(path).path
+    parsed_path = URL(path).path
     if not parsed_path.startswith("/"):
         parsed_path = "/" + parsed_path
     return "/" + "/".join(segment for segment in parsed_path.split("/") if segment)
+
+
+async def _route_endpoint() -> None:
+    return None
 
 
 def _non_blank_path_param(params: Mapping[str, str], key: str) -> str | None:

@@ -33,7 +33,7 @@
 
 | 项 | 说明 |
 |---|---|
-| 现状 | 已用 Pydantic v2 接管 `host/config.py`、`profile/config.py`、`domain/package_codec.py`、`persistence/codec.py` 的 JSON/config payload 类型解析，并开始接管 `agentd/routing.py` 中分布式、doctor 与 session 路由的简单 HTTP payload 校验、`agentd/server.py` 的 request body JSON object 校验、`domains/kubernetes/resources.py` 的 Kubernetes 资源摘要解析、`model/http.py` 的 OpenAI provider response payload 解析、`distributed/queue_codec.py` 的 work queue 持久化 payload 解析、`distributed/worker_state.py` 的 worker registry 持久化 payload 解析、`distributed/locks.py` 的 distributed lock 持久化 payload 解析，以及 `evaluation/dataset.py` 的 dataset manifest、`evaluation/scenario_config.py` 的 suite/scenario config、`evaluation/recording.py` 的 report/replay recording codec 解析；公共 dataclass API、持久化 schema version 与 legacy 默认值保留 |
+| 现状 | 已用 Pydantic v2 接管 `host/config.py`、`profile/config.py`、`domain/package_codec.py`、`persistence/codec.py` 的 JSON/config payload 类型解析，并开始接管 `agentd/routing.py` 中分布式、doctor 与 session 路由的简单 HTTP payload 校验、`agentd/server.py` 的 request body JSON object 校验、`service/distributed_runtime.py` 的 distributed goal work payload 解码、`domains/kubernetes/resources.py` 的 Kubernetes 资源摘要解析、`model/http.py` 的 OpenAI provider response payload 解析、`distributed/queue_codec.py` 的 work queue 持久化 payload 解析、`distributed/worker_state.py` 的 worker registry 持久化 payload 解析、`distributed/locks.py` 的 distributed lock 持久化 payload 解析，以及 `evaluation/dataset.py` 的 dataset manifest、`evaluation/scenario_config.py` 的 suite/scenario config、`evaluation/recording.py` 的 report/replay recording codec 解析；公共 dataclass API、持久化 schema version 与 legacy 默认值保留 |
 | 收益 | 预计 **-1500~2500 行**；pydantic-core（Rust）解析快一个量级；错误信息标准化 |
 | 合规性 | 零风险：AGENTS.md §6 明文列出 Pydantic 为首选方案之一 |
 | 剩余 | 可继续评估 agentd 其他请求体是否值得按模块迁移；当前不建议一次性替换核心 runtime contracts |
@@ -53,7 +53,7 @@
 
 | 项 | 说明 |
 |---|---|
-| 现状 | `AgentdHttpServer` 已从 stdlib `http.server` 切到 Starlette ASGI + uvicorn；`agentd/routing.py` 的动态 path helper 已用 Starlette `compile_path()` 接管模板匹配；`AgentdApp.handle()` 仍作为稳定 Runtime API 路由契约保留 |
+| 现状 | `AgentdHttpServer` 已从 stdlib `http.server` 切到 Starlette ASGI + uvicorn；`agentd/routing.py` 的动态 path helper 已用 Starlette `Route.matches()` 接管模板匹配，并用 `QueryParams` 接管 HTTP query 解析；`AgentdApp.handle()` 仍作为稳定 Runtime API 路由契约保留 |
 | 收益 | 生产服务边界获得 ASGI/uvicorn 生命周期、并发、socket 处理和标准 path matching；CLI/server 注入测试契约保持兼容 |
 | 剩余 | 后续再按路由族逐步把 `agentd/app.py` 手写分派迁入 Starlette route primitives，并在稳定 schema 后补 OpenAPI |
 | 风险 | 中：依赖树变大；需持续保证 Runtime API 行为不变（现有 test_agentd_routes / test_agentd_server 兜底） |

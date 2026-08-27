@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
+
+from pydantic import Field
+from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import (
     ActionId,
@@ -21,6 +24,7 @@ from universal_agent.core import (
     parse_iso_datetime,
     utc_now,
 )
+from universal_agent.core.config_validation import ConfigPayload, PydanticJsonValue
 from universal_agent.distributed import (
     DistributedCancellationResult,
     DistributedHealthReport,
@@ -54,6 +58,30 @@ if TYPE_CHECKING:
 
 
 _DISTRIBUTED_SESSION_LOCK_TTL_SECONDS = 300.0
+
+
+class _GoalWorkSuccessCriterionPayload(ConfigPayload):
+    key: str
+    expected: PydanticJsonValue
+
+
+class _GoalWorkPayload(ConfigPayload):
+    id: str
+    description: str
+    success_criteria: list[_GoalWorkSuccessCriterionPayload] = Field(min_length=1)
+    created_at: str | None = None
+
+
+class _TaskWorkPayload(ConfigPayload):
+    id: str
+    description: str
+    required_criteria: list[str]
+    created_at: str | None = None
+
+
+class _GoalTaskWorkPayload(ConfigPayload):
+    goal: _GoalWorkPayload
+    task: _TaskWorkPayload
 
 
 class DistributedRuntimeController:
@@ -728,111 +756,131 @@ def goal_work_idempotency_key(goal: Goal, task: Task) -> str:
 
 
 def goal_task_from_work_payload(payload: Mapping[str, JsonValue]) -> tuple[Goal, Task]:
-    goal_payload = _object_payload_field(payload, "goal", "goal")
-    task_payload = _object_payload_field(payload, "task", "task")
+    work_payload = _parse_goal_task_work_payload(payload)
+    goal_payload = work_payload.goal
+    task_payload = work_payload.task
     return (
         Goal(
-            _required_string_payload_field(goal_payload, "description", "goal.description"),
-            _success_criteria_from_payload(goal_payload),
-            id=GoalId(_required_string_payload_field(goal_payload, "id", "goal.id")),
-            created_at=_datetime_payload_field(goal_payload, "created_at", "goal.created_at"),
+            _non_empty_work_payload_string(goal_payload.description, "goal.description"),
+            _success_criteria_from_payload(goal_payload.success_criteria),
+            id=GoalId(_non_empty_work_payload_string(goal_payload.id, "goal.id")),
+            created_at=_datetime_payload_field(goal_payload.created_at, "goal.created_at"),
         ),
         Task(
-            _required_string_payload_field(task_payload, "description", "task.description"),
+            _non_empty_work_payload_string(task_payload.description, "task.description"),
             _string_tuple_payload_field(
-                task_payload,
-                "required_criteria",
+                task_payload.required_criteria,
                 "task.required_criteria",
             ),
-            id=TaskId(_required_string_payload_field(task_payload, "id", "task.id")),
-            created_at=_datetime_payload_field(task_payload, "created_at", "task.created_at"),
+            id=TaskId(_non_empty_work_payload_string(task_payload.id, "task.id")),
+            created_at=_datetime_payload_field(task_payload.created_at, "task.created_at"),
         ),
     )
 
 
-def _object_payload_field(
+def _parse_goal_task_work_payload(
     payload: Mapping[str, JsonValue],
-    key: str,
-    field: str,
-) -> Mapping[str, JsonValue]:
-    value = payload.get(key)
-    if not isinstance(value, dict):
-        raise ValueError(f"{field} must be an object")
-    return cast(Mapping[str, JsonValue], value)
+) -> _GoalTaskWorkPayload:
+    try:
+        return _GoalTaskWorkPayload.model_validate(dict(payload))
+    except PydanticValidationError as exc:
+        raise ValueError(_goal_task_work_payload_error_message(exc)) from exc
 
 
 def _success_criteria_from_payload(
-    payload: Mapping[str, JsonValue],
+    items: list[_GoalWorkSuccessCriterionPayload],
 ) -> tuple[SuccessCriterion, ...]:
-    value = payload.get("success_criteria")
-    if not isinstance(value, list):
-        raise ValueError("goal.success_criteria must be a list")
-    if not value:
-        raise ValueError("goal.success_criteria must not be empty")
     criteria: list[SuccessCriterion] = []
-    for index, item in enumerate(value):
-        field = f"goal.success_criteria[{index}]"
-        if not isinstance(item, dict):
-            raise ValueError(f"{field} must be an object")
-        item_payload = cast(Mapping[str, JsonValue], item)
+    for index, item in enumerate(items):
         criteria.append(
             SuccessCriterion(
-                _required_string_payload_field(item_payload, "key", f"{field}.key"),
-                _required_json_payload_field(item_payload, "expected", f"{field}.expected"),
+                _non_empty_work_payload_string(
+                    item.key,
+                    f"goal.success_criteria[{index}].key",
+                ),
+                copy_json_value(item.expected),
             )
         )
     return tuple(criteria)
 
 
 def _string_tuple_payload_field(
-    payload: Mapping[str, JsonValue],
-    key: str,
+    items: list[str],
     field: str,
 ) -> tuple[str, ...]:
-    value = payload.get(key)
-    if not isinstance(value, list):
-        raise ValueError(f"{field} must be a list")
     values: list[str] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, str):
-            raise ValueError(f"{field}[{index}] must be a string")
+    for index, item in enumerate(items):
         if not item.strip():
             raise ValueError(f"{field}[{index}] must not be empty")
         values.append(item)
     return tuple(values)
 
 
-def _required_string_payload_field(
-    payload: Mapping[str, JsonValue],
-    key: str,
-    field: str,
-) -> str:
-    value = payload.get(key)
-    if not isinstance(value, str):
-        raise ValueError(f"{field} must be a string")
+def _non_empty_work_payload_string(value: str, field: str) -> str:
     if not value.strip():
         raise ValueError(f"{field} must not be empty")
     return value
 
 
-def _required_json_payload_field(
-    payload: Mapping[str, JsonValue],
-    key: str,
-    field: str,
-) -> JsonValue:
-    if key not in payload:
-        raise ValueError(f"{field} is required")
-    return copy_json_value(payload[key])
-
-
 def _datetime_payload_field(
-    payload: Mapping[str, JsonValue],
-    key: str,
+    value: str | None,
     field: str,
 ) -> datetime:
-    value = payload.get(key)
     if value is None:
         return utc_now()
-    if not isinstance(value, str):
-        raise ValueError(f"{field} must be an ISO datetime string")
     return parse_iso_datetime(value, field=field)
+
+
+def _goal_task_work_payload_error_message(error: PydanticValidationError) -> str:
+    errors = error.errors(include_url=False)
+    if not errors:
+        return str(error)
+    first = errors[0]
+    path = _pydantic_error_path(first.get("loc", ()))
+    error_type = str(first.get("type", ""))
+    if path == "goal.success_criteria" and error_type == "too_short":
+        return "goal.success_criteria must not be empty"
+    if path.endswith(".expected") and error_type == "missing":
+        return f"{path} is required"
+    expected = _goal_task_work_payload_expected_type(error_type, path)
+    if expected is not None:
+        return f"{path} must be {expected}"
+    message = str(first.get("msg", ""))
+    if message:
+        return message.removeprefix("Value error, ")
+    return str(error)
+
+
+def _goal_task_work_payload_expected_type(error_type: str, path: str) -> str | None:
+    if error_type == "missing":
+        return _goal_task_work_payload_missing_field_type(path)
+    return {
+        "dict_type": "an object",
+        "invalid-json-value": "JSON-compatible",
+        "list_type": "a list",
+        "model_attributes_type": "an object",
+        "model_type": "an object",
+        "string_type": "a string",
+    }.get(error_type)
+
+
+def _goal_task_work_payload_missing_field_type(path: str) -> str:
+    if path.endswith(".success_criteria") or path.endswith(".required_criteria"):
+        return "a list"
+    if path in {"goal", "task"}:
+        return "an object"
+    return "a string"
+
+
+def _pydantic_error_path(location: object) -> str:
+    parts: list[str] = []
+    if isinstance(location, tuple):
+        for item in location:
+            if isinstance(item, int):
+                if parts:
+                    parts[-1] = f"{parts[-1]}[{item}]"
+                else:
+                    parts.append(f"[{item}]")
+            else:
+                parts.append(str(item))
+    return ".".join(parts)
