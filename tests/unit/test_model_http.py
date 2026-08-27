@@ -470,6 +470,48 @@ async def test_openai_chat_completions_model_adapter_can_use_prompt_json_format(
 
 
 @pytest.mark.asyncio
+async def test_openai_chat_completions_model_adapter_reads_content_parts() -> None:
+    adapter = OpenAIChatCompletionsModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        transport=RecordingTransport(
+            immutable_json(
+                {
+                    "choices": [
+                        {
+                            "finish_reason": "stop",
+                            "message": {
+                                "role": "assistant",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": json_text(
+                                            {
+                                                "type": "finish",
+                                                "reason": "All criteria satisfied.",
+                                                "capability": None,
+                                                "target": None,
+                                                "arguments": {},
+                                                "expected_observations": [],
+                                                "message": None,
+                                            }
+                                        ),
+                                    },
+                                ],
+                            },
+                        }
+                    ]
+                }
+            )
+        ),
+    )
+
+    decision = await adapter.decide(context())
+
+    assert decision.type is DecisionType.FINISH
+
+
+@pytest.mark.asyncio
 async def test_openai_chat_completions_model_adapter_rejects_tool_call_finish() -> None:
     adapter = OpenAIChatCompletionsModelAdapter(
         "gpt-runtime",
@@ -489,6 +531,29 @@ async def test_openai_chat_completions_model_adapter_rejects_tool_call_finish() 
     )
 
     with pytest.raises(JsonHttpModelError, match="did not return final JSON content"):
+        await adapter.decide(context())
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completions_model_adapter_rejects_refusal() -> None:
+    adapter = OpenAIChatCompletionsModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        transport=RecordingTransport(
+            immutable_json(
+                {
+                    "choices": [
+                        {
+                            "finish_reason": "stop",
+                            "message": {"role": "assistant", "refusal": "not allowed"},
+                        }
+                    ]
+                }
+            )
+        ),
+    )
+
+    with pytest.raises(JsonHttpModelError, match="refused"):
         await adapter.decide(context())
 
 

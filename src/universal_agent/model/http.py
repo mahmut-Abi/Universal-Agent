@@ -52,6 +52,41 @@ class _UsagePayload(ConfigPayload):
     currency: str | None = None
 
 
+class _OpenAIResponsesContentPayload(ConfigPayload):
+    type: str | None = None
+    text: str | None = None
+
+
+class _OpenAIResponsesOutputPayload(ConfigPayload):
+    content: list[_OpenAIResponsesContentPayload] = Field(default_factory=list)
+
+
+class _OpenAIResponsesPayload(ConfigPayload):
+    status: str | None = None
+    output_text: str | None = None
+    output: list[_OpenAIResponsesOutputPayload] = Field(default_factory=list)
+    error: PydanticJsonValue = None
+    incomplete_details: PydanticJsonValue = None
+
+
+class _OpenAIChatContentPartPayload(ConfigPayload):
+    text: str | None = None
+
+
+class _OpenAIChatMessagePayload(ConfigPayload):
+    content: str | list[_OpenAIChatContentPartPayload] | None = None
+    refusal: str | None = None
+
+
+class _OpenAIChatChoicePayload(ConfigPayload):
+    finish_reason: str | None = None
+    message: _OpenAIChatMessagePayload | None = None
+
+
+class _OpenAIChatCompletionPayload(ConfigPayload):
+    choices: list[_OpenAIChatChoicePayload] = Field(default_factory=list)
+
+
 class JsonHttpModelTransport(Protocol):
     async def post_json(
         self,
@@ -267,8 +302,9 @@ class OpenAIResponsesModelAdapter:
             payload=self._request_payload(context),
             timeout_seconds=self._timeout_seconds,
         )
-        _raise_for_openai_response_status(response)
-        output_text = _openai_output_text(response)
+        openai_response = _openai_responses_payload(response)
+        _raise_for_openai_response_status(openai_response)
+        output_text = _openai_output_text(openai_response)
         try:
             decoded = json.loads(output_text)
         except json.JSONDecodeError as exc:
@@ -390,7 +426,7 @@ class OpenAIChatCompletionsModelAdapter:
             payload=self._request_payload(context),
             timeout_seconds=self._timeout_seconds,
         )
-        output_text = _openai_chat_completion_content(response)
+        output_text = _openai_chat_completion_content(_openai_chat_completion_payload(response))
         decoded = _loads_json_text(output_text, "OpenAI chat completion message content")
         decision_payload = _decision_payload(_json_mapping(decoded, "message.content"))
         try:
@@ -581,79 +617,62 @@ def _decode_usage(provider: str, model: str, value: JsonValue) -> ModelUsage | N
     )
 
 
-def _raise_for_openai_response_status(response: JsonMapping) -> None:
-    status = response.get("status")
+def _openai_responses_payload(response: JsonMapping) -> _OpenAIResponsesPayload:
+    return _parse_model_payload(_OpenAIResponsesPayload, response, "OpenAI response")
+
+
+def _raise_for_openai_response_status(response: _OpenAIResponsesPayload) -> None:
+    status = response.status
     if status is None or status == "completed":
         return
-    if not isinstance(status, str):
-        raise JsonHttpModelError("OpenAI response status must be a string")
-    detail = response.get("error") or response.get("incomplete_details")
+    detail = response.error or response.incomplete_details
     suffix = f": {detail}" if detail is not None else ""
     raise JsonHttpModelError(f"OpenAI response did not complete: {status}{suffix}")
 
 
-def _openai_output_text(response: JsonMapping) -> str:
-    direct = response.get("output_text")
-    if isinstance(direct, str) and direct.strip():
-        return direct
-    output = response.get("output")
-    if not isinstance(output, list):
-        raise JsonHttpModelError("OpenAI response missing output_text")
+def _openai_output_text(response: _OpenAIResponsesPayload) -> str:
+    if response.output_text is not None and response.output_text.strip():
+        return response.output_text
     parts: list[str] = []
-    for item in output:
-        if not isinstance(item, Mapping):
-            continue
-        content = item.get("content")
-        if not isinstance(content, list):
-            continue
-        for content_item in content:
-            if not isinstance(content_item, Mapping):
+    for item in response.output:
+        for content_item in item.content:
+            if content_item.type != "output_text":
                 continue
-            if content_item.get("type") != "output_text":
-                continue
-            text = content_item.get("text")
-            if isinstance(text, str):
-                parts.append(text)
+            if content_item.text is not None:
+                parts.append(content_item.text)
     output_text = "".join(parts).strip()
     if not output_text:
         raise JsonHttpModelError("OpenAI response missing output_text")
     return output_text
 
 
-def _openai_chat_completion_content(response: JsonMapping) -> str:
-    choices = response.get("choices")
-    if not isinstance(choices, list) or not choices:
+def _openai_chat_completion_payload(response: JsonMapping) -> _OpenAIChatCompletionPayload:
+    return _parse_model_payload(
+        _OpenAIChatCompletionPayload,
+        response,
+        "OpenAI chat completion response",
+    )
+
+
+def _openai_chat_completion_content(response: _OpenAIChatCompletionPayload) -> str:
+    if not response.choices:
         raise JsonHttpModelError("OpenAI chat completion response missing choices")
-    first = choices[0]
-    if not isinstance(first, Mapping):
-        raise JsonHttpModelError("OpenAI chat completion choice must be an object")
-    choice = _json_mapping(first, "choices[0]")
-    finish_reason = choice.get("finish_reason")
-    if finish_reason is not None and not isinstance(finish_reason, str):
-        raise JsonHttpModelError("OpenAI chat completion finish_reason must be a string")
+    choice = response.choices[0]
+    finish_reason = choice.finish_reason
     if finish_reason in {"length", "content_filter", "tool_calls", "function_call"}:
         raise JsonHttpModelError(
             f"OpenAI chat completion did not return final JSON content: {finish_reason}"
         )
-    message = choice.get("message")
-    if not isinstance(message, Mapping):
+    if choice.message is None:
         raise JsonHttpModelError("OpenAI chat completion choice missing message")
-    message_payload = _json_mapping(message, "choices[0].message")
-    refusal = message_payload.get("refusal")
-    if isinstance(refusal, str) and refusal.strip():
+    message = choice.message
+    if message.refusal is not None and message.refusal.strip():
         raise JsonHttpModelError("OpenAI chat completion refused the decision request")
-    content = message_payload.get("content")
+    content = message.content
     if isinstance(content, str) and content.strip():
         return content.strip()
     if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if not isinstance(item, Mapping):
-                continue
-            content_item = _json_mapping(item, "choices[0].message.content[]")
-            text = content_item.get("text")
-            if isinstance(text, str):
-                parts.append(text)
+        parts = [item.text for item in content if item.text is not None]
         joined = "".join(parts).strip()
         if joined:
             return joined
@@ -827,9 +846,13 @@ def _expected_error_type(error_type: str) -> str | None:
     if error_type == "greater_than_equal":
         return "a non-negative integer"
     return {
+        "bool_type": "a boolean",
         "dict_type": "an object",
+        "float_type": "a number",
         "int_type": "an integer",
         "invalid-json-value": "JSON-compatible",
         "list_type": "a list",
+        "model_attributes_type": "an object",
+        "model_type": "an object",
         "string_type": "a string",
     }.get(error_type)
