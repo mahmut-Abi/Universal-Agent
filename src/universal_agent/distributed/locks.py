@@ -24,6 +24,8 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     PydanticJsonValue,
     json_mapping,
+    parse_non_empty_string,
+    parse_positive_float,
     pydantic_error_details,
 )
 
@@ -527,19 +529,16 @@ def _decode_distributed_lock_lease(payload: dict[str, object]) -> DistributedLoc
 
 
 def _lease_deadline(now: datetime, ttl_seconds: float) -> datetime:
-    if ttl_seconds <= 0:
-        raise ValueError("ttl_seconds must be positive")
+    parse_positive_float(ttl_seconds, "ttl_seconds")
     return now + timedelta(seconds=ttl_seconds)
 
 
 def _require_lock_key(lock_key: str) -> None:
-    if not lock_key.strip():
-        raise ValueError("lock_key must not be empty")
+    parse_non_empty_string(lock_key, "lock_key")
 
 
 def _require_owner_id(owner_id: DistributedLockOwnerId) -> None:
-    if not str(owner_id).strip():
-        raise ValueError("owner_id must not be empty")
+    parse_non_empty_string(str(owner_id), "owner_id")
 
 
 def _decode_distributed_lock_registry_payload(payload: object) -> _DistributedLockRegistryPayload:
