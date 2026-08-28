@@ -24,6 +24,8 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     PydanticJsonValue,
     json_mapping,
+    parse_non_empty_string,
+    parse_positive_float,
     pydantic_error_details,
 )
 from universal_agent.distributed.queue import WorkerId
@@ -143,8 +145,7 @@ class InMemoryWorkerRegistry:
         reason: str = "worker draining",
         now: datetime | None = None,
     ) -> WorkerRecord:
-        if not reason.strip():
-            raise ValueError("drain reason must not be empty")
+        parse_non_empty_string(reason, "drain reason")
         record = self.get(worker_id)
         updated = replace(
             record,
@@ -162,8 +163,7 @@ class InMemoryWorkerRegistry:
         reason: str = "worker offline",
         now: datetime | None = None,
     ) -> WorkerRecord:
-        if not reason.strip():
-            raise ValueError("offline reason must not be empty")
+        parse_non_empty_string(reason, "offline reason")
         record = self.get(worker_id)
         updated = replace(
             record,
@@ -567,13 +567,11 @@ def _lease_deadline(now: datetime, ttl_seconds: float) -> datetime:
 
 
 def _validate_ttl(ttl_seconds: float) -> None:
-    if ttl_seconds <= 0:
-        raise ValueError("ttl_seconds must be positive")
+    parse_positive_float(ttl_seconds, "ttl_seconds")
 
 
 def _require_worker_id(worker_id: WorkerId) -> None:
-    if not str(worker_id).strip():
-        raise ValueError("worker_id must not be empty")
+    parse_non_empty_string(str(worker_id), "worker_id")
 
 
 def _decode_worker_registry_payload(payload: object) -> _WorkerRegistryPayload:

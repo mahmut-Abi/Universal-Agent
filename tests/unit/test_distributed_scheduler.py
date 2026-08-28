@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 
@@ -161,3 +162,12 @@ def test_work_scheduler_rejects_empty_runtime_ids() -> None:
         scheduler.schedule_task(SessionId("session-1"), TaskId(""))
     with pytest.raises(ValueError, match="action_id"):
         scheduler.schedule_action(SessionId("session-1"), TaskId("task-1"), ActionId(""))
+
+
+def test_work_scheduler_rejects_invalid_goal_idempotency_key() -> None:
+    scheduler = WorkScheduler(InMemoryWorkQueue())
+
+    with pytest.raises(ValueError, match="idempotency_key must not be empty"):
+        scheduler.schedule_goal(idempotency_key=" ")
+    with pytest.raises(ValueError, match="idempotency_key must be a string"):
+        scheduler.schedule_goal(idempotency_key=cast(str, 1))

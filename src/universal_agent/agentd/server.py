@@ -14,7 +14,12 @@ from uvicorn import Config, Server
 from universal_agent.agentd.app import AgentdApp
 from universal_agent.agentd.http import HttpRequest, HttpResponse
 from universal_agent.core import JsonCodecError, JsonMapping, dumps_json, immutable_json, loads_json
-from universal_agent.core.config_validation import parse_json_object
+from universal_agent.core.config_validation import (
+    parse_json_object,
+    parse_non_empty_string,
+    parse_non_negative_int,
+    parse_non_negative_int_text,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +27,19 @@ class AgentdServerConfig:
     host: str = "127.0.0.1"
     port: int = 8765
     max_body_bytes: int = 1_000_000
+
+    def __post_init__(self) -> None:
+        parse_non_empty_string(self.host, "agentd host")
+        parse_non_negative_int(
+            self.port,
+            "agentd port",
+            range_template="{path} must be non-negative",
+        )
+        parse_non_negative_int(
+            self.max_body_bytes,
+            "agentd max_body_bytes",
+            range_template="{path} must be non-negative",
+        )
 
 
 class AgentdHttpServer:
@@ -131,11 +149,9 @@ async def _request_body(
     length_value = request.headers.get("content-length")
     if length_value is not None:
         try:
-            length = int(length_value)
-        except ValueError:
-            return _error_response(400, "bad_request", "content-length must be an integer")
-        if length < 0:
-            return _error_response(400, "bad_request", "content-length must be non-negative")
+            length = parse_non_negative_int_text(length_value, "content-length")
+        except ValueError as exc:
+            return _error_response(400, "bad_request", str(exc))
         if length > max_body_bytes:
             return _error_response(413, "payload_too_large", "request body is too large")
 

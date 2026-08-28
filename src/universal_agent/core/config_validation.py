@@ -29,6 +29,8 @@ __all__ = [
     "enum_value",
     "json_mapping",
     "parse_bool",
+    "parse_bool_text",
+    "parse_bounded_float_text",
     "parse_int",
     "parse_json_object",
     "parse_json_object_sequence",
@@ -38,6 +40,7 @@ __all__ = [
     "parse_non_empty_string_sequence",
     "parse_non_negative_float",
     "parse_non_negative_int",
+    "parse_non_negative_int_text",
     "parse_optional_bool",
     "parse_optional_int",
     "parse_optional_lower_sha256_hex_digest",
@@ -50,6 +53,7 @@ __all__ = [
     "parse_payload",
     "parse_positive_float",
     "parse_positive_int",
+    "parse_positive_int_text",
     "parse_rate",
     "parse_string",
     "parse_string_sequence",
@@ -272,6 +276,13 @@ def parse_bool(value: object, field: str) -> bool:
         raise ValueError(pydantic_error_message(exc, field)) from exc
 
 
+def parse_bool_text(value: object, field: str) -> bool:
+    try:
+        return _BOOL_ADAPTER.validate_strings(value)
+    except PydanticValidationError as exc:
+        raise ValueError(f"{pydantic_error_details(exc, field).path} must be a boolean") from exc
+
+
 def parse_optional_bool(value: object, field: str) -> bool | None:
     if value is None:
         return None
@@ -306,6 +317,22 @@ def parse_non_negative_int(
         if details.error_type == "greater_than_equal":
             raise ValueError(range_template.format(path=details.path)) from exc
         raise ValueError(pydantic_error_message(exc, field)) from exc
+
+
+def parse_non_negative_int_text(
+    value: object,
+    field: str,
+    *,
+    range_template: str = "{path} must be non-negative",
+    type_template: str = "{path} must be an integer",
+) -> int:
+    try:
+        return _NON_NEGATIVE_INT_ADAPTER.validate_strings(value)
+    except PydanticValidationError as exc:
+        details = pydantic_error_details(exc, field)
+        if details.error_type == "greater_than_equal":
+            raise ValueError(range_template.format(path=details.path)) from exc
+        raise ValueError(type_template.format(path=details.path)) from exc
 
 
 def parse_non_negative_float(
@@ -350,6 +377,19 @@ def parse_positive_int(value: object, field: str) -> int:
         raise ValueError(pydantic_error_message(exc, field)) from exc
 
 
+def parse_positive_int_text(
+    value: object,
+    field: str,
+    *,
+    error_template: str = "{path} must be a positive integer",
+) -> int:
+    try:
+        return _POSITIVE_INT_ADAPTER.validate_strings(value)
+    except PydanticValidationError as exc:
+        details = pydantic_error_details(exc, field)
+        raise ValueError(error_template.format(path=details.path)) from exc
+
+
 def parse_positive_float(value: object, field: str) -> float:
     try:
         return _POSITIVE_FLOAT_ADAPTER.validate_python(value, strict=True)
@@ -374,6 +414,33 @@ def parse_rate(value: object, field: str) -> float:
         if details.error_type in {"greater_than_equal", "less_than_equal"}:
             raise ValueError(f"{details.path} must be between 0.0 and 1.0") from exc
         raise ValueError(pydantic_error_message(exc, field)) from exc
+
+
+def parse_bounded_float_text(
+    value: object,
+    field: str,
+    *,
+    minimum: float,
+    maximum: float,
+    range_template: str = "{path} must be between {minimum:g} and {maximum:g}",
+    type_template: str = "{path} must be a number",
+) -> float:
+    if minimum > maximum:
+        raise ValueError("minimum must not exceed maximum")
+    adapter: TypeAdapter[float] = TypeAdapter(Annotated[float, Field(ge=minimum, le=maximum)])
+    try:
+        return adapter.validate_strings(value)
+    except PydanticValidationError as exc:
+        details = pydantic_error_details(exc, field)
+        if details.error_type in {"greater_than_equal", "less_than_equal"}:
+            raise ValueError(
+                range_template.format(
+                    path=details.path,
+                    minimum=minimum,
+                    maximum=maximum,
+                )
+            ) from exc
+        raise ValueError(type_template.format(path=details.path)) from exc
 
 
 def parse_optional_rate(value: object, field: str) -> float | None:

@@ -5,6 +5,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 import pytest
 from filelock import FileLock
@@ -329,6 +330,10 @@ def test_worker_registry_validates_inputs() -> None:
         registry.register(WorkerId(""))
     with pytest.raises(ValueError, match="ttl_seconds"):
         registry.register(WorkerId("worker-a"), ttl_seconds=0)
+    with pytest.raises(ValueError, match="ttl_seconds must be a number"):
+        registry.register(WorkerId("worker-a"), ttl_seconds=cast(float, True))
     with pytest.raises(ValueError, match="drain reason"):
         registry.register(WorkerId("worker-a"))
         registry.drain(WorkerId("worker-a"), reason=" ")
+    with pytest.raises(ValueError, match="offline reason"):
+        registry.mark_offline(WorkerId("worker-a"), reason="")

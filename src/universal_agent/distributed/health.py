@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from universal_agent.core.config_validation import (
+    parse_non_negative_float,
+    parse_non_negative_int,
+)
 from universal_agent.distributed.queue import WorkItemStatus
 from universal_agent.distributed.snapshot import (
     DistributedLockSnapshot,
@@ -71,12 +75,17 @@ def build_distributed_health_report(
 ) -> DistributedHealthReport:
     """Project a read-only P6 coordination snapshot into HA-oriented checks."""
 
-    if queued_backlog_warn_threshold < 0:
-        raise ValueError("queued_backlog_warn_threshold must be non-negative")
-    if lease_expiry_warn_seconds < 0:
-        raise ValueError("lease_expiry_warn_seconds must be non-negative")
-    if min_online_workers < 0:
-        raise ValueError("min_online_workers must be non-negative")
+    parse_non_negative_int(
+        queued_backlog_warn_threshold,
+        "queued_backlog_warn_threshold",
+        range_template="{path} must be non-negative",
+    )
+    parse_non_negative_float(lease_expiry_warn_seconds, "lease_expiry_warn_seconds")
+    parse_non_negative_int(
+        min_online_workers,
+        "min_online_workers",
+        range_template="{path} must be non-negative",
+    )
 
     capacity_gaps = _capacity_gaps(snapshot)
     expiring_leases = _expiring_leases(

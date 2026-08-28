@@ -10,6 +10,7 @@ from universal_agent.core import (
     TaskId,
     immutable_json,
 )
+from universal_agent.core.config_validation import parse_non_empty_string
 from universal_agent.distributed.queue import InMemoryWorkQueue, WorkItem, WorkItemStatus
 
 
@@ -55,8 +56,7 @@ class WorkScheduler:
         max_attempts: int = 3,
         available_at: datetime | None = None,
     ) -> WorkItem:
-        if not idempotency_key.strip():
-            raise ValueError("idempotency_key must not be empty")
+        parse_non_empty_string(idempotency_key, "idempotency_key")
         return self._queue.enqueue(
             kind=WorkKind.AGENT_GOAL.value,
             payload=immutable_json(payload),
@@ -157,8 +157,7 @@ def _action_key(session_id: SessionId, task_id: TaskId, action_id: ActionId) -> 
 
 
 def _require_id(value: object, name: str) -> None:
-    if not str(value).strip():
-        raise ValueError(f"{name} must not be empty")
+    parse_non_empty_string(str(value), name)
 
 
 def _can_cancel(item: WorkItem) -> bool:

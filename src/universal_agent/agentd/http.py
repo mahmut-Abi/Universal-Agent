@@ -107,7 +107,13 @@ class AgentdAuthPolicy:
             and hmac.compare_digest(self.bearer_token, self.read_only_bearer_token)
         ):
             raise ValueError("agentd bearer token and read-only bearer token must differ")
-        if any(not path.startswith("/") or not path.strip() for path in self.public_paths):
+        public_paths = parse_non_empty_string_sequence(
+            self.public_paths,
+            "agentd public paths",
+            empty_template="agentd public paths must be absolute non-empty paths",
+            item_type_template="agentd public paths must be absolute non-empty paths",
+        )
+        if any(not path.startswith("/") for path in public_paths):
             raise ValueError("agentd public paths must be absolute non-empty paths")
 
     @property
@@ -202,8 +208,7 @@ def _authenticate(
 
 
 def _validate_bearer_token(value: str | None, field: str) -> None:
-    if value is not None and not value.strip():
-        raise ValueError(f"{field} must not be empty")
+    parse_optional_non_empty_string(value, field)
 
 
 def _token_matches(token: str, expected: str | None) -> bool:

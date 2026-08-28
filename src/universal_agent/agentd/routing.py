@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cache
 
-from pydantic import Field, TypeAdapter
+from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
 from starlette.datastructures import URL, QueryParams
 from starlette.routing import Match, Route
@@ -14,7 +14,10 @@ from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     json_mapping,
+    parse_bool_text,
+    parse_bounded_float_text,
     parse_non_empty_string,
+    parse_positive_int_text,
     pydantic_error_details,
 )
 from universal_agent.distributed import DistributedLockOwnerId
@@ -130,11 +133,6 @@ class AgentdRouteMatcher:
         return None
 
 
-_BOOL_QUERY_ADAPTER: TypeAdapter[bool] = TypeAdapter(bool)
-_FLOAT_QUERY_ADAPTER: TypeAdapter[float] = TypeAdapter(float)
-_INT_QUERY_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
-
-
 class _DistributedLockAcquireModel(ConfigPayload):
     lock_key: str
     owner_id: str
@@ -234,10 +232,7 @@ def _optional_bool_query(path: str, key: str) -> bool | None:
     value = _optional_query_value(path, key)
     if value is None:
         return None
-    try:
-        return _BOOL_QUERY_ADAPTER.validate_python(value)
-    except PydanticValidationError as exc:
-        raise ValueError(f"{key} must be a boolean") from exc
+    return parse_bool_text(value, key)
 
 
 def _optional_float_query(
@@ -251,26 +246,19 @@ def _optional_float_query(
     value = _optional_query_value(path, key)
     if value is None:
         return default
-    try:
-        parsed = _FLOAT_QUERY_ADAPTER.validate_python(value)
-    except PydanticValidationError as exc:
-        raise ValueError(f"{key} must be a number") from exc
-    if parsed < minimum or parsed > maximum:
-        raise ValueError(f"{key} must be between {minimum:g} and {maximum:g}")
-    return parsed
+    return parse_bounded_float_text(
+        value,
+        key,
+        minimum=minimum,
+        maximum=maximum,
+    )
 
 
 def _optional_positive_int_query(path: str, key: str) -> int | None:
     value = _optional_query_value(path, key)
     if value is None:
         return None
-    try:
-        parsed = _INT_QUERY_ADAPTER.validate_python(value)
-    except PydanticValidationError as exc:
-        raise ValueError(f"{key} must be a positive integer") from exc
-    if parsed < 1:
-        raise ValueError(f"{key} must be a positive integer")
-    return parsed
+    return parse_positive_int_text(value, key)
 
 
 def _optional_query_value(path: str, key: str) -> str | None:
