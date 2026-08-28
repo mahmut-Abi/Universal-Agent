@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 
 from universal_agent.core import (
@@ -220,12 +220,8 @@ def _copy_evidence(evidence: Evidence) -> Evidence:
 
 
 def _copy_mapping(values: JsonMapping) -> JsonMapping:
-    return immutable_json({key: _copy_json(value) for key, value in values.items()})
+    return immutable_json(deepcopy(dict(values)))
 
 
 def _copy_json(value: JsonValue) -> JsonValue:
-    if isinstance(value, Mapping):
-        return {key: _copy_json(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_copy_json(item) for item in value]
-    return value
+    return deepcopy(value)

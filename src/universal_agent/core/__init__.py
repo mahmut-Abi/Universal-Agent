@@ -7,6 +7,7 @@ from universal_agent.core.json_codec import (
     dumps_json,
     loads_json,
     read_json_file,
+    to_json_value,
     write_json,
     write_json_file,
 )
@@ -119,6 +120,7 @@ __all__ = [
     "parse_iso_datetime",
     "read_json_file",
     "runtime_primitives",
+    "to_json_value",
     "utc_now",
     "validate_argument_contract",
     "write_json",

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from graphlib import CycleError, TopologicalSorter
+
 from universal_agent.core import Task, TaskId, TaskStatus
 from universal_agent.tasks.models import (
     TaskGraphSnapshot,
@@ -105,19 +107,7 @@ class TaskManager:
         )
 
     def _validate_acyclic(self) -> None:
-        visiting: set[TaskId] = set()
-        visited: set[TaskId] = set()
-
-        def visit(task_id: TaskId) -> None:
-            if task_id in visiting:
-                raise ValueError("task graph contains a dependency cycle")
-            if task_id in visited:
-                return
-            visiting.add(task_id)
-            for dependency in self._dependencies[task_id]:
-                visit(dependency)
-            visiting.remove(task_id)
-            visited.add(task_id)
-
-        for task_id in self._order:
-            visit(task_id)
+        try:
+            TopologicalSorter(self._dependencies).prepare()
+        except CycleError as exc:
+            raise ValueError("task graph contains a dependency cycle") from exc

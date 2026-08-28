@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 
 from universal_agent.capability import (
@@ -32,6 +32,7 @@ from universal_agent.core import (
     dumps_json,
     immutable_json,
     new_action_id,
+    to_json_value,
 )
 from universal_agent.domain import ActionArgumentContext, RuntimeComponents
 from universal_agent.observation import ObservationFactory
@@ -578,10 +579,4 @@ def _resource_version(arguments: JsonMapping) -> str | None:
 
 
 def _canonical_json(value: JsonValue | object) -> JsonValue:
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, Mapping):
-        return {str(key): _canonical_json(item) for key, item in value.items()}
-    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
-        return [_canonical_json(item) for item in value]
-    return str(value)
+    return to_json_value(value, fallback_to_string=True)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 
 from universal_agent.core import JsonMapping, JsonValue, SessionId, dumps_json, immutable_json
 from universal_agent.core.config_validation import parse_non_empty_string
@@ -298,12 +298,4 @@ def _has_conflicting_values(evidence: tuple[Evidence, ...]) -> bool:
 
 
 def _value_key(value: JsonValue) -> str:
-    return dumps_json(_plain_json_value(value))
-
-
-def _plain_json_value(value: JsonValue) -> JsonValue:
-    if isinstance(value, Mapping):
-        return {key: _plain_json_value(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_plain_json_value(item) for item in value]
-    return value
+    return dumps_json(value)

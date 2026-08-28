@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
@@ -469,11 +470,7 @@ def evidence_view(evidence: Evidence) -> EvidenceView:
 
 
 def _copy_json_value(value: JsonValue) -> JsonValue:
-    if isinstance(value, list):
-        return [_copy_json_value(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _copy_json_value(item) for key, item in value.items()}
-    return value
+    return deepcopy(value)
 
 
 def _cursor_value(event_id: EventId | None) -> str | None:

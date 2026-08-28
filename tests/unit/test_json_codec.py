@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from enum import StrEnum
 from io import StringIO
 from pathlib import Path
 
@@ -10,9 +12,19 @@ from universal_agent.core import (
     dumps_json,
     loads_json,
     read_json_file,
+    to_json_value,
     write_json,
     write_json_file,
 )
+
+
+class _Status(StrEnum):
+    RUNNING = "running"
+
+
+class _UnknownObject:
+    def __str__(self) -> str:
+        return "unknown-object"
 
 
 def test_json_codec_dumps_sorted_compact_json() -> None:
@@ -26,6 +38,29 @@ def test_json_codec_dumps_pretty_json() -> None:
 def test_json_codec_loads_json_from_text_and_bytes() -> None:
     assert loads_json('{"a":1}') == {"a": 1}
     assert loads_json(b'{"a":1}') == {"a": 1}
+
+
+def test_json_codec_coerces_objects_to_json_values() -> None:
+    payload = to_json_value(
+        {
+            1: _Status.RUNNING,
+            "observed_at": datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+            "items": (_Status.RUNNING,),
+        },
+        fallback_to_string=True,
+    )
+
+    assert payload == {
+        "1": "running",
+        "items": ["running"],
+        "observed_at": "2026-01-02T03:04:05+00:00",
+    }
+
+
+def test_json_codec_can_stringify_unknown_objects_for_projection_boundaries() -> None:
+    assert to_json_value({"value": _UnknownObject()}, fallback_to_string=True) == {
+        "value": "unknown-object"
+    }
 
 
 def test_json_codec_writes_stream_with_trailing_newline() -> None:
