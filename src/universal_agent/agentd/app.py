@@ -18,6 +18,7 @@ from universal_agent.agentd.http import (
     parse_goal_submission,
     text_response,
 )
+from universal_agent.agentd.openapi import build_agentd_openapi_schema
 from universal_agent.agentd.representations import (
     _stream_events_for_sse,
     audit_records_body,
@@ -98,128 +99,132 @@ from universal_agent.profile import ProfileNotFoundError
 from universal_agent.service import RuntimeService
 from universal_agent.state import StateNotFoundError
 
-_STATIC_GET_ROUTES = AgentdRouteMatcher(
-    (
-        AgentdRouteDefinition("health", "/health"),
-        AgentdRouteDefinition("ready", "/ready"),
-        AgentdRouteDefinition("domains", "/v1/domains"),
-        AgentdRouteDefinition("domain_packages", "/v1/domain-packages"),
-        AgentdRouteDefinition("capabilities", "/v1/capabilities"),
-        AgentdRouteDefinition("tools", "/v1/tools"),
-        AgentdRouteDefinition("policies", "/v1/policies"),
-        AgentdRouteDefinition("evaluators", "/v1/evaluators"),
-        AgentdRouteDefinition("memory", "/v1/memory"),
-        AgentdRouteDefinition("profiles", "/v1/profiles"),
-        AgentdRouteDefinition("multi_agent", "/v1/multi-agent"),
-        AgentdRouteDefinition("config", "/v1/config"),
-        AgentdRouteDefinition("distributed_snapshot", "/v1/distributed/snapshot"),
-        AgentdRouteDefinition("distributed_health", "/v1/distributed/health"),
-        AgentdRouteDefinition("metrics", "/v1/metrics"),
-        AgentdRouteDefinition("metrics_prometheus", "/v1/metrics/prometheus"),
-        AgentdRouteDefinition("cost", "/v1/cost"),
-        AgentdRouteDefinition("logs", "/v1/logs"),
-        AgentdRouteDefinition("traces", "/v1/traces"),
-        AgentdRouteDefinition("traces_otlp", "/v1/traces/otlp"),
-        AgentdRouteDefinition("doctor", "/v1/doctor"),
-        AgentdRouteDefinition("audit", "/v1/audit"),
-    )
+_STATIC_GET_ROUTE_DEFINITIONS = (
+    AgentdRouteDefinition("openapi", "/openapi.json"),
+    AgentdRouteDefinition("health", "/health"),
+    AgentdRouteDefinition("ready", "/ready"),
+    AgentdRouteDefinition("domains", "/v1/domains"),
+    AgentdRouteDefinition("domain_packages", "/v1/domain-packages"),
+    AgentdRouteDefinition("capabilities", "/v1/capabilities"),
+    AgentdRouteDefinition("tools", "/v1/tools"),
+    AgentdRouteDefinition("policies", "/v1/policies"),
+    AgentdRouteDefinition("evaluators", "/v1/evaluators"),
+    AgentdRouteDefinition("memory", "/v1/memory"),
+    AgentdRouteDefinition("profiles", "/v1/profiles"),
+    AgentdRouteDefinition("multi_agent", "/v1/multi-agent"),
+    AgentdRouteDefinition("config", "/v1/config"),
+    AgentdRouteDefinition("distributed_snapshot", "/v1/distributed/snapshot"),
+    AgentdRouteDefinition("distributed_health", "/v1/distributed/health"),
+    AgentdRouteDefinition("metrics", "/v1/metrics"),
+    AgentdRouteDefinition("metrics_prometheus", "/v1/metrics/prometheus"),
+    AgentdRouteDefinition("cost", "/v1/cost"),
+    AgentdRouteDefinition("logs", "/v1/logs"),
+    AgentdRouteDefinition("traces", "/v1/traces"),
+    AgentdRouteDefinition("traces_otlp", "/v1/traces/otlp"),
+    AgentdRouteDefinition("doctor", "/v1/doctor"),
+    AgentdRouteDefinition("audit", "/v1/audit"),
 )
+_STATIC_GET_ROUTES = AgentdRouteMatcher(_STATIC_GET_ROUTE_DEFINITIONS)
 
 
-_DETAIL_GET_ROUTES = AgentdRouteMatcher(
-    (
-        AgentdRouteDefinition("profile", "/v1/profiles/{profile}"),
-        AgentdRouteDefinition("domain_package", "/v1/domain-packages/{name}"),
-        AgentdRouteDefinition("domain_package_version", "/v1/domain-packages/{name}/{version}"),
-    )
+_DETAIL_GET_ROUTE_DEFINITIONS = (
+    AgentdRouteDefinition("profile", "/v1/profiles/{profile}"),
+    AgentdRouteDefinition("domain_package", "/v1/domain-packages/{name}"),
+    AgentdRouteDefinition("domain_package_version", "/v1/domain-packages/{name}/{version}"),
 )
+_DETAIL_GET_ROUTES = AgentdRouteMatcher(_DETAIL_GET_ROUTE_DEFINITIONS)
 
 
-_DISTRIBUTED_ROUTES = AgentdRouteMatcher(
-    (
-        AgentdRouteDefinition(
-            "distributed_worker_action",
-            "/v1/distributed/workers/{worker_id}/{action}",
-            ("POST",),
-        ),
-        AgentdRouteDefinition(
-            "distributed_lock_acquire",
-            "/v1/distributed/locks/acquire",
-            ("POST",),
-        ),
-        AgentdRouteDefinition(
-            "distributed_lock_lease_action",
-            "/v1/distributed/lock-leases/{lease_id}/{action}",
-            ("POST",),
-        ),
-        AgentdRouteDefinition("distributed_goals", "/v1/distributed/goals", ("POST",)),
-        AgentdRouteDefinition(
-            "distributed_pending_actions_schedule",
-            "/v1/distributed/pending-actions/schedule",
-            ("POST",),
-        ),
-        AgentdRouteDefinition(
-            "distributed_schedule_action",
-            "/v1/distributed/sessions/{session_id}/tasks/{task_id}/actions/{action_id}/schedule",
-            ("POST",),
-        ),
-        AgentdRouteDefinition(
-            "distributed_schedule_task",
-            "/v1/distributed/sessions/{session_id}/tasks/{task_id}/schedule",
-            ("POST",),
-        ),
-        AgentdRouteDefinition(
-            "distributed_schedule_session",
-            "/v1/distributed/sessions/{session_id}/schedule",
-            ("POST",),
-        ),
-        AgentdRouteDefinition("distributed_expire", "/v1/distributed/expire", ("POST",)),
-        AgentdRouteDefinition(
-            "distributed_prune_terminal",
-            "/v1/distributed/prune-terminal",
-            ("POST",),
-        ),
-        AgentdRouteDefinition(
-            "distributed_cancel",
-            "/v1/distributed/work-items/{work_item_id}/cancel",
-            ("POST",),
-        ),
-        AgentdRouteDefinition(
-            "state_event_repair",
-            "/v1/doctor/state-events/repair",
-            ("POST",),
-        ),
-    )
+_DISTRIBUTED_ROUTE_DEFINITIONS = (
+    AgentdRouteDefinition(
+        "distributed_worker_action",
+        "/v1/distributed/workers/{worker_id}/{action}",
+        ("POST",),
+    ),
+    AgentdRouteDefinition(
+        "distributed_lock_acquire",
+        "/v1/distributed/locks/acquire",
+        ("POST",),
+    ),
+    AgentdRouteDefinition(
+        "distributed_lock_lease_action",
+        "/v1/distributed/lock-leases/{lease_id}/{action}",
+        ("POST",),
+    ),
+    AgentdRouteDefinition("distributed_goals", "/v1/distributed/goals", ("POST",)),
+    AgentdRouteDefinition(
+        "distributed_pending_actions_schedule",
+        "/v1/distributed/pending-actions/schedule",
+        ("POST",),
+    ),
+    AgentdRouteDefinition(
+        "distributed_schedule_action",
+        "/v1/distributed/sessions/{session_id}/tasks/{task_id}/actions/{action_id}/schedule",
+        ("POST",),
+    ),
+    AgentdRouteDefinition(
+        "distributed_schedule_task",
+        "/v1/distributed/sessions/{session_id}/tasks/{task_id}/schedule",
+        ("POST",),
+    ),
+    AgentdRouteDefinition(
+        "distributed_schedule_session",
+        "/v1/distributed/sessions/{session_id}/schedule",
+        ("POST",),
+    ),
+    AgentdRouteDefinition("distributed_expire", "/v1/distributed/expire", ("POST",)),
+    AgentdRouteDefinition(
+        "distributed_prune_terminal",
+        "/v1/distributed/prune-terminal",
+        ("POST",),
+    ),
+    AgentdRouteDefinition(
+        "distributed_cancel",
+        "/v1/distributed/work-items/{work_item_id}/cancel",
+        ("POST",),
+    ),
+    AgentdRouteDefinition(
+        "state_event_repair",
+        "/v1/doctor/state-events/repair",
+        ("POST",),
+    ),
 )
+_DISTRIBUTED_ROUTES = AgentdRouteMatcher(_DISTRIBUTED_ROUTE_DEFINITIONS)
 
 
-_SESSION_ROUTES = AgentdRouteMatcher(
-    (
-        AgentdRouteDefinition("sessions", "/v1/sessions", ("GET", "POST")),
-        AgentdRouteDefinition("session", "/v1/sessions/{session_id}"),
-        AgentdRouteDefinition("session_diagnostics", "/v1/sessions/{session_id}/diagnostics"),
-        AgentdRouteDefinition("session_evidence", "/v1/sessions/{session_id}/evidence"),
-        AgentdRouteDefinition("session_world", "/v1/sessions/{session_id}/world"),
-        AgentdRouteDefinition("session_events", "/v1/sessions/{session_id}/events"),
-        AgentdRouteDefinition("session_events_stream", "/v1/sessions/{session_id}/events/stream"),
-        AgentdRouteDefinition("session_audit", "/v1/sessions/{session_id}/audit"),
-        AgentdRouteDefinition("session_cost", "/v1/sessions/{session_id}/cost"),
-        AgentdRouteDefinition("session_logs", "/v1/sessions/{session_id}/logs"),
-        AgentdRouteDefinition("session_traces", "/v1/sessions/{session_id}/traces"),
-        AgentdRouteDefinition("session_traces_otlp", "/v1/sessions/{session_id}/traces/otlp"),
-        AgentdRouteDefinition("session_pause", "/v1/sessions/{session_id}/pause", ("POST",)),
-        AgentdRouteDefinition("session_resume", "/v1/sessions/{session_id}/resume", ("POST",)),
-        AgentdRouteDefinition("session_cancel", "/v1/sessions/{session_id}/cancel", ("POST",)),
-    )
+_SESSION_ROUTE_DEFINITIONS = (
+    AgentdRouteDefinition("sessions", "/v1/sessions", ("GET", "POST")),
+    AgentdRouteDefinition("session", "/v1/sessions/{session_id}"),
+    AgentdRouteDefinition("session_diagnostics", "/v1/sessions/{session_id}/diagnostics"),
+    AgentdRouteDefinition("session_evidence", "/v1/sessions/{session_id}/evidence"),
+    AgentdRouteDefinition("session_world", "/v1/sessions/{session_id}/world"),
+    AgentdRouteDefinition("session_events", "/v1/sessions/{session_id}/events"),
+    AgentdRouteDefinition("session_events_stream", "/v1/sessions/{session_id}/events/stream"),
+    AgentdRouteDefinition("session_audit", "/v1/sessions/{session_id}/audit"),
+    AgentdRouteDefinition("session_cost", "/v1/sessions/{session_id}/cost"),
+    AgentdRouteDefinition("session_logs", "/v1/sessions/{session_id}/logs"),
+    AgentdRouteDefinition("session_traces", "/v1/sessions/{session_id}/traces"),
+    AgentdRouteDefinition("session_traces_otlp", "/v1/sessions/{session_id}/traces/otlp"),
+    AgentdRouteDefinition("session_pause", "/v1/sessions/{session_id}/pause", ("POST",)),
+    AgentdRouteDefinition("session_resume", "/v1/sessions/{session_id}/resume", ("POST",)),
+    AgentdRouteDefinition("session_cancel", "/v1/sessions/{session_id}/cancel", ("POST",)),
+)
+_SESSION_ROUTES = AgentdRouteMatcher(_SESSION_ROUTE_DEFINITIONS)
+
+_OPENAPI_ROUTE_DEFINITIONS = (
+    *_STATIC_GET_ROUTE_DEFINITIONS,
+    *_DETAIL_GET_ROUTE_DEFINITIONS,
+    *_DISTRIBUTED_ROUTE_DEFINITIONS,
+    *_SESSION_ROUTE_DEFINITIONS,
 )
 
 
 class AgentdApp:
-    """Framework-free route adapter for the future agentd process.
+    """Runtime API route adapter for the agentd process.
 
     It owns HTTP-shaped routing and JSON serialization. Runtime behavior stays
-    behind RuntimeService, so a real socket server can later wrap this adapter
-    without learning Kernel internals.
+    behind RuntimeService, so the ASGI server boundary can stay independent of
+    Kernel internals.
     """
 
     def __init__(
@@ -281,6 +286,8 @@ class AgentdApp:
             return None
         if not route.method_allowed:
             return method_not_allowed(route.allowed_methods)
+        if route.name == "openapi":
+            return json_response(build_agentd_openapi_schema(_OPENAPI_ROUTE_DEFINITIONS))
 
         sync_json_handlers: dict[str, Callable[[], JsonMapping]] = {
             "health": lambda: health_body(self._service.health()),

@@ -59,13 +59,13 @@
 | 剩余 | 测试和 examples 仍可继续使用标准库 JSON 构造 fixture；若未来要强制全 repo 收口，再单独迁移测试工具层 |
 | 风险 | 低：全量 `ruff`、`mypy` 与 `pytest` 已覆盖 |
 
-### 5. Starlette + uvicorn → 替换 agentd socket/server / routing 适配层（持续推进）
+### 5. Starlette + uvicorn → 替换 agentd socket/server / routing / schema 适配层（已完成）
 
 | 项 | 说明 |
 |---|---|
-| 现状 | `AgentdHttpServer` 已从 stdlib `http.server` 切到 Starlette ASGI + uvicorn；`AgentdRouteMatcher` 已用 Starlette `Route.matches()` 接管 agentd API 与 console route family 的模板匹配，并用 `QueryParams` 接管 HTTP query 解析；agentd auth header lookup 已用 Starlette `Headers` 接管大小写不敏感匹配；旧私有 path helper 已清理，稳定 Runtime API / Console 路由契约保留 |
-| 收益 | 生产服务边界获得 ASGI/uvicorn 生命周期、并发、socket 处理、标准 path matching 与 HTTP header 语义；CLI/server 注入测试契约保持兼容 |
-| 剩余 | 后续在稳定 schema 后补 OpenAPI；更大范围的 CLI Typer 迁移单独排期，避免扰动现有命令契约 |
+| 现状 | `AgentdHttpServer` 已从 stdlib `http.server` 切到 Starlette ASGI + uvicorn；`AgentdRouteMatcher` 已用 Starlette `Route.matches()` 接管 agentd API 与 console route family 的模板匹配，并用 `QueryParams` 接管 HTTP query 解析；agentd auth header lookup 已用 Starlette `Headers` 接管大小写不敏感匹配；`/openapi.json` 已用 Starlette `SchemaGenerator` 从现有 Runtime route definitions 生成 OpenAPI 3.0 schema；旧私有 path helper 已清理，稳定 Runtime API / Console 路由契约保留 |
+| 收益 | 生产服务边界获得 ASGI/uvicorn 生命周期、并发、socket 处理、标准 path matching、HTTP header 语义与可生成 client 的 API schema；CLI/server 注入测试契约保持兼容 |
+| 剩余 | 更大范围的 CLI Typer 迁移单独排期，避免扰动现有命令契约 |
 | 风险 | 中：依赖树变大；需持续保证 Runtime API 行为不变（现有 test_agentd_routes / test_agentd_server 兜底） |
 
 ### 6. prometheus-client → 替换手写 Prometheus text exposition（已完成）

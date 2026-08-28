@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from universal_agent.agentd.app import _DETAIL_GET_ROUTES, _DISTRIBUTED_ROUTES, _SESSION_ROUTES
+from universal_agent.agentd.app import (
+    _DETAIL_GET_ROUTES,
+    _DISTRIBUTED_ROUTES,
+    _OPENAPI_ROUTE_DEFINITIONS,
+    _SESSION_ROUTES,
+)
 from universal_agent.agentd.console_routes import _CONSOLE_ROUTES
+from universal_agent.agentd.openapi import build_agentd_openapi_schema
 from universal_agent.agentd.routing import (
     AgentdRouteDefinition,
     AgentdRouteMatcher,
@@ -14,7 +20,12 @@ from universal_agent.agentd.routing import (
     _optional_positive_int_query,
     _optional_query_value,
 )
-from universal_agent.core import immutable_json
+from universal_agent.core import JsonValue, immutable_json
+
+
+def json_object(value: JsonValue) -> dict[str, JsonValue]:
+    assert isinstance(value, dict)
+    return value
 
 
 def test_agentd_route_tables_match_starlette_path_templates() -> None:
@@ -71,6 +82,39 @@ def test_agentd_route_tables_match_starlette_path_templates() -> None:
     assert profile.path_params == {"profile": "production-operator"}
     assert package is not None
     assert package.path_params == {"name": "kubernetes", "version": "0.2.0"}
+
+
+def test_agentd_openapi_schema_is_generated_from_runtime_route_definitions() -> None:
+    schema = build_agentd_openapi_schema(_OPENAPI_ROUTE_DEFINITIONS)
+    paths = schema["paths"]
+    assert isinstance(paths, dict)
+
+    sessions = paths["/v1/sessions"]
+    stream = paths["/v1/sessions/{session_id}/events/stream"]
+    distributed_goals = paths["/v1/distributed/goals"]
+    metrics_prometheus = paths["/v1/metrics/prometheus"]
+    assert isinstance(sessions, dict)
+    assert isinstance(stream, dict)
+    assert isinstance(distributed_goals, dict)
+    assert isinstance(metrics_prometheus, dict)
+
+    sessions_post = sessions["post"]
+    stream_get = stream["get"]
+    distributed_goals_post = distributed_goals["post"]
+    metrics_prometheus_get = metrics_prometheus["get"]
+    assert isinstance(sessions_post, dict)
+    assert isinstance(stream_get, dict)
+    assert isinstance(distributed_goals_post, dict)
+    assert isinstance(metrics_prometheus_get, dict)
+    assert sessions_post["operationId"] == "sessions_post"
+    assert "201" in json_object(sessions_post["responses"])
+    assert "202" in json_object(distributed_goals_post["responses"])
+    assert json_object(json_object(stream_get["responses"])["200"])["content"] == {
+        "text/event-stream": {"schema": {"type": "string"}}
+    }
+    assert json_object(json_object(metrics_prometheus_get["responses"])["200"])["content"] == {
+        "text/plain": {"schema": {"type": "string"}}
+    }
 
 
 def test_agentd_route_tables_ignore_query_and_trailing_slashes() -> None:

@@ -604,6 +604,24 @@ def test_agentd_auth_policy_rejects_ambiguous_token_scopes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agentd_openapi_route_exposes_generated_runtime_api_schema() -> None:
+    service, _ = build_service([])
+    app = AgentdApp(service)
+
+    response = await app.handle(HttpRequest("GET", "/openapi.json"))
+
+    assert response.status_code == 200
+    assert response.body["openapi"] == "3.0.0"
+    paths = json_object(response.body["paths"])
+    sessions = json_object(paths["/v1/sessions"])
+    session_events = json_object(paths["/v1/sessions/{session_id}/events"])
+    assert json_object(sessions["get"])["operationId"] == "sessions"
+    assert json_object(sessions["post"])["operationId"] == "sessions_post"
+    assert "201" in json_object(json_object(sessions["post"])["responses"])
+    assert json_object(session_events["get"])["summary"] == "Session events"
+
+
+@pytest.mark.asyncio
 async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     service, _ = build_service([])
     app = AgentdApp(service)
