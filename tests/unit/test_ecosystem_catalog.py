@@ -572,6 +572,26 @@ def test_ecosystem_registry_domain_package_install_plan_sorts_dependencies_first
     )
 
 
+def test_ecosystem_registry_domain_package_install_plan_reports_cycles_without_preverify(
+    tmp_path: Path,
+) -> None:
+    domain_root = tmp_path / "domains"
+    write_domain_package(
+        domain_root / "alpha",
+        name="alpha",
+        dependencies=(DomainIdentity("beta", "1.0.0"),),
+    )
+    write_domain_package(
+        domain_root / "beta",
+        name="beta",
+        dependencies=(DomainIdentity("alpha", "1.0.0"),),
+    )
+    manifest = load_ecosystem_catalog(domain_package_root=domain_root).registry_manifest()
+
+    with pytest.raises(EcosystemRegistryInstallError, match="dependency cycle in install plan"):
+        plan_ecosystem_domain_package_install(manifest, verify=False)
+
+
 def test_ecosystem_registry_domain_package_install_checks_loaded_manifest_dependencies(
     tmp_path: Path,
 ) -> None:

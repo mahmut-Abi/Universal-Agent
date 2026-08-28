@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass
+from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
+from typing import cast
 
 from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
 from universal_agent.core.config_validation import duplicate_values
@@ -718,34 +720,25 @@ def _sort_domain_package_install_candidates(
     candidates: tuple[EcosystemDomainPackageInstallCandidate, ...],
 ) -> tuple[EcosystemDomainPackageInstallCandidate, ...]:
     by_identity = {candidate.package.identity: candidate for candidate in candidates}
-    visiting: set[DomainIdentity] = set()
-    visited: set[DomainIdentity] = set()
-    stack: list[DomainIdentity] = []
-    sorted_candidates: list[EcosystemDomainPackageInstallCandidate] = []
-
-    def visit(identity: DomainIdentity) -> None:
-        if identity in visited:
-            return
-        if identity in visiting:
-            cycle = [*stack[stack.index(identity) :], identity]
-            formatted = " -> ".join(_format_domain_identity(item) for item in cycle)
-            raise EcosystemRegistryInstallError(
-                f"domain package dependency cycle in install plan: {formatted}"
-            )
-        visiting.add(identity)
-        stack.append(identity)
-        candidate = by_identity[identity]
-        for dependency in candidate.package.manifest.dependencies:
-            if dependency in by_identity:
-                visit(dependency)
-        stack.pop()
-        visiting.remove(identity)
-        visited.add(identity)
-        sorted_candidates.append(candidate)
-
+    sorter: TopologicalSorter[DomainIdentity] = TopologicalSorter()
     for candidate in candidates:
-        visit(candidate.package.identity)
-    return tuple(sorted_candidates)
+        sorter.add(
+            candidate.package.identity,
+            *(
+                dependency
+                for dependency in candidate.package.manifest.dependencies
+                if dependency in by_identity
+            ),
+        )
+    try:
+        order = tuple(sorter.static_order())
+    except CycleError as exc:
+        cycle = cast(list[DomainIdentity], exc.args[1])
+        formatted = " -> ".join(_format_domain_identity(item) for item in cycle)
+        raise EcosystemRegistryInstallError(
+            f"domain package dependency cycle in install plan: {formatted}"
+        ) from exc
+    return tuple(by_identity[identity] for identity in order)
 
 
 def _reject_registry_install_duplicates(
@@ -876,11 +869,8 @@ def _reference_check(
 
 
 def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
     with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+        return hashlib.file_digest(handle, "sha256").hexdigest()
 
 
 __all__ = [

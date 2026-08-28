@@ -124,6 +124,14 @@
 | 收益 | JUnit XML 结构交给专用库维护，减少手写 Element/SubElement 拼装和 escaping 细节；CLI `eval --format junit` 外部契约保持单个 `<testsuite>` 根节点 |
 | 风险 | 低：单测覆盖 scenario/gate failure 结构，CLI integration 覆盖 JUnit 输出可解析性 |
 
+### 13. graphlib / hashlib.file_digest → 替换手写图排序与文件 digest（已完成）
+
+| 项 | 说明 |
+|---|---|
+| 现状 | `ecosystem/catalog.py` 的 Domain package install plan 依赖排序已用 `graphlib.TopologicalSorter` 接管；`ecosystem/validation.py` 与 `domain/package_verification.py` 的 dependency cycle 检测也使用同一标准库图算法；registry file SHA-256 改用 `hashlib.file_digest` |
+| 收益 | 去掉三处手写 DFS/cycle stack 逻辑和手写 chunk digest loop；依赖排序、cycle detection 与文件摘要行为交给标准库维护 |
+| 风险 | 低：新增 `verify=False` install-plan cycle 测试，既有 ecosystem/domain registry verification 测试继续覆盖 cycle 与 sha256 mismatch |
+
 ---
 
 ## Tier 2 — 明确收益，按需排期

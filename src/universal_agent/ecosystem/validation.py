@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from graphlib import CycleError, TopologicalSorter
 from typing import Any, Protocol, cast
 
 from universal_agent.core import DomainIdentity
@@ -37,24 +38,19 @@ def _compatibility_body(compatibility: DomainPackageCompatibility) -> dict[str, 
 def _dependency_cycles(
     dependencies: dict[DomainIdentity, tuple[DomainIdentity, ...]],
 ) -> tuple[str, ...]:
-    cycles: list[str] = []
-
-    def visit(
-        node: DomainIdentity,
-        path: tuple[DomainIdentity, ...],
-        visiting: frozenset[DomainIdentity],
-    ) -> None:
-        if node in visiting:
-            cycle = (*path[path.index(node) :], node)
-            cycles.append(" -> ".join(_format_domain_identity(item) for item in cycle))
-            return
-        for dependency in dependencies.get(node, ()):
-            if dependency in dependencies:
-                visit(dependency, (*path, dependency), visiting | {node})
-
+    known = frozenset(dependencies)
+    sorter: TopologicalSorter[DomainIdentity] = TopologicalSorter()
     for identity in sorted(dependencies, key=lambda item: (item.name, item.version)):
-        visit(identity, (identity,), frozenset())
-    return tuple(dict.fromkeys(cycles))
+        sorter.add(
+            identity,
+            *(dependency for dependency in dependencies[identity] if dependency in known),
+        )
+    try:
+        tuple(sorter.static_order())
+    except CycleError as exc:
+        cycle = cast(list[DomainIdentity], exc.args[1])
+        return (" -> ".join(_format_domain_identity(item) for item in cycle),)
+    return ()
 
 
 def _reject_duplicates(label: str, identities: tuple[str, ...]) -> None:

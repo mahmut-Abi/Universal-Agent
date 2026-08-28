@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from graphlib import CycleError, TopologicalSorter
+from typing import TYPE_CHECKING, cast
 
 from universal_agent.core import DomainIdentity
 from universal_agent.domain.package_codec import load_domain_package
@@ -187,27 +188,16 @@ def _package_registry_local_checks(
 def _dependency_cycles(
     dependency_map: dict[DomainIdentity, tuple[DomainIdentity, ...]],
 ) -> tuple[str, ...]:
-    visiting: set[DomainIdentity] = set()
-    visited: set[DomainIdentity] = set()
-    stack: list[DomainIdentity] = []
-    cycles: set[str] = set()
-
-    def visit(identity: DomainIdentity) -> None:
-        if identity in visited:
-            return
-        if identity in visiting:
-            cycle = [*stack[stack.index(identity) :], identity]
-            cycles.add(" -> ".join(_format_identity(item) for item in cycle))
-            return
-        visiting.add(identity)
-        stack.append(identity)
-        for dependency in dependency_map.get(identity, ()):
-            if dependency in dependency_map:
-                visit(dependency)
-        stack.pop()
-        visiting.remove(identity)
-        visited.add(identity)
-
+    known = frozenset(dependency_map)
+    sorter: TopologicalSorter[DomainIdentity] = TopologicalSorter()
     for identity in dependency_map:
-        visit(identity)
-    return tuple(sorted(cycles))
+        sorter.add(
+            identity,
+            *(dependency for dependency in dependency_map[identity] if dependency in known),
+        )
+    try:
+        tuple(sorter.static_order())
+    except CycleError as exc:
+        cycle = cast(list[DomainIdentity], exc.args[1])
+        return (" -> ".join(_format_identity(item) for item in cycle),)
+    return ()
