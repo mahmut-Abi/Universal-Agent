@@ -10,7 +10,8 @@
 ## 现状基线
 
 - 源码约 39.7k 行，已引入 `httpx`、`openai`、`jsonschema`、`pydantic`、`orjson`、
-  `filelock`、`jinja2`、`junit-xml`、`python-dateutil`、`rapidfuzz`、`rich` 等基础运行时依赖，mypy strict + ruff 全量约束
+  `filelock`、`jinja2`、`junit-xml`、`python-dateutil`、`rapidfuzz`、`rich`、`sqlalchemy`
+  等基础运行时依赖，mypy strict + ruff 全量约束
 - 早期超 2000 行源码文件已被压回 1000 行以内；后续先优先做库替换和 seam 收口，
   暂不继续以拆文件作为主线
 - 主要瓶颈是**代码量增长速度**，非性能（主循环为 I/O 密集：LLM 秒级、kubectl 子进程、HTTP）
@@ -139,6 +140,15 @@
 | 收益 | 去除自维护 token overlap/substring scoring 的空间，提升拼写变体、词序变化和近似查询的稳定性；仍保留 Runtime 自有 confidence threshold 与 limit 逻辑 |
 | 风险 | 低：`test_memory.py` 覆盖阈值、截断、模糊词形变体和 confidence 加权 |
 
+### 15. SQLAlchemy Core → 替换手写 SQLite persistence DDL/DML（第一批已完成）
+
+| 项 | 说明 |
+|---|---|
+| 现状 | `persistence/sqlite.py` 已使用 SQLAlchemy Core `MetaData` / `Table` / `insert` / `select` / `update` / `Engine.begin()` 接管 session 与 runtime event 表定义、schema 创建、DML 构造和事务入口；`SQLiteSessionStore`、`SQLiteEventStore`、`SQLiteRuntimeStore` 的公开 store 接口与 `sqlite_transaction` state/event commit 策略保持不变 |
+| 收益 | SQLite persistence 的 schema 与 DML 从多段手写 SQL 字符串收口到 typed Core expression seam，减少字段漂移、参数顺序错误和事务入口分叉；重复 session 仍映射为现有 `ValueError`，重复 event 继续保留旧 sqlite integrity 异常兼容 |
+| 剩余 | P6 `SQLiteWorkQueue`、`SQLiteDistributedLockRegistry`、`SQLiteWorkerRegistry` 仍是直接 `sqlite3`；生产数据库迁移/versioning 后续再评估 Alembic |
+| 风险 | 低：persistence integration tests、RuntimeHost/CLI SQLite 配置路径、ruff 和 mypy 已覆盖 |
+
 ---
 
 ## Tier 2 — 明确收益，按需排期
@@ -149,6 +159,7 @@
 | jsonschema | `core/arguments.py` / `tools/runtime.py:181` | 已由 `Draft202012Validator` 接管 capability/tool argument schema 校验，并在进入 jsonschema 前复用 Pydantic JSON adapter 校验 schema/arguments 形状；`tools/runtime.py` 继续通过统一 contract 入口调用 | 后续可补充更多 JSON Schema 关键字覆盖用例 |
 | packaging | `domain/package_models.py` | 已用 `SpecifierSet` 接管 `compatibility.runtime_api` 校验与 runtime API version 支持判断 | 当前刻意不收紧所有 Domain identity version 字符串，避免破坏既有包标识兼容性 |
 | opentelemetry-proto | `operations/otlp.py` | 已用官方 OTLP protobuf schema 类型接管 trace export payload 生成，保留现有 JSON/hex ID Runtime API 契约 | 后续若需要直接推送 Tempo/Collector，再引入 `opentelemetry-sdk` / OTLP exporter |
+| SQLAlchemy / Alembic | P6 SQLite coordination / production DB adapters | Runtime persistence 第一批已用 SQLAlchemy Core；后续按存储 seam 迁移 queue/lock/worker registry，并在生产数据库 adapter 出现时引入 Alembic migration | 避免一次性替换所有本地 coordination primitive，先保持 P6 测试语义稳定 |
 | Typer | `cli_parser.py` / `cli.py` | argparse 样板约 -30%；命令声明与 help 文案更可维护 | Rich 已先用于终端渲染；Typer 迁移单独排期，避免一次性改动全部 CLI 契约 |
 
 ## Tier 3 — 场景触发再引入
@@ -190,6 +201,7 @@
     PyYAML(Domain Package manifest YAML 兼容，已完成)
     packaging runtime_api compatibility specifier（已完成）
     filelock 文件协调锁（已完成）
+    SQLAlchemy Core(SQLite Runtime persistence 第一批已完成；P6 coordination 后续渐进)
     Jinja2 Web/Evaluation 页面外壳、hero/nav、主要 row/detail（持续推进）
     python-dateutil ISO datetime 解析（已完成）
 

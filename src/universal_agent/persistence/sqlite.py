@@ -1,7 +1,28 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import NoReturn
+
+from sqlalchemy import (
+    URL,
+    Column,
+    Engine,
+    Index,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    Text,
+    create_engine,
+)
+from sqlalchemy import insert as sql_insert
+from sqlalchemy import select as sql_select
+from sqlalchemy import update as sql_update
+from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError as SQLAlchemyIntegrityError
 
 from universal_agent.core import (
     AgentState,
@@ -28,12 +49,40 @@ from universal_agent.state import (
 )
 from universal_agent.state.session import with_state
 
+_METADATA = MetaData()
+_SESSIONS = Table(
+    "sessions",
+    _METADATA,
+    Column("session_id", String, primary_key=True),
+    Column("created_at", String, nullable=False),
+    Column("payload", Text, nullable=False),
+)
+_RUNTIME_EVENTS = Table(
+    "runtime_events",
+    _METADATA,
+    Column("sequence", Integer, primary_key=True, autoincrement=True),
+    Column("event_id", String, nullable=False, unique=True),
+    Column("session_id", String, nullable=False),
+    Column("goal_id", String, nullable=False),
+    Column("task_id", String, nullable=False),
+    Column("action_id", String, nullable=True),
+    Column("type", String, nullable=False),
+    Column("occurred_at", String, nullable=False),
+    Column("payload", Text, nullable=False),
+)
+Index(
+    "idx_runtime_events_session_sequence",
+    _RUNTIME_EVENTS.c.session_id,
+    _RUNTIME_EVENTS.c.sequence,
+)
+
 
 class SQLiteSessionStore:
     """SQLite-backed SessionStore adapter for local durable runtime deployments."""
 
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
+        self._engine: Engine | None = None
 
     async def create_session(self, snapshot: SessionSnapshot) -> None:
         snapshot.version = 0
@@ -41,49 +90,32 @@ class SQLiteSessionStore:
         with self._connect() as connection:
             try:
                 connection.execute(
-                    """
-                    INSERT INTO sessions(session_id, created_at, payload)
-                    VALUES (?, ?, ?)
-                    """,
-                    (
-                        str(snapshot.state.session_id),
-                        snapshot.state.goal.created_at.isoformat(),
-                        payload,
+                    sql_insert(_SESSIONS).values(
+                        session_id=str(snapshot.state.session_id),
+                        created_at=snapshot.state.goal.created_at.isoformat(),
+                        payload=payload,
                     ),
                 )
-            except sqlite3.IntegrityError as exc:
+            except SQLAlchemyIntegrityError as exc:
                 raise ValueError(f"session already exists: {snapshot.state.session_id}") from exc
 
     async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
         with self._connect() as connection:
             rows = connection.execute(
-                """
-                SELECT payload
-                FROM sessions
-                ORDER BY created_at DESC, session_id DESC
-                """
-            ).fetchall()
+                sql_select(_SESSIONS.c.payload).order_by(
+                    _SESSIONS.c.created_at.desc(),
+                    _SESSIONS.c.session_id.desc(),
+                )
+            ).all()
         return tuple(decode_session_snapshot(_loads_json_object(row[0])) for row in rows)
 
     async def load_session(self, session_id: SessionId) -> SessionSnapshot:
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT payload FROM sessions WHERE session_id = ?",
-                (str(session_id),),
-            ).fetchone()
-        if row is None:
-            raise StateNotFoundError(f"session not found: {session_id}")
-        return decode_session_snapshot(_loads_json_object(row[0]))
+            return _load_stored_session(connection, session_id)
 
     async def save_session(self, snapshot: SessionSnapshot) -> None:
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT payload FROM sessions WHERE session_id = ?",
-                (str(snapshot.state.session_id),),
-            ).fetchone()
-            if row is None:
-                raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
-            stored = decode_session_snapshot(_loads_json_object(row[0]))
+            stored = _load_stored_session(connection, snapshot.state.session_id)
             if snapshot.version != stored.version:
                 raise SessionVersionConflictError(
                     f"session version conflict: {snapshot.state.session_id} expected "
@@ -92,15 +124,11 @@ class SQLiteSessionStore:
             snapshot.version = stored.version + 1
             payload = _encode_json(encode_session_snapshot(snapshot))
             connection.execute(
-                """
-                UPDATE sessions
-                SET created_at = ?, payload = ?
-                WHERE session_id = ?
-                """,
-                (
-                    snapshot.state.goal.created_at.isoformat(),
-                    payload,
-                    str(snapshot.state.session_id),
+                sql_update(_SESSIONS)
+                .where(_SESSIONS.c.session_id == str(snapshot.state.session_id))
+                .values(
+                    created_at=snapshot.state.goal.created_at.isoformat(),
+                    payload=payload,
                 ),
             )
 
@@ -114,11 +142,17 @@ class SQLiteSessionStore:
         snapshot = await self.load_session(state.session_id)
         await self.save_session(with_state(snapshot, state))
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[Connection]:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self._path)
-        _ensure_schema(connection)
-        return connection
+        with self._sqlite_engine().begin() as connection:
+            yield connection
+
+    def _sqlite_engine(self) -> Engine:
+        if self._engine is None:
+            self._engine = create_engine(URL.create("sqlite", database=str(self._path)))
+            _METADATA.create_all(self._engine)
+        return self._engine
 
 
 class SQLiteEventStore:
@@ -126,6 +160,7 @@ class SQLiteEventStore:
 
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
+        self._engine: Engine | None = None
 
     async def emit(self, event: RuntimeEvent) -> None:
         with self._connect() as connection:
@@ -139,20 +174,15 @@ class SQLiteEventStore:
         limit: int | None = None,
     ) -> tuple[RuntimeEvent, ...]:
         with self._connect() as connection:
+            query = sql_select(_RUNTIME_EVENTS.c.payload).order_by(
+                _RUNTIME_EVENTS.c.sequence.asc()
+            )
             if session_id is None:
-                rows = connection.execute(
-                    "SELECT payload FROM runtime_events ORDER BY sequence ASC"
-                ).fetchall()
+                rows = connection.execute(query).all()
             else:
                 rows = connection.execute(
-                    """
-                    SELECT payload
-                    FROM runtime_events
-                    WHERE session_id = ?
-                    ORDER BY sequence ASC
-                    """,
-                    (str(session_id),),
-                ).fetchall()
+                    query.where(_RUNTIME_EVENTS.c.session_id == str(session_id))
+                ).all()
         events = tuple(decode_runtime_event(_loads_json_object(row[0])) for row in rows)
         return filter_events(
             events,
@@ -161,11 +191,17 @@ class SQLiteEventStore:
             limit=limit,
         )
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[Connection]:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self._path)
-        _ensure_schema(connection)
-        return connection
+        with self._sqlite_engine().begin() as connection:
+            yield connection
+
+    def _sqlite_engine(self) -> Engine:
+        if self._engine is None:
+            self._engine = create_engine(URL.create("sqlite", database=str(self._path)))
+            _METADATA.create_all(self._engine)
+        return self._engine
 
 
 class SQLiteRuntimeStore(SQLiteSessionStore, SQLiteEventStore):
@@ -180,13 +216,7 @@ class SQLiteRuntimeStore(SQLiteSessionStore, SQLiteEventStore):
     ) -> None:
         original_version = snapshot.version
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT payload FROM sessions WHERE session_id = ?",
-                (str(snapshot.state.session_id),),
-            ).fetchone()
-            if row is None:
-                raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
-            stored = decode_session_snapshot(_loads_json_object(row[0]))
+            stored = _load_stored_session(connection, snapshot.state.session_id)
             if snapshot.version != stored.version:
                 raise SessionVersionConflictError(
                     f"session version conflict: {snapshot.state.session_id} expected "
@@ -195,54 +225,20 @@ class SQLiteRuntimeStore(SQLiteSessionStore, SQLiteEventStore):
             snapshot.version = stored.version + 1
             try:
                 connection.execute(
-                    """
-                    UPDATE sessions
-                    SET created_at = ?, payload = ?
-                    WHERE session_id = ?
-                    """,
-                    (
-                        snapshot.state.goal.created_at.isoformat(),
-                        _encode_json(encode_session_snapshot(snapshot)),
-                        str(snapshot.state.session_id),
+                    sql_update(_SESSIONS)
+                    .where(_SESSIONS.c.session_id == str(snapshot.state.session_id))
+                    .values(
+                        created_at=snapshot.state.goal.created_at.isoformat(),
+                        payload=_encode_json(encode_session_snapshot(snapshot)),
                     ),
                 )
                 _insert_runtime_event(connection, event)
+            except SQLAlchemyIntegrityError as exc:
+                snapshot.version = original_version
+                _raise_sqlite_integrity_error(exc)
             except Exception:
                 snapshot.version = original_version
                 raise
-
-
-def _ensure_schema(connection: sqlite3.Connection) -> None:
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS sessions (
-            session_id TEXT PRIMARY KEY,
-            created_at TEXT NOT NULL,
-            payload TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS runtime_events (
-            sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-            event_id TEXT NOT NULL UNIQUE,
-            session_id TEXT NOT NULL,
-            goal_id TEXT NOT NULL,
-            task_id TEXT NOT NULL,
-            action_id TEXT,
-            type TEXT NOT NULL,
-            occurred_at TEXT NOT NULL,
-            payload TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_runtime_events_session_sequence
-        ON runtime_events(session_id, sequence)
-        """
-    )
 
 
 def _encode_json(payload: object) -> str:
@@ -253,30 +249,35 @@ def _loads_json_object(value: str | bytes | bytearray) -> JsonMapping:
     return parse_json_object(loads_json(value), "sqlite payload")
 
 
-def _insert_runtime_event(connection: sqlite3.Connection, event: RuntimeEvent) -> None:
+def _load_stored_session(connection: Connection, session_id: SessionId) -> SessionSnapshot:
+    row = connection.execute(
+        sql_select(_SESSIONS.c.payload).where(_SESSIONS.c.session_id == str(session_id))
+    ).first()
+    if row is None:
+        raise StateNotFoundError(f"session not found: {session_id}")
+    return decode_session_snapshot(_loads_json_object(row[0]))
+
+
+def _insert_runtime_event(connection: Connection, event: RuntimeEvent) -> None:
     payload = _encode_json(encode_runtime_event(event))
-    connection.execute(
-        """
-        INSERT INTO runtime_events(
-            event_id,
-            session_id,
-            goal_id,
-            task_id,
-            action_id,
-            type,
-            occurred_at,
-            payload
+    try:
+        connection.execute(
+            sql_insert(_RUNTIME_EVENTS).values(
+                event_id=str(event.id),
+                session_id=str(event.session_id),
+                goal_id=str(event.goal_id),
+                task_id=str(event.task_id),
+                action_id=None if event.action_id is None else str(event.action_id),
+                type=event.type,
+                occurred_at=event.occurred_at.isoformat(),
+                payload=payload,
+            ),
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            str(event.id),
-            str(event.session_id),
-            str(event.goal_id),
-            str(event.task_id),
-            None if event.action_id is None else str(event.action_id),
-            event.type,
-            event.occurred_at.isoformat(),
-            payload,
-        ),
-    )
+    except SQLAlchemyIntegrityError as exc:
+        _raise_sqlite_integrity_error(exc)
+
+
+def _raise_sqlite_integrity_error(error: SQLAlchemyIntegrityError) -> NoReturn:
+    if isinstance(error.orig, sqlite3.IntegrityError):
+        raise error.orig from error
+    raise error
