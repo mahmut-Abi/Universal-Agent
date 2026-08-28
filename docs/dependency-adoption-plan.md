@@ -127,8 +127,8 @@
 
 | 项 | 说明 |
 |---|---|
-| 现状 | `ecosystem/catalog.py` 的 Domain package install plan 依赖排序已用 `graphlib.TopologicalSorter` 接管；`ecosystem/validation.py`、`domain/package_verification.py` 与 `tasks/manager.py` 的 dependency cycle 检测也使用同一标准库图算法；registry file SHA-256 改用 `hashlib.file_digest` |
-| 收益 | 去掉四处手写 DFS/cycle stack 逻辑和手写 chunk digest loop；依赖排序、cycle detection 与文件摘要行为交给标准库维护 |
+| 现状 | `ecosystem/catalog.py` 的 Domain package install plan 与 `multi_agent/orchestrator.py` 的 batch delegation 调度已用 `graphlib.TopologicalSorter` 接管；`ecosystem/validation.py`、`domain/package_verification.py` 与 `tasks/manager.py` 的 dependency cycle 检测也使用同一标准库图算法；registry file SHA-256 改用 `hashlib.file_digest` |
+| 收益 | 去掉五处手写 DFS/cycle stack/pending-ready 扫描逻辑和手写 chunk digest loop；依赖排序、cycle detection、batch scheduling 与文件摘要行为交给标准库维护 |
 | 风险 | 低：新增 `verify=False` install-plan cycle 测试，既有 ecosystem/domain registry verification 测试继续覆盖 cycle 与 sha256 mismatch |
 
 ### 14. RapidFuzz → 替换手写 memory relevance matching（已完成）

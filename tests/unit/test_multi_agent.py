@@ -1138,7 +1138,7 @@ async def test_agent_orchestrator_delegates_many_detects_cycles() -> None:
         },
     )
 
-    with pytest.raises(AgentDelegationDependencyError):
+    with pytest.raises(AgentDelegationDependencyError, match="cycle"):
         await orchestrator.delegate_many(
             (
                 AgentDelegationSpec(

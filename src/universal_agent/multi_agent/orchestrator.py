@@ -5,6 +5,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from graphlib import CycleError, TopologicalSorter
 from types import MappingProxyType
 from typing import Protocol
 
@@ -283,40 +284,37 @@ class AgentOrchestrator:
     ) -> AgentDelegationBatchResult:
         if not specs:
             raise ValueError("agent delegation batch requires specs")
-        _validate_delegation_specs(specs)
-        pending = {spec.request.task_id: spec for spec in specs}
+        sorter = _delegation_sorter(specs)
+        specs_by_id = {spec.request.task_id: spec for spec in specs}
         results: dict[AgentTaskId, AgentTaskResult] = {}
         skipped: list[AgentTaskId] = []
 
-        while pending:
-            blocked = tuple(
-                spec for spec in pending.values() if _has_failed_dependency(spec, results)
+        while sorter.is_active():
+            ready_ids = sorter.get_ready()
+            if not ready_ids:
+                raise AgentDelegationDependencyError(
+                    "agent delegation dependencies cannot be resolved"
+                )
+            ready_specs = tuple(specs_by_id[task_id] for task_id in ready_ids)
+            delegated_specs = tuple(
+                spec for spec in ready_specs if not _has_failed_dependency(spec, results)
             )
-            for spec in blocked:
-                pending.pop(spec.request.task_id)
+            delegated_task_ids = {spec.request.task_id for spec in delegated_specs}
+            for spec in ready_specs:
+                if spec.request.task_id in delegated_task_ids:
+                    continue
                 skipped.append(spec.request.task_id)
                 results[spec.request.task_id] = rejected_agent_task_result(
                     spec.request,
                     "dependency did not complete: " + _failed_dependency_reason(spec, results),
                     error_code=ErrorCode.INVALID_STATE,
                 )
-            if blocked:
-                continue
-
-            ready = tuple(
-                spec for spec in pending.values() if _dependencies_completed(spec, results)
+            delegated = await asyncio.gather(
+                *(self._delegate_spec(spec) for spec in delegated_specs)
             )
-            if not ready:
-                if pending:
-                    raise AgentDelegationDependencyError(
-                        "agent delegation dependencies cannot be resolved"
-                    )
-                break
-
-            delegated = await asyncio.gather(*(self._delegate_spec(spec) for spec in ready))
-            for spec, result in zip(ready, delegated, strict=True):
-                pending.pop(spec.request.task_id)
+            for spec, result in zip(delegated_specs, delegated, strict=True):
                 results[spec.request.task_id] = result
+            sorter.done(*ready_ids)
 
         ordered = tuple(results[spec.request.task_id] for spec in specs)
         status = _batch_status(ordered)
@@ -587,7 +585,9 @@ def _batch_status_value(value: object) -> AgentDelegationBatchStatus:
         raise ValueError(f"unsupported agent delegation batch status: {raw}") from exc
 
 
-def _validate_delegation_specs(specs: tuple[AgentDelegationSpec, ...]) -> None:
+def _delegation_sorter(
+    specs: tuple[AgentDelegationSpec, ...],
+) -> TopologicalSorter[AgentTaskId]:
     task_ids = tuple(spec.request.task_id for spec in specs)
     duplicates = _duplicates(task_ids)
     if duplicates:
@@ -598,6 +598,14 @@ def _validate_delegation_specs(specs: tuple[AgentDelegationSpec, ...]) -> None:
     )
     if missing:
         raise ValueError("unknown agent delegation dependencies: " + _format_task_ids(missing))
+    sorter = TopologicalSorter({spec.request.task_id: spec.depends_on for spec in specs})
+    try:
+        sorter.prepare()
+    except CycleError as exc:
+        raise AgentDelegationDependencyError(
+            "agent delegation dependencies contain a cycle"
+        ) from exc
+    return sorter
 
 
 def _has_failed_dependency(
