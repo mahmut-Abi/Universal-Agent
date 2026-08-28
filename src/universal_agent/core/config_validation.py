@@ -4,6 +4,7 @@ from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import cache
 from typing import Annotated
 
 from pydantic import (
@@ -432,7 +433,7 @@ def parse_bounded_int(
 ) -> int:
     if minimum > maximum:
         raise ValueError("minimum must not exceed maximum")
-    adapter: TypeAdapter[int] = TypeAdapter(Annotated[int, Field(ge=minimum, le=maximum)])
+    adapter = _bounded_int_adapter(minimum, maximum)
     try:
         return adapter.validate_python(value, strict=True)
     except PydanticValidationError as exc:
@@ -485,7 +486,7 @@ def parse_bounded_float(
 ) -> float:
     if minimum > maximum:
         raise ValueError("minimum must not exceed maximum")
-    adapter: TypeAdapter[float] = TypeAdapter(Annotated[float, Field(ge=minimum, le=maximum)])
+    adapter = _bounded_float_adapter(minimum, maximum)
     try:
         return adapter.validate_python(value, strict=True)
     except PydanticValidationError as exc:
@@ -512,7 +513,7 @@ def parse_bounded_float_text(
 ) -> float:
     if minimum > maximum:
         raise ValueError("minimum must not exceed maximum")
-    adapter: TypeAdapter[float] = TypeAdapter(Annotated[float, Field(ge=minimum, le=maximum)])
+    adapter = _bounded_float_adapter(minimum, maximum)
     try:
         return adapter.validate_strings(value)
     except PydanticValidationError as exc:
@@ -532,6 +533,16 @@ def parse_optional_rate(value: object, field: str) -> float | None:
     if value is None:
         return None
     return parse_rate(value, field)
+
+
+@cache
+def _bounded_int_adapter(minimum: int, maximum: int) -> TypeAdapter[int]:
+    return TypeAdapter(Annotated[int, Field(ge=minimum, le=maximum)])
+
+
+@cache
+def _bounded_float_adapter(minimum: float, maximum: float) -> TypeAdapter[float]:
+    return TypeAdapter(Annotated[float, Field(ge=minimum, le=maximum)])
 
 
 def json_mapping(value: Mapping[str, PydanticJsonValue]) -> JsonMapping:

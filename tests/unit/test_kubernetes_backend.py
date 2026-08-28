@@ -162,6 +162,27 @@ async def test_httpx_kubernetes_api_transport_maps_request_errors() -> None:
         await client.aclose()
 
 
+@pytest.mark.asyncio
+async def test_httpx_kubernetes_api_transport_preserves_api_server_base_path() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"items": []}, request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        transport = HttpxKubernetesApiTransport(
+            "https://gateway.example.test/kubernetes/prod/",
+            client=client,
+        )
+        await transport.request("GET", "/api/v1/nodes")
+    finally:
+        await client.aclose()
+
+    assert str(requests[0].url) == "https://gateway.example.test/kubernetes/prod/api/v1/nodes"
+
+
 class RecordingScaleBackend:
     def __init__(self) -> None:
         self.arguments: JsonMapping | None = None
@@ -782,8 +803,18 @@ def test_kubernetes_backends_validate_constructor_inputs() -> None:
         KubectlBackend(timeout_seconds=cast(float, True))
     with pytest.raises(ValueError, match="Kubernetes API server must not be empty"):
         HttpxKubernetesApiTransport(" ")
+    with pytest.raises(
+        ValueError, match=r"Kubernetes API server must be an absolute http\(s\) URL"
+    ):
+        HttpxKubernetesApiTransport("kube.example.test")
+    with pytest.raises(ValueError, match="Kubernetes API server must not include query"):
+        HttpxKubernetesApiTransport("https://kube.example.test?debug=true")
     with pytest.raises(ValueError, match="api_server must not be empty"):
         KubernetesApiBackend(api_server=" ", transport=RecordingKubernetesApiTransport({}))
+    with pytest.raises(ValueError, match=r"api_server must be an absolute http\(s\) URL"):
+        KubernetesApiBackend(
+            api_server="kube.example.test", transport=RecordingKubernetesApiTransport({})
+        )
     with pytest.raises(ValueError, match="default_namespace must not be empty"):
         KubernetesApiBackend(
             api_server="https://cluster.example.test",

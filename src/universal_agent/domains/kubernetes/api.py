@@ -58,8 +58,7 @@ class HttpxKubernetesApiTransport:
         bearer_token: str | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        parse_non_empty_string(api_server, "Kubernetes API server")
-        self._api_server = api_server.rstrip("/")
+        self._api_server = _api_server_url(api_server, "Kubernetes API server")
         self._bearer_token = bearer_token
         self._client = client
 
@@ -105,7 +104,7 @@ class HttpxKubernetesApiTransport:
         headers: dict[str, str],
         timeout_seconds: float | None,
     ) -> KubernetesApiResponse:
-        url = self._api_server + path
+        url = _request_url(self._api_server, path)
         request_headers = {"accept": "application/json", **headers}
         if self._bearer_token:
             request_headers["authorization"] = f"Bearer {self._bearer_token}"
@@ -145,7 +144,7 @@ class KubernetesApiBackend:
         default_namespace: str = "default",
         timeout_seconds: float = 10.0,
     ) -> None:
-        parse_non_empty_string(api_server, "api_server")
+        _api_server_url(api_server, "api_server")
         parse_non_empty_string(default_namespace, "default_namespace")
         parse_positive_float(timeout_seconds, "timeout_seconds")
         self._transport = transport or HttpxKubernetesApiTransport(
@@ -452,6 +451,24 @@ def _workload_plural(kind: str) -> str:
 
 def _quote_path_part(value: str) -> str:
     return quote(value, safe="")
+
+
+def _api_server_url(value: str, field: str) -> httpx.URL:
+    raw = parse_non_empty_string(value, field)
+    url = httpx.URL(raw)
+    if url.scheme not in {"http", "https"} or url.host is None:
+        raise ValueError(f"{field} must be an absolute http(s) URL")
+    if url.query or url.fragment:
+        raise ValueError(f"{field} must not include query or fragment")
+    return url.copy_with(path=url.path.rstrip("/"))
+
+
+def _request_url(api_server: httpx.URL, path: str) -> str:
+    request_path = "/" + path.lstrip("/")
+    base_path = api_server.path.rstrip("/")
+    if base_path:
+        request_path = f"{base_path}{request_path}"
+    return str(api_server.copy_with(path=request_path))
 
 
 def _decode_optional_json(text: str) -> JsonValue:
