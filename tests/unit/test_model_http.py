@@ -29,8 +29,10 @@ from universal_agent.model import (
     ModelUsage,
     OpenAIChatCompletionsModelAdapter,
     OpenAIResponsesModelAdapter,
+    OpenAISdkModelTransport,
     model_usage,
 )
+from universal_agent.model.http import OpenAIClientFactory
 
 
 @dataclass(slots=True)
@@ -56,6 +58,84 @@ class RecordingTransport:
     ) -> JsonMapping:
         self.requests.append(RequestRecord(url, dict(headers), payload, timeout_seconds))
         return self._response
+
+
+@dataclass(slots=True)
+class OpenAIClientRecord:
+    api_key: str
+    base_url: str
+    default_headers: Mapping[str, str]
+    timeout_seconds: float
+    calls: list[tuple[str, dict[str, object]]]
+    closed: bool = False
+
+
+class FakeOpenAIResponse:
+    def __init__(self, payload: JsonMapping) -> None:
+        self._payload = payload
+
+    def model_dump(self, *, mode: str) -> object:
+        assert mode == "json"
+        return self._payload
+
+
+class FakeOpenAIResponsesResource:
+    def __init__(self, record: OpenAIClientRecord, response: JsonMapping) -> None:
+        self._record = record
+        self._response = response
+
+    async def create(self, **kwargs: object) -> FakeOpenAIResponse:
+        self._record.calls.append(("responses", kwargs))
+        return FakeOpenAIResponse(self._response)
+
+
+class FakeOpenAIChatCompletionsResource:
+    def __init__(self, record: OpenAIClientRecord, response: JsonMapping) -> None:
+        self._record = record
+        self._response = response
+
+    async def create(self, **kwargs: object) -> FakeOpenAIResponse:
+        self._record.calls.append(("chat.completions", kwargs))
+        return FakeOpenAIResponse(self._response)
+
+
+class FakeOpenAIChatResource:
+    def __init__(self, record: OpenAIClientRecord, response: JsonMapping) -> None:
+        self.completions = FakeOpenAIChatCompletionsResource(record, response)
+
+
+class FakeOpenAIClient:
+    def __init__(self, record: OpenAIClientRecord, response: JsonMapping) -> None:
+        self._record = record
+        self.responses = FakeOpenAIResponsesResource(record, response)
+        self.chat = FakeOpenAIChatResource(record, response)
+
+    async def close(self) -> None:
+        self._record.closed = True
+
+
+class FakeOpenAIClientFactory:
+    def __init__(self, response: JsonMapping) -> None:
+        self._response = response
+        self.records: list[OpenAIClientRecord] = []
+
+    def __call__(
+        self,
+        *,
+        api_key: str,
+        base_url: str,
+        default_headers: Mapping[str, str],
+        timeout_seconds: float,
+    ) -> FakeOpenAIClient:
+        record = OpenAIClientRecord(
+            api_key=api_key,
+            base_url=base_url,
+            default_headers=dict(default_headers),
+            timeout_seconds=timeout_seconds,
+            calls=[],
+        )
+        self.records.append(record)
+        return FakeOpenAIClient(record, self._response)
 
 
 @pytest.mark.asyncio
@@ -311,6 +391,105 @@ def test_json_http_model_adapter_validates_configuration() -> None:
             "runtime-model",
             extra_headers={"X-Test\n": "bad"},
         )
+
+
+@pytest.mark.asyncio
+async def test_openai_sdk_transport_drives_chat_completions_adapter() -> None:
+    factory = FakeOpenAIClientFactory(
+        immutable_json(
+            {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": json_text(
+                                {
+                                    "type": "execute",
+                                    "reason": "Need current workload health.",
+                                    "capability": "inspect_workload",
+                                    "target": "deployment/api",
+                                    "arguments": {"name": "api"},
+                                    "expected_observations": ["healthy"],
+                                    "message": None,
+                                }
+                            ),
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 4},
+            }
+        )
+    )
+    adapter = OpenAIChatCompletionsModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        endpoint="https://api.openai.example.test/v1/chat/completions",
+        extra_headers={"OpenAI-Organization": "org-test"},
+        timeout_seconds=5.5,
+        transport=OpenAISdkModelTransport(cast(OpenAIClientFactory, factory)),
+    )
+
+    decision = await adapter.decide(context())
+
+    assert decision.type is DecisionType.EXECUTE
+    assert decision.capability == "inspect_workload"
+    record = factory.records[0]
+    assert record.api_key == "openai-secret"
+    assert record.base_url == "https://api.openai.example.test/v1"
+    assert record.default_headers == {"OpenAI-Organization": "org-test"}
+    assert record.timeout_seconds == 5.5
+    assert record.closed is True
+    call_name, kwargs = record.calls[0]
+    assert call_name == "chat.completions"
+    assert kwargs["model"] == "gpt-runtime"
+    assert "messages" in kwargs
+    assert cast(Mapping[str, JsonValue], kwargs["response_format"])["type"] == "json_schema"
+
+
+@pytest.mark.asyncio
+async def test_openai_sdk_transport_drives_responses_adapter() -> None:
+    factory = FakeOpenAIClientFactory(
+        immutable_json(
+            {
+                "status": "completed",
+                "output_text": json_text(
+                    {
+                        "type": "finish",
+                        "reason": "Runtime criteria are already satisfied.",
+                        "capability": None,
+                        "target": None,
+                        "arguments": {},
+                        "expected_observations": [],
+                        "message": None,
+                    }
+                ),
+                "usage": {"input_tokens": 12, "output_tokens": 3},
+            }
+        )
+    )
+    adapter = OpenAIResponsesModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        endpoint="https://api.openai.example.test/v1",
+        timeout_seconds=6.5,
+        transport=OpenAISdkModelTransport(cast(OpenAIClientFactory, factory)),
+    )
+
+    decision = await adapter.decide(context())
+
+    assert decision.type is DecisionType.FINISH
+    record = factory.records[0]
+    assert record.base_url == "https://api.openai.example.test/v1"
+    assert record.timeout_seconds == 6.5
+    assert record.closed is True
+    call_name, kwargs = record.calls[0]
+    assert call_name == "responses"
+    assert kwargs["model"] == "gpt-runtime"
+    assert kwargs["store"] is False
+    text = cast(Mapping[str, JsonValue], kwargs["text"])
+    text_format = cast(Mapping[str, JsonValue], text["format"])
+    assert text_format["type"] == "json_schema"
 
 
 @pytest.mark.asyncio

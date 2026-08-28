@@ -174,8 +174,8 @@ See `examples/p3_5_runtime_sdk.py` for a complete local embedding example.
 Profile runtime config can declare a model provider without storing credentials.
 The current built-in providers are `scripted` for deterministic local runs,
 `json_http` for `httpx`-backed HTTP model bridges, `openai_chat_completions`
-for OpenAI-compatible `/v1/chat/completions` providers, and `openai_responses`
-for direct OpenAI Responses structured decision output. Model config stores
+for OpenAI SDK-backed `/v1/chat/completions` providers, and `openai_responses`
+for OpenAI SDK-backed Responses structured decision output. Model config stores
 only endpoint/model metadata plus an optional `api_key_secret` reference; the
 secret value is resolved by `RuntimeHost` from the declared `secrets` block and
 is never returned by `config show` or `/v1/config`. Built-in secret references
@@ -206,9 +206,11 @@ goal completion.
 
 Direct OpenAI Chat Completions config uses the same secret reference model.
 `endpoint` is optional and defaults to the OpenAI Chat Completions endpoint when
-omitted. The default response format is `json_schema`; use `json_object` for
-providers that support JSON mode but not schemas, and `prompt_json` for legacy
-OpenAI-compatible providers that reject the `response_format` request field.
+omitted. Custom endpoints may use either a provider base URL or the full
+`/v1/chat/completions` URL. The default response format is `json_schema`; use
+`json_object` for providers that support JSON mode but not schemas, and
+`prompt_json` for legacy OpenAI-compatible providers that reject the
+`response_format` request field.
 
 ```json
 {

@@ -32,6 +32,7 @@ from universal_agent.model import (
     ModelAdapter,
     ModelUsage,
     OpenAIChatCompletionsModelAdapter,
+    OpenAIModelTransport,
     OpenAIResponsesModelAdapter,
     ScriptedModelAdapter,
 )
@@ -65,6 +66,7 @@ def build_configured_model_adapter(
     scripted_usage: Iterable[ModelUsage] = (),
     secret_provider: SecretProvider | None = None,
     json_http_transport: JsonHttpModelTransport | None = None,
+    openai_transport: OpenAIModelTransport | None = None,
 ) -> ModelAdapter:
     """Build a ModelAdapter from RuntimeConfig without exposing secret values.
 
@@ -97,7 +99,7 @@ def build_configured_model_adapter(
             endpoint=config.model.endpoint or OpenAIResponsesModelAdapter.DEFAULT_ENDPOINT,
             extra_headers=_configured_model_headers(config),
             timeout_seconds=config.model.timeout_seconds,
-            transport=json_http_transport,
+            transport=openai_transport or json_http_transport,
         )
     if config.model.provider is ModelProvider.OPENAI_CHAT_COMPLETIONS:
         api_key = _configured_model_api_key(config, secret_provider)
@@ -110,7 +112,7 @@ def build_configured_model_adapter(
             extra_headers=_configured_model_headers(config),
             timeout_seconds=config.model.timeout_seconds,
             response_format=config.model.response_format or "json_schema",
-            transport=json_http_transport,
+            transport=openai_transport or json_http_transport,
         )
     raise ValueError(f"unsupported model provider: {config.model.provider}")
 

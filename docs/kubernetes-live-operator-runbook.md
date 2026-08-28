@@ -66,6 +66,8 @@ Notes:
 
 - Omit `--model-endpoint` when using the default OpenAI Chat Completions
   endpoint.
+- For OpenAI-compatible providers, `--model-endpoint` may be either the provider
+  base URL or the full `/v1/chat/completions` URL.
 - Use `--model-response-format json_schema` when the provider supports Chat
   Completions JSON Schema response format.
 - Use `--model-response-format json_object` when the provider supports JSON mode

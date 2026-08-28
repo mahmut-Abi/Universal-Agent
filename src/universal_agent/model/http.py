@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Protocol
+from typing import Any, Protocol, cast
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
+from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI, OpenAIError
 from pydantic import Field
 
 from universal_agent.core import (
@@ -105,6 +107,182 @@ class JsonHttpModelTransport(Protocol):
         payload: JsonMapping,
         timeout_seconds: float,
     ) -> JsonMapping: ...
+
+
+class OpenAIClientResponse(Protocol):
+    def model_dump(self, *, mode: str) -> object: ...
+
+
+class OpenAIResponsesResource(Protocol):
+    async def create(self, **kwargs: Any) -> OpenAIClientResponse: ...
+
+
+class OpenAIChatCompletionsResource(Protocol):
+    async def create(self, **kwargs: Any) -> OpenAIClientResponse: ...
+
+
+class OpenAIChatResource(Protocol):
+    completions: OpenAIChatCompletionsResource
+
+
+class OpenAIClient(Protocol):
+    responses: OpenAIResponsesResource
+    chat: OpenAIChatResource
+
+    async def close(self) -> None: ...
+
+
+class OpenAIClientFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        api_key: str,
+        base_url: str,
+        default_headers: Mapping[str, str],
+        timeout_seconds: float,
+    ) -> OpenAIClient: ...
+
+
+class OpenAIModelTransport(Protocol):
+    async def create_response(
+        self,
+        endpoint: str,
+        *,
+        api_key: str,
+        extra_headers: Mapping[str, str],
+        payload: JsonMapping,
+        timeout_seconds: float,
+    ) -> JsonMapping: ...
+
+    async def create_chat_completion(
+        self,
+        endpoint: str,
+        *,
+        api_key: str,
+        extra_headers: Mapping[str, str],
+        payload: JsonMapping,
+        timeout_seconds: float,
+    ) -> JsonMapping: ...
+
+
+class OpenAISdkModelTransport:
+    """OpenAI SDK-backed transport for OpenAI and OpenAI-compatible providers."""
+
+    def __init__(self, client_factory: OpenAIClientFactory | None = None) -> None:
+        self._client_factory = client_factory or _openai_client
+
+    async def create_response(
+        self,
+        endpoint: str,
+        *,
+        api_key: str,
+        extra_headers: Mapping[str, str],
+        payload: JsonMapping,
+        timeout_seconds: float,
+    ) -> JsonMapping:
+        client = self._client(
+            endpoint,
+            "/responses",
+            api_key=api_key,
+            extra_headers=extra_headers,
+            timeout_seconds=timeout_seconds,
+        )
+        try:
+            response = await client.responses.create(**_openai_kwargs(payload))
+        except APIStatusError as exc:
+            raise JsonHttpModelError(_openai_status_error_message(exc)) from exc
+        except APITimeoutError as exc:
+            raise JsonHttpModelError(f"OpenAI provider request timed out: {exc}") from exc
+        except APIConnectionError as exc:
+            raise JsonHttpModelError(f"OpenAI provider connection failed: {exc}") from exc
+        except OpenAIError as exc:
+            raise JsonHttpModelError(f"OpenAI provider request failed: {exc}") from exc
+        finally:
+            await client.close()
+        return _openai_response_mapping(response, "OpenAI response")
+
+    async def create_chat_completion(
+        self,
+        endpoint: str,
+        *,
+        api_key: str,
+        extra_headers: Mapping[str, str],
+        payload: JsonMapping,
+        timeout_seconds: float,
+    ) -> JsonMapping:
+        client = self._client(
+            endpoint,
+            "/chat/completions",
+            api_key=api_key,
+            extra_headers=extra_headers,
+            timeout_seconds=timeout_seconds,
+        )
+        try:
+            response = await client.chat.completions.create(**_openai_kwargs(payload))
+        except APIStatusError as exc:
+            raise JsonHttpModelError(_openai_status_error_message(exc)) from exc
+        except APITimeoutError as exc:
+            raise JsonHttpModelError(f"OpenAI provider request timed out: {exc}") from exc
+        except APIConnectionError as exc:
+            raise JsonHttpModelError(f"OpenAI provider connection failed: {exc}") from exc
+        except OpenAIError as exc:
+            raise JsonHttpModelError(f"OpenAI provider request failed: {exc}") from exc
+        finally:
+            await client.close()
+        return _openai_response_mapping(response, "OpenAI chat completion response")
+
+    def _client(
+        self,
+        endpoint: str,
+        resource_path: str,
+        *,
+        api_key: str,
+        extra_headers: Mapping[str, str],
+        timeout_seconds: float,
+    ) -> OpenAIClient:
+        return self._client_factory(
+            api_key=api_key,
+            base_url=_openai_base_url(endpoint, resource_path),
+            default_headers=extra_headers,
+            timeout_seconds=timeout_seconds,
+        )
+
+
+class _LegacyOpenAIJsonHttpTransport:
+    def __init__(self, transport: JsonHttpModelTransport) -> None:
+        self._transport = transport
+
+    async def create_response(
+        self,
+        endpoint: str,
+        *,
+        api_key: str,
+        extra_headers: Mapping[str, str],
+        payload: JsonMapping,
+        timeout_seconds: float,
+    ) -> JsonMapping:
+        return await self._transport.post_json(
+            endpoint,
+            headers=_openai_headers(api_key, extra_headers),
+            payload=payload,
+            timeout_seconds=timeout_seconds,
+        )
+
+    async def create_chat_completion(
+        self,
+        endpoint: str,
+        *,
+        api_key: str,
+        extra_headers: Mapping[str, str],
+        payload: JsonMapping,
+        timeout_seconds: float,
+    ) -> JsonMapping:
+        return await self._transport.post_json(
+            endpoint,
+            headers=_openai_headers(api_key, extra_headers),
+            payload=payload,
+            timeout_seconds=timeout_seconds,
+        )
 
 
 class HttpxJsonHttpTransport:
@@ -283,7 +461,7 @@ class OpenAIResponsesModelAdapter:
         endpoint: str = DEFAULT_ENDPOINT,
         extra_headers: Mapping[str, str] | None = None,
         timeout_seconds: float = 30.0,
-        transport: JsonHttpModelTransport | None = None,
+        transport: OpenAIModelTransport | JsonHttpModelTransport | None = None,
     ) -> None:
         parsed_model = parse_non_empty_string(model, "model name")
         parsed_api_key = parse_non_empty_string(api_key, "OpenAI API key")
@@ -295,13 +473,14 @@ class OpenAIResponsesModelAdapter:
         self._endpoint = parsed_endpoint
         self._extra_headers = dict(extra_headers or {})
         self._timeout_seconds = timeout_seconds
-        self._transport = transport or HttpxJsonHttpTransport()
+        self._transport = _openai_model_transport(transport)
         self._last_usage: ModelUsage | None = None
 
     async def decide(self, context: DecisionContext) -> Decision:
-        response = await self._transport.post_json(
+        response = await self._transport.create_response(
             self._endpoint,
-            headers=self._headers(),
+            api_key=self._api_key,
+            extra_headers=self._extra_headers,
             payload=self._request_payload(context),
             timeout_seconds=self._timeout_seconds,
         )
@@ -330,13 +509,6 @@ class OpenAIResponsesModelAdapter:
 
     def model_usage(self) -> ModelUsage | None:
         return self._last_usage
-
-    def _headers(self) -> Mapping[str, str]:
-        return {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self._api_key}",
-            **self._extra_headers,
-        }
 
     def _request_payload(self, context: DecisionContext) -> JsonMapping:
         context_payload = _decision_context_payload(context)
@@ -399,7 +571,7 @@ class OpenAIChatCompletionsModelAdapter:
         extra_headers: Mapping[str, str] | None = None,
         timeout_seconds: float = 30.0,
         response_format: str = "json_schema",
-        transport: JsonHttpModelTransport | None = None,
+        transport: OpenAIModelTransport | JsonHttpModelTransport | None = None,
     ) -> None:
         parsed_model = parse_non_empty_string(model, "model name")
         parsed_api_key = parse_non_empty_string(api_key, "OpenAI API key")
@@ -417,13 +589,14 @@ class OpenAIChatCompletionsModelAdapter:
         self._extra_headers = dict(extra_headers or {})
         self._timeout_seconds = timeout_seconds
         self._response_format = response_format
-        self._transport = transport or HttpxJsonHttpTransport()
+        self._transport = _openai_model_transport(transport)
         self._last_usage: ModelUsage | None = None
 
     async def decide(self, context: DecisionContext) -> Decision:
-        response = await self._transport.post_json(
+        response = await self._transport.create_chat_completion(
             self._endpoint,
-            headers=self._headers(),
+            api_key=self._api_key,
+            extra_headers=self._extra_headers,
             payload=self._request_payload(context),
             timeout_seconds=self._timeout_seconds,
         )
@@ -445,13 +618,6 @@ class OpenAIChatCompletionsModelAdapter:
 
     def model_usage(self) -> ModelUsage | None:
         return self._last_usage
-
-    def _headers(self) -> Mapping[str, str]:
-        return {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self._api_key}",
-            **self._extra_headers,
-        }
 
     def _request_payload(self, context: DecisionContext) -> JsonMapping:
         prompt = {
@@ -489,6 +655,81 @@ class OpenAIChatCompletionsModelAdapter:
         if response_format is not None:
             payload["response_format"] = response_format
         return immutable_json(payload)
+
+
+def _openai_model_transport(
+    transport: OpenAIModelTransport | JsonHttpModelTransport | None,
+) -> OpenAIModelTransport:
+    if transport is None:
+        return OpenAISdkModelTransport()
+    if hasattr(transport, "create_response") and hasattr(transport, "create_chat_completion"):
+        return cast(OpenAIModelTransport, transport)
+    return _LegacyOpenAIJsonHttpTransport(transport)
+
+
+def _openai_client(
+    *,
+    api_key: str,
+    base_url: str,
+    default_headers: Mapping[str, str],
+    timeout_seconds: float,
+) -> OpenAIClient:
+    return cast(
+        OpenAIClient,
+        AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            default_headers=dict(default_headers),
+            timeout=timeout_seconds,
+        ),
+    )
+
+
+def _openai_kwargs(payload: JsonMapping) -> dict[str, Any]:
+    return cast(dict[str, Any], dict(payload))
+
+
+def _openai_headers(api_key: str, extra_headers: Mapping[str, str]) -> Mapping[str, str]:
+    return {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        **extra_headers,
+    }
+
+
+def _openai_base_url(endpoint: str, resource_path: str) -> str:
+    parsed = urlsplit(endpoint)
+    if parsed.query or parsed.fragment:
+        raise ValueError("OpenAI model endpoint must not include query or fragment")
+    path = parsed.path.rstrip("/")
+    normalized_resource_path = resource_path.rstrip("/")
+    if path.endswith(normalized_resource_path):
+        path = path[: -len(normalized_resource_path)].rstrip("/")
+        path = "" if not path else path
+        return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+    return endpoint.rstrip("/")
+
+
+def _openai_response_mapping(response: object, field_name: str) -> JsonMapping:
+    if isinstance(response, Mapping):
+        return _json_mapping(response, field_name)
+    model_dump = getattr(response, "model_dump", None)
+    if not callable(model_dump):
+        raise JsonHttpModelError(f"{field_name} was not an OpenAI SDK model")
+    return _json_mapping(model_dump(mode="json"), field_name)
+
+
+def _openai_status_error_message(error: APIStatusError) -> str:
+    response = getattr(error, "response", None)
+    detail = ""
+    if response is not None:
+        body = getattr(response, "text", "")
+        if isinstance(body, str) and body.strip():
+            detail = f": {body.strip()}"
+    if not detail:
+        message = str(error).strip()
+        detail = f": {message}" if message else ""
+    return f"OpenAI provider returned HTTP {error.status_code}{detail}"
 
 
 def _decision_context_payload(context: DecisionContext) -> JsonMapping:

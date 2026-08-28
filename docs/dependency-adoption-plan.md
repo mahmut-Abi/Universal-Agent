@@ -9,8 +9,9 @@
 
 ## 现状基线
 
-- 源码约 39.7k 行，已引入 `httpx`、`jsonschema`、`pydantic`、`orjson`、`filelock`、
-  `jinja2`、`python-dateutil`、`rich` 等基础运行时依赖，mypy strict + ruff 全量约束
+- 源码约 39.7k 行，已引入 `httpx`、`openai`、`jsonschema`、`pydantic`、`orjson`、
+  `filelock`、`jinja2`、`python-dateutil`、`rich` 等基础运行时依赖，
+  mypy strict + ruff 全量约束
 - 早期超 2000 行源码文件已被压回 1000 行以内；后续先优先做库替换和 seam 收口，
   暂不继续以拆文件作为主线
 - 主要瓶颈是**代码量增长速度**，非性能（主循环为 I/O 密集：LLM 秒级、kubectl 子进程、HTTP）
@@ -29,7 +30,16 @@
 | 预估 | 改动 ~100 行，ROI 最高的单点改动 |
 | 风险 | 低 |
 
-### 2. Pydantic v2 → 替换手写校验/解析层（持续推进）
+### 2. OpenAI SDK → 替换手写 OpenAI HTTP 调用层（已完成）
+
+| 项 | 说明 |
+|---|---|
+| 现状 | 已引入 `openai>=1.99,<3`；`OpenAIChatCompletionsModelAdapter` 与 `OpenAIResponsesModelAdapter` 默认通过 `OpenAISdkModelTransport` 调用官方 SDK；`JsonHttpModelTransport` 仍保留给 provider-agnostic `json_http` 和旧测试 fake 的兼容包装 |
+| 改动面 | Runtime 的 `ModelAdapter` / `Decision` / 本地校验契约不变；替换的是 OpenAI provider transport seam，而不是把 Kernel 绑定到 OpenAI |
+| 收益 | 鉴权、base_url、超时、HTTP 错误与 SDK response model 交给官方库维护；OpenAI-compatible Chat Completions 和 Responses 都保留同一 runtime-owned Decision 解码/验证路径 |
+| 风险 | 低：新增 SDK fake 单测覆盖 payload/base_url/header/close；旧 `post_json` fake 仍可注入，避免破坏现有 integration tests |
+
+### 3. Pydantic v2 → 替换手写校验/解析层（持续推进）
 
 | 项 | 说明 |
 |---|---|
@@ -39,7 +49,7 @@
 | 剩余 | 可继续评估 agentd 其他请求体是否值得按模块迁移；当前不建议一次性替换核心 runtime contracts |
 | 风险 | 低；建议继续按模块迁移，避免一次性替换所有 dataclass 构造契约 |
 
-### 3. orjson → 替换分散的标准库 JSON 编解码（第一批已完成）
+### 4. orjson → 替换分散的标准库 JSON 编解码（第一批已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -49,7 +59,7 @@
 | 剩余 | 测试和 examples 仍可继续使用标准库 JSON 构造 fixture；若未来要强制全 repo 收口，再单独迁移测试工具层 |
 | 风险 | 低：全量 `ruff`、`mypy` 与 `pytest` 已覆盖 |
 
-### 4. Starlette + uvicorn → 替换 agentd socket/server / routing 适配层（持续推进）
+### 5. Starlette + uvicorn → 替换 agentd socket/server / routing 适配层（持续推进）
 
 | 项 | 说明 |
 |---|---|
@@ -58,7 +68,7 @@
 | 剩余 | 后续在稳定 schema 后补 OpenAPI；更大范围的 CLI Typer 迁移单独排期，避免扰动现有命令契约 |
 | 风险 | 中：依赖树变大；需持续保证 Runtime API 行为不变（现有 test_agentd_routes / test_agentd_server 兜底） |
 
-### 5. prometheus-client → 替换手写 Prometheus text exposition（已完成）
+### 6. prometheus-client → 替换手写 Prometheus text exposition（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -66,7 +76,7 @@
 | 收益 | 指标格式交给官方库维护，避免手写 HELP/TYPE/sample 行细节；Runtime 仍只负责从事件投影 metrics view |
 | 风险 | 低：输出数值使用 prometheus-client 的 float 表达，相关 CLI/agentd 测试已覆盖 |
 
-### 6. PyYAML → 替换 Domain manifest 的 JSON-only loader（已完成）
+### 7. PyYAML → 替换 Domain manifest 的 JSON-only loader（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -74,7 +84,7 @@
 | 收益 | 对齐设计文档的 `manifest.yaml` 目标，同时保留 scaffold 默认写 `manifest.json` 的兼容契约 |
 | 风险 | 低：同目录存在多个 manifest 时显式报错，避免 registry 静默选错 |
 
-### 7. filelock → 替换手写 fcntl 文件互斥锁（已完成）
+### 8. filelock → 替换手写 fcntl 文件互斥锁（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -82,7 +92,7 @@
 | 收益 | 去除三处直接 `fcntl` 调用，获得跨平台文件锁抽象；测试仍覆盖跨进程互斥行为 |
 | 风险 | 低：仅替换文件型本地协调边界，不改变 SQLite 后端和调度语义 |
 
-### 8. Jinja2 → 替换手写 Web 页面外壳 / Hero / Row 拼接（持续推进）
+### 9. Jinja2 → 替换手写 Web 页面外壳 / Hero / Row 拼接（持续推进）
 
 | 项 | 说明 |
 |---|---|
@@ -90,7 +100,7 @@
 | 收益 | HTML 外壳与高频片段渲染统一到模板 seam，减少重复拼接和 escaping 漏洞面；后续复杂页面只需要准备 cell 数据，不必重复编写空表、row 渲染与 raw cell handling |
 | 风险 | 低：渲染内容顺序和现有 URL/section helper 不变，Web/Evaluation/agentd route 测试覆盖 escaping、导航链接、table section 输出与关键页面文本 |
 
-### 9. python-dateutil → 替换手写 ISO datetime 兼容解析（已完成）
+### 10. python-dateutil → 替换手写 ISO datetime 兼容解析（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -98,7 +108,7 @@
 | 收益 | 去除 `value.replace("Z", "+00:00")` / `datetime.fromisoformat()` 分散写法，统一 `Z` 后缀、时区强制和错误文案 |
 | 风险 | 低：保留 public dataclass/API 类型，测试覆盖持久化恢复和 CLI/HTTP 输入解析 |
 
-### 10. Rich → 替换手写终端渲染执行层（第一批已完成）
+### 11. Rich → 替换手写终端渲染执行层（第一批已完成）
 
 | 项 | 说明 |
 |---|---|

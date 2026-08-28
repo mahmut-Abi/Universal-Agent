@@ -280,9 +280,9 @@ detect accidental split state/event wiring. These adapters are local persistence
   provider bridge for HTTP endpoints that accept compiled runtime context JSON, including structured
   goal success criteria, current task required criteria, and capability-level input contracts derived
   from deterministic tool resolution, then return structured `Decision` JSON plus optional
-  token/cost usage. `OpenAIChatCompletionsModelAdapter` adds a direct `httpx`-backed
-  OpenAI-compatible Chat Completions path for older `/v1/chat/completions` deployments, and
-  `OpenAIResponsesModelAdapter` adds a direct `httpx`-backed OpenAI Responses provider path. Both
+  token/cost usage. `OpenAIChatCompletionsModelAdapter` adds an OpenAI SDK-backed
+  Chat Completions path for OpenAI-compatible `/v1/chat/completions` deployments, and
+  `OpenAIResponsesModelAdapter` adds an OpenAI SDK-backed Responses provider path. Both
   request structured `Decision` JSON and still validate the decoded decision locally before the
   Runtime acts. Kubernetes `check` and `run` responses now include a deterministic production
   `contract` report covering model probe, preflight, runtime submission, verification evidence and
