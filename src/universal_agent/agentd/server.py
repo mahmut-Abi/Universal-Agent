@@ -9,6 +9,7 @@ from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
 from starlette.applications import Starlette
 from starlette.requests import Request as StarletteRequest
+from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.responses import Response as StarletteResponse
 from starlette.routing import Route
 from uvicorn import Config, Server
@@ -29,6 +30,11 @@ class _AgentdServerConfigPayload(ConfigPayload):
     host: PydanticNonEmptyString
     port: int = Field(ge=0)
     max_body_bytes: int = Field(ge=0)
+
+
+class _OrjsonResponse(JSONResponse):
+    def render(self, content: object) -> bytes:
+        return dumps_json(content).encode("utf-8")
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,17 +225,16 @@ async def _request_body(
 def _starlette_response(response: HttpResponse) -> StarletteResponse:
     headers = dict(response.headers)
     if response.text_body is not None:
-        return StarletteResponse(
-            response.text_body.encode("utf-8"),
+        return PlainTextResponse(
+            response.text_body,
             status_code=response.status_code,
             headers=headers,
             media_type=None,
         )
-    return StarletteResponse(
-        dumps_json(response.body).encode("utf-8"),
+    return _OrjsonResponse(
+        response.body,
         status_code=response.status_code,
         headers=headers,
-        media_type=None,
     )
 
 
