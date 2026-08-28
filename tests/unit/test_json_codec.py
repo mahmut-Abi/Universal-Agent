@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
 from io import StringIO
@@ -25,6 +26,20 @@ class _Status(StrEnum):
 class _UnknownObject:
     def __str__(self) -> str:
         return "unknown-object"
+
+
+class _ReadOnlyMapping(Mapping[object, object]):
+    def __init__(self, values: Mapping[object, object]) -> None:
+        self._values = values
+
+    def __getitem__(self, key: object) -> object:
+        return self._values[key]
+
+    def __iter__(self) -> Iterator[object]:
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
 
 
 def test_json_codec_dumps_sorted_compact_json() -> None:
@@ -55,6 +70,13 @@ def test_json_codec_coerces_objects_to_json_values() -> None:
         "items": ["running"],
         "observed_at": "2026-01-02T03:04:05+00:00",
     }
+
+
+def test_json_codec_uses_orjson_defaults_for_mapping_and_sequence_compatibility() -> None:
+    payload = to_json_value(_ReadOnlyMapping({1: "one", "items": range(2)}))
+
+    assert payload == {"1": "one", "items": [0, 1]}
+    assert dumps_json(_ReadOnlyMapping({"b": 2, "a": 1})) == '{"a":1,"b":2}'
 
 
 def test_json_codec_can_stringify_unknown_objects_for_projection_boundaries() -> None:

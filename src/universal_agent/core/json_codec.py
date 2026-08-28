@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime
-from enum import Enum
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import TextIO, cast
@@ -27,15 +25,17 @@ def dumps_json(
         option |= orjson.OPT_INDENT_2
     if sort_keys:
         option |= orjson.OPT_SORT_KEYS
+    option |= orjson.OPT_NON_STR_KEYS
     try:
-        return orjson.dumps(_json_encodable(value), option=option).decode("utf-8")
+        return orjson.dumps(value, option=option, default=_orjson_default).decode("utf-8")
     except TypeError as exc:
         raise JsonCodecError(f"value is not JSON serializable: {exc}") from exc
 
 
 def to_json_value(value: object, *, fallback_to_string: bool = False) -> JsonValue:
+    default = _orjson_string_default if fallback_to_string else _orjson_default
     try:
-        payload = orjson.dumps(_json_encodable(value, fallback_to_string=fallback_to_string))
+        payload = orjson.dumps(value, option=orjson.OPT_NON_STR_KEYS, default=default)
     except TypeError as exc:
         raise JsonCodecError(f"value is not JSON serializable: {exc}") from exc
     return cast(JsonValue, loads_json(payload))
@@ -99,20 +99,16 @@ def write_json_file(
         raise
 
 
-def _json_encodable(value: object, *, fallback_to_string: bool = False) -> object:
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if fallback_to_string and isinstance(value, Enum):
-        return str(value.value)
-    if fallback_to_string and isinstance(value, datetime):
-        return value.isoformat()
+def _orjson_default(value: object) -> object:
     if isinstance(value, Mapping):
-        return {
-            str(key): _json_encodable(item, fallback_to_string=fallback_to_string)
-            for key, item in value.items()
-        }
+        return dict(value)
     if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
-        return [_json_encodable(item, fallback_to_string=fallback_to_string) for item in value]
-    if fallback_to_string:
+        return list(value)
+    raise TypeError
+
+
+def _orjson_string_default(value: object) -> object:
+    try:
+        return _orjson_default(value)
+    except TypeError:
         return str(value)
-    return value
