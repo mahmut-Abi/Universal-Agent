@@ -9,6 +9,12 @@ from enum import StrEnum
 from inspect import isawaitable
 
 from universal_agent.core import utc_now
+from universal_agent.core.config_validation import (
+    parse_non_empty_string,
+    parse_optional_positive_float,
+    parse_positive_float,
+    parse_positive_int,
+)
 from universal_agent.distributed.queue import (
     InMemoryWorkQueue,
     LeaseId,
@@ -60,8 +66,12 @@ class WorkHandlerResult:
         return cls(WorkHandlerStatus.CANCELLED, reason=reason, retry=False)
 
     def __post_init__(self) -> None:
-        if self.status is not WorkHandlerStatus.COMPLETED and not self.reason.strip():
-            raise ValueError("non-completed handler result requires a reason")
+        if self.status is not WorkHandlerStatus.COMPLETED:
+            parse_non_empty_string(
+                self.reason,
+                "non-completed handler result",
+                empty_template="{path} requires a reason",
+            )
 
 
 WorkHandler = Callable[[WorkItem], WorkHandlerResult | Awaitable[WorkHandlerResult]]
@@ -91,14 +101,10 @@ class WorkQueueWorker:
         worker_capabilities: tuple[str, ...] | None = None,
         heartbeat_interval_seconds: float | None = None,
     ) -> None:
-        if not str(worker_id).strip():
-            raise ValueError("worker_id must not be empty")
-        if lease_ttl_seconds <= 0:
-            raise ValueError("lease_ttl_seconds must be positive")
-        if worker_ttl_seconds <= 0:
-            raise ValueError("worker_ttl_seconds must be positive")
-        if heartbeat_interval_seconds is not None and heartbeat_interval_seconds <= 0:
-            raise ValueError("heartbeat_interval_seconds must be positive")
+        parse_non_empty_string(str(worker_id), "worker_id")
+        parse_positive_float(lease_ttl_seconds, "lease_ttl_seconds")
+        parse_positive_float(worker_ttl_seconds, "worker_ttl_seconds")
+        parse_optional_positive_float(heartbeat_interval_seconds, "heartbeat_interval_seconds")
         self._queue = queue
         self._worker_id = worker_id
         self._handlers = dict(handlers)
@@ -164,8 +170,7 @@ class WorkQueueWorker:
         return self._apply_handler_result(item, lease.lease_id, result)
 
     async def run_until_idle(self, *, max_items: int) -> tuple[WorkerRunResult, ...]:
-        if max_items < 1:
-            raise ValueError("max_items must be positive")
+        parse_positive_int(max_items, "max_items")
         results: list[WorkerRunResult] = []
         for _ in range(max_items):
             result = await self.run_once()
