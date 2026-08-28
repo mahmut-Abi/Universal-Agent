@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from enum import StrEnum
+
+from pydantic import field_validator
 
 from universal_agent.core import (
     ActionId,
@@ -31,6 +34,7 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
+    enum_value,
     json_mapping,
     parse_payload,
 )
@@ -56,16 +60,26 @@ class _GoalPayload(ConfigPayload):
     description: str
     success_criteria: list[_SuccessCriterionPayload]
     id: str
-    status: str
+    status: GoalStatus
     created_at: str
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _parse_status(cls, value: object) -> GoalStatus:
+        return _enum_value(GoalStatus, value, "goal.status")
 
 
 class _TaskPayload(ConfigPayload):
     description: str
     required_criteria: list[str]
     id: str
-    status: str
+    status: TaskStatus
     created_at: str
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _parse_status(cls, value: object) -> TaskStatus:
+        return _enum_value(TaskStatus, value, "task.status")
 
 
 class _TaskNodePayload(ConfigPayload):
@@ -84,20 +98,35 @@ class _ObservationPayload(ConfigPayload):
     action_id: str
     task_id: str
     source: str
-    status: str
+    status: ObservationStatus
     data: dict[str, PydanticJsonValue]
     observed_at: str
     error: str | None
-    error_code: str | None
+    error_code: ErrorCode | None
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _parse_status(cls, value: object) -> ObservationStatus:
+        return _enum_value(ObservationStatus, value, "observation.status")
+
+    @field_validator("error_code", mode="before")
+    @classmethod
+    def _parse_error_code(cls, value: object) -> ErrorCode | None:
+        return _optional_error_code(value, "observation.error_code")
 
 
 class _EvaluationPayload(ConfigPayload):
-    status: str
+    status: EvaluationStatus
     reason: str
     evaluator_name: str
     matched_criteria: dict[str, PydanticJsonValue]
     task_completed: bool
     goal_completed: bool
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _parse_status(cls, value: object) -> EvaluationStatus:
+        return _enum_value(EvaluationStatus, value, "evaluation.status")
 
 
 class _PendingActionPayload(ConfigPayload):
@@ -127,7 +156,12 @@ class _AgentStatePayload(ConfigPayload):
     task_ids: list[str]
     recovery_attempts: dict[str, int]
     termination_reason: str | None
-    error_code: str | None
+    error_code: ErrorCode | None
+
+    @field_validator("error_code", mode="before")
+    @classmethod
+    def _parse_error_code(cls, value: object) -> ErrorCode | None:
+        return _optional_error_code(value, "state.error_code")
 
 
 class _EvidencePayload(ConfigPayload):
@@ -272,7 +306,7 @@ def _decode_agent_state(payload: _AgentStatePayload, tasks: Mapping[TaskId, Task
         tasks=[_task_by_id(tasks, TaskId(task_id)) for task_id in payload.task_ids],
         recovery_attempts=dict(payload.recovery_attempts),
         termination_reason=payload.termination_reason,
-        error_code=_decode_optional_error(payload.error_code),
+        error_code=payload.error_code,
     )
     return state
 
@@ -294,7 +328,7 @@ def _decode_goal(payload: _GoalPayload) -> Goal:
         payload.description,
         tuple(SuccessCriterion(item.key, item.expected) for item in payload.success_criteria),
         GoalId(payload.id),
-        GoalStatus(payload.status),
+        payload.status,
         parse_iso_datetime(payload.created_at, field="goal.created_at"),
     )
 
@@ -314,7 +348,7 @@ def _decode_task(payload: _TaskPayload) -> Task:
         payload.description,
         tuple(payload.required_criteria),
         TaskId(payload.id),
-        TaskStatus(payload.status),
+        payload.status,
         parse_iso_datetime(payload.created_at, field="task.created_at"),
     )
 
@@ -377,11 +411,11 @@ def _decode_observation(payload: _ObservationPayload) -> Observation:
         ActionId(payload.action_id),
         TaskId(payload.task_id),
         payload.source,
-        ObservationStatus(payload.status),
+        payload.status,
         immutable_json(json_mapping(payload.data)),
         parse_iso_datetime(payload.observed_at, field="observation.observed_at"),
         payload.error,
-        _decode_optional_error(payload.error_code),
+        payload.error_code,
     )
 
 
@@ -400,7 +434,7 @@ def _decode_optional_evaluation(payload: _EvaluationPayload | None) -> Evaluatio
     if payload is None:
         return None
     return EvaluationResult(
-        EvaluationStatus(payload.status),
+        payload.status,
         payload.reason,
         payload.evaluator_name,
         immutable_json(json_mapping(payload.matched_criteria)),
@@ -500,10 +534,14 @@ def _decode_domain_identity(payload: _DomainIdentityPayload) -> DomainIdentity:
     return DomainIdentity(payload.name, payload.version)
 
 
-def _decode_optional_error(value: str | None) -> ErrorCode | None:
+def _optional_error_code(value: object, field: str) -> ErrorCode | None:
     if value is None:
         return None
-    return ErrorCode(value)
+    return _enum_value(ErrorCode, value, field)
+
+
+def _enum_value[TEnum: StrEnum](enum_type: type[TEnum], value: object, field: str) -> TEnum:
+    return enum_value(enum_type, value, field)
 
 
 def _task_by_id(tasks: Mapping[TaskId, Task], task_id: TaskId) -> Task:

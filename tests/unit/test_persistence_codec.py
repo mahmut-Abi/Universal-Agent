@@ -413,6 +413,24 @@ def test_persistence_codec_rejects_invalid_persisted_types_without_coercion() ->
     with pytest.raises(ValueError, match=r"state\.iteration must be an integer"):
         decode_session_snapshot(encoded)
 
+    encoded = encode_session_snapshot(snapshot)
+    state = encoded["state"]
+    assert isinstance(state, dict)
+    state["error_code"] = "not_an_error_code"
+
+    with pytest.raises(ValueError, match=r"state\.error_code must be one of"):
+        decode_session_snapshot(encoded)
+
+    encoded = encode_session_snapshot(snapshot)
+    state = encoded["state"]
+    assert isinstance(state, dict)
+    goal_payload = state["goal"]
+    assert isinstance(goal_payload, dict)
+    goal_payload["status"] = "not_a_goal_status"
+
+    with pytest.raises(ValueError, match=r"goal\.status must be one of"):
+        decode_session_snapshot(encoded)
+
     event = RuntimeEvent(
         type="InvalidEvent",
         session_id=SessionId("session-invalid"),
