@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
@@ -8,6 +7,21 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from filelock import FileLock
+from sqlalchemy import (
+    URL,
+    Column,
+    Engine,
+    Index,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    Text,
+    create_engine,
+)
+from sqlalchemy import insert as sql_insert
+from sqlalchemy import select as sql_select
+from sqlalchemy.engine import Connection
 
 from universal_agent.core import (
     ActionId,
@@ -58,6 +72,30 @@ __all__ = [
     "WorkerId",
     "WorkerLease",
 ]
+
+_SQLITE_METADATA = MetaData()
+_SQLITE_WORK_QUEUE_ITEMS = Table(
+    "work_queue_items",
+    _SQLITE_METADATA,
+    Column("work_item_id", String, primary_key=True),
+    Column("kind", String, nullable=False),
+    Column("status", String, nullable=False),
+    Column("priority", Integer, nullable=False),
+    Column("attempts", Integer, nullable=False),
+    Column("max_attempts", Integer, nullable=False),
+    Column("available_at", String, nullable=False),
+    Column("lease_expires_at", String, nullable=True),
+    Column("idempotency_key", String, nullable=True),
+    Column("payload", Text, nullable=False),
+)
+Index(
+    "idx_work_queue_items_leaseable",
+    _SQLITE_WORK_QUEUE_ITEMS.c.status,
+    _SQLITE_WORK_QUEUE_ITEMS.c.priority.desc(),
+    _SQLITE_WORK_QUEUE_ITEMS.c.available_at.asc(),
+    _SQLITE_WORK_QUEUE_ITEMS.c.work_item_id.asc(),
+)
+Index("idx_work_queue_items_idempotency", _SQLITE_WORK_QUEUE_ITEMS.c.idempotency_key)
 
 
 class InMemoryWorkQueue:
@@ -567,9 +605,9 @@ class SQLiteWorkQueue(InMemoryWorkQueue):
     def __init__(self, path: str | Path) -> None:
         super().__init__()
         self._path = Path(path)
-        self._transaction_connection: sqlite3.Connection | None = None
+        self._engine: Engine | None = None
+        self._transaction_connection: Connection | None = None
         with self._connect() as connection:
-            _ensure_sqlite_work_queue_schema(connection)
             self._load(connection)
 
     def enqueue(
@@ -744,14 +782,13 @@ class SQLiteWorkQueue(InMemoryWorkQueue):
         self,
         *,
         commit_on: tuple[type[Exception], ...] = (),
-    ) -> Iterator[sqlite3.Connection]:
+    ) -> Iterator[Connection]:
         active = self._transaction_connection
         if active is not None:
             yield active
             return
         with self._connect() as connection:
-            _ensure_sqlite_work_queue_schema(connection)
-            connection.execute("BEGIN IMMEDIATE")
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
             self._transaction_connection = connection
             try:
                 yield connection
@@ -766,19 +803,29 @@ class SQLiteWorkQueue(InMemoryWorkQueue):
             finally:
                 self._transaction_connection = None
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[Connection]:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        return sqlite3.connect(self._path, timeout=30.0, isolation_level=None)
+        with self._sqlite_engine().connect() as connection:
+            yield connection
 
-    def _load(self, connection: sqlite3.Connection) -> None:
-        _ensure_sqlite_work_queue_schema(connection)
+    def _sqlite_engine(self) -> Engine:
+        if self._engine is None:
+            self._engine = create_engine(
+                URL.create("sqlite", database=str(self._path)),
+                connect_args={"timeout": 30.0},
+            )
+            _SQLITE_METADATA.create_all(self._engine)
+        return self._engine
+
+    def _load(self, connection: Connection) -> None:
         rows = connection.execute(
-            """
-            SELECT payload
-            FROM work_queue_items
-            ORDER BY priority DESC, available_at ASC, work_item_id ASC
-            """
-        ).fetchall()
+            sql_select(_SQLITE_WORK_QUEUE_ITEMS.c.payload).order_by(
+                _SQLITE_WORK_QUEUE_ITEMS.c.priority.desc(),
+                _SQLITE_WORK_QUEUE_ITEMS.c.available_at.asc(),
+                _SQLITE_WORK_QUEUE_ITEMS.c.work_item_id.asc(),
+            )
+        ).all()
         loaded: dict[WorkItemId, WorkItem] = {}
         for row in rows:
             payload = loads_json(row[0])
@@ -793,26 +840,11 @@ class SQLiteWorkQueue(InMemoryWorkQueue):
             (_sequence_from_work_item_id(item_id) for item_id in loaded), default=0
         )
 
-    def _save(self, connection: sqlite3.Connection) -> None:
-        connection.execute("DELETE FROM work_queue_items")
-        connection.executemany(
-            """
-            INSERT INTO work_queue_items(
-                work_item_id,
-                kind,
-                status,
-                priority,
-                attempts,
-                max_attempts,
-                available_at,
-                lease_expires_at,
-                idempotency_key,
-                payload
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (_sqlite_work_item_row(item) for item in super().list()),
-        )
+    def _save(self, connection: Connection) -> None:
+        connection.execute(_SQLITE_WORK_QUEUE_ITEMS.delete())
+        rows = [_sqlite_work_item_values(item) for item in super().list()]
+        if rows:
+            connection.execute(sql_insert(_SQLITE_WORK_QUEUE_ITEMS), rows)
 
 
 def _lease_deadline(now: datetime, ttl_seconds: float) -> datetime:
@@ -873,50 +905,17 @@ def _sequence_from_work_item_id(work_item_id: WorkItemId) -> int:
     return int(suffix)
 
 
-def _ensure_sqlite_work_queue_schema(connection: sqlite3.Connection) -> None:
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS work_queue_items (
-            work_item_id TEXT PRIMARY KEY,
-            kind TEXT NOT NULL,
-            status TEXT NOT NULL,
-            priority INTEGER NOT NULL,
-            attempts INTEGER NOT NULL,
-            max_attempts INTEGER NOT NULL,
-            available_at TEXT NOT NULL,
-            lease_expires_at TEXT,
-            idempotency_key TEXT,
-            payload TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_work_queue_items_leaseable
-        ON work_queue_items(status, priority DESC, available_at ASC, work_item_id ASC)
-        """
-    )
-    connection.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_work_queue_items_idempotency
-        ON work_queue_items(idempotency_key)
-        """
-    )
-
-
-def _sqlite_work_item_row(
-    item: WorkItem,
-) -> tuple[str, str, str, int, int, int, str, str | None, str | None, str]:
+def _sqlite_work_item_values(item: WorkItem) -> dict[str, str | int | None]:
     lease = item.lease
-    return (
-        str(item.work_item_id),
-        item.kind,
-        item.status.value,
-        item.priority,
-        item.attempts,
-        item.max_attempts,
-        item.available_at.isoformat(),
-        None if lease is None else lease.lease_expires_at.isoformat(),
-        item.idempotency_key,
-        dumps_json(_encode_work_item(item)),
-    )
+    return {
+        "work_item_id": str(item.work_item_id),
+        "kind": item.kind,
+        "status": item.status.value,
+        "priority": item.priority,
+        "attempts": item.attempts,
+        "max_attempts": item.max_attempts,
+        "available_at": item.available_at.isoformat(),
+        "lease_expires_at": None if lease is None else lease.lease_expires_at.isoformat(),
+        "idempotency_key": item.idempotency_key,
+        "payload": dumps_json(_encode_work_item(item)),
+    }
