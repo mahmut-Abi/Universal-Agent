@@ -4,7 +4,7 @@ from typing import cast
 
 import pytest
 
-from universal_agent.core import ErrorCode
+from universal_agent.core import ErrorCode, immutable_json
 from universal_agent.evidence import EvidenceId
 from universal_agent.multi_agent import (
     AgentProposalId,
@@ -163,3 +163,27 @@ def test_result_merge_payload_round_trips_merge_report() -> None:
     assert decoded.results[0].task_id == AgentTaskId("agent-task-a")
     assert decoded.evidence_ids == (EvidenceId("evidence-1"), EvidenceId("evidence-conflict"))
     assert decoded.conflict_resolutions[0].review_proposal_ids == (AgentProposalId("proposal-a"),)
+
+
+def test_result_merge_decoder_rejects_invalid_pydantic_payload_shape() -> None:
+    with pytest.raises(ValueError, match="passed must be a boolean"):
+        decode_agent_result_merge(
+            immutable_json(
+                {
+                    "status": "completed",
+                    "passed": "yes",
+                    "results": [],
+                }
+            )
+        )
+
+    with pytest.raises(ValueError, match=r"evidence\[0\] must be a string"):
+        decode_agent_result_merge(
+            immutable_json(
+                {
+                    "status": "completed",
+                    "evidence": [1],
+                    "results": [],
+                }
+            )
+        )

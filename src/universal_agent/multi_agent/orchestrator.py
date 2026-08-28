@@ -8,6 +8,8 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Protocol
 
+from pydantic import Field
+
 from universal_agent.core import (
     ErrorCode,
     ExecutionStatus,
@@ -18,12 +20,10 @@ from universal_agent.core import (
     Task,
 )
 from universal_agent.core.config_validation import (
-    parse_int,
-    parse_json_object,
-    parse_json_object_sequence,
-    parse_optional_int,
+    ConfigPayload,
+    PydanticJsonValue,
+    parse_payload,
     parse_string,
-    parse_string_sequence,
 )
 from universal_agent.multi_agent.contracts import (
     AgentTaskId,
@@ -74,6 +74,29 @@ class AgentDelegationBatchStatus(StrEnum):
     COMPLETED = "completed"
     PARTIAL = "partial"
     FAILED = "failed"
+
+
+class _AgentDelegationSpecPayload(ConfigPayload):
+    request: dict[str, PydanticJsonValue]
+    agent_id: str | None = None
+    depends_on: list[str] = Field(default_factory=list)
+
+
+class _AgentDelegationBatchResultPayload(ConfigPayload):
+    status: str
+    reason: str = ""
+    skipped_task_ids: list[str] = Field(default_factory=list)
+    results: list[dict[str, PydanticJsonValue]] = Field(default_factory=list)
+
+
+class _AgentDelegationTaskStatePayload(ConfigPayload):
+    task_id: str
+    child_count: int = 0
+    delegation_depth: int | None = None
+
+
+class _AgentDelegationStatePayload(ConfigPayload):
+    tasks: list[_AgentDelegationTaskStatePayload] = Field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,13 +158,11 @@ def agent_delegation_spec_payload(spec: AgentDelegationSpec) -> JsonMapping:
 
 
 def decode_agent_delegation_spec(payload: JsonMapping) -> AgentDelegationSpec:
+    parsed = _parse_payload(_AgentDelegationSpecPayload, payload)
     return AgentDelegationSpec(
-        request=decode_agent_task_request(parse_json_object(payload.get("request"), "request")),
-        agent_id=_optional_agent_id(payload.get("agent_id")),
-        depends_on=tuple(
-            AgentTaskId(value)
-            for value in parse_string_sequence(payload.get("depends_on"), "depends_on")
-        ),
+        request=decode_agent_task_request(parsed.request),
+        agent_id=_optional_agent_id(parsed.agent_id),
+        depends_on=tuple(AgentTaskId(value) for value in parsed.depends_on),
     )
 
 
@@ -158,20 +179,12 @@ def agent_delegation_batch_result_payload(result: AgentDelegationBatchResult) ->
 
 
 def decode_agent_delegation_batch_result(payload: JsonMapping) -> AgentDelegationBatchResult:
+    parsed = _parse_payload(_AgentDelegationBatchResultPayload, payload)
     return AgentDelegationBatchResult(
-        status=_batch_status_value(payload.get("status")),
-        results=tuple(
-            decode_agent_task_result(item)
-            for item in parse_json_object_sequence(payload.get("results"), "results")
-        ),
-        skipped_task_ids=tuple(
-            AgentTaskId(value)
-            for value in parse_string_sequence(
-                payload.get("skipped_task_ids"),
-                "skipped_task_ids",
-            )
-        ),
-        reason=parse_string(payload.get("reason"), "reason", default=""),
+        status=_batch_status_value(parsed.status),
+        results=tuple(decode_agent_task_result(item) for item in parsed.results),
+        skipped_task_ids=tuple(AgentTaskId(value) for value in parsed.skipped_task_ids),
+        reason=parsed.reason,
     )
 
 
@@ -191,18 +204,21 @@ def agent_delegation_state_payload(state: AgentDelegationState) -> JsonMapping:
 
 
 def decode_agent_delegation_state(payload: JsonMapping) -> AgentDelegationState:
+    parsed = _parse_payload(_AgentDelegationStatePayload, payload)
     return AgentDelegationState(
         tasks=tuple(
             AgentDelegationTaskState(
-                task_id=AgentTaskId(parse_string(item.get("task_id"), "tasks.task_id")),
-                child_count=parse_int(item.get("child_count"), "tasks.child_count", default=0),
-                delegation_depth=parse_optional_int(
-                    item.get("delegation_depth"), "tasks.delegation_depth"
-                ),
+                task_id=AgentTaskId(item.task_id),
+                child_count=item.child_count,
+                delegation_depth=item.delegation_depth,
             )
-            for item in parse_json_object_sequence(payload.get("tasks"), "tasks")
+            for item in parsed.tasks
         )
     )
+
+
+def _parse_payload[T: ConfigPayload](payload_type: type[T], payload: JsonMapping) -> T:
+    return parse_payload(payload_type, payload)
 
 
 class AgentOrchestrator:

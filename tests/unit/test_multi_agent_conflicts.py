@@ -83,6 +83,19 @@ def test_conflict_resolution_payload_round_trips() -> None:
     )
 
 
+def test_conflict_resolution_decoder_rejects_invalid_pydantic_payload_shape() -> None:
+    with pytest.raises(ValueError, match=r"rejected_proposal_ids\[0\] must be a string"):
+        decode_conflict_resolution(
+            immutable_json(
+                {
+                    "resource_key": "deployment/example",
+                    "status": "selected",
+                    "rejected_proposal_ids": [1],
+                }
+            )
+        )
+
+
 def test_conflict_resolver_denies_read_only_mutation() -> None:
     resolver = AgentConflictResolver()
 

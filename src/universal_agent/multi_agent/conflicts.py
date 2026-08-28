@@ -5,6 +5,8 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import NewType
 
+from pydantic import Field
+
 from universal_agent.core import (
     JsonMapping,
     JsonValue,
@@ -15,9 +17,9 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.core.config_validation import (
-    parse_optional_string,
+    ConfigPayload,
+    parse_payload,
     parse_string,
-    parse_string_sequence,
 )
 from universal_agent.evidence import EvidenceId
 from universal_agent.multi_agent.contracts import AgentTaskConstraints, AgentTaskId
@@ -31,6 +33,16 @@ class ConflictResolutionStatus(StrEnum):
     SELECTED = "selected"
     DENIED = "denied"
     REQUIRES_REVIEW = "requires_review"
+
+
+class _ConflictResolutionPayload(ConfigPayload):
+    resource_key: str
+    status: str
+    selected_proposal_id: str | None = None
+    rejected_proposal_ids: list[str] = Field(default_factory=list)
+    review_proposal_ids: list[str] = Field(default_factory=list)
+    supporting_evidence_ids: list[str] = Field(default_factory=list)
+    reason: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,33 +116,19 @@ def conflict_resolution_payload(resolution: ConflictResolution) -> JsonMapping:
 
 
 def decode_conflict_resolution(payload: JsonMapping) -> ConflictResolution:
+    parsed = parse_payload(_ConflictResolutionPayload, payload)
     return ConflictResolution(
-        resource_key=parse_string(payload.get("resource_key"), "resource_key"),
-        status=_conflict_resolution_status(payload.get("status")),
-        selected_proposal_id=_optional_agent_proposal_id(
-            payload.get("selected_proposal_id"),
-            "selected_proposal_id",
-        ),
+        resource_key=parsed.resource_key,
+        status=_conflict_resolution_status(parsed.status),
+        selected_proposal_id=_optional_agent_proposal_id(parsed.selected_proposal_id),
         rejected_proposal_ids=tuple(
-            AgentProposalId(value)
-            for value in parse_string_sequence(
-                payload.get("rejected_proposal_ids"), "rejected_proposal_ids"
-            )
+            AgentProposalId(value) for value in parsed.rejected_proposal_ids
         ),
-        review_proposal_ids=tuple(
-            AgentProposalId(value)
-            for value in parse_string_sequence(
-                payload.get("review_proposal_ids"), "review_proposal_ids"
-            )
-        ),
+        review_proposal_ids=tuple(AgentProposalId(value) for value in parsed.review_proposal_ids),
         supporting_evidence_ids=tuple(
-            EvidenceId(value)
-            for value in parse_string_sequence(
-                payload.get("supporting_evidence_ids"),
-                "supporting_evidence_ids",
-            )
+            EvidenceId(value) for value in parsed.supporting_evidence_ids
         ),
-        reason=parse_string(payload.get("reason"), "reason", default=""),
+        reason=parsed.reason,
     )
 
 
@@ -298,11 +296,10 @@ def _optional_str(value: object | None) -> str | None:
     return str(value)
 
 
-def _optional_agent_proposal_id(value: object, field_name: str) -> AgentProposalId | None:
-    raw = parse_optional_string(value, field_name)
-    if raw is None:
+def _optional_agent_proposal_id(value: str | None) -> AgentProposalId | None:
+    if value is None:
         return None
-    return AgentProposalId(raw)
+    return AgentProposalId(value)
 
 
 def _conflict_resolution_status(value: object) -> ConflictResolutionStatus:

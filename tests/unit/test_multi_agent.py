@@ -856,6 +856,16 @@ def test_agent_delegation_batch_result_decoder_rejects_invalid_status() -> None:
         )
 
 
+def test_agent_delegation_decoders_reject_invalid_pydantic_payload_shape() -> None:
+    with pytest.raises(ValueError, match="request must be an object"):
+        decode_agent_delegation_spec(immutable_json({"request": []}))
+
+    with pytest.raises(ValueError, match=r"tasks\[0\].child_count must be an integer"):
+        decode_agent_delegation_state(
+            immutable_json({"tasks": [{"task_id": "agent-task-a", "child_count": True}]})
+        )
+
+
 @pytest.mark.asyncio
 async def test_agent_orchestrator_delegates_many_ready_tasks_in_parallel() -> None:
     events: list[str] = []
