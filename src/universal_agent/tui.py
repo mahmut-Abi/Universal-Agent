@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from io import StringIO
 from typing import Any
-
-from rich.console import Console
-from rich.text import Text
 
 from universal_agent.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
 from universal_agent.core import DomainIdentity, SessionId, dumps_json
@@ -27,6 +23,7 @@ from universal_agent.service import (
     SessionExplorerView,
     ToolView,
 )
+from universal_agent.terminal import render_terminal_lines
 
 TuiSnapshot = RuntimeConsoleSnapshot
 _TUI_SECTION_TITLES = frozenset(
@@ -166,29 +163,19 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
 
 
 def _render_lines(lines: list[str]) -> str:
-    buffer = StringIO()
-    console = Console(
-        file=buffer,
-        force_terminal=False,
-        color_system=None,
-        highlight=False,
-        width=240,
-    )
-    for line in lines:
-        console.print(_rich_line(line), markup=False, highlight=False, soft_wrap=True)
-    return buffer.getvalue()
+    return render_terminal_lines(lines, styler=_line_style)
 
 
-def _rich_line(line: str) -> Text:
+def _line_style(line: str) -> str | None:
     if line in _TUI_SECTION_TITLES:
-        return Text(line, style="bold")
+        return "bold"
     if line.startswith("- error"):
-        return Text(line, style="red")
+        return "red"
     if line.startswith("- warn"):
-        return Text(line, style="yellow")
+        return "yellow"
     if line.startswith("- ok"):
-        return Text(line, style="green")
-    return Text(line)
+        return "green"
+    return None
 
 
 def _operational_diagnostic_lines(snapshot: TuiSnapshot) -> list[str]:

@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from io import StringIO
 from pathlib import Path
-
-from rich.console import Console
-from rich.text import Text
 
 from universal_agent.evaluation.recording import (
     EvaluationCheckRecording,
@@ -14,6 +10,7 @@ from universal_agent.evaluation.recording import (
     EvaluationScenarioRecording,
     FileEvaluationReportStore,
 )
+from universal_agent.terminal import render_terminal_lines
 from universal_agent.web_ui import (
     _empty_table_row,
     _hero_block,
@@ -108,27 +105,17 @@ def render_evaluation_console_text(snapshot: EvaluationConsoleSnapshot) -> str:
 
 
 def _render_text_lines(lines: list[str]) -> str:
-    buffer = StringIO()
-    console = Console(
-        file=buffer,
-        force_terminal=False,
-        color_system=None,
-        highlight=False,
-        width=240,
-    )
-    for line in lines:
-        console.print(_rich_text_line(line), markup=False, highlight=False, soft_wrap=True)
-    return buffer.getvalue()
+    return render_terminal_lines(lines, styler=_line_style)
 
 
-def _rich_text_line(line: str) -> Text:
+def _line_style(line: str) -> str | None:
     if line in _TEXT_SECTION_TITLES:
-        return Text(line, style="bold")
+        return "bold"
     if " status=fail" in line or " gate=fail" in line:
-        return Text(line, style="red")
+        return "red"
     if " status=pass" in line or " gate=pass" in line:
-        return Text(line, style="green")
-    return Text(line)
+        return "green"
+    return None
 
 
 def _report_text_lines(reports: tuple[EvaluationReportRecording, ...]) -> list[str]:

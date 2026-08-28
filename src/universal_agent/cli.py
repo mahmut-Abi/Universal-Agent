@@ -76,6 +76,7 @@ from universal_agent.core import (
     Task,
     TaskId,
 )
+from universal_agent.core.config_validation import parse_bounded_float
 from universal_agent.distributed import (
     DistributedLockConflictError,
     DistributedLockLeaseId,
@@ -753,10 +754,18 @@ async def _stream_events_for_cli(
             after_event_id=after_event_id,
             limit=limit,
         )
-    if timeout_seconds < 0.0 or timeout_seconds > 30.0:
-        raise ValueError("timeout_seconds must be between 0 and 30")
-    if poll_interval_seconds < 0.001 or poll_interval_seconds > 5.0:
-        raise ValueError("poll_interval_seconds must be between 0.001 and 5")
+    timeout_seconds = parse_bounded_float(
+        timeout_seconds,
+        "timeout_seconds",
+        minimum=0.0,
+        maximum=30.0,
+    )
+    poll_interval_seconds = parse_bounded_float(
+        poll_interval_seconds,
+        "poll_interval_seconds",
+        minimum=0.001,
+        maximum=5.0,
+    )
 
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout_seconds

@@ -30,6 +30,7 @@ __all__ = [
     "json_mapping",
     "parse_bool",
     "parse_bool_text",
+    "parse_bounded_float",
     "parse_bounded_float_text",
     "parse_int",
     "parse_json_object",
@@ -414,6 +415,33 @@ def parse_rate(value: object, field: str) -> float:
         if details.error_type in {"greater_than_equal", "less_than_equal"}:
             raise ValueError(f"{details.path} must be between 0.0 and 1.0") from exc
         raise ValueError(pydantic_error_message(exc, field)) from exc
+
+
+def parse_bounded_float(
+    value: object,
+    field: str,
+    *,
+    minimum: float,
+    maximum: float,
+    range_template: str = "{path} must be between {minimum:g} and {maximum:g}",
+    type_template: str = "{path} must be a number",
+) -> float:
+    if minimum > maximum:
+        raise ValueError("minimum must not exceed maximum")
+    adapter: TypeAdapter[float] = TypeAdapter(Annotated[float, Field(ge=minimum, le=maximum)])
+    try:
+        return adapter.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        details = pydantic_error_details(exc, field)
+        if details.error_type in {"greater_than_equal", "less_than_equal"}:
+            raise ValueError(
+                range_template.format(
+                    path=details.path,
+                    minimum=minimum,
+                    maximum=maximum,
+                )
+            ) from exc
+        raise ValueError(type_template.format(path=details.path)) from exc
 
 
 def parse_bounded_float_text(

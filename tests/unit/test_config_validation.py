@@ -9,6 +9,7 @@ from universal_agent.core.config_validation import (
     ConfigPayload,
     parse_bool,
     parse_bool_text,
+    parse_bounded_float,
     parse_bounded_float_text,
     parse_int,
     parse_json_object,
@@ -128,6 +129,7 @@ def test_parse_numeric_helpers_use_pydantic_range_validation() -> None:
     assert parse_optional_non_negative_int(2, "count") == 2
     assert parse_positive_int(1, "limit") == 1
     assert parse_positive_float(0.1, "timeout") == 0.1
+    assert parse_bounded_float(0.25, "timeout_seconds", minimum=0.0, maximum=30.0) == 0.25
     assert parse_optional_positive_float(None, "timeout") is None
     assert parse_rate(0.0, "pass_rate") == 0.0
     assert parse_rate(1, "pass_rate") == 1.0
@@ -141,6 +143,10 @@ def test_parse_numeric_helpers_use_pydantic_range_validation() -> None:
         parse_positive_int(0, "limit")
     with pytest.raises(ValueError, match="timeout must be positive"):
         parse_positive_float(0.0, "timeout")
+    with pytest.raises(ValueError, match="timeout_seconds must be a number"):
+        parse_bounded_float("0.25", "timeout_seconds", minimum=0.0, maximum=30.0)
+    with pytest.raises(ValueError, match="timeout_seconds must be between 0 and 30"):
+        parse_bounded_float(31.0, "timeout_seconds", minimum=0.0, maximum=30.0)
     with pytest.raises(ValueError, match="count must be an integer"):
         parse_non_negative_int(True, "count")
     with pytest.raises(ValueError, match="cost must be a number"):

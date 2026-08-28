@@ -3874,6 +3874,38 @@ async def test_cli_session_events_rejects_invalid_wait_timeout() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cli_session_events_rejects_invalid_wait_poll_interval() -> None:
+    service, _ = build_cli_service([wait()])
+    waiting = await service.run_goal(*goal_task())
+    output = StringIO()
+    error = StringIO()
+
+    status = await run_cli(
+        [
+            "session",
+            "events",
+            str(waiting.result.session_id),
+            "--wait",
+            "--poll-interval-seconds",
+            "0",
+        ],
+        service=service,
+        stdout=output,
+        stderr=error,
+    )
+    payload = read_json(error)
+
+    assert status == 2
+    assert payload == {
+        "error": {
+            "code": "bad_request",
+            "message": "poll_interval_seconds must be between 0.001 and 5",
+        }
+    }
+    assert output.getvalue() == ""
+
+
+@pytest.mark.asyncio
 async def test_cli_session_list_supports_cursor_and_limit() -> None:
     service, _ = build_cli_service(
         [
