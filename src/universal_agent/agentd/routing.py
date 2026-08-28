@@ -13,6 +13,7 @@ from universal_agent.core import EventId, JsonMapping, SessionId
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
+    PydanticNonEmptyString,
     json_mapping,
     parse_bool_text,
     parse_bounded_float_text,
@@ -23,73 +24,6 @@ from universal_agent.core.config_validation import (
 from universal_agent.distributed import DistributedLockOwnerId
 from universal_agent.service import DomainPackageView, DomainView
 from universal_agent.web import WebConsoleSnapshot
-
-
-@dataclass(frozen=True, slots=True)
-class _DistributedLockAcquirePayload:
-    lock_key: str
-    owner_id: DistributedLockOwnerId
-    ttl_seconds: float
-    metadata: JsonMapping | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class _DistributedLockLeasePayload:
-    owner_id: DistributedLockOwnerId
-    ttl_seconds: float
-
-
-@dataclass(frozen=True, slots=True)
-class _DistributedWorkerRegistrationPayload:
-    capabilities: tuple[str, ...]
-    ttl_seconds: float
-    metadata: JsonMapping | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class _DistributedWorkerRunPayload:
-    lease_ttl_seconds: float
-    worker_ttl_seconds: float
-    heartbeat_interval_seconds: float | None
-
-
-@dataclass(frozen=True, slots=True)
-class _DistributedWorkerRunBatchPayload:
-    max_items: int
-    lease_ttl_seconds: float
-    worker_ttl_seconds: float
-    heartbeat_interval_seconds: float | None
-
-
-@dataclass(frozen=True, slots=True)
-class _DistributedSchedulePayload:
-    payload: JsonMapping | None
-    priority: int
-    max_attempts: int
-
-
-@dataclass(frozen=True, slots=True)
-class _DistributedConfirmedSchedulePayload:
-    confirmed: bool
-    priority: int
-    max_attempts: int
-
-
-@dataclass(frozen=True, slots=True)
-class _DistributedScheduleSettingsPayload:
-    priority: int
-    max_attempts: int
-
-
-@dataclass(frozen=True, slots=True)
-class _StateEventRepairPayload:
-    confirmed: bool
-    dry_run: bool
-
-
-@dataclass(frozen=True, slots=True)
-class _SessionResumePayload:
-    confirmed: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,69 +67,99 @@ class AgentdRouteMatcher:
         return None
 
 
-class _DistributedLockAcquireModel(ConfigPayload):
-    lock_key: str
-    owner_id: str
+class _DistributedLockAcquirePayload(ConfigPayload):
+    lock_key: PydanticNonEmptyString
+    owner_id: PydanticNonEmptyString
     ttl_seconds: float = Field(default=30.0, gt=0)
     metadata: dict[str, PydanticJsonValue] | None = None
 
+    @property
+    def lock_owner_id(self) -> DistributedLockOwnerId:
+        return DistributedLockOwnerId(self.owner_id)
 
-class _DistributedLockLeaseModel(ConfigPayload):
-    owner_id: str
+    @property
+    def metadata_mapping(self) -> JsonMapping | None:
+        if self.metadata is None:
+            return None
+        return json_mapping(self.metadata)
+
+
+class _DistributedLockLeasePayload(ConfigPayload):
+    owner_id: PydanticNonEmptyString
     ttl_seconds: float = Field(default=30.0, gt=0)
 
+    @property
+    def lock_owner_id(self) -> DistributedLockOwnerId:
+        return DistributedLockOwnerId(self.owner_id)
 
-class _DistributedWorkerRegistrationModel(ConfigPayload):
-    capabilities: list[str] = Field(default_factory=list)
+
+class _DistributedWorkerRegistrationPayload(ConfigPayload):
+    capabilities: list[PydanticNonEmptyString] = Field(default_factory=list)
     metadata: dict[str, PydanticJsonValue] | None = None
     ttl_seconds: float = Field(default=30.0, gt=0)
 
+    @property
+    def capability_tuple(self) -> tuple[str, ...]:
+        return tuple(self.capabilities)
 
-class _DistributedWorkerTtlModel(ConfigPayload):
+    @property
+    def metadata_mapping(self) -> JsonMapping | None:
+        if self.metadata is None:
+            return None
+        return json_mapping(self.metadata)
+
+
+class _DistributedWorkerTtlPayload(ConfigPayload):
     ttl_seconds: float = Field(default=30.0, gt=0)
 
 
-class _DistributedWorkerRunModel(ConfigPayload):
+class _DistributedWorkerRunPayload(ConfigPayload):
     lease_ttl_seconds: float = Field(default=30.0, gt=0)
     worker_ttl_seconds: float = Field(default=30.0, gt=0)
     heartbeat_interval_seconds: float | None = Field(default=None, gt=0)
 
 
-class _DistributedWorkerRunBatchModel(_DistributedWorkerRunModel):
+class _DistributedWorkerRunBatchPayload(_DistributedWorkerRunPayload):
     max_items: int = Field(default=1, ge=1)
 
 
-class _DistributedScheduleModel(ConfigPayload):
+class _DistributedSchedulePayload(ConfigPayload):
     payload: dict[str, PydanticJsonValue] | None = None
     priority: int = 0
     max_attempts: int = 3
 
+    @property
+    def payload_mapping(self) -> JsonMapping | None:
+        if self.payload is None:
+            return None
+        return json_mapping(self.payload)
 
-class _DistributedConfirmedScheduleModel(ConfigPayload):
+
+class _DistributedConfirmedSchedulePayload(ConfigPayload):
     confirmed: bool
     priority: int = 0
     max_attempts: int = 3
 
 
-class _DistributedScheduleSettingsModel(ConfigPayload):
+class _DistributedScheduleSettingsPayload(ConfigPayload):
     priority: int = 0
     max_attempts: int = 3
 
 
-class _DistributedReasonModel(ConfigPayload):
-    reason: str
+class _DistributedReasonPayload(ConfigPayload):
+    reason: PydanticNonEmptyString
 
 
-class _StateEventRepairModel(ConfigPayload):
+class _StateEventRepairPayload(ConfigPayload):
     confirmed: bool = False
     dry_run: bool = False
 
 
-class _SessionResumeModel(ConfigPayload):
+class _SessionResumePayload(ConfigPayload):
     confirmed: bool | None = None
 
 
-class _SessionReasonModel(ConfigPayload):
+class _SessionReasonPayload(ConfigPayload):
     reason: str
 
 
@@ -304,8 +268,8 @@ async def _route_endpoint() -> None:
 
 
 def _distributed_lock_acquire_payload(body: JsonMapping) -> _DistributedLockAcquirePayload:
-    payload = _request_model_payload(
-        _DistributedLockAcquireModel,
+    return _request_model_payload(
+        _DistributedLockAcquirePayload,
         body,
         {
             "lock_key": "distributed lock key must be a string",
@@ -313,39 +277,30 @@ def _distributed_lock_acquire_payload(body: JsonMapping) -> _DistributedLockAcqu
             "ttl_seconds": "distributed lock ttl_seconds must be a positive number",
             "metadata": "distributed lock metadata must be an object",
         },
-    )
-    return _DistributedLockAcquirePayload(
-        lock_key=parse_non_empty_string(payload.lock_key, "distributed lock key"),
-        owner_id=DistributedLockOwnerId(
-            parse_non_empty_string(payload.owner_id, "distributed lock owner_id")
-        ),
-        ttl_seconds=payload.ttl_seconds,
-        metadata=None if payload.metadata is None else json_mapping(payload.metadata),
+        empty_field_messages={
+            "lock_key": "distributed lock key must not be empty",
+            "owner_id": "distributed lock owner_id must not be empty",
+        },
     )
 
 
 def _distributed_lock_lease_payload(body: JsonMapping) -> _DistributedLockLeasePayload:
-    payload = _request_model_payload(
-        _DistributedLockLeaseModel,
+    return _request_model_payload(
+        _DistributedLockLeasePayload,
         body,
         {
             "owner_id": "distributed lock owner_id must be a string",
             "ttl_seconds": "distributed lock ttl_seconds must be a positive number",
         },
-    )
-    return _DistributedLockLeasePayload(
-        owner_id=DistributedLockOwnerId(
-            parse_non_empty_string(payload.owner_id, "distributed lock owner_id")
-        ),
-        ttl_seconds=payload.ttl_seconds,
+        empty_field_messages={"owner_id": "distributed lock owner_id must not be empty"},
     )
 
 
 def _distributed_worker_registration_payload(
     body: JsonMapping,
 ) -> _DistributedWorkerRegistrationPayload:
-    payload = _request_model_payload(
-        _DistributedWorkerRegistrationModel,
+    return _request_model_payload(
+        _DistributedWorkerRegistrationPayload,
         body,
         {
             "capabilities": "distributed worker capabilities must be a list of strings",
@@ -353,27 +308,11 @@ def _distributed_worker_registration_payload(
             "metadata": "distributed worker metadata must be an object",
         },
     )
-    capabilities: list[str] = []
-    for index, item in enumerate(payload.capabilities):
-        capabilities.append(
-            parse_non_empty_string(
-                item,
-                f"distributed worker capabilities[{index}]",
-                empty_template=(
-                    f"distributed worker capabilities[{index}] must be a non-empty string"
-                ),
-            )
-        )
-    return _DistributedWorkerRegistrationPayload(
-        capabilities=tuple(capabilities),
-        ttl_seconds=payload.ttl_seconds,
-        metadata=None if payload.metadata is None else json_mapping(payload.metadata),
-    )
 
 
 def _distributed_worker_ttl_seconds(body: JsonMapping) -> float:
     payload = _request_model_payload(
-        _DistributedWorkerTtlModel,
+        _DistributedWorkerTtlPayload,
         body,
         {"ttl_seconds": "distributed worker ttl_seconds must be a positive number"},
     )
@@ -381,8 +320,8 @@ def _distributed_worker_ttl_seconds(body: JsonMapping) -> float:
 
 
 def _distributed_worker_run_payload(body: JsonMapping) -> _DistributedWorkerRunPayload:
-    payload = _request_model_payload(
-        _DistributedWorkerRunModel,
+    return _request_model_payload(
+        _DistributedWorkerRunPayload,
         body,
         {
             "lease_ttl_seconds": "distributed worker lease_ttl_seconds must be a positive number",
@@ -392,16 +331,11 @@ def _distributed_worker_run_payload(body: JsonMapping) -> _DistributedWorkerRunP
             ),
         },
     )
-    return _DistributedWorkerRunPayload(
-        lease_ttl_seconds=payload.lease_ttl_seconds,
-        worker_ttl_seconds=payload.worker_ttl_seconds,
-        heartbeat_interval_seconds=payload.heartbeat_interval_seconds,
-    )
 
 
 def _distributed_worker_run_batch_payload(body: JsonMapping) -> _DistributedWorkerRunBatchPayload:
-    payload = _request_model_payload(
-        _DistributedWorkerRunBatchModel,
+    return _request_model_payload(
+        _DistributedWorkerRunBatchPayload,
         body,
         {
             "max_items": "distributed worker max_items must be a positive integer",
@@ -412,17 +346,11 @@ def _distributed_worker_run_batch_payload(body: JsonMapping) -> _DistributedWork
             ),
         },
     )
-    return _DistributedWorkerRunBatchPayload(
-        max_items=payload.max_items,
-        lease_ttl_seconds=payload.lease_ttl_seconds,
-        worker_ttl_seconds=payload.worker_ttl_seconds,
-        heartbeat_interval_seconds=payload.heartbeat_interval_seconds,
-    )
 
 
 def _distributed_schedule_payload(body: JsonMapping) -> _DistributedSchedulePayload:
-    payload = _request_model_payload(
-        _DistributedScheduleModel,
+    return _request_model_payload(
+        _DistributedSchedulePayload,
         body,
         {
             "payload": "distributed schedule payload must be an object",
@@ -430,27 +358,18 @@ def _distributed_schedule_payload(body: JsonMapping) -> _DistributedSchedulePayl
             "max_attempts": "distributed schedule max_attempts must be an integer",
         },
     )
-    return _DistributedSchedulePayload(
-        payload=None if payload.payload is None else json_mapping(payload.payload),
-        priority=payload.priority,
-        max_attempts=payload.max_attempts,
-    )
 
 
 def _distributed_schedule_settings_payload(
     body: JsonMapping,
 ) -> _DistributedScheduleSettingsPayload:
-    payload = _request_model_payload(
-        _DistributedScheduleSettingsModel,
+    return _request_model_payload(
+        _DistributedScheduleSettingsPayload,
         body,
         {
             "priority": "distributed schedule priority must be an integer",
             "max_attempts": "distributed schedule max_attempts must be an integer",
         },
-    )
-    return _DistributedScheduleSettingsPayload(
-        priority=payload.priority,
-        max_attempts=payload.max_attempts,
     )
 
 
@@ -459,19 +378,14 @@ def _distributed_confirmed_schedule_payload(
     *,
     confirmed_field_name: str,
 ) -> _DistributedConfirmedSchedulePayload:
-    payload = _request_model_payload(
-        _DistributedConfirmedScheduleModel,
+    return _request_model_payload(
+        _DistributedConfirmedSchedulePayload,
         body,
         {
             "confirmed": f"{confirmed_field_name} must be a boolean",
             "priority": "distributed schedule priority must be an integer",
             "max_attempts": "distributed schedule max_attempts must be an integer",
         },
-    )
-    return _DistributedConfirmedSchedulePayload(
-        confirmed=payload.confirmed,
-        priority=payload.priority,
-        max_attempts=payload.max_attempts,
     )
 
 
@@ -482,35 +396,31 @@ def _distributed_reason_payload(
     field_name: str,
 ) -> str:
     payload = _request_model_payload(
-        _DistributedReasonModel,
+        _DistributedReasonPayload,
         {**dict(body), "reason": body.get("reason", default)},
         {"reason": f"{field_name} must be a string"},
+        empty_field_messages={"reason": f"{field_name} must not be empty"},
     )
-    return parse_non_empty_string(payload.reason, field_name)
+    return payload.reason
 
 
 def _state_event_repair_payload(body: JsonMapping) -> _StateEventRepairPayload:
-    payload = _request_model_payload(
-        _StateEventRepairModel,
+    return _request_model_payload(
+        _StateEventRepairPayload,
         body,
         {
             "confirmed": "state/event repair confirmed must be a boolean",
             "dry_run": "state/event repair dry_run must be a boolean",
         },
     )
-    return _StateEventRepairPayload(
-        confirmed=payload.confirmed,
-        dry_run=payload.dry_run,
-    )
 
 
 def _session_resume_payload(body: JsonMapping) -> _SessionResumePayload:
-    payload = _request_model_payload(
-        _SessionResumeModel,
+    return _request_model_payload(
+        _SessionResumePayload,
         body,
         {"confirmed": "resume confirmed must be a boolean"},
     )
-    return _SessionResumePayload(confirmed=payload.confirmed)
 
 
 def _session_reason_payload(
@@ -520,7 +430,7 @@ def _session_reason_payload(
     field_name: str,
 ) -> str:
     payload = _request_model_payload(
-        _SessionReasonModel,
+        _SessionReasonPayload,
         {**dict(body), "reason": body.get("reason", default)},
         {"reason": f"{field_name} must be a string"},
     )
@@ -531,22 +441,36 @@ def _request_model_payload[T: ConfigPayload](
     model_type: type[T],
     body: Mapping[str, object],
     field_messages: Mapping[str, str],
+    *,
+    empty_field_messages: Mapping[str, str] | None = None,
 ) -> T:
     try:
         return model_type.model_validate(dict(body))
     except PydanticValidationError as exc:
-        raise ValueError(_request_payload_error_message(exc, field_messages)) from exc
+        raise ValueError(
+            _request_payload_error_message(
+                exc,
+                field_messages,
+                empty_field_messages=empty_field_messages or {},
+            )
+        ) from exc
 
 
 def _request_payload_error_message(
     error: PydanticValidationError,
     field_messages: Mapping[str, str],
+    *,
+    empty_field_messages: Mapping[str, str],
 ) -> str:
     details = pydantic_error_details(error)
     path = details.path
     if path:
         if path.startswith("capabilities["):
             return f"distributed worker {path} must be a non-empty string"
+        if details.error_type == "value_error" and details.message.endswith("must not be empty"):
+            message = empty_field_messages.get(path.partition("[")[0].partition(".")[0])
+            if message is not None:
+                return message
         message = field_messages.get(path.partition("[")[0].partition(".")[0])
         if message is not None:
             return message

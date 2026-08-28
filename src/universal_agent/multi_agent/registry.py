@@ -12,6 +12,7 @@ from pydantic import ValidationError as PydanticValidationError
 from universal_agent.core import DomainIdentity, JsonMapping, SessionId
 from universal_agent.core.config_validation import (
     ConfigPayload,
+    PydanticNonEmptyString,
     parse_non_empty_string,
     parse_non_empty_string_sequence,
     pydantic_error_details,
@@ -41,26 +42,26 @@ class AgentInstanceStatus(StrEnum):
 
 
 class _DomainIdentityPayload(ConfigPayload):
-    name: str
-    version: str
+    name: PydanticNonEmptyString
+    version: PydanticNonEmptyString
 
 
 class _AgentProfileRecordPayload(ConfigPayload):
-    name: str
-    version: str
+    name: PydanticNonEmptyString
+    version: PydanticNonEmptyString
     domains: list[_DomainIdentityPayload] = Field(default_factory=list)
-    permissions: list[str] = Field(default_factory=list)
-    capabilities: list[str] = Field(default_factory=list)
+    permissions: list[PydanticNonEmptyString] = Field(default_factory=list)
+    capabilities: list[PydanticNonEmptyString] = Field(default_factory=list)
     description: str = ""
 
 
 class _AgentInstanceRecordPayload(ConfigPayload):
-    agent_id: str
-    profile_name: str
-    profile_version: str
-    status: str = AgentInstanceStatus.READY.value
-    session_id: str | None = None
-    endpoint: str | None = None
+    agent_id: PydanticNonEmptyString
+    profile_name: PydanticNonEmptyString
+    profile_version: PydanticNonEmptyString
+    status: PydanticNonEmptyString = AgentInstanceStatus.READY.value
+    session_id: PydanticNonEmptyString | None = None
+    endpoint: PydanticNonEmptyString | None = None
 
 
 class _AgentRegistrySnapshotPayload(ConfigPayload):
@@ -341,6 +342,8 @@ def _registry_payload_error_message(
     error_type = details.error_type
     if not error_type:
         return details.message
+    if error_type == "value_error" and details.message.endswith("must not be empty"):
+        return f"{path} must not be empty"
     expected = _expected_registry_type(error_type, path)
     if expected is not None:
         return f"{path} must be {expected}"

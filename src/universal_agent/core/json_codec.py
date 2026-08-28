@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TextIO
+from tempfile import NamedTemporaryFile
+from typing import TextIO, cast
 
 import orjson
 
@@ -60,14 +61,30 @@ def write_json_file(
     sort_keys: bool = True,
     trailing_newline: bool = True,
 ) -> None:
-    with Path(path).open("w", encoding="utf-8") as handle:
-        write_json(
-            handle,
-            value,
-            indent=indent,
-            sort_keys=sort_keys,
-            trailing_newline=trailing_newline,
-        )
+    target = Path(path)
+    tmp_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=target.parent,
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            tmp_path = Path(handle.name)
+            write_json(
+                cast(TextIO, handle),
+                value,
+                indent=indent,
+                sort_keys=sort_keys,
+                trailing_newline=trailing_newline,
+            )
+        tmp_path.replace(target)
+    except Exception:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def _json_encodable(value: object) -> object:

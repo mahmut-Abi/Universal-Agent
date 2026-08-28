@@ -15,6 +15,7 @@ from universal_agent.core import (
     TaskId,
     utc_now,
 )
+from universal_agent.core.config_validation import parse_bounded_float, parse_non_empty_string
 
 EvidenceId = NewType("EvidenceId", str)
 
@@ -40,10 +41,23 @@ class Evidence:
     domain_version: str = ""
 
     def __post_init__(self) -> None:
-        if not 0.0 <= self.confidence <= 1.0:
-            raise ValueError("evidence confidence must be between zero and one")
-        if not self.subject or not self.claim:
-            raise ValueError("evidence subject and claim are required")
+        parse_bounded_float(
+            self.confidence,
+            "evidence confidence",
+            minimum=0.0,
+            maximum=1.0,
+            range_template="{path} must be between zero and one",
+        )
+        parse_non_empty_string(
+            self.subject,
+            "evidence subject",
+            empty_template="evidence subject and claim are required",
+        )
+        parse_non_empty_string(
+            self.claim,
+            "evidence claim",
+            empty_template="evidence subject and claim are required",
+        )
 
 
 @dataclass(frozen=True, slots=True)

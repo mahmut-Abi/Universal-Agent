@@ -425,6 +425,18 @@ def test_agent_registry_decoders_reject_invalid_payload_shapes() -> None:
             )
         )
 
+    with pytest.raises(ValueError, match=r"profile\.permissions\[0\] must not be empty"):
+        decode_agent_profile_record(
+            immutable_json(
+                {
+                    "name": "security-auditor",
+                    "version": "1.0.0",
+                    "domains": [{"name": "kubernetes", "version": "0.2.0"}],
+                    "permissions": [""],
+                }
+            )
+        )
+
     with pytest.raises(ValueError, match=r"instance\.session_id must be a string"):
         decode_agent_instance_record(
             immutable_json(
@@ -433,6 +445,18 @@ def test_agent_registry_decoders_reject_invalid_payload_shapes() -> None:
                     "profile_name": "security-auditor",
                     "profile_version": "1.0.0",
                     "session_id": 1,
+                }
+            )
+        )
+
+    with pytest.raises(ValueError, match=r"instance\.endpoint must not be empty"):
+        decode_agent_instance_record(
+            immutable_json(
+                {
+                    "agent_id": "agent-1",
+                    "profile_name": "security-auditor",
+                    "profile_version": "1.0.0",
+                    "endpoint": " ",
                 }
             )
         )

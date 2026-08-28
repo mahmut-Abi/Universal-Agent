@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import importlib
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
+from importlib.metadata import EntryPoint
 from pathlib import Path
-from types import ModuleType
 from typing import Any, cast
 
 from universal_agent.domain.package_codec import load_domain_package
@@ -61,32 +60,54 @@ def load_domain_package_runtime(
 
 
 def _load_domain_runtime_entrypoint(root_path: Path, entrypoint: str) -> DomainRuntime:
-    module_name, attribute_path = _parse_entrypoint(entrypoint)
+    parsed = _entrypoint(entrypoint)
     with _package_import_path(root_path):
         try:
-            module = importlib.import_module(module_name)
+            target = parsed.load()
         except ImportError as exc:
             raise DomainPackageRuntimeLoadError(
-                f"domain package entrypoint module could not be imported: {module_name}"
+                f"domain package entrypoint module could not be imported: {parsed.module}"
             ) from exc
-        target = _resolve_entrypoint_attribute(module, attribute_path)
+        except AttributeError as exc:
+            raise DomainPackageRuntimeLoadError(
+                "domain package entrypoint attribute not found: "
+                f"{parsed.module}.{parsed.attr}"
+            ) from exc
         return _coerce_domain_runtime(target, entrypoint)
 
 
 def _parse_entrypoint(entrypoint: str) -> tuple[str, tuple[str, ...]]:
-    if ":" not in entrypoint:
+    parsed = _entrypoint(entrypoint)
+    return parsed.module, tuple(parsed.attr.split("."))
+
+
+def _entrypoint(entrypoint: str) -> EntryPoint:
+    try:
+        parsed = EntryPoint(
+            name="domain_runtime",
+            value=entrypoint,
+            group="universal_agent.domains",
+        )
+        module_name = parsed.module
+        attribute_name = parsed.attr
+        extras = parsed.extras
+    except (AssertionError, ValueError) as exc:
+        raise DomainPackageRuntimeLoadError(
+            "domain package entrypoint must use 'module:attribute' format"
+        ) from exc
+    if attribute_name is None:
         raise DomainPackageRuntimeLoadError(
             "domain package entrypoint must use 'module:attribute' format"
         )
-    module_name, raw_attribute = entrypoint.split(":", 1)
-    if not module_name.strip() or not raw_attribute.strip():
+    if not module_name.strip() or not attribute_name.strip():
         raise DomainPackageRuntimeLoadError(
             "domain package entrypoint must include module and attribute"
         )
-    attribute_path = tuple(part for part in raw_attribute.split(".") if part)
-    if "." in raw_attribute and len(attribute_path) != len(raw_attribute.split(".")):
+    if extras:
+        raise DomainPackageRuntimeLoadError("domain package entrypoint extras are not supported")
+    if not all(part.strip() for part in attribute_name.split(".")):
         raise DomainPackageRuntimeLoadError("domain package entrypoint attribute is invalid")
-    return module_name, attribute_path
+    return parsed
 
 
 @contextmanager
@@ -104,20 +125,6 @@ def _package_import_path(root_path: Path) -> Iterator[None]:
                 sys.path.remove(root)
             except ValueError:  # pragma: no cover - defensive against external sys.path mutation
                 pass
-
-
-def _resolve_entrypoint_attribute(module: ModuleType, attribute_path: tuple[str, ...]) -> Any:
-    target: Any = module
-    traversed: list[str] = [module.__name__]
-    for attribute in attribute_path:
-        traversed.append(attribute)
-        try:
-            target = getattr(target, attribute)
-        except AttributeError as exc:
-            raise DomainPackageRuntimeLoadError(
-                "domain package entrypoint attribute not found: " + ".".join(traversed)
-            ) from exc
-    return target
 
 
 def _coerce_domain_runtime(target: Any, entrypoint: str) -> DomainRuntime:

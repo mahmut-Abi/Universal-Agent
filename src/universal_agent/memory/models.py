@@ -7,6 +7,7 @@ from typing import NewType
 from uuid import uuid4
 
 from universal_agent.core import SessionId, utc_now
+from universal_agent.core.config_validation import parse_bounded_float, parse_non_empty_string
 
 MemoryId = NewType("MemoryId", str)
 
@@ -41,10 +42,23 @@ class MemoryRecord:
     created_at: datetime = field(default_factory=utc_now)
 
     def __post_init__(self) -> None:
-        if not 0.0 <= self.confidence <= 1.0:
-            raise ValueError("memory confidence must be between zero and one")
-        if not self.subject or not self.content:
-            raise ValueError("memory subject and content are required")
+        parse_bounded_float(
+            self.confidence,
+            "memory confidence",
+            minimum=0.0,
+            maximum=1.0,
+            range_template="{path} must be between zero and one",
+        )
+        parse_non_empty_string(
+            self.subject,
+            "memory subject",
+            empty_template="memory subject and content are required",
+        )
+        parse_non_empty_string(
+            self.content,
+            "memory content",
+            empty_template="memory subject and content are required",
+        )
 
 
 @dataclass(frozen=True, slots=True)

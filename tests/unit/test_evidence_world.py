@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
 
@@ -53,6 +54,17 @@ def make_evidence(
         confidence,
         observed_at=observation.observed_at,
     )
+
+
+def test_evidence_validates_confidence_and_fields_through_pydantic_helpers() -> None:
+    with pytest.raises(ValueError, match="evidence confidence must be between zero and one"):
+        make_evidence(value=True, confidence=1.5, seconds=1)
+    with pytest.raises(ValueError, match="evidence confidence must be a number"):
+        make_evidence(value=True, confidence=cast(float, True), seconds=1)
+    with pytest.raises(ValueError, match="evidence subject and claim are required"):
+        make_evidence(value=True, confidence=0.9, seconds=1, subject=" ")
+    with pytest.raises(ValueError, match="evidence claim must be a string"):
+        make_evidence(value=True, confidence=0.9, seconds=1, claim=cast(str, 1))
 
 
 def test_evidence_store_is_idempotent_and_queryable() -> None:

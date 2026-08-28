@@ -617,6 +617,42 @@ def test_domain_package_runtime_loader_requires_explicit_entrypoint(tmp_path: Pa
         load_domain_package_runtime(package)
 
 
+def test_domain_package_runtime_loader_validates_entrypoint_with_stdlib_parser(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "widget-domain"
+    module_name = "widget_domain_entrypoint_parser"
+    payload = runtime_package_payload(module_name=module_name)
+    payload["entrypoint"] = module_name
+    write_manifest(root, payload)
+    package = DomainPackageRegistry().install(root)
+
+    with pytest.raises(DomainPackageRuntimeLoadError, match="module:attribute"):
+        load_domain_package_runtime(package)
+
+    payload["entrypoint"] = f"{module_name}:build_domain[extra]"
+    write_manifest(root, payload)
+    package = DomainPackageRegistry().install(root)
+
+    with pytest.raises(DomainPackageRuntimeLoadError, match="extras are not supported"):
+        load_domain_package_runtime(package)
+
+
+def test_domain_package_runtime_loader_reports_missing_entrypoint_attribute(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "widget-domain"
+    module_name = "widget_domain_missing_attribute"
+    payload = runtime_package_payload(module_name=module_name)
+    payload["entrypoint"] = f"{module_name}:missing"
+    write_manifest(root, payload)
+    write_runtime_module(root, module_name=module_name)
+    package = DomainPackageRegistry().install(root)
+
+    with pytest.raises(DomainPackageRuntimeLoadError, match="attribute not found"):
+        load_domain_package_runtime(package)
+
+
 def test_domain_package_runtime_loader_rejects_identity_mismatch(tmp_path: Path) -> None:
     root = tmp_path / "widget-domain"
     module_name = "widget_domain_identity_mismatch"

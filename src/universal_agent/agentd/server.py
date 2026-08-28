@@ -5,7 +5,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
 from starlette.applications import Starlette
 from starlette.requests import Request as StarletteRequest
@@ -18,6 +18,7 @@ from universal_agent.agentd.http import HttpRequest, HttpResponse
 from universal_agent.core import JsonCodecError, JsonMapping, dumps_json, immutable_json, loads_json
 from universal_agent.core.config_validation import (
     ConfigPayload,
+    PydanticNonEmptyString,
     parse_json_object,
     parse_non_negative_int_text,
     pydantic_error_details,
@@ -25,16 +26,9 @@ from universal_agent.core.config_validation import (
 
 
 class _AgentdServerConfigPayload(ConfigPayload):
-    host: str
+    host: PydanticNonEmptyString
     port: int = Field(ge=0)
     max_body_bytes: int = Field(ge=0)
-
-    @field_validator("host")
-    @classmethod
-    def _require_host(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("agentd host must not be empty")
-        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +59,8 @@ def _agentd_server_config_error_message(error: PydanticValidationError) -> str:
     if details.path == "host":
         if details.error_type == "string_type":
             return "agentd host must be a string"
+        if details.error_type == "value_error" and details.message.endswith("must not be empty"):
+            return "agentd host must not be empty"
         return details.message.removeprefix("Value error, ")
     if details.path == "port":
         if details.error_type == "greater_than_equal":

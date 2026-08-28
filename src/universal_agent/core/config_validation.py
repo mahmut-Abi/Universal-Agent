@@ -28,6 +28,7 @@ __all__ = [
     "ConfigPayload",
     "PydanticErrorDetails",
     "PydanticJsonValue",
+    "PydanticNonEmptyString",
     "duplicate_values",
     "enum_value",
     "json_mapping",
@@ -86,7 +87,7 @@ def _non_empty_string_value(value: str) -> str:
     return value
 
 
-_PydanticNonEmptyString = Annotated[str, AfterValidator(_non_empty_string_value)]
+PydanticNonEmptyString = Annotated[str, AfterValidator(_non_empty_string_value)]
 _PydanticLowerSha256HexDigest = Annotated[
     str,
     StringConstraints(pattern=r"^[0-9a-f]{64}$"),
@@ -109,11 +110,11 @@ _POSITIVE_FLOAT_ADAPTER: TypeAdapter[PositiveFloat] = TypeAdapter(PositiveFloat)
 _POSITIVE_INT_ADAPTER: TypeAdapter[PositiveInt] = TypeAdapter(PositiveInt)
 _RATE_ADAPTER: TypeAdapter[_PydanticRate] = TypeAdapter(_PydanticRate)
 _STRING_ADAPTER: TypeAdapter[str] = TypeAdapter(str)
-_NON_EMPTY_STRING_ADAPTER: TypeAdapter[_PydanticNonEmptyString] = TypeAdapter(
-    _PydanticNonEmptyString
+_NON_EMPTY_STRING_ADAPTER: TypeAdapter[PydanticNonEmptyString] = TypeAdapter(
+    PydanticNonEmptyString
 )
-_NON_EMPTY_STRING_SEQUENCE_ADAPTER: TypeAdapter[list[_PydanticNonEmptyString]] = TypeAdapter(
-    list[_PydanticNonEmptyString]
+_NON_EMPTY_STRING_SEQUENCE_ADAPTER: TypeAdapter[list[PydanticNonEmptyString]] = TypeAdapter(
+    list[PydanticNonEmptyString]
 )
 _STRING_SEQUENCE_ADAPTER: TypeAdapter[list[str]] = TypeAdapter(list[str])
 _STRING_MAPPING_ADAPTER: TypeAdapter[dict[str, str]] = TypeAdapter(dict[str, str])
@@ -582,7 +583,10 @@ def pydantic_error_message(
     if not error_type:
         return details.message
     if error_type == "value_error":
-        return details.message.removeprefix("Value error, ")
+        message = details.message.removeprefix("Value error, ")
+        if message == "must not be empty" and path:
+            return f"{path} must not be empty"
+        return message
     if error_type == "missing" and missing_template is not None:
         return missing_template.format(path=path)
     expected = _expected_error_type(error_type, path, expected_types)

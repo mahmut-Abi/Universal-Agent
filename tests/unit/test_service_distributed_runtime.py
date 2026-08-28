@@ -56,6 +56,21 @@ def test_goal_work_payload_round_trips_through_pydantic_decoder() -> None:
             {
                 "goal": {
                     "id": "goal-1",
+                    "description": " ",
+                    "success_criteria": [{"key": "healthy", "expected": True}],
+                },
+                "task": {
+                    "id": "task-1",
+                    "description": "Inspect deployment",
+                    "required_criteria": ["healthy"],
+                },
+            },
+            "goal.description must not be empty",
+        ),
+        (
+            {
+                "goal": {
+                    "id": "goal-1",
                     "description": "Diagnose workload",
                     "success_criteria": [],
                 },
@@ -87,6 +102,21 @@ def test_goal_work_payload_round_trips_through_pydantic_decoder() -> None:
                 "goal": {
                     "id": "goal-1",
                     "description": "Diagnose workload",
+                    "success_criteria": [{"key": "", "expected": True}],
+                },
+                "task": {
+                    "id": "task-1",
+                    "description": "Inspect deployment",
+                    "required_criteria": ["healthy"],
+                },
+            },
+            "goal.success_criteria[0].key must not be empty",
+        ),
+        (
+            {
+                "goal": {
+                    "id": "goal-1",
+                    "description": "Diagnose workload",
                     "success_criteria": [{"key": "healthy", "expected": True}],
                 },
                 "task": {
@@ -96,6 +126,21 @@ def test_goal_work_payload_round_trips_through_pydantic_decoder() -> None:
                 },
             },
             "task.required_criteria[0] must be a string",
+        ),
+        (
+            {
+                "goal": {
+                    "id": "goal-1",
+                    "description": "Diagnose workload",
+                    "success_criteria": [{"key": "healthy", "expected": True}],
+                },
+                "task": {
+                    "id": "task-1",
+                    "description": "Inspect deployment",
+                    "required_criteria": [" "],
+                },
+            },
+            "task.required_criteria[0] must not be empty",
         ),
     ),
 )

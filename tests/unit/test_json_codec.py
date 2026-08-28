@@ -43,6 +43,17 @@ def test_json_codec_reads_and_writes_files(tmp_path: Path) -> None:
 
     assert path.read_text(encoding="utf-8") == '{\n  "a": 1,\n  "b": 2\n}\n'
     assert read_json_file(path) == {"a": 1, "b": 2}
+    assert tuple(tmp_path.glob(".*.tmp")) == ()
+
+
+def test_json_codec_cleans_up_atomic_temp_file_on_write_failure(tmp_path: Path) -> None:
+    path = tmp_path / "payload.json"
+
+    with pytest.raises(JsonCodecError, match="not JSON serializable"):
+        write_json_file(path, object())
+
+    assert not path.exists()
+    assert tuple(tmp_path.glob(".*.tmp")) == ()
 
 
 def test_json_codec_reports_invalid_json_and_non_serializable_values() -> None:

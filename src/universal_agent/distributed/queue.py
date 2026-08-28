@@ -19,7 +19,7 @@ from universal_agent.core import (
     loads_json,
     read_json_file,
     utc_now,
-    write_json,
+    write_json_file,
 )
 from universal_agent.core.config_validation import (
     parse_non_empty_string,
@@ -546,14 +546,11 @@ class FileWorkQueue(InMemoryWorkQueue):
 
     def _save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = self._path.with_suffix(self._path.suffix + ".tmp")
         payload = {
             "version": 1,
             "items": [_encode_work_item(item) for item in super().list()],
         }
-        with tmp_path.open("w", encoding="utf-8") as handle:
-            write_json(handle, payload, indent=True)
-        tmp_path.replace(self._path)
+        write_json_file(self._path, payload, indent=True)
 
 
 class SQLiteWorkQueue(InMemoryWorkQueue):

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TextIO, cast
 
 from universal_agent.cli_io import _parse_key_value_options, _write_json
-from universal_agent.core import write_json
+from universal_agent.core import write_json_file
 from universal_agent.domains.kubernetes.cli import (
     profile_domain_config as kubernetes_profile_domain_config,
 )
@@ -52,10 +52,7 @@ def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
         model_response_format=cast(str | None, args.model_response_format),
         model_headers=_parse_key_value_options(cast(list[str], args.model_header), "model-header"),
     )
-    tmp_path = output.with_name(output.name + ".tmp")
-    with tmp_path.open("w", encoding="utf-8") as handle:
-        write_json(handle, payload, indent=True)
-    tmp_path.replace(output)
+    write_json_file(output, payload, indent=True)
     _write_json(out, {"status": "created", "profile": profile_name, "path": str(output)})
 
 

@@ -467,8 +467,8 @@ class AgentdApp:
                 registration_payload = _distributed_worker_registration_payload(request.body)
                 lifecycle = self._service.distributed_register_worker(
                     worker_id,
-                    capabilities=registration_payload.capabilities,
-                    metadata=registration_payload.metadata,
+                    capabilities=registration_payload.capability_tuple,
+                    metadata=registration_payload.metadata_mapping,
                     ttl_seconds=registration_payload.ttl_seconds,
                 )
             elif action == "heartbeat":
@@ -533,9 +533,9 @@ class AgentdApp:
             lock_payload = _distributed_lock_acquire_payload(request.body)
             lock_lifecycle = self._service.distributed_acquire_lock(
                 lock_key=lock_payload.lock_key,
-                owner_id=lock_payload.owner_id,
+                owner_id=lock_payload.lock_owner_id,
                 ttl_seconds=lock_payload.ttl_seconds,
-                metadata=lock_payload.metadata,
+                metadata=lock_payload.metadata_mapping,
             )
         except DistributedLockConflictError as exc:
             return conflict(str(exc))
@@ -557,13 +557,13 @@ class AgentdApp:
             if action == "heartbeat":
                 lock_lifecycle = self._service.distributed_heartbeat_lock(
                     lease_id,
-                    owner_id=lease_payload.owner_id,
+                    owner_id=lease_payload.lock_owner_id,
                     ttl_seconds=lease_payload.ttl_seconds,
                 )
             elif action == "release":
                 lock_lifecycle = self._service.distributed_release_lock(
                     lease_id,
-                    owner_id=lease_payload.owner_id,
+                    owner_id=lease_payload.lock_owner_id,
                 )
             else:
                 return not_found(f"unknown route: {path}")
@@ -662,7 +662,7 @@ class AgentdApp:
             scheduling = self._service.distributed_schedule_task(
                 session_id,
                 task_id,
-                payload=task_schedule.payload,
+                payload=task_schedule.payload_mapping,
                 priority=task_schedule.priority,
                 max_attempts=task_schedule.max_attempts,
             )
@@ -681,7 +681,7 @@ class AgentdApp:
             session_schedule = _distributed_schedule_payload(request.body)
             scheduling = self._service.distributed_schedule_session(
                 session_id,
-                payload=session_schedule.payload,
+                payload=session_schedule.payload_mapping,
                 priority=session_schedule.priority,
                 max_attempts=session_schedule.max_attempts,
             )

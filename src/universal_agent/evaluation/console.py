@@ -12,7 +12,6 @@ from universal_agent.evaluation.recording import (
 )
 from universal_agent.terminal import render_terminal_lines
 from universal_agent.web_ui import (
-    _empty_table_row,
     _hero_block,
     _HeroPill,
     _metric_card,
@@ -20,9 +19,7 @@ from universal_agent.web_ui import (
     _page,
     _pill,
     _raw_table_cell,
-    _section,
-    _table,
-    _table_row,
+    _table_section,
 )
 
 
@@ -179,8 +176,21 @@ def _hero(snapshot: EvaluationConsoleSnapshot) -> str:
 
 
 def _reports(reports: tuple[EvaluationReportRecording, ...]) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Evaluation Reports",
+        (
+            "Suite",
+            "Status",
+            "Scenarios",
+            "Passed",
+            "Failed",
+            "Gate",
+            "Failed Scenarios",
+            "Duration ms",
+            "Tokens",
+            "Cost micros",
+        ),
+        (
             (
                 report.suite_name,
                 _raw_table_cell(_status_pill(report.passed)),
@@ -193,92 +203,67 @@ def _reports(reports: tuple[EvaluationReportRecording, ...]) -> str:
                 report.summary.model_total_token_count,
                 report.summary.model_estimated_cost_micros,
             )
-        )
-        for report in reports
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No evaluation reports", colspan=10))
-    return _section(
-        "Evaluation Reports",
-        _table(
-            (
-                "Suite",
-                "Status",
-                "Scenarios",
-                "Passed",
-                "Failed",
-                "Gate",
-                "Failed Scenarios",
-                "Duration ms",
-                "Tokens",
-                "Cost micros",
-            ),
-            tuple(rows),
+            for report in reports
         ),
+        empty_message="No evaluation reports",
+        empty_colspan=10,
     )
 
 
 def _scenarios(reports: tuple[EvaluationReportRecording, ...]) -> str:
-    rows = [_scenario_row(report, scenario) for report in reports for scenario in report.scenarios]
-    if not rows:
-        rows.append(_empty_table_row("No scenarios", colspan=9))
-    return _section(
+    return _table_section(
         "Scenario Results",
-        _table(
-            (
-                "Suite",
-                "Scenario",
-                "Kind",
-                "Tags",
-                "Status",
-                "Result",
-                "Checks",
-                "Capabilities",
-                "Evidence",
-            ),
-            tuple(rows),
+        (
+            "Suite",
+            "Scenario",
+            "Kind",
+            "Tags",
+            "Status",
+            "Result",
+            "Checks",
+            "Capabilities",
+            "Evidence",
         ),
+        (_scenario_row(report, scenario) for report in reports for scenario in report.scenarios),
+        empty_message="No scenarios",
+        empty_colspan=9,
     )
 
 
 def _scenario_row(
     report: EvaluationReportRecording,
     scenario: EvaluationScenarioRecording,
-) -> str:
-    return _table_row(
-        (
-            report.suite_name,
-            scenario.scenario_name,
-            scenario.kind.value,
-            _tuple_text(scenario.tags),
-            _raw_table_cell(_status_pill(scenario.passed)),
-            _result_text(scenario),
-            _checks_text(scenario.checks),
-            _tuple_text(scenario.action_capabilities),
-            _tuple_text(scenario.evidence_claims),
-        )
+) -> tuple[object, ...]:
+    return (
+        report.suite_name,
+        scenario.scenario_name,
+        scenario.kind.value,
+        _tuple_text(scenario.tags),
+        _raw_table_cell(_status_pill(scenario.passed)),
+        _result_text(scenario),
+        _checks_text(scenario.checks),
+        _tuple_text(scenario.action_capabilities),
+        _tuple_text(scenario.evidence_claims),
     )
 
 
 def _gate_checks(reports: tuple[EvaluationReportRecording, ...]) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Quality Gate Checks",
+        ("Suite", "Check", "Status", "Message"),
+        (
             (
                 report.suite_name,
                 check.name,
                 _raw_table_cell(_status_pill(check.passed)),
                 check.message,
             )
-        )
-        for report in reports
-        if report.gate is not None
-        for check in report.gate.checks
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No gate checks", colspan=4))
-    return _section(
-        "Quality Gate Checks",
-        _table(("Suite", "Check", "Status", "Message"), tuple(rows)),
+            for report in reports
+            if report.gate is not None
+            for check in report.gate.checks
+        ),
+        empty_message="No gate checks",
+        empty_colspan=4,
     )
 
 

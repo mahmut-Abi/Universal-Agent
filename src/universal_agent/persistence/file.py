@@ -12,7 +12,7 @@ from universal_agent.core import (
     dumps_json,
     loads_json,
     read_json_file,
-    write_json,
+    write_json_file,
 )
 from universal_agent.core.config_validation import parse_json_object
 from universal_agent.persistence.codec import (
@@ -100,10 +100,7 @@ class FileSessionStore:
 
     def _write_snapshot(self, path: Path, snapshot: SessionSnapshot) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = path.with_suffix(".json.tmp")
-        with tmp_path.open("w", encoding="utf-8") as handle:
-            write_json(handle, encode_session_snapshot(snapshot), indent=True)
-        tmp_path.replace(path)
+        write_json_file(path, encode_session_snapshot(snapshot), indent=True)
 
 
 class FileEventStore:
@@ -244,17 +241,14 @@ class FileRuntimeStore(FileSessionStore, FileEventStore):
         event: RuntimeEvent,
     ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = path.with_suffix(".json.tmp")
-        with tmp_path.open("w", encoding="utf-8") as handle:
-            write_json(
-                handle,
-                {
-                    "session": encode_session_snapshot(snapshot),
-                    "event": encode_runtime_event(event),
-                },
-                indent=True,
-            )
-        tmp_path.replace(path)
+        write_json_file(
+            path,
+            {
+                "session": encode_session_snapshot(snapshot),
+                "event": encode_runtime_event(event),
+            },
+            indent=True,
+        )
 
     def _append_event_if_missing(self, event: RuntimeEvent) -> None:
         if self._event_exists(event.id):

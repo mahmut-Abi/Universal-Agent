@@ -5,8 +5,8 @@ from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
-from pydantic import field_validator
 
 from universal_agent.core import (
     ActionId,
@@ -27,8 +27,7 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
-    parse_non_empty_string,
-    parse_non_empty_string_sequence,
+    PydanticNonEmptyString,
     pydantic_error_details,
 )
 from universal_agent.distributed import (
@@ -67,31 +66,21 @@ _DISTRIBUTED_SESSION_LOCK_TTL_SECONDS = 300.0
 
 
 class _GoalWorkSuccessCriterionPayload(ConfigPayload):
-    key: str
+    key: PydanticNonEmptyString
     expected: PydanticJsonValue
 
 
 class _GoalWorkPayload(ConfigPayload):
-    id: str
-    description: str
-    success_criteria: list[_GoalWorkSuccessCriterionPayload]
+    id: PydanticNonEmptyString
+    description: PydanticNonEmptyString
+    success_criteria: list[_GoalWorkSuccessCriterionPayload] = Field(min_length=1)
     created_at: str | None = None
-
-    @field_validator("success_criteria")
-    @classmethod
-    def _require_success_criteria(
-        cls,
-        value: list[_GoalWorkSuccessCriterionPayload],
-    ) -> list[_GoalWorkSuccessCriterionPayload]:
-        if not value:
-            raise ValueError("goal.success_criteria must not be empty")
-        return value
 
 
 class _TaskWorkPayload(ConfigPayload):
-    id: str
-    description: str
-    required_criteria: list[str]
+    id: PydanticNonEmptyString
+    description: PydanticNonEmptyString
+    required_criteria: list[PydanticNonEmptyString]
     created_at: str | None = None
 
 
@@ -777,18 +766,15 @@ def goal_task_from_work_payload(payload: Mapping[str, JsonValue]) -> tuple[Goal,
     task_payload = work_payload.task
     return (
         Goal(
-            parse_non_empty_string(goal_payload.description, "goal.description"),
+            goal_payload.description,
             _success_criteria_from_payload(goal_payload.success_criteria),
-            id=GoalId(parse_non_empty_string(goal_payload.id, "goal.id")),
+            id=GoalId(goal_payload.id),
             created_at=_datetime_payload_field(goal_payload.created_at, "goal.created_at"),
         ),
         Task(
-            parse_non_empty_string(task_payload.description, "task.description"),
-            parse_non_empty_string_sequence(
-                task_payload.required_criteria,
-                "task.required_criteria",
-            ),
-            id=TaskId(parse_non_empty_string(task_payload.id, "task.id")),
+            task_payload.description,
+            tuple(task_payload.required_criteria),
+            id=TaskId(task_payload.id),
             created_at=_datetime_payload_field(task_payload.created_at, "task.created_at"),
         ),
     )
@@ -806,18 +792,7 @@ def _parse_goal_task_work_payload(
 def _success_criteria_from_payload(
     items: list[_GoalWorkSuccessCriterionPayload],
 ) -> tuple[SuccessCriterion, ...]:
-    criteria: list[SuccessCriterion] = []
-    for index, item in enumerate(items):
-        criteria.append(
-            SuccessCriterion(
-                parse_non_empty_string(
-                    item.key,
-                    f"goal.success_criteria[{index}].key",
-                ),
-                copy_json_value(item.expected),
-            )
-        )
-    return tuple(criteria)
+    return tuple(SuccessCriterion(item.key, copy_json_value(item.expected)) for item in items)
 
 
 def _datetime_payload_field(
@@ -837,6 +812,8 @@ def _goal_task_work_payload_error_message(error: PydanticValidationError) -> str
         return details.message
     if path == "goal.success_criteria" and error_type == "too_short":
         return "goal.success_criteria must not be empty"
+    if error_type == "value_error" and details.message.endswith("must not be empty"):
+        return f"{path} must not be empty"
     if path.endswith(".expected") and error_type == "missing":
         return f"{path} is required"
     expected = _goal_task_work_payload_expected_type(error_type, path)

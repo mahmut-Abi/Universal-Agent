@@ -12,7 +12,7 @@ from universal_agent.core import (
     JsonMapping,
     immutable_json,
     read_json_file,
-    write_json,
+    write_json_file,
 )
 from universal_agent.core.config_validation import (
     ConfigPayload,
@@ -247,10 +247,7 @@ def write_ecosystem_registry_manifest(
     if output.parent != Path(""):
         output.parent.mkdir(parents=True, exist_ok=True)
     overwritten = output.exists()
-    tmp_path = output.with_name(output.name + ".tmp")
-    with tmp_path.open("w", encoding="utf-8") as handle:
-        write_json(handle, encode_ecosystem_registry_manifest(manifest), indent=True)
-    tmp_path.replace(output)
+    write_json_file(output, encode_ecosystem_registry_manifest(manifest), indent=True)
     return EcosystemRegistryWriteResult(manifest, output, overwritten)
 
 

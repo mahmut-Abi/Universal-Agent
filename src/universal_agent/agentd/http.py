@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from types import MappingProxyType
 
-from pydantic import field_validator
+from pydantic import Field
+from pydantic import ValidationError as PydanticValidationError
 from starlette.datastructures import Headers
 
 from universal_agent.core import (
@@ -21,10 +22,11 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
-    parse_non_empty_string,
+    PydanticNonEmptyString,
     parse_non_empty_string_sequence,
     parse_optional_non_empty_string,
-    parse_payload,
+    pydantic_error_details,
+    pydantic_error_message,
 )
 
 
@@ -60,34 +62,24 @@ class GoalSubmission:
 
 
 class _SuccessCriterionPayload(ConfigPayload):
-    key: str
+    key: PydanticNonEmptyString
     expected: PydanticJsonValue
 
 
 class _GoalPayload(ConfigPayload):
-    description: str
-    success_criteria: list[_SuccessCriterionPayload]
-
-    @field_validator("success_criteria")
-    @classmethod
-    def _require_success_criteria(
-        cls,
-        value: list[_SuccessCriterionPayload],
-    ) -> list[_SuccessCriterionPayload]:
-        if not value:
-            raise ValueError("goal.success_criteria must not be empty")
-        return value
+    description: PydanticNonEmptyString
+    success_criteria: list[_SuccessCriterionPayload] = Field(min_length=1)
 
 
 class _TaskPayload(ConfigPayload):
-    description: str
-    required_criteria: list[str]
+    description: PydanticNonEmptyString
+    required_criteria: list[PydanticNonEmptyString]
 
 
 class _GoalSubmissionPayload(ConfigPayload):
     goal: _GoalPayload
     task: _TaskPayload
-    profile: str | None = None
+    profile: PydanticNonEmptyString | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,39 +225,31 @@ def _bearer_token(value: str | None) -> str | None:
 
 def parse_goal_submission(body: JsonMapping) -> GoalSubmission:
     payload = _parse_goal_submission_payload(body)
-    profile_name = parse_optional_non_empty_string(payload.profile, "profile")
     goal_payload = payload.goal
     task_payload = payload.task
-    goal = Goal(
-        parse_non_empty_string(goal_payload.description, "goal.description"),
-        _success_criteria(goal_payload.success_criteria),
-    )
-    task = Task(
-        parse_non_empty_string(task_payload.description, "task.description"),
-        parse_non_empty_string_sequence(
-            task_payload.required_criteria,
-            "task.required_criteria",
-        ),
-    )
-    return GoalSubmission(goal, task, profile_name)
+    goal = Goal(goal_payload.description, _success_criteria(goal_payload.success_criteria))
+    task = Task(task_payload.description, tuple(task_payload.required_criteria))
+    return GoalSubmission(goal, task, payload.profile)
 
 
 def _parse_goal_submission_payload(body: JsonMapping) -> _GoalSubmissionPayload:
-    return parse_payload(_GoalSubmissionPayload, body, missing_template="{path} is required")
+    try:
+        return _GoalSubmissionPayload.model_validate(dict(body))
+    except PydanticValidationError as exc:
+        raise ValueError(_goal_submission_payload_error_message(exc)) from exc
+
+
+def _goal_submission_payload_error_message(error: PydanticValidationError) -> str:
+    details = pydantic_error_details(error)
+    if details.path == "goal.success_criteria" and details.error_type == "too_short":
+        return "goal.success_criteria must not be empty"
+    return pydantic_error_message(error, missing_template="{path} is required")
 
 
 def _success_criteria(
     items: list[_SuccessCriterionPayload],
 ) -> tuple[SuccessCriterion, ...]:
-    criteria: list[SuccessCriterion] = []
-    for index, item in enumerate(items):
-        criteria.append(
-            SuccessCriterion(
-                parse_non_empty_string(item.key, f"goal.success_criteria[{index}].key"),
-                item.expected,
-            )
-        )
-    return tuple(criteria)
+    return tuple(SuccessCriterion(item.key, item.expected) for item in items)
 
 
 def _optional_datetime_field(

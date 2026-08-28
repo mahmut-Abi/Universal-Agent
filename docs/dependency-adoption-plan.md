@@ -10,8 +10,7 @@
 ## 现状基线
 
 - 源码约 39.7k 行，已引入 `httpx`、`openai`、`jsonschema`、`pydantic`、`orjson`、
-  `filelock`、`jinja2`、`junit-xml`、`python-dateutil`、`rich` 等基础运行时依赖，
-  mypy strict + ruff 全量约束
+  `filelock`、`jinja2`、`junit-xml`、`python-dateutil`、`rapidfuzz`、`rich` 等基础运行时依赖，mypy strict + ruff 全量约束
 - 早期超 2000 行源码文件已被压回 1000 行以内；后续先优先做库替换和 seam 收口，
   暂不继续以拆文件作为主线
 - 主要瓶颈是**代码量增长速度**，非性能（主循环为 I/O 密集：LLM 秒级、kubectl 子进程、HTTP）
@@ -43,7 +42,7 @@
 
 | 项 | 说明 |
 |---|---|
-| 现状 | 已用 Pydantic v2 接管 `host/config.py`、`profile/config.py`、`domain/package_codec.py`、`persistence/codec.py` 的 JSON/config payload 类型解析，并开始接管 `agentd/routing.py` 中分布式、doctor 与 session 路由的简单 HTTP payload 校验以及 agentd bool/int/float query scalar / 非空 query value 解析、`agentd/http.py` 的 goal submission 非空集合约束、`agentd/server.py` 的 server config 与 request body JSON object 校验、`cli.py` 的 session event wait polling 数值边界校验、`core/arguments.py` 进入 jsonschema 前的 JSON shape 校验、`service/distributed_runtime.py` 的 distributed goal work payload 解码与非空字符串约束、`coordination/locks.py` 的 resource key/version 校验、`recovery/models.py` 的 recovery attempt 与替代 capability 校验、`evaluation/deterministic.py` 的 deterministic id 标量校验、`security/secrets.py` 的 secret reference 与 file secret key 校验、`multi_agent/contracts.py` 的 Agent Task/Result contract 解码及非完成结果 reason 校验、`multi_agent/conflicts.py` 的 proposal 非空字段校验、`multi_agent/registry.py` 的 Agent registry snapshot 与 record 非空字段校验、`domains/kubernetes/resources.py` 的 Kubernetes 资源摘要解析、`domains/kubernetes/evidence.py` 的 pod evidence 列表过滤、`domains/kubernetes/policy.py` 的 scale policy 环境/参数 shape 与副本数边界校验、`model/http.py` 的 OpenAI provider response payload 解析与 HTTP model adapter 构造参数非空校验、`distributed/queue_codec.py` 的 work queue 持久化 payload 解析、`distributed/worker_state.py` 的 worker registry 持久化 payload 解析、`distributed/locks.py` 的 distributed lock 持久化 payload 解析、`distributed/queue.py` / `distributed/queue_models.py` 的 runtime queue 参数校验、`evaluation/dataset.py` 的 dataset manifest、`evaluation/scenario_config.py` 的 suite/scenario config、`evaluation/recording.py` 的 report/replay recording codec 解析、`evaluation/replay.py` 的 replay recording scenario key 校验，以及 `ecosystem/validation.py` 的 registry 非空字段与 SHA-256 digest 校验；公共 dataclass API、持久化 schema version 与 legacy 默认值保留；`core.config_validation.parse_payload()`、`parse_json_object_sequence()`、`parse_json_value()`、`parse_string_sequence()`、`parse_non_empty_string()`、`parse_non_empty_string_sequence()`、`parse_unique_non_empty_string_sequence()`、`duplicate_values()`、`parse_optional_lower_sha256_hex_digest()`、`parse_bounded_float()`、`parse_bounded_int()`、numeric range helper、text scalar helper、rate helper 与 `pydantic_error_details()` 开始统一复用 Pydantic 错误路径、JSON object/list/string sequence、SDK JSON values、非空 string / sequence、HTTP/query text scalar、config/backend timeout、SHA-256 digest pattern 校验与类型文案，避免每个 codec 重写一套 formatter |
+| 现状 | 已用 Pydantic v2 接管 `host/config.py`、`profile/config.py`、`domain/package_codec.py`、`persistence/codec.py` 的 JSON/config payload 类型解析，并开始接管 `agentd/routing.py` 中分布式、doctor 与 session 路由的简单 HTTP payload 校验、分布式请求体非空字段校验与中间 payload 映射以及 agentd bool/int/float query scalar / 非空 query value 解析、`agentd/http.py` 的 goal submission 非空集合约束与字段级非空校验、`agentd/server.py` 的 server config 与 request body JSON object 校验、`cli.py` 的 session event wait polling 数值边界校验、`core/arguments.py` 进入 jsonschema 前的 JSON shape 校验、`service/distributed_runtime.py` 的 distributed goal work payload 解码与非空字符串约束、`coordination/locks.py` 的 resource key/version 校验、`recovery/models.py` 的 recovery attempt 与替代 capability 校验、`evaluation/deterministic.py` 的 deterministic id 标量校验、`security/secrets.py` 的 secret reference 与 file secret key 校验、`multi_agent/contracts.py` 的 Agent Task/Result contract 解码及非完成结果 reason 校验、`multi_agent/conflicts.py` 的 proposal 非空字段校验、`multi_agent/registry.py` 的 Agent registry snapshot 与 record 非空字段校验、`domains/kubernetes/resources.py` 的 Kubernetes 资源摘要解析、`domains/kubernetes/evidence.py` 的 pod evidence 列表过滤、`domains/kubernetes/policy.py` 的 scale policy 环境/参数 shape 与副本数边界校验、`model/http.py` 的 OpenAI provider response payload 解析与 HTTP model adapter 构造参数非空校验、`distributed/queue_codec.py` 的 work queue 持久化 payload 解析、`distributed/worker_state.py` 的 worker registry 持久化 payload 解析、`distributed/locks.py` 的 distributed lock 持久化 payload 解析、`distributed/queue.py` / `distributed/queue_models.py` 的 runtime queue 参数校验、`evaluation/dataset.py` 的 dataset manifest、`evaluation/scenario_config.py` 的 suite/scenario config、`evaluation/recording.py` 的 report/replay recording codec 解析、`evaluation/replay.py` 的 replay recording scenario key 校验，以及 `ecosystem/validation.py` 的 registry 非空字段与 SHA-256 digest 校验；公共 dataclass API、持久化 schema version 与 legacy 默认值保留；`core.config_validation.parse_payload()`、`parse_json_object_sequence()`、`parse_json_value()`、`parse_string_sequence()`、`parse_non_empty_string()`、`parse_non_empty_string_sequence()`、`parse_unique_non_empty_string_sequence()`、`duplicate_values()`、`parse_optional_lower_sha256_hex_digest()`、`parse_bounded_float()`、`parse_bounded_int()`、numeric range helper、text scalar helper、rate helper 与 `pydantic_error_details()` 开始统一复用 Pydantic 错误路径、JSON object/list/string sequence、SDK JSON values、非空 string / sequence、HTTP/query text scalar、config/backend timeout、SHA-256 digest pattern 校验与类型文案，避免每个 codec 重写一套 formatter |
 | 收益 | 预计 **-1500~2500 行**；pydantic-core（Rust）解析快一个量级；错误信息标准化 |
 | 合规性 | 零风险：AGENTS.md §6 明文列出 Pydantic 为首选方案之一 |
 | 剩余 | 可继续评估 agentd 其他请求体是否值得按模块迁移；当前不建议一次性替换核心 runtime contracts |
@@ -53,9 +52,9 @@
 
 | 项 | 说明 |
 |---|---|
-| 现状 | 已新增 `core/json_codec.py` 作为统一 JSON codec seam，并用 `orjson` 接管 Runtime 源码中的 JSON dumps/loads、文件读写、model prompt 编码、agentd 请求体解析与响应序列化、persistence payload、distributed queue/lock/worker registry payload、evaluation recording/config、ecosystem registry、Kubernetes API/kubectl 响应解析，以及 web/tui value text 的 JSON 渲染 |
-| 收益 | JSON 编解码从调用点收口到一个库适配层；compact canonical JSON 用于 hash/fingerprint，pretty JSON 用于 CLI/config/report 文件输出；后续可在 codec 层统一处理 bytes、mappingproxy、tuple/list 和错误文案 |
-| 兼容性 | `JsonCodecError` 继承 `ValueError`；HTTP/CLI 的用户可见错误保持原语义；UI 中嵌入的小 JSON 片段改为 `orjson` compact one-line 格式 |
+| 现状 | 已新增 `core/json_codec.py` 作为统一 JSON codec seam，并用 `orjson` 接管 Runtime 源码中的 JSON dumps/loads、文件读写、model prompt 编码、agentd 请求体解析与响应序列化、persistence payload、distributed queue/lock/worker registry payload、evaluation recording/config、ecosystem registry、Kubernetes API/kubectl 响应解析，以及 web/tui value text 的 JSON 渲染；`write_json_file()` 已用标准库 `tempfile` 做同目录临时文件 + atomic replace，persistence、distributed、evaluation、ecosystem、domain scaffold 与 CLI init 的完整 JSON 文件写入都走同一入口 |
+| 收益 | JSON 编解码和完整 JSON 文件写入从调用点收口到一个库适配层；compact canonical JSON 用于 hash/fingerprint，pretty JSON 用于 CLI/config/report 文件输出；写入失败时统一清理临时文件 |
+| 兼容性 | `JsonCodecError` 继承 `ValueError`；HTTP/CLI 的用户可见错误保持原语义；UI 中嵌入的小 JSON 片段改为 `orjson` compact one-line 格式；文件写入输出格式保持不变 |
 | 剩余 | 测试和 examples 仍可继续使用标准库 JSON 构造 fixture；若未来要强制全 repo 收口，再单独迁移测试工具层 |
 | 风险 | 低：全量 `ruff`、`mypy` 与 `pytest` 已覆盖 |
 
@@ -131,6 +130,14 @@
 | 现状 | `ecosystem/catalog.py` 的 Domain package install plan 依赖排序已用 `graphlib.TopologicalSorter` 接管；`ecosystem/validation.py` 与 `domain/package_verification.py` 的 dependency cycle 检测也使用同一标准库图算法；registry file SHA-256 改用 `hashlib.file_digest` |
 | 收益 | 去掉三处手写 DFS/cycle stack 逻辑和手写 chunk digest loop；依赖排序、cycle detection 与文件摘要行为交给标准库维护 |
 | 风险 | 低：新增 `verify=False` install-plan cycle 测试，既有 ecosystem/domain registry verification 测试继续覆盖 cycle 与 sha256 mismatch |
+
+### 14. RapidFuzz → 替换手写 memory relevance matching（已完成）
+
+| 项 | 说明 |
+|---|---|
+| 现状 | `memory/retrieval.py` 已使用 `rapidfuzz.process.extract()` / `fuzz.WRatio` / `utils.default_process` 接管 memory relevance 的文本标准化与模糊匹配 |
+| 收益 | 去除自维护 token overlap/substring scoring 的空间，提升拼写变体、词序变化和近似查询的稳定性；仍保留 Runtime 自有 confidence threshold 与 limit 逻辑 |
+| 风险 | 低：`test_memory.py` 覆盖阈值、截断、模糊词形变体和 confidence 加权 |
 
 ---
 

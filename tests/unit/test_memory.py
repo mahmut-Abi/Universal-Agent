@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 
@@ -46,8 +47,12 @@ def make_record(
 def test_memory_record_validates_confidence_and_fields() -> None:
     with pytest.raises(ValueError, match="confidence"):
         MemoryRecord(MemoryKind.SEMANTIC, "s", "c", confidence=1.5)
+    with pytest.raises(ValueError, match="memory confidence must be a number"):
+        MemoryRecord(MemoryKind.SEMANTIC, "s", "c", confidence=cast(float, True))
     with pytest.raises(ValueError, match="subject"):
         MemoryRecord(MemoryKind.SEMANTIC, "", "c")
+    with pytest.raises(ValueError, match="memory subject and content are required"):
+        MemoryRecord(MemoryKind.SEMANTIC, "s", " ")
 
 
 def test_store_round_trip_dedup_and_stable_export() -> None:

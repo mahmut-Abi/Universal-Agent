@@ -16,7 +16,7 @@ from universal_agent.core import (
     JsonValue,
     immutable_json,
     read_json_file,
-    write_json,
+    write_json_file,
 )
 from universal_agent.core.config_validation import (
     ConfigPayload,
@@ -283,10 +283,7 @@ class FileEvaluationReportStore:
     def save(self, recording: EvaluationReportRecording) -> None:
         path = self._path(recording.suite_name)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = path.with_suffix(".json.tmp")
-        with tmp_path.open("w", encoding="utf-8") as handle:
-            write_json(handle, encode_evaluation_report(recording), indent=True)
-        tmp_path.replace(path)
+        write_json_file(path, encode_evaluation_report(recording), indent=True)
 
     def load(self, suite_name: str) -> EvaluationReportRecording:
         path = self._path(suite_name)
@@ -316,10 +313,7 @@ class FileReplayRecordingStore:
     def save(self, recording: ReplayRecording) -> None:
         path = self._path(recording.scenario_name)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = path.with_suffix(".json.tmp")
-        with tmp_path.open("w", encoding="utf-8") as handle:
-            write_json(handle, encode_replay_recording(recording), indent=True)
-        tmp_path.replace(path)
+        write_json_file(path, encode_replay_recording(recording), indent=True)
 
     def load(self, scenario_name: str) -> ReplayRecording:
         path = self._path(scenario_name)

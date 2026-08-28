@@ -7,6 +7,7 @@ from pydantic import Field, ValidationError
 
 from universal_agent.core.config_validation import (
     ConfigPayload,
+    PydanticNonEmptyString,
     parse_bool,
     parse_bool_text,
     parse_bounded_float,
@@ -46,6 +47,14 @@ from universal_agent.core.config_validation import (
 class _ExamplePayload(ConfigPayload):
     name: str
     items: list[str] = Field(default_factory=list)
+
+
+class _NestedNonEmptyPayload(ConfigPayload):
+    name: PydanticNonEmptyString
+
+
+class _NestedPayload(ConfigPayload):
+    item: _NestedNonEmptyPayload
 
 
 def test_parse_json_value_accepts_nested_json_values() -> None:
@@ -263,6 +272,11 @@ def test_parse_payload_uses_custom_missing_template() -> None:
 def test_parse_payload_formats_common_pydantic_type_errors() -> None:
     with pytest.raises(ValueError, match="items must be a list"):
         parse_payload(_ExamplePayload, {"name": "ok", "items": "bad"})
+
+
+def test_parse_payload_prefixes_generic_value_error_paths() -> None:
+    with pytest.raises(ValueError, match="item\\.name must not be empty"):
+        parse_payload(_NestedPayload, {"item": {"name": " "}})
 
 
 def test_parse_payload_prefixes_error_paths_and_accepts_expected_type_overrides() -> None:
