@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from universal_agent.core import ActionId, SessionId, TaskId
+from universal_agent.core.config_validation import parse_non_empty_string
 
 
 class ResourceConflictError(RuntimeError):
@@ -58,8 +59,7 @@ class ResourceLockRegistry:
         session_id: SessionId,
         task_id: TaskId,
     ) -> ResourceLock:
-        if not resource_key.strip():
-            raise ValueError("resource_key must not be empty")
+        parse_non_empty_string(resource_key, "resource_key")
         requested = ResourceLock(resource_key, action_id, session_id, task_id)
         existing = self._locks.get(resource_key)
         if existing is None:
@@ -108,12 +108,8 @@ class ResourceVersionRegistry:
         self._versions: dict[str, str] = dict(versions or {})
 
     def set_current(self, resource_key: str, version: str) -> None:
-        resource_key = resource_key.strip()
-        version = version.strip()
-        if not resource_key:
-            raise ValueError("resource_key must not be empty")
-        if not version:
-            raise ValueError("resource version must not be empty")
+        resource_key = parse_non_empty_string(resource_key, "resource_key").strip()
+        version = parse_non_empty_string(version, "resource version").strip()
         self._versions[resource_key] = version
 
     def current(self, resource_key: str) -> str | None:
@@ -128,8 +124,7 @@ class ResourceVersionRegistry:
         resource_key: str,
         expected_version: str | None,
     ) -> ResourceVersionCheck:
-        if not resource_key.strip():
-            raise ValueError("resource_key must not be empty")
+        parse_non_empty_string(resource_key, "resource_key")
         current = self.current(resource_key)
         matched = expected_version is None or current is None or expected_version == current
         check = ResourceVersionCheck(resource_key, expected_version, current, matched)

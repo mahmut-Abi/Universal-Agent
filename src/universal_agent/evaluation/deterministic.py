@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from types import TracebackType
 
 from universal_agent.core import runtime_primitives
+from universal_agent.core.config_validation import parse_non_empty_string, parse_positive_int
 
 
 @dataclass(slots=True)
@@ -36,12 +37,10 @@ class DeterministicIdFactory:
     counters: dict[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.width < 1:
-            raise ValueError("deterministic id width must be positive")
+        parse_positive_int(self.width, "deterministic id width")
 
     def new_id(self, prefix: str) -> str:
-        if not prefix.strip():
-            raise ValueError("deterministic id prefix must not be empty")
+        parse_non_empty_string(prefix, "deterministic id prefix")
         next_value = self.counters.get(prefix, 0) + 1
         self.counters[prefix] = next_value
         return f"{prefix}-{next_value:0{self.width}d}"

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from universal_agent.core import ErrorCode, JsonMapping, TaskId, immutable_json
+from universal_agent.core.config_validation import parse_non_empty_string, parse_non_negative_int
 
 
 class FailureCategory(StrEnum):
@@ -49,10 +50,16 @@ class RecoveryRule:
     match_capabilities: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.max_attempts < 0:
-            raise ValueError("recovery max_attempts cannot be negative")
-        if self.strategy is RecoveryStrategy.ALTERNATIVE_CAPABILITY and not self.capability:
-            raise ValueError("alternative capability recovery requires a capability")
+        parse_non_negative_int(
+            self.max_attempts,
+            "recovery max_attempts",
+            range_template="{path} cannot be negative",
+        )
+        if self.strategy is RecoveryStrategy.ALTERNATIVE_CAPABILITY:
+            try:
+                parse_non_empty_string(self.capability or "", "alternative capability recovery")
+            except ValueError as exc:
+                raise ValueError("alternative capability recovery requires a capability") from exc
         if self.strategy is RecoveryStrategy.ROLLBACK:
             raise ValueError("rollback execution is outside P2")
 
