@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from html import escape
 
 from jinja2 import Environment, select_autoescape
-from markupsafe import Markup
+from markupsafe import escape as escape_html
 
 _WEB_ENV = Environment(autoescape=select_autoescape(default=True))
-_WEB_ENV.filters["html_text"] = lambda value: Markup(escape(str(value), quote=False))
+_WEB_ENV.filters["html_text"] = lambda value: escape_html(str(value))
 _PAGE_TEMPLATE = _WEB_ENV.from_string(
     """<!doctype html>
 <html lang="en">

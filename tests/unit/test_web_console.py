@@ -650,7 +650,7 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     assert "deployment/example" in focused_world_explorer
     assert "No incoming focused relations" in focused_world_explorer
     assert "pod/example-1" in focused_world_explorer
-    assert '{"phase":"Running"}' in focused_world_explorer
+    assert "{&#34;phase&#34;:&#34;Running&#34;}" in focused_world_explorer
 
     domain_detail = render_web_domain_detail(
         snapshot,

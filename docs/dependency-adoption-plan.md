@@ -95,7 +95,7 @@
 
 | 项 | 说明 |
 |---|---|
-| 现状 | `web_ui._page()`、`_fragment()`、`_section()`、`_section_blocks()`、`_empty_paragraph()`、`_metric_card()`、`_metric_grid()`、`_table()`、`_table_from_cells()`、`_table_section()`、`_hero_block()`、`_table_row()` 与 `_detail_list()` 已用 Jinja2 接管 Web Console 与 Evaluation Console 的页面骨架、公共 section/card/grid/table/empty-state 片段、hero/nav/status pill 片段；Session、World、Catalog 与 Operational 页面族的主要 table section 已从逐行手写 HTML 组装迁到公共 Jinja2 table helper；`domain/package_runtime_stub.py` 也已改用 Jinja2 接管 scaffold runtime stub 源码模板；Evaluation Console 已复用公共 helper，去除第二套手写 hero HTML 与 summary grid HTML |
+| 现状 | `web_ui._page()`、`_fragment()`、`_section()`、`_section_blocks()`、`_empty_paragraph()`、`_metric_card()`、`_metric_grid()`、`_table()`、`_table_from_cells()`、`_table_section()`、`_hero_block()`、`_table_row()` 与 `_detail_list()` 已用 Jinja2 接管 Web Console 与 Evaluation Console 的页面骨架、公共 section/card/grid/table/empty-state 片段、hero/nav/status pill 片段；Session、World、Catalog 与 Operational 页面族的主要 table section 已从逐行手写 HTML 组装迁到公共 Jinja2 table helper；`domain/package_runtime_stub.py` 也已改用 Jinja2 接管 scaffold runtime stub 源码模板；Evaluation Console 已复用公共 helper，去除第二套手写 hero HTML 与 summary grid HTML；Web 文本 escaping 已改由 MarkupSafe/Jinja2 接管 |
 | 收益 | HTML 外壳与高频片段渲染统一到模板 seam，减少重复拼接和 escaping 漏洞面；后续复杂页面只需要准备 cell 数据，不必重复编写空表、row 渲染与 raw cell handling |
 | 风险 | 低：渲染内容顺序和现有 URL/section helper 不变，Web/Evaluation/agentd route 测试覆盖 escaping、导航链接、table section 输出与关键页面文本 |
 
