@@ -2,9 +2,90 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import Annotated
+
+from pydantic import BeforeValidator, Field
 
 from universal_agent.core import JsonMapping, JsonValue, immutable_json
+from universal_agent.core.config_validation import ConfigPayload, PydanticJsonValue, parse_payload
+
+
+def _text_or_empty(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def _mapping_or_empty(value: object) -> object:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _mapping_list_or_empty(value: object) -> object:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, Mapping)]
+
+
+_Text = Annotated[str, BeforeValidator(_text_or_empty)]
+_JsonObject = Annotated[dict[str, PydanticJsonValue], BeforeValidator(_mapping_or_empty)]
+
+
+class _OperationPayload(ConfigPayload):
+    workload: _Text = ""
+    namespace: _Text = ""
+
+
+class _DecisionPayload(ConfigPayload):
+    capability: _Text = ""
+    target: _Text = ""
+    arguments: _JsonObject = Field(default_factory=dict)
+
+
+class _WorkloadArgumentsPayload(ConfigPayload):
+    name: _Text = ""
+    namespace: _Text = ""
+
+
+class _ModelProbePayload(ConfigPayload):
+    status: _Text = ""
+    decision: _JsonObject = Field(default_factory=dict)
+    error: _JsonObject = Field(default_factory=dict)
+
+
+class _PreflightCheckPayload(ConfigPayload):
+    name: _Text = ""
+    status: _Text = ""
+
+
+class _PreflightPayload(ConfigPayload):
+    status: _Text = ""
+    checks: Annotated[
+        list[_PreflightCheckPayload],
+        BeforeValidator(_mapping_list_or_empty),
+    ] = Field(default_factory=list)
+
+
+class _RuntimeResultPayload(ConfigPayload):
+    status: _Text = ""
+    session_id: _Text = ""
+
+
+class _PendingActionPayload(ConfigPayload):
+    capability: _Text = ""
+    action_id: _Text = ""
+
+
+class _SessionPayload(ConfigPayload):
+    pending_action: _JsonObject | None = None
+    satisfied_criteria: _JsonObject = Field(default_factory=dict)
+
+
+class _RunPayload(ConfigPayload):
+    result: _JsonObject = Field(default_factory=dict)
+    session: _JsonObject = Field(default_factory=dict)
+
+
+class _ErrorPayload(ConfigPayload):
+    type: _Text = ""
+    message: _Text = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,13 +155,15 @@ def _model_probe_checks(
             ),
         )
 
-    if _text(model_probe.get("status")) != "ok":
+    operation_payload = _payload(_OperationPayload, operation)
+    probe = _payload(_ModelProbePayload, model_probe)
+    if probe.status != "ok":
         return (
             KubernetesProductionContractCheck(
                 "model_probe",
                 "failed",
                 "model probe failed before Kubernetes preflight or remediation",
-                _error_details(model_probe),
+                _error_details(probe.error),
             ),
             KubernetesProductionContractCheck(
                 "model_probe_scope",
@@ -89,14 +172,14 @@ def _model_probe_checks(
             ),
         )
 
-    decision = _object(model_probe.get("decision"))
-    scope_error = _probe_scope_error(operation, decision)
+    decision = _payload(_DecisionPayload, probe.decision)
+    scope_error = _probe_scope_error(operation_payload, decision)
     return (
         KubernetesProductionContractCheck(
             "model_probe",
             "ok",
             "model returned a validated Kubernetes inspection decision",
-            immutable_json({"capability": _text(decision.get("capability"))}),
+            immutable_json({"capability": decision.capability}),
         ),
         KubernetesProductionContractCheck(
             "model_probe_scope",
@@ -130,14 +213,16 @@ def _preflight_checks(
             ),
         )
 
-    failed_names = _preflight_check_names(preflight, "failed")
-    warning_names = _preflight_check_names(preflight, "warn")
+    report = _payload(_PreflightPayload, preflight)
+    failed_names = _preflight_check_names(report, "failed")
+    warning_names = _preflight_check_names(report, "warn")
+    preflight_ok = report.status == "ok"
     return (
         KubernetesProductionContractCheck(
             "kubernetes_preflight",
-            "ok" if _text(preflight.get("status")) == "ok" else "failed",
+            "ok" if preflight_ok else "failed",
             "Kubernetes preflight completed successfully"
-            if _text(preflight.get("status")) == "ok"
+            if preflight_ok
             else "Kubernetes preflight failed",
         ),
         KubernetesProductionContractCheck(
@@ -185,32 +270,34 @@ def _runtime_checks(
             ),
         )
 
-    result = _object(run.get("result"))
-    session = _object(run.get("session"))
-    run_status = _text(result.get("status"))
-    pending_action = _object_or_none(session.get("pending_action"))
+    operation_payload = _payload(_OperationPayload, operation)
+    payload = _payload(_RunPayload, run)
+    result = _payload(_RuntimeResultPayload, payload.result)
+    session = _payload(_SessionPayload, payload.session)
+    run_status = result.status
+    pending_action = _payload_or_none(_PendingActionPayload, session.pending_action)
     return (
         KubernetesProductionContractCheck(
             "runtime_submission",
             "ok",
             "runtime session was submitted through RuntimeService",
-            immutable_json({"session_id": _text(result.get("session_id"))}),
+            immutable_json({"session_id": result.session_id}),
         ),
         KubernetesProductionContractCheck(
             "runtime_result",
             _runtime_result_status(run_status, pending_action),
             _runtime_result_message(run_status, pending_action),
         ),
-        _completion_verification_check(operation, run_status, session, pending_action),
+        _completion_verification_check(operation_payload, run_status, session, pending_action),
         _confirmation_boundary_check(pending_action),
     )
 
 
 def _completion_verification_check(
-    operation: JsonMapping,
+    operation: _OperationPayload,
     run_status: str,
-    session: JsonMapping,
-    pending_action: JsonMapping | None,
+    session: _SessionPayload,
+    pending_action: _PendingActionPayload | None,
 ) -> KubernetesProductionContractCheck:
     if run_status == "waiting" and pending_action is not None:
         return KubernetesProductionContractCheck(
@@ -225,10 +312,10 @@ def _completion_verification_check(
             "runtime did not reach a completed state with fresh verification evidence",
         )
 
-    satisfied = _object(session.get("satisfied_criteria"))
+    satisfied = session.satisfied_criteria
     healthy = satisfied.get("healthy") is True
-    resource_matches = satisfied.get("resource") == operation.get("workload")
-    namespace = _text(operation.get("namespace"))
+    resource_matches = satisfied.get("resource") == operation.workload
+    namespace = operation.namespace
     namespace_matches = not namespace or satisfied.get("namespace") == namespace
     verified = healthy and resource_matches and namespace_matches
     return KubernetesProductionContractCheck(
@@ -248,7 +335,7 @@ def _completion_verification_check(
 
 
 def _confirmation_boundary_check(
-    pending_action: JsonMapping | None,
+    pending_action: _PendingActionPayload | None,
 ) -> KubernetesProductionContractCheck:
     if pending_action is None:
         return KubernetesProductionContractCheck(
@@ -262,8 +349,8 @@ def _confirmation_boundary_check(
         "policy-gated mutation is paused for explicit confirmation",
         immutable_json(
             {
-                "capability": _text(pending_action.get("capability")),
-                "action_id": _text(pending_action.get("action_id")),
+                "capability": pending_action.capability,
+                "action_id": pending_action.action_id,
             }
         ),
     )
@@ -271,7 +358,7 @@ def _confirmation_boundary_check(
 
 def _runtime_result_status(
     run_status: str,
-    pending_action: JsonMapping | None,
+    pending_action: _PendingActionPayload | None,
 ) -> str:
     if run_status == "completed":
         return "ok"
@@ -284,7 +371,7 @@ def _runtime_result_status(
 
 def _runtime_result_message(
     run_status: str,
-    pending_action: JsonMapping | None,
+    pending_action: _PendingActionPayload | None,
 ) -> str:
     if run_status == "completed":
         return "runtime completed the Kubernetes remediation flow"
@@ -295,51 +382,40 @@ def _runtime_result_message(
     return f"runtime ended with status: {run_status or 'unknown'}"
 
 
-def _probe_scope_error(operation: JsonMapping, decision: JsonMapping) -> str | None:
-    if decision.get("capability") != "inspect_workload":
+def _probe_scope_error(
+    operation: _OperationPayload,
+    decision: _DecisionPayload,
+) -> str | None:
+    if decision.capability != "inspect_workload":
         return "model probe decision did not start with inspect_workload"
 
-    expected_workload = _text(operation.get("workload"))
-    target = _text(decision.get("target"))
+    expected_workload = operation.workload
+    target = decision.target
     if target and _normal_workload(target) != expected_workload:
         return "model probe target does not match requested workload"
 
-    arguments = _object(decision.get("arguments"))
-    name = _text(arguments.get("name"))
+    arguments = _payload(_WorkloadArgumentsPayload, decision.arguments)
+    name = arguments.name
     if not name or _normal_workload(name) != expected_workload:
         return "model probe name argument does not match requested workload"
 
-    expected_namespace = _text(operation.get("namespace"))
-    if expected_namespace and arguments.get("namespace") != expected_namespace:
+    expected_namespace = operation.namespace
+    if expected_namespace and arguments.namespace != expected_namespace:
         return "model probe namespace argument does not match requested namespace"
     return None
 
 
-def _preflight_check_names(report: JsonMapping, status: str) -> tuple[str, ...]:
-    raw_checks = report.get("checks")
-    if not isinstance(raw_checks, list):
-        return ()
-    names: list[str] = []
-    for raw_check in raw_checks:
-        check = _object(raw_check)
-        if check.get("status") == status:
-            name = _text(check.get("name"))
-            if name:
-                names.append(name)
-    return tuple(names)
+def _preflight_check_names(report: _PreflightPayload, status: str) -> tuple[str, ...]:
+    return tuple(check.name for check in report.checks if check.status == status and check.name)
 
 
-def _error_details(report: JsonMapping) -> JsonMapping | None:
-    error = _object(report.get("error"))
-    if not error:
-        return None
+def _error_details(value: object) -> JsonMapping | None:
+    error = _payload(_ErrorPayload, value)
     body: dict[str, JsonValue] = {}
-    error_type = _text(error.get("type"))
-    message = _text(error.get("message"))
-    if error_type:
-        body["type"] = error_type
-    if message:
-        body["message"] = message
+    if error.type:
+        body["type"] = error.type
+    if error.message:
+        body["message"] = error.message
     return immutable_json(body) if body else None
 
 
@@ -350,20 +426,19 @@ def _normal_workload(value: str) -> str:
     return f"deployment/{normalized}"
 
 
-def _object(value: object) -> JsonMapping:
-    if isinstance(value, Mapping):
-        return cast(JsonMapping, value)
-    return immutable_json()
+def _payload[T: ConfigPayload](model_type: type[T], value: object) -> T:
+    if not isinstance(value, Mapping):
+        return model_type()
+    try:
+        return parse_payload(model_type, value)
+    except ValueError:
+        return model_type()
 
 
-def _object_or_none(value: object) -> JsonMapping | None:
-    if isinstance(value, Mapping):
-        return cast(JsonMapping, value)
-    return None
-
-
-def _text(value: object) -> str:
-    return value if isinstance(value, str) else ""
+def _payload_or_none[T: ConfigPayload](model_type: type[T], value: object) -> T | None:
+    if not isinstance(value, Mapping):
+        return None
+    return _payload(model_type, value)
 
 
 def _status_count(
