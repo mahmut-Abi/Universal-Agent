@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -11,6 +10,11 @@ from typing import NewType
 from filelock import FileLock
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 from pydantic import ValidationError as PydanticValidationError
+from sqlalchemy import URL, Column, Engine, Index, MetaData, String, Table, Text, create_engine
+from sqlalchemy import insert as sql_insert
+from sqlalchemy import select as sql_select
+from sqlalchemy import update as sql_update
+from sqlalchemy.engine import Connection
 
 from universal_agent.core import (
     JsonMapping,
@@ -71,6 +75,29 @@ class _DistributedLockLeasePayload(BaseModel):
     lease_expires_at: datetime
     heartbeat_at: datetime
     metadata: dict[str, PydanticJsonValue] | None = None
+
+
+_SQLITE_METADATA = MetaData()
+_SQLITE_LOCK_LEASES = Table(
+    "distributed_lock_leases",
+    _SQLITE_METADATA,
+    Column("lock_key", String, primary_key=True),
+    Column("owner_id", String, nullable=False),
+    Column("lease_id", String, nullable=False, unique=True),
+    Column("lease_expires_at", String, nullable=False),
+    Column("payload", Text, nullable=False),
+)
+_SQLITE_LOCK_STATE = Table(
+    "distributed_lock_state",
+    _SQLITE_METADATA,
+    Column("key", String, primary_key=True),
+    Column("value", String, nullable=False),
+)
+Index(
+    "idx_distributed_lock_leases_expiry",
+    _SQLITE_LOCK_LEASES.c.lease_expires_at,
+    _SQLITE_LOCK_LEASES.c.lock_key,
+)
 
 
 class InMemoryDistributedLockRegistry:
@@ -325,9 +352,9 @@ class SQLiteDistributedLockRegistry(InMemoryDistributedLockRegistry):
     def __init__(self, path: str | Path) -> None:
         super().__init__()
         self._path = Path(path)
-        self._transaction_connection: sqlite3.Connection | None = None
+        self._engine: Engine | None = None
+        self._transaction_connection: Connection | None = None
         with self._connect() as connection:
-            _ensure_sqlite_lock_registry_schema(connection)
             self._load(connection)
 
     def acquire(
@@ -421,14 +448,13 @@ class SQLiteDistributedLockRegistry(InMemoryDistributedLockRegistry):
         self,
         *,
         commit_on: tuple[type[Exception], ...] = (),
-    ) -> Iterator[sqlite3.Connection]:
+    ) -> Iterator[Connection]:
         active = self._transaction_connection
         if active is not None:
             yield active
             return
         with self._connect() as connection:
-            _ensure_sqlite_lock_registry_schema(connection)
-            connection.execute("BEGIN IMMEDIATE")
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
             self._transaction_connection = connection
             try:
                 yield connection
@@ -443,19 +469,27 @@ class SQLiteDistributedLockRegistry(InMemoryDistributedLockRegistry):
             finally:
                 self._transaction_connection = None
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[Connection]:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        return sqlite3.connect(self._path, timeout=30.0, isolation_level=None)
+        with self._sqlite_engine().connect() as connection:
+            yield connection
 
-    def _load(self, connection: sqlite3.Connection) -> None:
-        _ensure_sqlite_lock_registry_schema(connection)
+    def _sqlite_engine(self) -> Engine:
+        if self._engine is None:
+            self._engine = create_engine(
+                URL.create("sqlite", database=str(self._path)),
+                connect_args={"timeout": 30.0},
+            )
+            _SQLITE_METADATA.create_all(self._engine)
+        return self._engine
+
+    def _load(self, connection: Connection) -> None:
         rows = connection.execute(
-            """
-            SELECT payload
-            FROM distributed_lock_leases
-            ORDER BY lock_key ASC
-            """
-        ).fetchall()
+            sql_select(_SQLITE_LOCK_LEASES.c.payload).order_by(
+                _SQLITE_LOCK_LEASES.c.lock_key.asc()
+            )
+        ).all()
         loaded: dict[str, DistributedLockLease] = {}
         for row in rows:
             payload = loads_json(row[0])
@@ -466,8 +500,8 @@ class SQLiteDistributedLockRegistry(InMemoryDistributedLockRegistry):
                 raise ValueError(f"duplicate sqlite distributed lock: {lease.lock_key}")
             loaded[lease.lock_key] = lease
         sequence_row = connection.execute(
-            "SELECT value FROM distributed_lock_state WHERE key = 'sequence'"
-        ).fetchone()
+            sql_select(_SQLITE_LOCK_STATE.c.value).where(_SQLITE_LOCK_STATE.c.key == "sequence")
+        ).first()
         sequence = _sqlite_lock_sequence(sequence_row[0] if sequence_row is not None else None)
         loaded_sequence = max(
             (_sequence_from_lock_lease_id(lease.lease_id) for lease in loaded.values()),
@@ -476,29 +510,21 @@ class SQLiteDistributedLockRegistry(InMemoryDistributedLockRegistry):
         self._leases = loaded
         self._sequence = max(sequence, loaded_sequence)
 
-    def _save(self, connection: sqlite3.Connection) -> None:
-        connection.execute("DELETE FROM distributed_lock_leases")
-        connection.executemany(
-            """
-            INSERT INTO distributed_lock_leases(
-                lock_key,
-                owner_id,
-                lease_id,
-                lease_expires_at,
-                payload
+    def _save(self, connection: Connection) -> None:
+        connection.execute(_SQLITE_LOCK_LEASES.delete())
+        rows = [_sqlite_lock_lease_values(lease) for lease in super().active()]
+        if rows:
+            connection.execute(sql_insert(_SQLITE_LOCK_LEASES), rows)
+        if _sqlite_sequence_exists(connection):
+            connection.execute(
+                sql_update(_SQLITE_LOCK_STATE)
+                .where(_SQLITE_LOCK_STATE.c.key == "sequence")
+                .values(value=str(self._sequence))
             )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (_sqlite_lock_lease_row(lease) for lease in super().active()),
-        )
-        connection.execute(
-            """
-            INSERT INTO distributed_lock_state(key, value)
-            VALUES ('sequence', ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value
-            """,
-            (str(self._sequence),),
-        )
+        else:
+            connection.execute(
+                sql_insert(_SQLITE_LOCK_STATE).values(key="sequence", value=str(self._sequence))
+            )
 
 
 def _encode_distributed_lock_lease(lease: DistributedLockLease) -> dict[str, object]:
@@ -633,43 +659,22 @@ def _sequence_from_lock_lease_id(lease_id: DistributedLockLeaseId) -> int:
     return int(suffix)
 
 
-def _ensure_sqlite_lock_registry_schema(connection: sqlite3.Connection) -> None:
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS distributed_lock_leases (
-            lock_key TEXT PRIMARY KEY,
-            owner_id TEXT NOT NULL,
-            lease_id TEXT NOT NULL UNIQUE,
-            lease_expires_at TEXT NOT NULL,
-            payload TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS distributed_lock_state (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_distributed_lock_leases_expiry
-        ON distributed_lock_leases(lease_expires_at ASC, lock_key ASC)
-        """
-    )
+def _sqlite_lock_lease_values(lease: DistributedLockLease) -> dict[str, str]:
+    return {
+        "lock_key": lease.lock_key,
+        "owner_id": str(lease.owner_id),
+        "lease_id": str(lease.lease_id),
+        "lease_expires_at": lease.lease_expires_at.isoformat(),
+        "payload": dumps_json(_encode_distributed_lock_lease(lease)),
+    }
 
 
-def _sqlite_lock_lease_row(
-    lease: DistributedLockLease,
-) -> tuple[str, str, str, str, str]:
+def _sqlite_sequence_exists(connection: Connection) -> bool:
     return (
-        lease.lock_key,
-        str(lease.owner_id),
-        str(lease.lease_id),
-        lease.lease_expires_at.isoformat(),
-        dumps_json(_encode_distributed_lock_lease(lease)),
+        connection.execute(
+            sql_select(_SQLITE_LOCK_STATE.c.key).where(_SQLITE_LOCK_STATE.c.key == "sequence")
+        ).first()
+        is not None
     )
 
 
