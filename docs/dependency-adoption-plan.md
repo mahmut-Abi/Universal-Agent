@@ -10,8 +10,8 @@
 ## 现状基线
 
 - 源码约 39.7k 行，已引入 `httpx`、`openai`、`jsonschema`、`pydantic`、`orjson`、
-  `filelock`、`jinja2`、`junit-xml`、`python-dateutil`、`rapidfuzz`、`rich`、
-  `sqlalchemy`、`tenacity` 等基础运行时依赖，mypy strict + ruff 全量约束
+  `filelock`、`jinja2`、`jsonlines`、`junit-xml`、`python-dateutil`、`rapidfuzz`、
+  `rich`、`sqlalchemy`、`tenacity` 等基础运行时依赖，mypy strict + ruff 全量约束
 - 早期超 2000 行源码文件已被压回 1000 行以内；后续先优先做库替换和 seam 收口，
   暂不继续以拆文件作为主线
 - 主要瓶颈是**代码量增长速度**，非性能（主循环为 I/O 密集：LLM 秒级、kubectl 子进程、HTTP）
@@ -59,7 +59,15 @@
 | 剩余 | 测试和 examples 仍可继续使用标准库 JSON 构造 fixture；若未来要强制全 repo 收口，再单独迁移测试工具层 |
 | 风险 | 低：全量 `ruff`、`mypy` 与 `pytest` 已覆盖 |
 
-### 5. Starlette + uvicorn → 替换 agentd socket/server / routing / schema 适配层（已完成）
+### 5. jsonlines → 替换手写 JSONL 事件流读写（已完成）
+
+| 项 | 说明 |
+|---|---|
+| 现状 | `FileEventStore` 与 `FileRuntimeStore` 已使用 `jsonlines.open()` 接管 `events.jsonl` 的追加写入、逐行读取与空行跳过；事件 payload 仍复用项目统一 `orjson` codec 与 `decode_runtime_event()`，Runtime event filtering 契约不变 |
+| 收益 | 去除两处手写 `open()` / `write("\n")` / `for line in handle` JSONL 处理，文件事件流格式细节交给专用库维护；保留现有 file journal 恢复和 duplicate event 防护 |
+| 风险 | 低：`test_file_event_store_reads_and_appends_jsonlines_events` 覆盖空行兼容、append 和 readback；持久化集成测试继续覆盖 journal commit/recovery |
+
+### 6. Starlette + uvicorn → 替换 agentd socket/server / routing / schema 适配层（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -68,7 +76,7 @@
 | 剩余 | 更大范围的 CLI Typer 迁移单独排期，避免扰动现有命令契约 |
 | 风险 | 中：依赖树变大；需持续保证 Runtime API 行为不变（现有 test_agentd_routes / test_agentd_server 兜底） |
 
-### 6. prometheus-client → 替换手写 Prometheus text exposition（已完成）
+### 7. prometheus-client → 替换手写 Prometheus text exposition（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -76,7 +84,7 @@
 | 收益 | 指标格式交给官方库维护，避免手写 HELP/TYPE/sample 行细节；Runtime 仍只负责从事件投影 metrics view |
 | 风险 | 低：输出数值使用 prometheus-client 的 float 表达，相关 CLI/agentd 测试已覆盖 |
 
-### 7. PyYAML → 替换 Domain manifest 的 JSON-only loader（已完成）
+### 8. PyYAML → 替换 Domain manifest 的 JSON-only loader（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -84,7 +92,7 @@
 | 收益 | 对齐设计文档的 `manifest.yaml` 目标，同时保留 scaffold 默认写 `manifest.json` 的兼容契约 |
 | 风险 | 低：同目录存在多个 manifest 时显式报错，避免 registry 静默选错 |
 
-### 8. filelock → 替换手写 fcntl 文件互斥锁（已完成）
+### 9. filelock → 替换手写 fcntl 文件互斥锁（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -92,7 +100,7 @@
 | 收益 | 去除三处直接 `fcntl` 调用，获得跨平台文件锁抽象；测试仍覆盖跨进程互斥行为 |
 | 风险 | 低：仅替换文件型本地协调边界，不改变 SQLite 后端和调度语义 |
 
-### 9. Jinja2 → 替换手写 Web 页面外壳 / Hero / Row 拼接（持续推进）
+### 10. Jinja2 → 替换手写 Web 页面外壳 / Hero / Row 拼接（持续推进）
 
 | 项 | 说明 |
 |---|---|
@@ -100,7 +108,7 @@
 | 收益 | HTML 外壳与高频片段渲染统一到模板 seam，减少重复拼接和 escaping 漏洞面；后续复杂页面只需要准备 cell 数据，不必重复编写空表、row 渲染与 raw cell handling |
 | 风险 | 低：渲染内容顺序和现有 URL/section helper 不变，Web/Evaluation/agentd route 测试覆盖 escaping、导航链接、table section 输出与关键页面文本 |
 
-### 10. python-dateutil → 替换手写 ISO datetime 兼容解析（已完成）
+### 11. python-dateutil → 替换手写 ISO datetime 兼容解析（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -108,7 +116,7 @@
 | 收益 | 去除 `value.replace("Z", "+00:00")` / `datetime.fromisoformat()` 分散写法，统一 `Z` 后缀、时区强制和错误文案 |
 | 风险 | 低：保留 public dataclass/API 类型，测试覆盖持久化恢复和 CLI/HTTP 输入解析 |
 
-### 11. Rich → 替换手写终端渲染执行层（第一批已完成）
+### 12. Rich → 替换手写终端渲染执行层（第一批已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -116,7 +124,7 @@
 | 收益 | 终端渲染 seam 从手写 `"\n".join(...)` 与重复 Console/StringIO 循环收口到库适配层，为后续颜色、表格、实时刷新和 Textual headless 测试做准备 |
 | 风险 | 低：输出不含 ANSI，现有 TUI / Evaluation Console / CLI 测试继续使用关键文本断言 |
 
-### 12. junit-xml → 替换手写 JUnit XML 生成（已完成）
+### 13. junit-xml → 替换手写 JUnit XML 生成（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -124,7 +132,7 @@
 | 收益 | JUnit XML 结构交给专用库维护，减少手写 Element/SubElement 拼装和 escaping 细节；CLI `eval --format junit` 外部契约保持单个 `<testsuite>` 根节点 |
 | 风险 | 低：单测覆盖 scenario/gate failure 结构，CLI integration 覆盖 JUnit 输出可解析性 |
 
-### 13. graphlib / hashlib.file_digest → 替换手写图排序与文件 digest（已完成）
+### 14. graphlib / hashlib.file_digest → 替换手写图排序与文件 digest（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -132,7 +140,7 @@
 | 收益 | 去掉五处手写 DFS/cycle stack/pending-ready 扫描逻辑和手写 chunk digest loop；依赖排序、cycle detection、batch scheduling 与文件摘要行为交给标准库维护 |
 | 风险 | 低：新增 `verify=False` install-plan cycle 测试，既有 ecosystem/domain registry verification 测试继续覆盖 cycle 与 sha256 mismatch |
 
-### 14. RapidFuzz → 替换手写 memory relevance matching（已完成）
+### 15. RapidFuzz → 替换手写 memory relevance matching（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -140,7 +148,7 @@
 | 收益 | 去除自维护 token overlap/substring scoring 的空间，提升拼写变体、词序变化和近似查询的稳定性；仍保留 Runtime 自有 confidence threshold 与 limit 逻辑 |
 | 风险 | 低：`test_memory.py` 覆盖阈值、截断、模糊词形变体和 confidence 加权 |
 
-### 15. SQLAlchemy Core → 替换手写 SQLite DDL/DML（第一批已完成）
+### 16. SQLAlchemy Core → 替换手写 SQLite DDL/DML（第一批已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -149,7 +157,7 @@
 | 剩余 | 本地 SQLite DDL/DML 替换已完成；生产数据库迁移/versioning 后续再评估 Alembic |
 | 风险 | 低：persistence integration tests、queue/worker/lock registry / SQLite serialization tests、RuntimeHost/CLI SQLite 配置路径、ruff 和 mypy 已覆盖 |
 
-### 16. Tenacity → 替换手写 async polling / deadline loop（已完成）
+### 17. Tenacity → 替换手写 async polling / deadline loop（已完成）
 
 | 项 | 说明 |
 |---|---|
@@ -165,7 +173,7 @@
 | 库 | 目标模块 | 收益 | 备注 |
 |---|---|---|---|
 | Textual | `tui.py` | 静态 Rich text output → 真 TUI（事件循环、刷新、筛选、详情面板） | Rich deterministic renderer 已作为第一批终端 seam；Textual 仍需等 Runtime API/生产流程更稳定后再做 |
-| jsonschema | `core/arguments.py` / `tools/runtime.py:181` | 已由 `Draft202012Validator` 接管 capability/tool argument schema 校验，并在进入 jsonschema 前复用 Pydantic JSON adapter 校验 schema/arguments 形状；`tools/runtime.py` 继续通过统一 contract 入口调用 | 后续可补充更多 JSON Schema 关键字覆盖用例 |
+| jsonschema | `core/arguments.py` / `tools/runtime.py:181` | 已由 `Draft202012Validator` 接管 capability/tool argument schema 校验，并用 `best_match()` 替换手写错误优先级排序；进入 jsonschema 前继续复用 Pydantic JSON adapter 校验 schema/arguments 形状 | 后续可补充更多 JSON Schema 关键字覆盖用例 |
 | packaging | `domain/package_models.py` | 已用 `SpecifierSet` 接管 `compatibility.runtime_api` 校验与 runtime API version 支持判断 | 当前刻意不收紧所有 Domain identity version 字符串，避免破坏既有包标识兼容性 |
 | opentelemetry-proto | `operations/otlp.py` | 已用官方 OTLP protobuf schema 类型接管 trace export payload 生成，保留现有 JSON/hex ID Runtime API 契约 | 后续若需要直接推送 Tempo/Collector，再引入 `opentelemetry-sdk` / OTLP exporter |
 | SQLAlchemy / Alembic | production DB adapters | 本地 Runtime persistence 与 P6 SQLite coordination 已用 SQLAlchemy Core；后续在生产数据库 adapter 出现时引入 Alembic migration | 本地 SQLite seam 已完成，下一步不是继续重写，而是补生产迁移/versioning 能力 |

@@ -11,6 +11,7 @@ from universal_agent import (
     Decision,
     DecisionType,
     DomainLoader,
+    FileEventStore,
     FileRuntimeStore,
     FileSessionStore,
     Goal,
@@ -286,6 +287,41 @@ async def test_file_runtime_store_commits_session_and_event_through_journal(
     assert [item.id for item in await store.list_events(snapshot.state.session_id)] == [
         EventId("event-1")
     ]
+
+
+@pytest.mark.asyncio
+async def test_file_event_store_reads_and_appends_jsonlines_events(tmp_path: Path) -> None:
+    store = FileEventStore(tmp_path)
+    state = goal_state(
+        Goal("Read JSON lines", (SuccessCriterion("healthy", True),)),
+        Task("Inspect", ("healthy",)),
+    )
+    first = RuntimeEvent(
+        "StateUpdated",
+        state.session_id,
+        state.goal.id,
+        state.current_task.id,
+        id=EventId("event-1"),
+    )
+    second = RuntimeEvent(
+        "GoalCompleted",
+        state.session_id,
+        state.goal.id,
+        state.current_task.id,
+        id=EventId("event-2"),
+    )
+    events_path = tmp_path / "events.jsonl"
+    events_path.write_text(
+        "\n" + json.dumps(encode_runtime_event(first)) + "\n\n",
+        encoding="utf-8",
+    )
+
+    loaded = await store.list_events(state.session_id)
+    await store.emit(second)
+    reloaded = await store.list_events(state.session_id)
+
+    assert [event.id for event in loaded] == [EventId("event-1")]
+    assert [event.id for event in reloaded] == [EventId("event-1"), EventId("event-2")]
 
 
 @pytest.mark.asyncio

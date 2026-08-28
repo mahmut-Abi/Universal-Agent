@@ -376,9 +376,7 @@ def _file_secret_path(key: str, root: str | Path | None) -> Path | None:
     root_path = Path(root).expanduser().resolve()
     path = raw_path if raw_path.is_absolute() else root_path / raw_path
     resolved = path.resolve()
-    try:
-        resolved.relative_to(root_path)
-    except ValueError:
+    if not resolved.is_relative_to(root_path):
         return None
     return resolved
 

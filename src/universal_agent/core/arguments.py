@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import SchemaError, ValidationError
+from jsonschema.exceptions import SchemaError, ValidationError, best_match
 
 from universal_agent.core.config_validation import parse_json_object
 from universal_agent.core.models import JsonMapping, JsonValue
@@ -48,13 +48,16 @@ def _validate_argument_schema(
         raise ArgumentSchemaError(f"argument_schema is invalid: {exc.message}") from exc
 
     validator = Draft202012Validator(schema)
-    errors = tuple(sorted(validator.iter_errors(arguments), key=_validation_error_key))
+    errors = tuple(validator.iter_errors(arguments))
     if not errors:
         return None
     required_error = _required_error(errors, arguments)
     if required_error is not None:
         return required_error
-    return _format_validation_error(errors[0])
+    selected = best_match(errors)
+    if selected.parent is not None:
+        selected = selected.parent
+    return _format_validation_error(selected)
 
 
 def _required_error(
@@ -121,22 +124,6 @@ def _unexpected_properties(error: ValidationError) -> tuple[str, ...]:
         sorted(key for key in error.instance if isinstance(key, str) and key not in allowed)
     )
     return unexpected or (error.message,)
-
-
-def _validation_error_key(error: ValidationError) -> tuple[int, str, str]:
-    priority = {
-        "required": 0,
-        "additionalProperties": 1,
-        "type": 2,
-        "enum": 3,
-        "minimum": 4,
-        "maximum": 5,
-        "minLength": 6,
-        "maxLength": 7,
-        "minItems": 8,
-        "maxItems": 9,
-    }.get(str(error.validator), 100)
-    return priority, _path_text(tuple(error.path)), error.message
 
 
 def _instance_at_path(arguments: Mapping[str, Any], path: tuple[Any, ...]) -> object:

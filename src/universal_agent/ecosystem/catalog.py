@@ -577,12 +577,10 @@ def _resolve_registry_path(
         return path
     base = Path(base_path).resolve()
     resolved = (path if path.is_absolute() else base / path).resolve()
-    try:
-        resolved.relative_to(base)
-    except ValueError as exc:
+    if not resolved.is_relative_to(base):
         raise EcosystemRegistryInstallError(
             f"{label} path escapes registry base path: {path_value}"
-        ) from exc
+        )
     return resolved
 
 

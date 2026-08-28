@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from urllib.parse import quote
+
+import jsonlines
 
 from universal_agent.core import (
     AgentState,
     EventId,
+    JsonCodecError,
     JsonMapping,
     RuntimeEvent,
     SessionId,
@@ -110,10 +114,7 @@ class FileEventStore:
         self._path = Path(root) / "events.jsonl"
 
     async def emit(self, event: RuntimeEvent) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._path.open("a", encoding="utf-8") as handle:
-            handle.write(dumps_json(encode_runtime_event(event)))
-            handle.write("\n")
+        _append_json_line(self._path, encode_runtime_event(event))
 
     async def list_events(
         self,
@@ -124,13 +125,7 @@ class FileEventStore:
     ) -> tuple[RuntimeEvent, ...]:
         if not self._path.exists():
             return ()
-        events: list[RuntimeEvent] = []
-        with self._path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                if not line.strip():
-                    continue
-                event = decode_runtime_event(_loads_json_object(line, "runtime event"))
-                events.append(event)
+        events = _load_runtime_events(self._path)
         return filter_events(
             events,
             session_id=session_id,
@@ -254,22 +249,12 @@ class FileRuntimeStore(FileSessionStore, FileEventStore):
     def _append_event_if_missing(self, event: RuntimeEvent) -> None:
         if self._event_exists(event.id):
             return
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._path.open("a", encoding="utf-8") as handle:
-            handle.write(dumps_json(encode_runtime_event(event)))
-            handle.write("\n")
+        _append_json_line(self._path, encode_runtime_event(event))
 
     def _event_exists(self, event_id: EventId) -> bool:
         if not self._path.exists():
             return False
-        with self._path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                if not line.strip():
-                    continue
-                event = decode_runtime_event(_loads_json_object(line, "runtime event"))
-                if event.id == event_id:
-                    return True
-        return False
+        return any(event.id == event_id for event in _iter_runtime_events(self._path))
 
 
 def _load_json_object(path: Path, field: str) -> JsonMapping:
@@ -279,3 +264,24 @@ def _load_json_object(path: Path, field: str) -> JsonMapping:
 def _loads_json_object(value: object, field: str) -> JsonMapping:
     decoded = loads_json(value) if isinstance(value, str | bytes | bytearray) else value
     return parse_json_object(decoded, field)
+
+
+def _append_json_line(path: Path, payload: JsonMapping) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with jsonlines.open(path, mode="a", dumps=dumps_json) as writer:
+        writer.write(payload)
+
+
+def _load_runtime_events(path: Path) -> list[RuntimeEvent]:
+    return list(_iter_runtime_events(path))
+
+
+def _iter_runtime_events(path: Path) -> Iterator[RuntimeEvent]:
+    try:
+        with jsonlines.open(path, loads=loads_json) as reader:
+            for payload in reader.iter(allow_none=True, skip_empty=True):
+                yield decode_runtime_event(_loads_json_object(payload, "runtime event"))
+    except jsonlines.InvalidLineError as exc:
+        if isinstance(exc.__cause__, JsonCodecError):
+            raise exc.__cause__ from exc
+        raise ValueError(f"invalid runtime event JSON line: {exc}") from exc

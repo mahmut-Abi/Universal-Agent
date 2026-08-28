@@ -283,12 +283,10 @@ def _package_resource_path(root: Path, resource: str) -> Path:
     _validate_package_resource(resource)
     resolved_root = root.resolve()
     resolved_resource = (resolved_root / resource).resolve()
-    try:
-        resolved_resource.relative_to(resolved_root)
-    except ValueError as exc:
+    if not resolved_resource.is_relative_to(resolved_root):
         raise DomainPackageValidationError(
             f"domain package resource path must stay inside package root: {resource}"
-        ) from exc
+        )
     return resolved_resource
 
 
