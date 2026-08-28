@@ -12,6 +12,7 @@ from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     json_mapping,
+    parse_json_object,
     parse_non_empty_string_sequence,
     parse_payload,
 )
@@ -312,9 +313,10 @@ def _load_manifest_object(path: Path) -> JsonMapping:
         raise DomainPackageValidationError(
             f"invalid domain package manifest document: {path}"
         ) from exc
-    if not isinstance(loaded, dict):
-        raise DomainPackageValidationError("domain package manifest must be an object")
-    return immutable_json(loaded)
+    try:
+        return immutable_json(parse_json_object(loaded, "domain package manifest"))
+    except ValueError as exc:
+        raise DomainPackageValidationError(str(exc)) from exc
 
 
 def _parse_domain_payload[T: ConfigPayload](

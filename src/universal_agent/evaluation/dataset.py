@@ -440,12 +440,13 @@ def _load_json_object(path: Path) -> JsonMapping:
         raise EvaluationDatasetValidationError(
             f"invalid evaluation dataset manifest JSON: {path}"
         ) from exc
-    if not isinstance(loaded, dict):
-        raise EvaluationDatasetValidationError("evaluation dataset manifest must be a JSON object")
     try:
         return parse_json_object(loaded, "evaluation dataset manifest")
     except ValueError as exc:
-        raise EvaluationDatasetValidationError(str(exc)) from exc
+        message = str(exc)
+        if message == "evaluation dataset manifest must be an object":
+            message = "evaluation dataset manifest must be a JSON object"
+        raise EvaluationDatasetValidationError(message) from exc
 
 
 def _api_version(payload: _EvaluationDatasetManifestPayload) -> str:

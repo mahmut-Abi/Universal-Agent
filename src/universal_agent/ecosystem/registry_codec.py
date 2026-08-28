@@ -18,6 +18,7 @@ from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     json_mapping,
+    parse_json_object,
     parse_non_empty_string_sequence,
     parse_payload,
 )
@@ -222,9 +223,14 @@ def load_ecosystem_registry_manifest(path: str | Path) -> EcosystemRegistryManif
         raise EcosystemRegistryValidationError(
             f"invalid ecosystem registry manifest JSON: {path}"
         ) from exc
-    if not isinstance(loaded, dict):
-        raise EcosystemRegistryValidationError("ecosystem registry manifest must be a JSON object")
-    return decode_ecosystem_registry_manifest(immutable_json(loaded))
+    try:
+        payload = parse_json_object(loaded, "ecosystem registry manifest")
+    except ValueError as exc:
+        message = str(exc)
+        if message == "ecosystem registry manifest must be an object":
+            message = "ecosystem registry manifest must be a JSON object"
+        raise EcosystemRegistryValidationError(message) from exc
+    return decode_ecosystem_registry_manifest(immutable_json(payload))
 
 
 def load_ecosystem_registry_index(path: str | Path) -> EcosystemRegistryIndex:

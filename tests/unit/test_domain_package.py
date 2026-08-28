@@ -272,6 +272,18 @@ def test_load_domain_package_accepts_yaml_manifest(tmp_path: Path) -> None:
     assert package.manifest.capabilities == ("inspect_workload",)
 
 
+def test_load_domain_package_rejects_non_object_manifest(tmp_path: Path) -> None:
+    root = tmp_path / "broken-domain"
+    root.mkdir()
+    (root / "manifest.yaml").write_text("- not-an-object\n", encoding="utf-8")
+
+    with pytest.raises(
+        DomainPackageValidationError,
+        match="domain package manifest must be an object",
+    ):
+        load_domain_package(root)
+
+
 def test_domain_package_registry_discovers_manifests_in_stable_order(tmp_path: Path) -> None:
     write_manifest(tmp_path / "beta-domain", package_payload("beta", tags=("database",)))
     write_manifest(tmp_path / "alpha-domain", package_payload("alpha", tags=("ops",)))

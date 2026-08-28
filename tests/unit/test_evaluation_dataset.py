@@ -157,6 +157,18 @@ def test_load_evaluation_dataset_rejects_missing_suite_and_unsafe_paths(tmp_path
         decode_evaluation_dataset_manifest(dataset_payload(suite_path="../suite.json"))
 
 
+def test_load_evaluation_dataset_rejects_non_object_manifest(tmp_path: Path) -> None:
+    root = tmp_path / "broken-dataset"
+    root.mkdir()
+    (root / "dataset.json").write_text("[]", encoding="utf-8")
+
+    with pytest.raises(
+        EvaluationDatasetValidationError,
+        match="evaluation dataset manifest must be a JSON object",
+    ):
+        load_evaluation_dataset(root)
+
+
 def test_decode_evaluation_dataset_manifest_reports_indexed_empty_tag_errors() -> None:
     metadata_payload = dataset_payload(tags=("kubernetes", " "))
 

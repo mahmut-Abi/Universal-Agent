@@ -290,6 +290,17 @@ def test_ecosystem_registry_manifest_round_trips_catalog_metadata(tmp_path: Path
     assert overwritten.overwritten is True
 
 
+def test_load_ecosystem_registry_manifest_rejects_non_object_manifest(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "ecosystem.json"
+    manifest_path.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(
+        EcosystemRegistryValidationError,
+        match="ecosystem registry manifest must be a JSON object",
+    ):
+        load_ecosystem_registry_manifest(manifest_path)
+
+
 def test_ecosystem_registry_manifest_accepts_legacy_package_refs_without_optional_metadata() -> (
     None
 ):
