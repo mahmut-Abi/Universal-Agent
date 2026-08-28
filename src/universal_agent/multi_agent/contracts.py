@@ -6,7 +6,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import NewType
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import (
@@ -87,14 +87,38 @@ class _AgentTaskUsagePayload(ConfigPayload):
 
 class _AgentTaskResultPayload(ConfigPayload):
     task_id: str
-    status: str
+    status: AgentTaskResultStatus
     result: dict[str, PydanticJsonValue] = Field(default_factory=dict)
     evidence: list[str] = Field(default_factory=list)
     reason: str = ""
     session_id: str | None = None
-    error_code: str | None = None
+    error_code: ErrorCode | None = None
     api_version: str = AGENT_TASK_API_VERSION
     usage: _AgentTaskUsagePayload = Field(default_factory=_AgentTaskUsagePayload)
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _parse_status(cls, value: object) -> AgentTaskResultStatus:
+        if isinstance(value, AgentTaskResultStatus):
+            return value
+        if not isinstance(value, str):
+            raise ValueError(f"unsupported agent task result status: {value}")
+        try:
+            return AgentTaskResultStatus(value)
+        except ValueError as exc:
+            raise ValueError(f"unsupported agent task result status: {value}") from exc
+
+    @field_validator("error_code", mode="before")
+    @classmethod
+    def _parse_error_code(cls, value: object) -> ErrorCode | None:
+        if value is None or isinstance(value, ErrorCode):
+            return value
+        if not isinstance(value, str):
+            raise ValueError(f"unsupported agent task error_code: {value}")
+        try:
+            return ErrorCode(value)
+        except ValueError as exc:
+            raise ValueError(f"unsupported agent task error_code: {value}") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -289,12 +313,12 @@ def decode_agent_task_result(payload: JsonMapping) -> AgentTaskResult:
     parsed = _parse_contract_payload(_AgentTaskResultPayload, payload)
     return AgentTaskResult(
         task_id=AgentTaskId(parsed.task_id),
-        status=_result_status(parsed.status),
+        status=parsed.status,
         result=immutable_json(json_mapping(parsed.result)),
         evidence_ids=tuple(EvidenceId(item) for item in parsed.evidence),
         reason=parsed.reason,
         session_id=_optional_session_id(parsed.session_id),
-        error_code=_optional_error_code(parsed.error_code),
+        error_code=parsed.error_code,
         api_version=parsed.api_version,
         usage=_agent_task_usage(parsed.usage),
     )
@@ -359,22 +383,6 @@ def _optional_task_id(value: str | None) -> TaskId | None:
     if value is None:
         return None
     return TaskId(value)
-
-
-def _result_status(raw: str) -> AgentTaskResultStatus:
-    try:
-        return AgentTaskResultStatus(raw)
-    except ValueError as exc:
-        raise ValueError(f"unsupported agent task result status: {raw}") from exc
-
-
-def _optional_error_code(value: str | None) -> ErrorCode | None:
-    if value is None:
-        return None
-    try:
-        return ErrorCode(value)
-    except ValueError as exc:
-        raise ValueError(f"unsupported agent task error_code: {value}") from exc
 
 
 def _parse_contract_payload[T: ConfigPayload](

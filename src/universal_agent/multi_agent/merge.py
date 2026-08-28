@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from universal_agent.core import JsonMapping
 from universal_agent.core.config_validation import (
@@ -12,7 +12,6 @@ from universal_agent.core.config_validation import (
     PydanticJsonValue,
     duplicate_values,
     parse_payload,
-    parse_string,
 )
 from universal_agent.evidence import EvidenceId
 from universal_agent.multi_agent.conflicts import (
@@ -39,7 +38,7 @@ class AgentResultMergeStatus(StrEnum):
 
 
 class _AgentResultMergePayload(ConfigPayload):
-    status: str
+    status: AgentResultMergeStatus
     passed: bool | None = None
     reason: str = ""
     evidence: list[str] = Field(default_factory=list)
@@ -50,6 +49,18 @@ class _AgentResultMergePayload(ConfigPayload):
     missing_evidence_task_ids: list[str] = Field(default_factory=list)
     results: list[dict[str, PydanticJsonValue]] = Field(default_factory=list)
     conflict_resolutions: list[dict[str, PydanticJsonValue]] = Field(default_factory=list)
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _parse_status(cls, value: object) -> AgentResultMergeStatus:
+        if isinstance(value, AgentResultMergeStatus):
+            return value
+        if not isinstance(value, str):
+            raise ValueError(f"unsupported agent result merge status: {value}")
+        try:
+            return AgentResultMergeStatus(value)
+        except ValueError as exc:
+            raise ValueError(f"unsupported agent result merge status: {value}") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,7 +190,7 @@ def agent_result_merge_payload(merge: AgentResultMerge) -> JsonMapping:
 def decode_agent_result_merge(payload: JsonMapping) -> AgentResultMerge:
     parsed = _parse_result_merge_payload(payload)
     merge = AgentResultMerge(
-        status=_merge_status_value(parsed.status),
+        status=parsed.status,
         results=tuple(decode_agent_task_result(item) for item in parsed.results),
         evidence_ids=tuple(EvidenceId(value) for value in parsed.evidence),
         completed_task_ids=_agent_task_ids(parsed.completed_task_ids),
@@ -294,11 +305,3 @@ def _duplicate_task_ids(task_ids: tuple[AgentTaskId, ...]) -> tuple[str, ...]:
 
 def _agent_task_ids(values: list[str]) -> tuple[AgentTaskId, ...]:
     return tuple(AgentTaskId(item) for item in values)
-
-
-def _merge_status_value(value: object) -> AgentResultMergeStatus:
-    raw = parse_string(value, "status")
-    try:
-        return AgentResultMergeStatus(raw)
-    except ValueError as exc:
-        raise ValueError(f"unsupported agent result merge status: {raw}") from exc

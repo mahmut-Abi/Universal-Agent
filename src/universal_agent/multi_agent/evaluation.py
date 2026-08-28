@@ -3,17 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from types import MappingProxyType
 
+from pydantic import Field, field_validator
+
 from universal_agent.core import JsonMapping
 from universal_agent.core.config_validation import (
+    ConfigPayload,
+    PydanticJsonValue,
     duplicate_values,
-    parse_bool,
-    parse_json_object,
-    parse_json_object_sequence,
-    parse_optional_bool,
-    parse_optional_int,
     parse_optional_non_negative_int,
-    parse_string,
-    parse_string_sequence,
+    parse_payload,
 )
 from universal_agent.evidence import EvidenceId
 from universal_agent.multi_agent.contracts import AgentTaskId
@@ -23,6 +21,44 @@ from universal_agent.multi_agent.merge import (
     agent_result_merge_payload,
     decode_agent_result_merge,
 )
+
+
+class _MultiAgentEvaluationExpectationsPayload(ConfigPayload):
+    expected_status: AgentResultMergeStatus = AgentResultMergeStatus.COMPLETED
+    required_evidence_ids: list[str] = Field(default_factory=list)
+    required_completed_task_ids: list[str] = Field(default_factory=list)
+    forbidden_failed_task_ids: list[str] = Field(default_factory=list)
+    max_missing_task_count: int | None = 0
+    max_waiting_task_count: int | None = 0
+    max_failed_task_count: int | None = 0
+    max_review_conflict_count: int | None = 0
+    min_completed_task_count: int | None = None
+
+    @field_validator("expected_status", mode="before")
+    @classmethod
+    def _parse_expected_status(cls, value: object) -> AgentResultMergeStatus:
+        return _parse_merge_status(value)
+
+
+class _MultiAgentEvaluationCheckPayload(ConfigPayload):
+    name: str
+    passed: bool
+    message: str
+
+
+class _MultiAgentEvaluationReportPayload(ConfigPayload):
+    passed: bool | None = None
+    merge_status: AgentResultMergeStatus | None = None
+    merge: dict[str, PydanticJsonValue]
+    expectations: dict[str, PydanticJsonValue]
+    checks: list[_MultiAgentEvaluationCheckPayload] = Field(default_factory=list)
+
+    @field_validator("merge_status", mode="before")
+    @classmethod
+    def _parse_merge_status(cls, value: object) -> AgentResultMergeStatus | None:
+        if value is None:
+            return None
+        return _parse_merge_status(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,61 +192,34 @@ def multi_agent_evaluation_expectations_payload(
 def decode_multi_agent_evaluation_expectations(
     payload: JsonMapping,
 ) -> MultiAgentEvaluationExpectations:
+    parsed = parse_payload(_MultiAgentEvaluationExpectationsPayload, payload)
     return MultiAgentEvaluationExpectations(
-        expected_status=_merge_status_value(payload.get("expected_status")),
-        required_evidence_ids=tuple(
-            EvidenceId(value)
-            for value in parse_string_sequence(
-                payload.get("required_evidence_ids"), "required_evidence_ids"
-            )
+        expected_status=parsed.expected_status,
+        required_evidence_ids=tuple(EvidenceId(value) for value in parsed.required_evidence_ids),
+        required_completed_task_ids=tuple(
+            AgentTaskId(value) for value in parsed.required_completed_task_ids
         ),
-        required_completed_task_ids=_agent_task_ids(
-            payload.get("required_completed_task_ids"),
-            "required_completed_task_ids",
+        forbidden_failed_task_ids=tuple(
+            AgentTaskId(value) for value in parsed.forbidden_failed_task_ids
         ),
-        forbidden_failed_task_ids=_agent_task_ids(
-            payload.get("forbidden_failed_task_ids"),
-            "forbidden_failed_task_ids",
-        ),
-        max_missing_task_count=parse_optional_int(
-            payload.get("max_missing_task_count"),
-            "max_missing_task_count",
-        ),
-        max_waiting_task_count=parse_optional_int(
-            payload.get("max_waiting_task_count"),
-            "max_waiting_task_count",
-        ),
-        max_failed_task_count=parse_optional_int(
-            payload.get("max_failed_task_count"),
-            "max_failed_task_count",
-        ),
-        max_review_conflict_count=parse_optional_int(
-            payload.get("max_review_conflict_count"),
-            "max_review_conflict_count",
-        ),
-        min_completed_task_count=parse_optional_int(
-            payload.get("min_completed_task_count"),
-            "min_completed_task_count",
-        ),
+        max_missing_task_count=parsed.max_missing_task_count,
+        max_waiting_task_count=parsed.max_waiting_task_count,
+        max_failed_task_count=parsed.max_failed_task_count,
+        max_review_conflict_count=parsed.max_review_conflict_count,
+        min_completed_task_count=parsed.min_completed_task_count,
     )
 
 
 def decode_multi_agent_evaluation_report(payload: JsonMapping) -> MultiAgentEvaluationReport:
+    parsed = parse_payload(_MultiAgentEvaluationReportPayload, payload)
     report = MultiAgentEvaluationReport(
-        merge=decode_agent_result_merge(parse_json_object(payload.get("merge"), "merge")),
-        expectations=decode_multi_agent_evaluation_expectations(
-            parse_json_object(payload.get("expectations"), "expectations")
-        ),
-        checks=tuple(
-            _decode_evaluation_check(item)
-            for item in parse_json_object_sequence(payload.get("checks"), "checks")
-        ),
+        merge=decode_agent_result_merge(parsed.merge),
+        expectations=decode_multi_agent_evaluation_expectations(parsed.expectations),
+        checks=tuple(_decode_evaluation_check(item) for item in parsed.checks),
     )
-    passed = parse_optional_bool(payload.get("passed"), "passed")
-    if passed is not None and passed is not report.passed:
+    if parsed.passed is not None and parsed.passed is not report.passed:
         raise ValueError("multi-agent evaluation passed flag does not match checks")
-    merge_status = payload.get("merge_status")
-    if merge_status is not None and _merge_status_value(merge_status) is not report.merge.status:
+    if parsed.merge_status is not None and parsed.merge_status is not report.merge.status:
         raise ValueError("multi-agent evaluation merge_status does not match merge")
     return report
 
@@ -334,21 +343,22 @@ def _format_values(values: tuple[object, ...]) -> str:
     return ", ".join(str(value) for value in values)
 
 
-def _decode_evaluation_check(payload: JsonMapping) -> MultiAgentEvaluationCheck:
+def _decode_evaluation_check(
+    payload: _MultiAgentEvaluationCheckPayload,
+) -> MultiAgentEvaluationCheck:
     return MultiAgentEvaluationCheck(
-        name=parse_string(payload.get("name"), "check.name"),
-        passed=parse_bool(payload.get("passed"), "check.passed"),
-        message=parse_string(payload.get("message"), "check.message"),
+        name=payload.name,
+        passed=payload.passed,
+        message=payload.message,
     )
 
 
-def _agent_task_ids(value: object, field_name: str) -> tuple[AgentTaskId, ...]:
-    return tuple(AgentTaskId(item) for item in parse_string_sequence(value, field_name))
-
-
-def _merge_status_value(value: object) -> AgentResultMergeStatus:
-    raw = parse_string(value, "expected_status")
+def _parse_merge_status(value: object) -> AgentResultMergeStatus:
+    if isinstance(value, AgentResultMergeStatus):
+        return value
+    if not isinstance(value, str):
+        raise ValueError(f"unsupported agent result merge status: {value}")
     try:
-        return AgentResultMergeStatus(raw)
+        return AgentResultMergeStatus(value)
     except ValueError as exc:
-        raise ValueError(f"unsupported agent result merge status: {raw}") from exc
+        raise ValueError(f"unsupported agent result merge status: {value}") from exc

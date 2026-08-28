@@ -9,7 +9,7 @@ from graphlib import CycleError, TopologicalSorter
 from types import MappingProxyType
 from typing import Protocol
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from universal_agent.core import (
     ErrorCode,
@@ -85,10 +85,22 @@ class _AgentDelegationSpecPayload(ConfigPayload):
 
 
 class _AgentDelegationBatchResultPayload(ConfigPayload):
-    status: str
+    status: AgentDelegationBatchStatus
     reason: str = ""
     skipped_task_ids: list[str] = Field(default_factory=list)
     results: list[dict[str, PydanticJsonValue]] = Field(default_factory=list)
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _parse_status(cls, value: object) -> AgentDelegationBatchStatus:
+        if isinstance(value, AgentDelegationBatchStatus):
+            return value
+        if not isinstance(value, str):
+            raise ValueError(f"unsupported agent delegation batch status: {value}")
+        try:
+            return AgentDelegationBatchStatus(value)
+        except ValueError as exc:
+            raise ValueError(f"unsupported agent delegation batch status: {value}") from exc
 
 
 class _AgentDelegationTaskStatePayload(ConfigPayload):
@@ -183,7 +195,7 @@ def agent_delegation_batch_result_payload(result: AgentDelegationBatchResult) ->
 def decode_agent_delegation_batch_result(payload: JsonMapping) -> AgentDelegationBatchResult:
     parsed = _parse_payload(_AgentDelegationBatchResultPayload, payload)
     return AgentDelegationBatchResult(
-        status=_batch_status_value(parsed.status),
+        status=parsed.status,
         results=tuple(decode_agent_task_result(item) for item in parsed.results),
         skipped_task_ids=tuple(AgentTaskId(value) for value in parsed.skipped_task_ids),
         reason=parsed.reason,
@@ -575,14 +587,6 @@ def _optional_agent_id(value: object) -> AgentId | None:
     if value is None:
         return None
     return AgentId(parse_string(value, "agent_id"))
-
-
-def _batch_status_value(value: object) -> AgentDelegationBatchStatus:
-    raw = parse_string(value, "status")
-    try:
-        return AgentDelegationBatchStatus(raw)
-    except ValueError as exc:
-        raise ValueError(f"unsupported agent delegation batch status: {raw}") from exc
 
 
 def _delegation_sorter(

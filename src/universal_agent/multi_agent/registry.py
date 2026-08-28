@@ -6,7 +6,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import NewType
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import DomainIdentity, JsonMapping, SessionId
@@ -59,9 +59,21 @@ class _AgentInstanceRecordPayload(ConfigPayload):
     agent_id: PydanticNonEmptyString
     profile_name: PydanticNonEmptyString
     profile_version: PydanticNonEmptyString
-    status: PydanticNonEmptyString = AgentInstanceStatus.READY.value
+    status: AgentInstanceStatus = AgentInstanceStatus.READY
     session_id: PydanticNonEmptyString | None = None
     endpoint: PydanticNonEmptyString | None = None
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _parse_status(cls, value: object) -> AgentInstanceStatus:
+        if isinstance(value, AgentInstanceStatus):
+            return value
+        if not isinstance(value, str):
+            raise ValueError(f"unsupported agent instance status: {value}")
+        try:
+            return AgentInstanceStatus(value)
+        except ValueError as exc:
+            raise ValueError(f"unsupported agent instance status: {value}") from exc
 
 
 class _AgentRegistrySnapshotPayload(ConfigPayload):
@@ -164,7 +176,7 @@ def decode_agent_instance_record(payload: JsonMapping) -> AgentInstanceRecord:
         agent_id=AgentId(parsed.agent_id),
         profile_name=parsed.profile_name,
         profile_version=parsed.profile_version,
-        status=_instance_status(parsed.status),
+        status=parsed.status,
         session_id=_optional_session_id(parsed.session_id),
         endpoint=parsed.endpoint,
     )
@@ -204,7 +216,7 @@ def decode_agent_registry_snapshot(payload: JsonMapping) -> AgentRegistrySnapsho
                 agent_id=AgentId(item.agent_id),
                 profile_name=item.profile_name,
                 profile_version=item.profile_version,
-                status=_instance_status(item.status),
+                status=item.status,
                 session_id=_optional_session_id(item.session_id),
                 endpoint=item.endpoint,
             )
@@ -311,13 +323,6 @@ def _optional_session_id(value: str | None) -> SessionId | None:
     if value is None:
         return None
     return SessionId(value)
-
-
-def _instance_status(raw: str) -> AgentInstanceStatus:
-    try:
-        return AgentInstanceStatus(raw)
-    except ValueError as exc:
-        raise ValueError(f"unsupported agent instance status: {raw}") from exc
 
 
 def _parse_registry_payload[T: ConfigPayload](

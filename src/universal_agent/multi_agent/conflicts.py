@@ -5,7 +5,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import NewType
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from universal_agent.core import (
     JsonMapping,
@@ -20,7 +20,6 @@ from universal_agent.core.config_validation import (
     ConfigPayload,
     parse_non_empty_string,
     parse_payload,
-    parse_string,
 )
 from universal_agent.evidence import EvidenceId
 from universal_agent.multi_agent.contracts import AgentTaskConstraints, AgentTaskId
@@ -38,12 +37,24 @@ class ConflictResolutionStatus(StrEnum):
 
 class _ConflictResolutionPayload(ConfigPayload):
     resource_key: str
-    status: str
+    status: ConflictResolutionStatus
     selected_proposal_id: str | None = None
     rejected_proposal_ids: list[str] = Field(default_factory=list)
     review_proposal_ids: list[str] = Field(default_factory=list)
     supporting_evidence_ids: list[str] = Field(default_factory=list)
     reason: str = ""
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _parse_status(cls, value: object) -> ConflictResolutionStatus:
+        if isinstance(value, ConflictResolutionStatus):
+            return value
+        if not isinstance(value, str):
+            raise ValueError(f"unsupported conflict resolution status: {value}")
+        try:
+            return ConflictResolutionStatus(value)
+        except ValueError as exc:
+            raise ValueError(f"unsupported conflict resolution status: {value}") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,7 +126,7 @@ def decode_conflict_resolution(payload: JsonMapping) -> ConflictResolution:
     parsed = parse_payload(_ConflictResolutionPayload, payload)
     return ConflictResolution(
         resource_key=parsed.resource_key,
-        status=_conflict_resolution_status(parsed.status),
+        status=parsed.status,
         selected_proposal_id=_optional_agent_proposal_id(parsed.selected_proposal_id),
         rejected_proposal_ids=tuple(
             AgentProposalId(value) for value in parsed.rejected_proposal_ids
@@ -296,11 +307,3 @@ def _optional_agent_proposal_id(value: str | None) -> AgentProposalId | None:
     if value is None:
         return None
     return AgentProposalId(value)
-
-
-def _conflict_resolution_status(value: object) -> ConflictResolutionStatus:
-    raw = parse_string(value, "status")
-    try:
-        return ConflictResolutionStatus(raw)
-    except ValueError as exc:
-        raise ValueError(f"unsupported conflict resolution status: {raw}") from exc
