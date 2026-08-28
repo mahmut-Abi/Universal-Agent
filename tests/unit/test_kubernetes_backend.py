@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from typing import cast
 
 import httpx
 import pytest
@@ -23,6 +24,7 @@ from universal_agent.domains.kubernetes import (
     KubernetesApiConflictError,
     KubernetesApiError,
     KubernetesApiResponse,
+    SubprocessKubectlRunner,
 )
 from universal_agent.domains.kubernetes.tools import KubernetesScaleTool
 from universal_agent.tools import ToolRegistry, ToolRuntime
@@ -767,3 +769,30 @@ def _crash_loop_pod() -> dict[str, JsonValue]:
             ],
         },
     }
+
+
+def test_kubernetes_backends_validate_constructor_inputs() -> None:
+    with pytest.raises(ValueError, match="kubectl binary must not be empty"):
+        SubprocessKubectlRunner(" ")
+    with pytest.raises(ValueError, match="default_namespace must not be empty"):
+        KubectlBackend(default_namespace=" ")
+    with pytest.raises(ValueError, match="timeout_seconds must be positive"):
+        KubectlBackend(timeout_seconds=0)
+    with pytest.raises(ValueError, match="timeout_seconds must be a number"):
+        KubectlBackend(timeout_seconds=cast(float, True))
+    with pytest.raises(ValueError, match="Kubernetes API server must not be empty"):
+        HttpxKubernetesApiTransport(" ")
+    with pytest.raises(ValueError, match="api_server must not be empty"):
+        KubernetesApiBackend(api_server=" ", transport=RecordingKubernetesApiTransport({}))
+    with pytest.raises(ValueError, match="default_namespace must not be empty"):
+        KubernetesApiBackend(
+            api_server="https://cluster.example.test",
+            default_namespace=" ",
+            transport=RecordingKubernetesApiTransport({}),
+        )
+    with pytest.raises(ValueError, match="timeout_seconds must be positive"):
+        KubernetesApiBackend(
+            api_server="https://cluster.example.test",
+            timeout_seconds=0,
+            transport=RecordingKubernetesApiTransport({}),
+        )

@@ -30,6 +30,7 @@ from universal_agent.core.config_validation import (
     parse_non_empty_string_sequence,
     parse_optional_non_empty_string,
     parse_payload,
+    parse_positive_float,
 )
 from universal_agent.model.adapter import ModelUsage
 
@@ -200,8 +201,7 @@ class JsonHttpModelAdapter:
         parsed_endpoint = parse_non_empty_string(endpoint, "model endpoint")
         parsed_model = parse_non_empty_string(model, "model name")
         parsed_provider = parse_non_empty_string(provider, "model provider")
-        if timeout_seconds <= 0:
-            raise ValueError("model timeout_seconds must be positive")
+        parse_positive_float(timeout_seconds, "model timeout_seconds")
         _validate_headers(extra_headers or {})
         self._endpoint = parsed_endpoint
         self._model = parsed_model
@@ -288,8 +288,7 @@ class OpenAIResponsesModelAdapter:
         parsed_model = parse_non_empty_string(model, "model name")
         parsed_api_key = parse_non_empty_string(api_key, "OpenAI API key")
         parsed_endpoint = parse_non_empty_string(endpoint, "OpenAI responses endpoint")
-        if timeout_seconds <= 0:
-            raise ValueError("model timeout_seconds must be positive")
+        parse_positive_float(timeout_seconds, "model timeout_seconds")
         _validate_headers(extra_headers or {})
         self._model = parsed_model
         self._api_key = parsed_api_key
@@ -405,8 +404,7 @@ class OpenAIChatCompletionsModelAdapter:
         parsed_model = parse_non_empty_string(model, "model name")
         parsed_api_key = parse_non_empty_string(api_key, "OpenAI API key")
         parsed_endpoint = parse_non_empty_string(endpoint, "OpenAI chat completions endpoint")
-        if timeout_seconds <= 0:
-            raise ValueError("model timeout_seconds must be positive")
+        parse_positive_float(timeout_seconds, "model timeout_seconds")
         if response_format not in {"json_schema", "json_object", "prompt_json"}:
             raise ValueError(
                 "OpenAI chat completions response_format must be "

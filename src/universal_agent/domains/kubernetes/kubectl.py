@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from universal_agent.core import JsonCodecError, JsonMapping, JsonValue, immutable_json, loads_json
+from universal_agent.core.config_validation import parse_non_empty_string, parse_positive_float
 from universal_agent.domains.kubernetes import resources as k8s
 
 
@@ -33,8 +34,7 @@ class SubprocessKubectlRunner:
     """Run kubectl without adding a Kubernetes SDK dependency."""
 
     def __init__(self, binary: str = "kubectl") -> None:
-        if not binary.strip():
-            raise ValueError("kubectl binary must not be empty")
+        parse_non_empty_string(binary, "kubectl binary")
         self._binary = binary
 
     async def run(
@@ -85,10 +85,8 @@ class KubectlBackend:
         kubeconfig: str | None = None,
         timeout_seconds: float = 10.0,
     ) -> None:
-        if not default_namespace.strip():
-            raise ValueError("default_namespace must not be empty")
-        if timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive")
+        parse_non_empty_string(default_namespace, "default_namespace")
+        parse_positive_float(timeout_seconds, "timeout_seconds")
         self._runner = runner or SubprocessKubectlRunner()
         self._default_namespace = default_namespace
         self._context = context

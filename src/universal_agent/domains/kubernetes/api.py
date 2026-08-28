@@ -9,7 +9,11 @@ import httpx
 from pydantic import TypeAdapter
 
 from universal_agent.core import JsonCodecError, JsonMapping, JsonValue, immutable_json, loads_json
-from universal_agent.core.config_validation import PydanticJsonValue
+from universal_agent.core.config_validation import (
+    PydanticJsonValue,
+    parse_non_empty_string,
+    parse_positive_float,
+)
 from universal_agent.domains.kubernetes import resources as k8s
 
 _JSON_VALUE_ADAPTER: TypeAdapter[PydanticJsonValue] = TypeAdapter(PydanticJsonValue)
@@ -54,8 +58,7 @@ class HttpxKubernetesApiTransport:
         bearer_token: str | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        if not api_server.strip():
-            raise ValueError("Kubernetes API server must not be empty")
+        parse_non_empty_string(api_server, "Kubernetes API server")
         self._api_server = api_server.rstrip("/")
         self._bearer_token = bearer_token
         self._client = client
@@ -142,12 +145,9 @@ class KubernetesApiBackend:
         default_namespace: str = "default",
         timeout_seconds: float = 10.0,
     ) -> None:
-        if not api_server.strip():
-            raise ValueError("api_server must not be empty")
-        if not default_namespace.strip():
-            raise ValueError("default_namespace must not be empty")
-        if timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive")
+        parse_non_empty_string(api_server, "api_server")
+        parse_non_empty_string(default_namespace, "default_namespace")
+        parse_positive_float(timeout_seconds, "timeout_seconds")
         self._transport = transport or HttpxKubernetesApiTransport(
             api_server,
             bearer_token=bearer_token,

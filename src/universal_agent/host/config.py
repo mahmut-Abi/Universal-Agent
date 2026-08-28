@@ -20,7 +20,12 @@ from universal_agent.core.config_validation import (
     enum_value,
     json_mapping,
     parse_json_object,
+    parse_non_empty_string,
+    parse_optional_non_empty_string,
+    parse_optional_positive_float,
     parse_payload,
+    parse_positive_float,
+    parse_positive_int,
     string_mapping,
 )
 
@@ -133,10 +138,8 @@ class SecretRef:
         return ref
 
     def validate(self) -> None:
-        if not self.name.strip():
-            raise ValueError("secret name must not be empty")
-        if not self.key.strip():
-            raise ValueError(f"secret {self.name} key must not be empty")
+        parse_non_empty_string(self.name, "secret name")
+        parse_non_empty_string(self.key, f"secret {self.name} key")
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,10 +167,22 @@ class StoreConfig:
         return config
 
     def validate(self) -> None:
-        if self.backend is StoreBackend.FILE and not self.path:
-            raise ValueError("file store requires path")
-        if self.backend is StoreBackend.SQLITE and not self.path:
-            raise ValueError("sqlite store requires path")
+        if self.backend is StoreBackend.FILE:
+            if self.path is None:
+                raise ValueError("file store requires path")
+            parse_non_empty_string(
+                self.path,
+                "file store path",
+                empty_template="file store requires path",
+            )
+        if self.backend is StoreBackend.SQLITE:
+            if self.path is None:
+                raise ValueError("sqlite store requires path")
+            parse_non_empty_string(
+                self.path,
+                "sqlite store path",
+                empty_template="sqlite store requires path",
+            )
         if self.backend is StoreBackend.MEMORY and self.path is not None:
             raise ValueError("memory store does not accept path")
 
@@ -188,10 +203,8 @@ class RuntimeLimitsConfig:
         return config
 
     def validate(self) -> None:
-        if self.max_iterations < 1:
-            raise ValueError("max_iterations must be positive")
-        if self.max_recovery_steps < 1:
-            raise ValueError("max_recovery_steps must be positive")
+        parse_positive_int(self.max_iterations, "max_iterations")
+        parse_positive_int(self.max_recovery_steps, "max_recovery_steps")
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,12 +227,9 @@ class DomainConfig:
         return config
 
     def validate(self) -> None:
-        if self.name is not None and not self.name:
-            raise ValueError("domain name must not be empty")
-        if self.version is not None and not self.version:
-            raise ValueError("domain version must not be empty")
-        if self.backend is not None and not self.backend.strip():
-            raise ValueError("domain backend must not be empty")
+        parse_optional_non_empty_string(self.name, "domain name")
+        parse_optional_non_empty_string(self.version, "domain version")
+        parse_optional_non_empty_string(self.backend, "domain backend")
 
     def identity(self) -> DomainIdentity:
         if self.name is None or self.version is None:
@@ -318,10 +328,8 @@ class ModelConfig:
         return config
 
     def validate(self) -> None:
-        if not self.name.strip():
-            raise ValueError("model name must not be empty")
-        if self.timeout_seconds <= 0:
-            raise ValueError("model timeout_seconds must be positive")
+        parse_non_empty_string(self.name, "model name")
+        parse_positive_float(self.timeout_seconds, "model timeout_seconds")
         string_mapping(self.headers, "model headers")
         if self.provider is ModelProvider.SCRIPTED:
             if self.endpoint is not None:
@@ -332,26 +340,44 @@ class ModelConfig:
                 raise ValueError("scripted model does not accept response_format")
             return
         if self.provider is ModelProvider.JSON_HTTP:
-            if self.endpoint is None or not self.endpoint.strip():
+            if self.endpoint is None:
                 raise ValueError("json_http model requires endpoint")
-            if self.api_key_secret is not None and not self.api_key_secret.strip():
-                raise ValueError("model api_key_secret must not be empty")
+            parse_non_empty_string(
+                self.endpoint,
+                "json_http model endpoint",
+                empty_template="json_http model requires endpoint",
+            )
+            parse_optional_non_empty_string(self.api_key_secret, "model api_key_secret")
             if self.response_format is not None:
                 raise ValueError("json_http model does not accept response_format")
             return
         if self.provider is ModelProvider.OPENAI_RESPONSES:
-            if self.endpoint is not None and not self.endpoint.strip():
-                raise ValueError("openai_responses model endpoint must not be empty")
-            if self.api_key_secret is None or not self.api_key_secret.strip():
+            parse_optional_non_empty_string(
+                self.endpoint,
+                "openai_responses model endpoint",
+            )
+            if self.api_key_secret is None:
                 raise ValueError("openai_responses model requires api_key_secret")
+            parse_non_empty_string(
+                self.api_key_secret,
+                "openai_responses model api_key_secret",
+                empty_template="openai_responses model requires api_key_secret",
+            )
             if self.response_format is not None:
                 raise ValueError("openai_responses model does not accept response_format")
             return
         if self.provider is ModelProvider.OPENAI_CHAT_COMPLETIONS:
-            if self.endpoint is not None and not self.endpoint.strip():
-                raise ValueError("openai_chat_completions model endpoint must not be empty")
-            if self.api_key_secret is None or not self.api_key_secret.strip():
+            parse_optional_non_empty_string(
+                self.endpoint,
+                "openai_chat_completions model endpoint",
+            )
+            if self.api_key_secret is None:
                 raise ValueError("openai_chat_completions model requires api_key_secret")
+            parse_non_empty_string(
+                self.api_key_secret,
+                "openai_chat_completions model api_key_secret",
+                empty_template="openai_chat_completions model requires api_key_secret",
+            )
             if self.response_format not in {None, "json_schema", "json_object", "prompt_json"}:
                 raise ValueError(
                     "openai_chat_completions response_format must be "
@@ -420,11 +446,10 @@ class RuntimeConfig:
         self.distributed_queue.validate()
         self.distributed_locks.validate()
         self.distributed_workers.validate()
-        if (
-            self.distributed_terminal_retention_seconds is not None
-            and self.distributed_terminal_retention_seconds <= 0
-        ):
-            raise ValueError("distributed_terminal_retention_seconds must be positive")
+        parse_optional_positive_float(
+            self.distributed_terminal_retention_seconds,
+            "distributed_terminal_retention_seconds",
+        )
         self.limits.validate()
         self.domain.validate()
         for domain in self.domains:
