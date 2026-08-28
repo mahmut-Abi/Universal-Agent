@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 from universal_agent.core import JsonMapping, JsonValue, immutable_json
+from universal_agent.core.config_validation import parse_non_empty_string
 
 REDACTED_SECRET_VALUES = frozenset({"", "<redacted>", "[REDACTED]", "***"})
 PUBLIC_TOKEN_KEYS = frozenset(
@@ -334,9 +335,12 @@ def _secret_reference_name(value: Mapping[str, JsonValue], path: str) -> str | N
     if len(value) != 1:
         raise SecretResolutionError(f"{path} secret reference must not include extra fields")
     raw_name = value.get("secret_ref", value.get("secret_reference"))
-    if not isinstance(raw_name, str) or not raw_name.strip():
-        raise SecretResolutionError(f"{path} secret reference name must be a non-empty string")
-    return raw_name
+    try:
+        return parse_non_empty_string(raw_name, f"{path} secret reference name")
+    except ValueError as exc:
+        raise SecretResolutionError(
+            f"{path} secret reference name must be a non-empty string"
+        ) from exc
 
 
 def _resolve_declared_secret(
@@ -362,7 +366,9 @@ def _resolve_declared_secret(
 
 
 def _file_secret_path(key: str, root: str | Path | None) -> Path | None:
-    if not key.strip():
+    try:
+        key = parse_non_empty_string(key, "file secret key").strip()
+    except ValueError:
         return None
     raw_path = Path(key).expanduser()
     if root is None:

@@ -148,6 +148,7 @@ def test_file_secret_provider_returns_none_for_missing_empty_or_escaped_paths(
     provider = FileSecretProvider(root=tmp_path)
 
     assert provider.get_secret(str(tmp_path / "missing-secret")) is None
+    assert provider.get_secret(" ") is None
     assert provider.get_secret("empty-secret") is None
     assert provider.get_secret(str(outside_path)) is None
 
@@ -208,6 +209,13 @@ def test_secret_argument_resolver_rejects_unknown_or_malformed_refs() -> None:
     with pytest.raises(SecretResolutionError, match="must not include extra fields"):
         resolve_secret_arguments(
             {"token": {"secret_ref": "api_key", "label": "extra"}},
+            provider=provider,
+            resolution=report,
+        )
+
+    with pytest.raises(SecretResolutionError, match="secret reference name"):
+        resolve_secret_arguments(
+            {"token": {"secret_ref": " "}},
             provider=provider,
             resolution=report,
         )
