@@ -118,6 +118,42 @@ def test_relevance_filter_scores_thresholds_and_truncates() -> None:
     )
 
 
+def test_relevance_filter_uses_library_fuzzy_matching_for_word_variants() -> None:
+    record = make_record(
+        subject="HTTP probe failure",
+        content="Check readiness-probe events before restarting the workload.",
+    )
+
+    filtered = KeywordRelevanceFilter().filter(
+        (record,),
+        RetrievalRequest(
+            "diagnose http probe failing on api pod",
+            "inspect readiness probe",
+        ),
+    )
+
+    assert filtered == (record,)
+
+
+def test_relevance_filter_applies_confidence_after_fuzzy_score() -> None:
+    record = make_record(
+        subject="HTTP probe failure",
+        content="Check readiness-probe events before restarting the workload.",
+        confidence=0.2,
+    )
+
+    assert (
+        KeywordRelevanceFilter().filter(
+            (record,),
+            RetrievalRequest(
+                "diagnose http probe failing on api pod",
+                "inspect readiness probe",
+            ),
+        )
+        == ()
+    )
+
+
 def test_query_limit_returns_most_recent_records() -> None:
     store = InMemoryMemoryStore()
     oldest = MemoryRecord(

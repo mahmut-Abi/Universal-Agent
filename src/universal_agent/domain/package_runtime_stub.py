@@ -160,10 +160,7 @@ def _runtime_stub_tools(manifest: Any) -> tuple[_RuntimeStubTool, ...]:
 
 
 def _runtime_stub_evaluators(manifest: Any) -> tuple[_RuntimeStubEvaluator, ...]:
-    return tuple(
-        {"name": _py_string(evaluator)}
-        for evaluator in manifest.evaluators
-    )
+    return tuple({"name": _py_string(evaluator)} for evaluator in manifest.evaluators)
 
 
 def _py_string(value: str) -> str:

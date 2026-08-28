@@ -282,9 +282,7 @@ def _manifest_paths(root: Path) -> tuple[Path, ...]:
         raise DomainPackageNotFoundError(f"domain package root not found: {root}")
     return tuple(
         sorted(
-            path
-            for manifest_name in DOMAIN_PACKAGE_MANIFESTS
-            for path in root.rglob(manifest_name)
+            path for manifest_name in DOMAIN_PACKAGE_MANIFESTS for path in root.rglob(manifest_name)
         )
     )
 
@@ -292,9 +290,7 @@ def _manifest_paths(root: Path) -> tuple[Path, ...]:
 def _manifest_path(path: Path) -> Path:
     if path.is_dir():
         manifests = tuple(
-            candidate
-            for name in DOMAIN_PACKAGE_MANIFESTS
-            if (candidate := path / name).exists()
+            candidate for name in DOMAIN_PACKAGE_MANIFESTS if (candidate := path / name).exists()
         )
         if len(manifests) > 1:
             names = ", ".join(item.name for item in manifests)

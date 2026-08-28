@@ -1,14 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections import Counter
 
 from universal_agent.operations.helpers import non_negative_int, string
 from universal_agent.operations.views import ModelCostBreakdownView, RuntimeCostView
 from universal_agent.runtime import RuntimeEventView
 
+_CostKey = tuple[str, str, str]
+
 
 def build_runtime_cost(events: tuple[RuntimeEventView, ...]) -> RuntimeCostView:
-    accumulators: dict[tuple[str, str, str], _CostAccumulator] = {}
+    call_counts: Counter[_CostKey] = Counter()
+    input_tokens: Counter[_CostKey] = Counter()
+    output_tokens: Counter[_CostKey] = Counter()
+    estimated_cost_micros: Counter[_CostKey] = Counter()
     for event in events:
         if event.type != "ModelUsageRecorded":
             continue
@@ -16,19 +21,23 @@ def build_runtime_cost(events: tuple[RuntimeEventView, ...]) -> RuntimeCostView:
         model = string(event.data.get("model")) or "unknown"
         currency = string(event.data.get("currency")) or "USD"
         key = (provider, model, currency)
-        if key not in accumulators:
-            accumulators[key] = _CostAccumulator(provider, model, currency)
-        accumulators[key].add(
-            input_tokens=non_negative_int(event.data.get("input_tokens")),
-            output_tokens=non_negative_int(event.data.get("output_tokens")),
-            estimated_cost_micros=non_negative_int(event.data.get("estimated_cost_micros")),
-        )
+        call_counts[key] += 1
+        input_tokens[key] += non_negative_int(event.data.get("input_tokens"))
+        output_tokens[key] += non_negative_int(event.data.get("output_tokens"))
+        estimated_cost_micros[key] += non_negative_int(event.data.get("estimated_cost_micros"))
     by_model = tuple(
-        item.view()
-        for item in sorted(
-            accumulators.values(),
-            key=lambda item: (item.provider, item.model, item.currency),
+        ModelCostBreakdownView(
+            provider=provider,
+            model=model,
+            call_count=call_counts[key],
+            input_tokens=input_tokens[key],
+            output_tokens=output_tokens[key],
+            total_tokens=input_tokens[key] + output_tokens[key],
+            estimated_cost_micros=estimated_cost_micros[key],
+            currency=currency,
         )
+        for key in sorted(call_counts)
+        for provider, model, currency in (key,)
     )
     return RuntimeCostView(
         model_call_count=sum(item.call_count for item in by_model),
@@ -48,38 +57,3 @@ def _aggregate_currency(currencies: tuple[str, ...]) -> str:
     if len(unique) == 1:
         return currencies[0]
     return "mixed"
-
-
-@dataclass(slots=True)
-class _CostAccumulator:
-    provider: str
-    model: str
-    currency: str
-    call_count: int = 0
-    input_tokens: int = 0
-    output_tokens: int = 0
-    estimated_cost_micros: int = 0
-
-    def add(
-        self,
-        *,
-        input_tokens: int,
-        output_tokens: int,
-        estimated_cost_micros: int,
-    ) -> None:
-        self.call_count += 1
-        self.input_tokens += input_tokens
-        self.output_tokens += output_tokens
-        self.estimated_cost_micros += estimated_cost_micros
-
-    def view(self) -> ModelCostBreakdownView:
-        return ModelCostBreakdownView(
-            provider=self.provider,
-            model=self.model,
-            call_count=self.call_count,
-            input_tokens=self.input_tokens,
-            output_tokens=self.output_tokens,
-            total_tokens=self.input_tokens + self.output_tokens,
-            estimated_cost_micros=self.estimated_cost_micros,
-            currency=self.currency,
-        )

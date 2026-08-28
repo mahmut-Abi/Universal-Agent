@@ -72,9 +72,7 @@ def test_kubernetes_scale_policy_requires_confirmation_in_production() -> None:
 
 
 def test_kubernetes_scale_policy_uses_pydantic_strict_argument_types() -> None:
-    result = KubernetesScalePolicy().evaluate(
-        scale_policy_context(arguments={"replicas": True})
-    )
+    result = KubernetesScalePolicy().evaluate(scale_policy_context(arguments={"replicas": True}))
 
     assert result is not None
     assert result.effect is PolicyEffect.DENY

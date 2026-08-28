@@ -411,11 +411,7 @@ class RuntimeConfig:
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> RuntimeConfig:
         payload = parse_payload(_RuntimeConfigPayload, values)
         domains = _domain_configs(payload.domains)
-        domain = (
-            domains[0]
-            if domains
-            else DomainConfig.from_mapping(json_mapping(payload.domain))
-        )
+        domain = domains[0] if domains else DomainConfig.from_mapping(json_mapping(payload.domain))
         config = cls(
             environment=immutable_json(json_mapping(payload.environment)),
             secrets=_secret_refs(payload.secrets),

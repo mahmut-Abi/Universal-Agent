@@ -4,49 +4,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from rapidfuzz import fuzz, process, utils
+
 from universal_agent.memory.models import MemoryQuery, MemoryRecord
 from universal_agent.memory.store import MemoryStore
-
-_STOP_WORDS: frozenset[str] = frozenset(
-    {
-        "a",
-        "an",
-        "and",
-        "are",
-        "as",
-        "at",
-        "be",
-        "by",
-        "for",
-        "from",
-        "has",
-        "in",
-        "is",
-        "it",
-        "of",
-        "on",
-        "or",
-        "that",
-        "the",
-        "to",
-        "was",
-        "were",
-        "will",
-        "with",
-        "this",
-        "these",
-        "those",
-    }
-)
-
-
-def _tokens(text: str) -> set[str]:
-    tokens: set[str] = set()
-    for raw in text.lower().split():
-        cleaned = "".join(ch for ch in raw if ch.isalnum())
-        if cleaned and cleaned not in _STOP_WORDS:
-            tokens.add(cleaned)
-    return tokens
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,7 +64,7 @@ class StoreMemoryRetriever:
 
 @dataclass(frozen=True, slots=True)
 class KeywordRelevanceFilter:
-    threshold: float = 0.05
+    threshold: float = 0.45
     limit: int = 8
 
     def filter(
@@ -111,27 +72,50 @@ class KeywordRelevanceFilter:
         records: Sequence[MemoryRecord],
         request: RetrievalRequest,
     ) -> tuple[MemoryRecord, ...]:
-        query_tokens: set[str] = set()
-        query_tokens |= _tokens(request.goal_description)
-        query_tokens |= _tokens(request.task_description)
-        # Runtime subjects (world entities) are soft signal: tokenize them so a
-        # memory mentioning 'workload' surfaces when the world reports one,
-        # without subjects ever gating recall.
-        for subject in request.subjects:
-            query_tokens |= _tokens(subject)
-        if not query_tokens:
+        query = _query_text(request)
+        if not query.strip():
+            return ()
+
+        choices = {
+            index: text
+            for index, record in enumerate(records)
+            if (text := _record_text(record).strip())
+        }
+        if not choices:
             return ()
 
         scored: list[tuple[float, MemoryRecord]] = []
-        for record in records:
-            record_tokens = _tokens(record.subject) | _tokens(record.content)
-            if not record_tokens:
-                continue
-            overlap = len(query_tokens & record_tokens)
-            score = (overlap / len(query_tokens)) * record.confidence
+        matches = process.extract(
+            query,
+            choices,
+            scorer=fuzz.WRatio,
+            processor=utils.default_process,
+            score_cutoff=self.threshold * 100.0,
+            limit=None,
+        )
+        for _text, raw_score, index in matches:
+            score = (raw_score / 100.0) * records[index].confidence
             if score >= self.threshold:
-                scored.append((score, record))
+                scored.append((score, records[index]))
 
         scored.sort(key=lambda pair: (pair[0], pair[1].created_at), reverse=True)
         kept = [record for _, record in scored[: self.limit]]
         return tuple(kept)
+
+
+def _query_text(request: RetrievalRequest) -> str:
+    # Runtime subjects are soft signal: they influence relevance ranking without
+    # gating the store recall step.
+    return " ".join(
+        part.strip()
+        for part in (
+            request.goal_description,
+            request.task_description,
+            *request.subjects,
+        )
+        if part.strip()
+    )
+
+
+def _record_text(record: MemoryRecord) -> str:
+    return f"{record.subject} {record.content}"

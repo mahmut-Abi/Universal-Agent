@@ -270,9 +270,7 @@ def _decode_agent_state(payload: _AgentStatePayload, tasks: Mapping[TaskId, Task
         observations=[_decode_observation(item) for item in payload.observations],
         latest_evaluation=_decode_optional_evaluation(payload.latest_evaluation),
         pending_action=_decode_optional_pending_action(payload.pending_action),
-        tasks=[
-            _task_by_id(tasks, TaskId(task_id)) for task_id in payload.task_ids
-        ],
+        tasks=[_task_by_id(tasks, TaskId(task_id)) for task_id in payload.task_ids],
         recovery_attempts=dict(payload.recovery_attempts),
         termination_reason=payload.termination_reason,
         error_code=_decode_optional_error(payload.error_code),
@@ -295,9 +293,7 @@ def _encode_goal(goal: Goal) -> JsonObject:
 def _decode_goal(payload: _GoalPayload) -> Goal:
     return Goal(
         payload.description,
-        tuple(
-            SuccessCriterion(item.key, item.expected) for item in payload.success_criteria
-        ),
+        tuple(SuccessCriterion(item.key, item.expected) for item in payload.success_criteria),
         GoalId(payload.id),
         GoalStatus(payload.status),
         parse_iso_datetime(payload.created_at, field="goal.created_at"),

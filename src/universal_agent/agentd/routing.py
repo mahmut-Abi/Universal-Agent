@@ -554,6 +554,7 @@ def _request_payload_error_message(
         return details.message.removeprefix("Value error, ")
     return str(error)
 
+
 def _console_domain_view(
     snapshot: WebConsoleSnapshot,
     name: str,

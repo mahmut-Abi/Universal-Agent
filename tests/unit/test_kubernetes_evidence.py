@@ -50,7 +50,7 @@ def test_kubernetes_workload_observation_projects_pod_world_facts() -> None:
                                 "reason": "CrashLoopBackOff",
                             }
                         ],
-                    }
+                    },
                 ],
             }
         ),

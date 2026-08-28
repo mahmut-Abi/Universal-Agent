@@ -4198,6 +4198,7 @@ async def test_cli_serve_reports_socket_bind_errors(
     assert output.getvalue() == ""
     assert "failed to bind agentd server on 127.0.0.1:8765" in error.getvalue()
     assert "Address already in use" in error.getvalue()
+    assert "retry with --port 0 / --port <free-port>" in error.getvalue()
 
 
 @pytest.mark.asyncio

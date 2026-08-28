@@ -160,10 +160,13 @@ def test_agentd_path_matching_uses_starlette_route_contract_without_unquoting() 
     assert _match_path("/console/sessions/a%2Fb", "/console/sessions/{session_id}") == {
         "session_id": "a%2Fb"
     }
-    assert _match_path(
-        "/v1/sessions/session-1/events",
-        "/v1/sessions/{session_id}/{first_suffix}/{second_suffix}",
-    ) is None
+    assert (
+        _match_path(
+            "/v1/sessions/session-1/events",
+            "/v1/sessions/{session_id}/{first_suffix}/{second_suffix}",
+        )
+        is None
+    )
 
 
 def test_agentd_route_matcher_uses_starlette_paths_and_preserves_method_contract() -> None:

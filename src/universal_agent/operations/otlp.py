@@ -88,9 +88,7 @@ def _otlp_span_message(span: RuntimeTraceSpanView) -> Span:
 
 def _otlp_attributes(values: dict[str, JsonValue]) -> list[KeyValue]:
     return [
-        _otlp_key_value(key, value)
-        for key, value in sorted(values.items())
-        if value is not None
+        _otlp_key_value(key, value) for key, value in sorted(values.items()) if value is not None
     ]
 
 
@@ -112,10 +110,7 @@ def _otlp_any_value(value: JsonValue) -> AnyValue:
     if isinstance(value, dict):
         return AnyValue(
             kvlist_value=KeyValueList(
-                values=[
-                    _otlp_key_value(str(key), item)
-                    for key, item in sorted(value.items())
-                ]
+                values=[_otlp_key_value(str(key), item) for key, item in sorted(value.items())]
             )
         )
     return AnyValue(string_value=str(value))

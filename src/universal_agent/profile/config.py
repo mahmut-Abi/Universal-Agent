@@ -74,11 +74,7 @@ class ProfileConfig:
         domain_config = _domain_config_type()
         runtime_config = _runtime_config_type()
         domains = _domain_configs(payload.domains, domain_config)
-        domain = (
-            domains[0]
-            if domains
-            else domain_config.from_mapping(json_mapping(payload.domain))
-        )
+        domain = domains[0] if domains else domain_config.from_mapping(json_mapping(payload.domain))
         config = cls(
             name=payload.name,
             version=payload.version,

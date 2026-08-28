@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime
 
+from pydantic.alias_generators import to_snake
+
 from universal_agent.core import ErrorCode, JsonMapping, JsonValue
 from universal_agent.security import redact_sensitive_mapping, redact_sensitive_value
 
@@ -49,14 +51,4 @@ def unix_nano(value: datetime) -> int:
 
 
 def event_words(event_type: str) -> str:
-    words: list[str] = []
-    current = ""
-    for character in event_type:
-        if character.isupper() and current:
-            words.append(current.lower())
-            current = character
-            continue
-        current += character
-    if current:
-        words.append(current.lower())
-    return " ".join(words) or event_type
+    return to_snake(event_type).replace("_", " ") or event_type

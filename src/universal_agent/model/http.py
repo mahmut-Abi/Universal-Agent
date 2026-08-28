@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Protocol, cast
+from typing import Annotated, Any, Protocol, cast
 
 import httpx
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI, OpenAIError
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from universal_agent.core import (
     CapabilitySummary,
@@ -48,6 +48,23 @@ class _DecisionPayload(ConfigPayload):
     arguments: dict[str, PydanticJsonValue] = Field(default_factory=dict)
     expected_observations: list[str] = Field(default_factory=list)
     message: str | None = None
+
+
+_SchemaNonEmptyString = Annotated[str, StringConstraints(min_length=1)]
+
+
+class _OpenAIDecisionSchemaPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", title="universal_agent_decision")
+
+    type: _SchemaNonEmptyString = Field(
+        json_schema_extra={"enum": [item.value for item in DecisionType]}
+    )
+    reason: _SchemaNonEmptyString
+    capability: str | None
+    target: str | None
+    arguments: dict[str, Any]
+    expected_observations: list[_SchemaNonEmptyString]
+    message: str | None
 
 
 class _UsagePayload(ConfigPayload):
@@ -580,7 +597,7 @@ class OpenAIChatCompletionsModelAdapter:
             raise ValueError(
                 "OpenAI chat completions response_format must be "
                 "json_schema, json_object, or prompt_json"
-        )
+            )
         _validate_headers(extra_headers or {})
         self._model = parsed_model
         self._api_key = parsed_api_key
@@ -973,31 +990,12 @@ def _openai_chat_response_format(mode: str) -> dict[str, JsonValue] | None:
 
 
 def _openai_decision_json_schema() -> dict[str, JsonValue]:
-    return {
-        "type": "object",
-        "additionalProperties": False,
-        "required": [
-            "type",
-            "reason",
-            "capability",
-            "target",
-            "arguments",
-            "expected_observations",
-            "message",
-        ],
-        "properties": {
-            "type": {"type": "string", "enum": [item.value for item in DecisionType]},
-            "reason": {"type": "string", "minLength": 1},
-            "capability": {"type": ["string", "null"]},
-            "target": {"type": ["string", "null"]},
-            "arguments": {"type": "object", "additionalProperties": True},
-            "expected_observations": {
-                "type": "array",
-                "items": {"type": "string", "minLength": 1},
-            },
-            "message": {"type": ["string", "null"]},
-        },
-    }
+    return dict(
+        parse_json_object(
+            _OpenAIDecisionSchemaPayload.model_json_schema(),
+            "OpenAI decision JSON schema",
+        )
+    )
 
 
 def _model_non_empty_string(value: str, field_name: str) -> str:

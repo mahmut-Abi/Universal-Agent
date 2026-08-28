@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Annotated
 
 from pydantic import BeforeValidator, Field, TypeAdapter
+from pydantic.alias_generators import to_snake
 
 from universal_agent.core import JsonMapping, JsonValue
 from universal_agent.core.config_validation import ConfigPayload, PydanticJsonValue, json_mapping
@@ -436,13 +437,5 @@ def json_object(value: object) -> dict[str, JsonValue]:
 
 
 def snake_case(value: str) -> str:
-    result: list[str] = []
-    for index, character in enumerate(value.strip()):
-        if character in {"-", " ", "."}:
-            result.append("_")
-        elif character.isupper() and index > 0:
-            result.append("_")
-            result.append(character.lower())
-        else:
-            result.append(character.lower())
-    return "".join(result).strip("_")
+    normalized = value.strip().replace("-", "_").replace(" ", "_").replace(".", "_")
+    return to_snake(normalized).strip("_")

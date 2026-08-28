@@ -97,3 +97,9 @@ def test_event_summary_maps_kubernetes_alias_fields() -> None:
         "involved_object_kind": "Pod",
         "involved_object_name": "api-123",
     }
+
+
+def test_snake_case_uses_library_case_conversion_with_kubernetes_separators() -> None:
+    assert k8s.snake_case("CrashLoopBackOff") == "crash_loop_back_off"
+    assert k8s.snake_case("HTTPProbeFailed") == "http_probe_failed"
+    assert k8s.snake_case("Back-off restarting.failed") == "back_off_restarting_failed"

@@ -527,8 +527,7 @@ def _validate_domain_spec_names(label: str, names: tuple[str, ...]) -> None:
             label,
             empty_template=f"domain runtime spec {label} must not include empty names",
             item_type_template=f"domain runtime spec {label} must not include empty names",
-            duplicate_template=f"domain runtime spec contains duplicate {label}: "
-            "{duplicates}",
+            duplicate_template=f"domain runtime spec contains duplicate {label}: {{duplicates}}",
         )
     except ValueError as exc:
         raise DomainValidationError(str(exc)) from exc

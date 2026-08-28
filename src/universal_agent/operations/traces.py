@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import defaultdict
+
 from universal_agent.core import ActionId, JsonMapping, JsonValue, SessionId, immutable_json
 from universal_agent.operations.helpers import duration_ms, redacted_value, string
 from universal_agent.operations.views import RuntimeTraceSpanView
@@ -184,29 +186,21 @@ def _phase_span_attributes(event: RuntimeEventView) -> JsonMapping:
 def _events_by_session(
     events: tuple[RuntimeEventView, ...],
 ) -> tuple[tuple[RuntimeEventView, ...], ...]:
-    grouped: dict[SessionId, list[RuntimeEventView]] = {}
-    order: list[SessionId] = []
+    grouped: defaultdict[SessionId, list[RuntimeEventView]] = defaultdict(list)
     for event in events:
-        if event.session_id not in grouped:
-            grouped[event.session_id] = []
-            order.append(event.session_id)
         grouped[event.session_id].append(event)
-    return tuple(tuple(grouped[item]) for item in order)
+    return tuple(tuple(items) for items in grouped.values())
 
 
 def _events_by_action(
     events: tuple[RuntimeEventView, ...],
 ) -> tuple[tuple[RuntimeEventView, ...], ...]:
-    grouped: dict[ActionId, list[RuntimeEventView]] = {}
-    order: list[ActionId] = []
+    grouped: defaultdict[ActionId, list[RuntimeEventView]] = defaultdict(list)
     for event in events:
         if event.action_id is None:
             continue
-        if event.action_id not in grouped:
-            grouped[event.action_id] = []
-            order.append(event.action_id)
         grouped[event.action_id].append(event)
-    return tuple(tuple(grouped[item]) for item in order)
+    return tuple(tuple(items) for items in grouped.values())
 
 
 def _session_span_status(events: tuple[RuntimeEventView, ...]) -> str:

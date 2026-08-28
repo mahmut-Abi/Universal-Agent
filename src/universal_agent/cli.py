@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import errno
 import sys
 from collections.abc import Awaitable, Callable, Sequence
 from importlib.metadata import PackageNotFoundError, version
@@ -10,6 +11,7 @@ from pathlib import Path
 from typing import TextIO, cast
 
 from universal_agent.agentd.app import AgentdApp
+from universal_agent.agentd.client import AgentdClientError
 from universal_agent.agentd.http import AgentdAuthPolicy
 from universal_agent.agentd.representations import (
     audit_records_body,
@@ -52,6 +54,7 @@ from universal_agent.agentd.session_representations import (
     session_explorer_body,
     session_world_body,
 )
+from universal_agent.cli_agentd import command_supports_agentd, dispatch_agentd_cli
 from universal_agent.cli_catalog_commands import (
     _dispatch_domain_packages,
     _dispatch_profile,
@@ -165,9 +168,14 @@ async def run_cli(
     args = parser.parse_args(list(argv) if argv is not None else None)
     out = stdout or sys.stdout
     err = stderr or sys.stderr
-    runtime_service = service or _service_from_args(args)
 
     try:
+        if cast(str | None, args.api_url) is not None:
+            if not command_supports_agentd(args):
+                raise ValueError(f"command does not support --api-url: {cast(str, args.command)}")
+            await dispatch_agentd_cli(args, out)
+            return 0
+        runtime_service = service or _service_from_args(args)
         await _dispatch(args, runtime_service, out, server_runner=server_runner)
     except (
         StateNotFoundError,
@@ -182,6 +190,9 @@ async def run_cli(
     ) as exc:
         _write_error(err, "not_found", str(exc))
         return 1
+    except AgentdClientError as exc:
+        _write_error(err, exc.code or "agentd_request_failed", str(exc))
+        return 1 if exc.status_code == 404 else 2
     except CliExit as exc:
         return exc.status
     except (ValueError, DistributedLockConflictError) as exc:
@@ -601,7 +612,7 @@ async def _dispatch_serve(
             AgentdServerConfig(host=host, port=port),
         )
     except OSError as exc:
-        raise ValueError(f"failed to bind agentd server on {host}:{port}: {exc}") from exc
+        raise ValueError(_serve_bind_error_message(host, port, exc)) from exc
     try:
         _write_json(
             out,
@@ -625,6 +636,16 @@ async def _dispatch_serve(
 
 async def _serve_forever(server: AgentdHttpServer) -> None:
     await server.serve()
+
+
+def _serve_bind_error_message(host: str, port: int, exc: OSError) -> str:
+    message = f"failed to bind agentd server on {host}:{port}: {exc}"
+    if exc.errno == errno.EADDRINUSE or "Address already in use" in str(exc):
+        return (
+            f"{message}; another process is already listening on that address. "
+            "Stop the existing server or retry with --port 0 / --port <free-port>."
+        )
+    return message
 
 
 def _resolve_cli_auth_token(

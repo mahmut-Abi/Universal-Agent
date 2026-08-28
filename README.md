@@ -483,10 +483,6 @@ The design roadmap now separates semantic runtime maturity from productization:
   execution, scheduled Goal execution, current Task resume, leased lock, Runtime Snapshot, Health Report, Coordinator, Heartbeat, retry, cancellation and lease expiry primitives.
 - P7: Ecosystem packaging and registry work.
 
-`PROMPT.md` is intentionally not kept as a project authority. Development instructions live in
-`AGENTS.md`; architecture lives in `universal-agent-runtime-domain-runtime-design.md`; operational
-usage stays in this README.
-
 For the latest dated implementation assessment, current limitations, verification snapshot, and
 recommended next steps, see [`docs/revision/2026-08-26-project-status.md`](docs/revision/2026-08-26-project-status.md).
 The current Kubernetes-first production slice spec is

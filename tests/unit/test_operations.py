@@ -291,6 +291,17 @@ def test_runtime_logs_project_redacted_structured_records() -> None:
     assert nested["password"] == "[REDACTED]"
 
 
+def test_runtime_logs_use_library_case_conversion_for_unknown_events() -> None:
+    logs = build_runtime_logs(
+        (
+            event("event-1", "GoalCreated"),
+            event("event-2", "HTTPProbeFailed"),
+        )
+    )
+
+    assert [record.message for record in logs] == ["goal created", "http probe failed"]
+
+
 def test_runtime_trace_spans_project_session_and_action_tree() -> None:
     events = (
         event(

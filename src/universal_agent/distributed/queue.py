@@ -831,10 +831,7 @@ def _normalize_accepted_kinds(accepted_kinds: Collection[str] | None) -> frozens
         empty_template="accepted_kinds must not include empty kinds",
         item_type_template="accepted_kinds must not include empty kinds",
     )
-    return frozenset(
-        kind.strip()
-        for kind in validated
-    )
+    return frozenset(kind.strip() for kind in validated)
 
 
 def _sort_key(item: WorkItem) -> tuple[int, datetime, str]:

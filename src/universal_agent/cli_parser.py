@@ -12,6 +12,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--profile-config",
         help="Load an Agent Profile JSON config before dispatching the command.",
     )
+    parser.add_argument(
+        "--api-url",
+        help="Forward supported commands to a running agentd Runtime API.",
+    )
+    parser.add_argument("--api-token", help="Bearer token for --api-url requests.")
+    parser.add_argument(
+        "--api-token-env",
+        help="Environment variable containing the bearer token for --api-url requests.",
+    )
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("version")

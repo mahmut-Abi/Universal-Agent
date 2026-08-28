@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import Counter
+
 from universal_agent.core import ActionId, GoalStatus, SessionId
 from universal_agent.operations.audit_logs import build_audit_records, build_runtime_logs
 from universal_agent.operations.cost import build_runtime_cost
@@ -27,6 +29,7 @@ def build_runtime_metrics(
     events: tuple[RuntimeEventView, ...],
 ) -> RuntimeMetricsView:
     cost = build_runtime_cost(events)
+    event_counts = Counter(event.type for event in events)
     active_resource_locks = _active_resource_locks(events)
     return RuntimeMetricsView(
         session_count=len(sessions),
@@ -48,8 +51,8 @@ def build_runtime_metrics(
             1 for session in sessions if session.goal_status is GoalStatus.CANCELLED
         ),
         event_count=len(events),
-        action_started_count=_count(events, "ActionStarted"),
-        action_completed_count=_count(events, "ActionCompleted"),
+        action_started_count=event_counts["ActionStarted"],
+        action_completed_count=event_counts["ActionCompleted"],
         tool_failure_count=sum(
             1
             for event in events
@@ -60,19 +63,19 @@ def build_runtime_metrics(
             for event in events
             if event.type == "PolicyChecked" and _string(event.data.get("effect")) == "deny"
         ),
-        confirmation_required_count=_count(events, "ConfirmationRequired"),
-        recovery_planned_count=_count(events, "RecoveryPlanned"),
-        recovery_exhausted_count=_count(events, "RecoveryExhausted"),
+        confirmation_required_count=event_counts["ConfirmationRequired"],
+        recovery_planned_count=event_counts["RecoveryPlanned"],
+        recovery_exhausted_count=event_counts["RecoveryExhausted"],
         human_intervention_count=sum(
             1 for event in events if event.type in {"ConfirmationRequired", "GoalWaiting"}
         ),
-        resource_lock_acquired_count=_count(events, "ResourceLockAcquired"),
-        resource_lock_released_count=_count(events, "ResourceLockReleased"),
-        resource_conflict_count=_count(events, "ResourceConflictDetected"),
+        resource_lock_acquired_count=event_counts["ResourceLockAcquired"],
+        resource_lock_released_count=event_counts["ResourceLockReleased"],
+        resource_conflict_count=event_counts["ResourceConflictDetected"],
         active_resource_lock_count=len(active_resource_locks),
-        decision_generated_count=_count(events, "DecisionGenerated"),
-        decision_validated_count=_count(events, "DecisionValidated"),
-        decision_rejected_count=_count(events, "DecisionRejected"),
+        decision_generated_count=event_counts["DecisionGenerated"],
+        decision_validated_count=event_counts["DecisionValidated"],
+        decision_rejected_count=event_counts["DecisionRejected"],
         model_call_count=cost.model_call_count,
         model_input_token_count=cost.input_tokens,
         model_output_token_count=cost.output_tokens,
@@ -491,10 +494,6 @@ def _aggregate_status(checks: tuple[DoctorCheckView, ...]) -> str:
     if any(check.status == "warn" for check in checks):
         return "warn"
     return "ok"
-
-
-def _count(events: tuple[RuntimeEventView, ...], event_type: str) -> int:
-    return sum(1 for event in events if event.type == event_type)
 
 
 def _active_resource_locks(

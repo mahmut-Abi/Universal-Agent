@@ -198,9 +198,7 @@ def parse_non_empty_string(
         return _NON_EMPTY_STRING_ADAPTER.validate_python(value, strict=True)
     except PydanticValidationError as exc:
         details = pydantic_error_details(exc, field)
-        if details.error_type == "value_error" and details.message.endswith(
-            "must not be empty"
-        ):
+        if details.error_type == "value_error" and details.message.endswith("must not be empty"):
             raise ValueError(empty_template.format(path=details.path)) from exc
         raise ValueError(pydantic_error_message(exc, field)) from exc
 
@@ -258,9 +256,7 @@ def parse_non_empty_string_sequence(
         )
     except PydanticValidationError as exc:
         details = pydantic_error_details(exc, field)
-        if details.error_type == "value_error" and details.message.endswith(
-            "must not be empty"
-        ):
+        if details.error_type == "value_error" and details.message.endswith("must not be empty"):
             raise ValueError(empty_template.format(path=details.path)) from exc
         if details.error_type == "string_type" and item_type_template is not None:
             raise ValueError(item_type_template.format(path=details.path)) from exc
