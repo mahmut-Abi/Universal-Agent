@@ -197,3 +197,27 @@ def test_domain_loader_manifest_json_rejects_non_string_references(
         match=r"invalid domain manifest JSON: spec\.capabilities\[0\] must be a string",
     ):
         DomainLoader().manifest_from_json(manifest_path)
+
+
+def test_domain_loader_manifest_json_rejects_empty_references_with_pydantic_path(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "domain.json"
+    write_json_file(
+        manifest_path,
+        {
+            "apiVersion": "agent.nantian.dev/v1alpha1",
+            "kind": "Domain",
+            "metadata": {"name": "widget", "version": "1.0.0"},
+            "spec": {
+                "capabilities": [" "],
+                "evaluators": ["criteria"],
+            },
+        },
+    )
+
+    with pytest.raises(
+        DomainValidationError,
+        match=r"invalid domain manifest JSON: spec\.capabilities\[0\] must not be empty",
+    ):
+        DomainLoader().manifest_from_json(manifest_path)

@@ -24,10 +24,10 @@ from universal_agent.core import (
 )
 from universal_agent.core.config_validation import (
     ConfigPayload,
+    PydanticNonEmptyString,
     duplicate_values,
     parse_json_object,
     parse_non_empty_string,
-    parse_non_empty_string_sequence,
     parse_payload,
     parse_unique_non_empty_string_sequence,
 )
@@ -328,20 +328,20 @@ class DomainValidationError(ValueError):
 
 
 class _DomainManifestMetadataPayload(ConfigPayload):
-    name: str
-    version: str
+    name: PydanticNonEmptyString
+    version: PydanticNonEmptyString
     description: str = ""
 
 
 class _DomainManifestSpecPayload(ConfigPayload):
-    ontology: list[str] = Field(default_factory=list)
-    capabilities: list[str]
-    evaluators: list[str]
+    ontology: list[PydanticNonEmptyString] = Field(default_factory=list)
+    capabilities: list[PydanticNonEmptyString]
+    evaluators: list[PydanticNonEmptyString]
 
 
 class _DomainManifestPayload(ConfigPayload):
-    api_version: str = Field(alias="apiVersion")
-    kind: str
+    api_version: PydanticNonEmptyString = Field(alias="apiVersion")
+    kind: PydanticNonEmptyString
     metadata: _DomainManifestMetadataPayload
     spec: _DomainManifestSpecPayload
 
@@ -648,25 +648,16 @@ class DomainLoader:
         payload = _domain_manifest_payload(path)
         try:
             return DomainManifest(
-                api_version=parse_non_empty_string(payload.api_version, "apiVersion"),
-                kind=parse_non_empty_string(payload.kind, "kind"),
+                api_version=payload.api_version,
+                kind=payload.kind,
                 metadata=DomainMetadata(
-                    name=parse_non_empty_string(payload.metadata.name, "metadata.name"),
-                    version=parse_non_empty_string(payload.metadata.version, "metadata.version"),
+                    name=payload.metadata.name,
+                    version=payload.metadata.version,
                     description=payload.metadata.description,
                 ),
-                ontology=parse_non_empty_string_sequence(
-                    payload.spec.ontology,
-                    "spec.ontology",
-                ),
-                capability_names=parse_non_empty_string_sequence(
-                    payload.spec.capabilities,
-                    "spec.capabilities",
-                ),
-                evaluator_names=parse_non_empty_string_sequence(
-                    payload.spec.evaluators,
-                    "spec.evaluators",
-                ),
+                ontology=tuple(payload.spec.ontology),
+                capability_names=tuple(payload.spec.capabilities),
+                evaluator_names=tuple(payload.spec.evaluators),
             )
         except ValueError as exc:
             raise DomainValidationError(f"invalid domain manifest JSON: {exc}") from exc

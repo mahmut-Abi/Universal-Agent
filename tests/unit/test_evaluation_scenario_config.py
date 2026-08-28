@@ -202,3 +202,47 @@ def test_evaluation_suite_config_rejects_invalid_shapes() -> None:
                 ],
             }
         )
+
+    with pytest.raises(ValueError, match=r"success_criteria\.\[key\] must not be empty"):
+        evaluation_suite_from_mapping(
+            {
+                "name": "broken",
+                "scenarios": [
+                    {
+                        "name": "bad success key",
+                        "goal": {
+                            "description": "Evaluate workload health",
+                            "success_criteria": {" ": True},
+                        },
+                        "task": {
+                            "description": "Inspect workload",
+                            "required_criteria": ["healthy"],
+                        },
+                    }
+                ],
+            }
+        )
+
+    with pytest.raises(
+        ValueError,
+        match=r"required_evidence_claims\[0\] must not be empty",
+    ):
+        evaluation_suite_from_mapping(
+            {
+                "name": "broken",
+                "scenarios": [
+                    {
+                        "name": "bad expectation",
+                        "goal": {
+                            "description": "Evaluate workload health",
+                            "success_criteria": {"healthy": True},
+                        },
+                        "task": {
+                            "description": "Inspect workload",
+                            "required_criteria": ["healthy"],
+                        },
+                        "expectations": {"required_evidence_claims": [""]},
+                    }
+                ],
+            }
+        )

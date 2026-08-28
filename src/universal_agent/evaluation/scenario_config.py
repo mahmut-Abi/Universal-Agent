@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from universal_agent.core import (
     ErrorCode,
@@ -19,10 +19,10 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
+    PydanticNonEmptyString,
     json_mapping,
     parse_json_object,
     parse_payload,
-    parse_string_sequence,
 )
 from universal_agent.evaluation.harness import (
     EvaluationQualityGate,
@@ -40,33 +40,45 @@ class EvaluationSuiteConfig:
 
 
 class _SuccessCriterionPayload(ConfigPayload):
-    key: str
+    key: PydanticNonEmptyString
     expected: PydanticJsonValue
 
 
 class _GoalPayload(ConfigPayload):
-    description: str
+    description: PydanticNonEmptyString
     success_criteria: dict[str, PydanticJsonValue] | list[_SuccessCriterionPayload] = Field(
         default_factory=dict
     )
 
+    @field_validator("success_criteria")
+    @classmethod
+    def _validate_success_criteria_keys(
+        cls,
+        value: dict[str, PydanticJsonValue] | list[_SuccessCriterionPayload],
+    ) -> dict[str, PydanticJsonValue] | list[_SuccessCriterionPayload]:
+        if isinstance(value, dict) and any(not key.strip() for key in value):
+            raise ValueError("success_criteria.[key] must not be empty")
+        return value
+
 
 class _TaskPayload(ConfigPayload):
-    description: str
-    required_criteria: list[str]
+    description: PydanticNonEmptyString
+    required_criteria: list[PydanticNonEmptyString]
 
 
 class _ExpectationsPayload(ConfigPayload):
     expected_status: str = ExecutionStatus.COMPLETED.value
     expected_error_code: str | None = None
-    expected_criteria: dict[str, PydanticJsonValue] = Field(default_factory=dict)
-    required_events: list[str] = Field(default_factory=list)
-    forbidden_events: list[str] = Field(default_factory=list)
-    required_evidence_claims: list[str] = Field(default_factory=list)
-    forbidden_evidence_claims: list[str] = Field(default_factory=list)
-    required_capabilities: list[str] = Field(default_factory=list)
-    allowed_capabilities: list[str] | None = None
-    required_audit_capabilities: list[str] = Field(default_factory=list)
+    expected_criteria: dict[PydanticNonEmptyString, PydanticJsonValue] = Field(
+        default_factory=dict
+    )
+    required_events: list[PydanticNonEmptyString] = Field(default_factory=list)
+    forbidden_events: list[PydanticNonEmptyString] = Field(default_factory=list)
+    required_evidence_claims: list[PydanticNonEmptyString] = Field(default_factory=list)
+    forbidden_evidence_claims: list[PydanticNonEmptyString] = Field(default_factory=list)
+    required_capabilities: list[PydanticNonEmptyString] = Field(default_factory=list)
+    allowed_capabilities: list[PydanticNonEmptyString] | None = None
+    required_audit_capabilities: list[PydanticNonEmptyString] = Field(default_factory=list)
     decision_rejected_count: int | None = None
     policy_denial_count: int | None = None
     recovery_planned_count: int | None = None
@@ -80,12 +92,12 @@ class _ExpectationsPayload(ConfigPayload):
 
 
 class _ScenarioPayload(ConfigPayload):
-    name: str
+    name: PydanticNonEmptyString
     goal: _GoalPayload
     task: _TaskPayload
     expectations: _ExpectationsPayload | None = None
     kind: str = EvaluationScenarioKind.SCENARIO.value
-    tags: list[str] = Field(default_factory=list)
+    tags: list[PydanticNonEmptyString] = Field(default_factory=list)
 
 
 class _QualityGatePayload(ConfigPayload):
@@ -107,9 +119,9 @@ class _QualityGatePayload(ConfigPayload):
 
 
 class _EvaluationSuitePayload(ConfigPayload):
-    name: str
+    name: PydanticNonEmptyString
     scenarios: list[_ScenarioPayload]
-    tags: list[str] = Field(default_factory=list)
+    tags: list[PydanticNonEmptyString] = Field(default_factory=list)
     quality_gate: _QualityGatePayload | None = None
 
 
@@ -253,14 +265,17 @@ def _optional_error_code(value: str | None) -> ErrorCode | None:
     return ErrorCode(value)
 
 
-def _optional_string_tuple(value: list[str] | None, field: str) -> tuple[str, ...] | None:
+def _optional_string_tuple(
+    value: list[PydanticNonEmptyString] | None,
+    field: str,
+) -> tuple[str, ...] | None:
     if value is None:
         return None
     return _string_tuple(value, field)
 
 
-def _string_tuple(value: list[str], field: str) -> tuple[str, ...]:
-    return parse_string_sequence(value, field)
+def _string_tuple(value: list[PydanticNonEmptyString], field: str) -> tuple[str, ...]:
+    return tuple(value)
 
 
 def _parse_config_payload[T: ConfigPayload](
