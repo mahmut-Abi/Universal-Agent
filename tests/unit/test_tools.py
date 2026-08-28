@@ -37,6 +37,17 @@ class EchoTool:
         return immutable_json({"value": arguments["value"]})
 
 
+class EmptyNameTool:
+    definition = ToolDefinition(
+        name=" ",
+        description="Invalid tool",
+        capabilities=("echo_value",),
+    )
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        return immutable_json()
+
+
 class SchemaTool:
     def __init__(self) -> None:
         self.calls = 0
@@ -156,6 +167,11 @@ def test_registry_rejects_duplicate_names() -> None:
     registry.register(EchoTool())
     with pytest.raises(DuplicateToolError):
         registry.register(EchoTool())
+
+
+def test_registry_rejects_empty_tool_name() -> None:
+    with pytest.raises(ValueError, match="tool name must not be empty"):
+        ToolRegistry().register(EmptyNameTool())
 
 
 @pytest.mark.asyncio

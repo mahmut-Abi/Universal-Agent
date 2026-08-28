@@ -1,5 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from universal_agent.core import (
     JsonValue,
     Observation,
@@ -11,7 +13,13 @@ from universal_agent.core import (
     new_observation_id,
 )
 from universal_agent.evidence import Evidence, EvidenceQuery, InMemoryEvidenceStore
-from universal_agent.world import EntityId, FactWorldUpdater, InMemoryWorldModel
+from universal_agent.world import (
+    EntityId,
+    FactWorldUpdater,
+    InMemoryWorldModel,
+    WorldEntity,
+    WorldRelation,
+)
 
 
 def make_evidence(
@@ -188,3 +196,23 @@ def test_world_snapshot_queries_entity_neighborhoods() -> None:
         EntityId("deployment/example")
     ]
     assert pod.outgoing_relations == ()
+
+
+def test_world_model_rejects_empty_entity_kind() -> None:
+    model = InMemoryWorldModel()
+
+    with pytest.raises(ValueError, match="world entity kind must not be empty"):
+        model.apply_entity(
+            SessionId("session-test"),
+            WorldEntity(EntityId("deployment/example"), " "),
+        )
+
+
+def test_world_model_rejects_empty_relation_name() -> None:
+    model = InMemoryWorldModel()
+
+    with pytest.raises(ValueError, match="world relation must not be empty"):
+        model.apply_relation(
+            SessionId("session-test"),
+            WorldRelation(EntityId("deployment/example"), " ", EntityId("pod/example")),
+        )

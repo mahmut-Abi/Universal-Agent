@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from universal_agent.core import CapabilityDefinition, DomainIdentity
+from universal_agent.core.config_validation import parse_non_empty_string
 from universal_agent.tools import Tool, ToolRegistration, ToolRegistry
 
 
@@ -41,8 +42,7 @@ class CapabilityRegistry:
         capability: CapabilityDefinition,
         domain_identity: DomainIdentity | None = None,
     ) -> None:
-        if not capability.name.strip():
-            raise ValueError("capability name must not be empty")
+        parse_non_empty_string(capability.name, "capability name")
         if capability.name in self._capabilities:
             raise DuplicateCapabilityError(f"capability already registered: {capability.name}")
         self._capabilities[capability.name] = CapabilityRegistration(

@@ -15,6 +15,7 @@ from universal_agent.core import (
     immutable_json,
     validate_argument_contract,
 )
+from universal_agent.core.config_validation import parse_non_empty_string
 from universal_agent.security import (
     EnvSecretProvider,
     SecretProvider,
@@ -55,8 +56,7 @@ class ToolRegistry:
 
     def register(self, tool: Tool, domain_identity: DomainIdentity | None = None) -> None:
         name = tool.definition.name
-        if not name.strip():
-            raise ValueError("tool name must not be empty")
+        parse_non_empty_string(name, "tool name")
         if not tool.definition.capabilities:
             raise ValueError(f"tool must implement at least one capability: {name}")
         if name in self._tools:

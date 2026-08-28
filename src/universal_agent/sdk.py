@@ -11,6 +11,11 @@ from universal_agent.core import (
     SuccessCriterion,
     Task,
 )
+from universal_agent.core.config_validation import (
+    parse_json_value,
+    parse_non_empty_string,
+    parse_non_empty_string_sequence,
+)
 from universal_agent.runtime import RuntimeEventBatch, RuntimeRun, SessionView
 from universal_agent.service import RuntimeService
 
@@ -25,8 +30,7 @@ class SDKSuccessCriterion:
     expected: JsonValue
 
     def __post_init__(self) -> None:
-        if not self.key.strip():
-            raise RuntimeSDKError("success criterion key must not be empty")
+        _non_empty_string(self.key, "success criterion key")
         _json_value(self.expected, f"success_criteria.{self.key}")
 
     def to_runtime(self) -> SuccessCriterion:
@@ -42,8 +46,7 @@ class SDKGoal:
     success_criteria: tuple[SDKSuccessCriterion, ...]
 
     def __post_init__(self) -> None:
-        if not self.description.strip():
-            raise RuntimeSDKError("goal description must not be empty")
+        _non_empty_string(self.description, "goal description")
         if not self.success_criteria:
             raise RuntimeSDKError("goal success criteria must not be empty")
         duplicates = _duplicates(tuple(item.key for item in self.success_criteria))
@@ -77,9 +80,13 @@ class SDKTask:
     required_criteria: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if not self.description.strip():
-            raise RuntimeSDKError("task description must not be empty")
-        _validate_strings("task required criteria", self.required_criteria)
+        _non_empty_string(self.description, "task description")
+        _non_empty_string_sequence(
+            self.required_criteria,
+            "task required criteria",
+            empty_template="task required criteria must not include empty values",
+            item_type_template="task required criteria must not include empty values",
+        )
 
     def to_runtime(self) -> Task:
         return Task(self.description, self.required_criteria)
@@ -214,24 +221,35 @@ def _coerce_task(task: SDKTask | str | None, *, required_criteria: tuple[str, ..
 
 
 def _json_value(value: JsonValue, field: str) -> JsonValue:
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, list):
-        return [_json_value(item, f"{field}[]") for item in value]
-    if isinstance(value, dict):
-        payload: dict[str, JsonValue] = {}
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise RuntimeSDKError(f"{field} keys must be strings")
-            payload[key] = _json_value(item, f"{field}.{key}")
-        return payload
-    raise RuntimeSDKError(f"{field} must be JSON-compatible")
+    try:
+        return parse_json_value(value, field)
+    except ValueError as exc:
+        raise RuntimeSDKError(str(exc)) from exc
 
 
-def _validate_strings(label: str, values: tuple[str, ...]) -> None:
-    for value in values:
-        if not value.strip():
-            raise RuntimeSDKError(f"{label} must not include empty values")
+def _non_empty_string(value: object, field: str) -> str:
+    try:
+        return parse_non_empty_string(value, field)
+    except ValueError as exc:
+        raise RuntimeSDKError(str(exc)) from exc
+
+
+def _non_empty_string_sequence(
+    value: object,
+    field: str,
+    *,
+    empty_template: str,
+    item_type_template: str,
+) -> tuple[str, ...]:
+    try:
+        return parse_non_empty_string_sequence(
+            value,
+            field,
+            empty_template=empty_template,
+            item_type_template=item_type_template,
+        )
+    except ValueError as exc:
+        raise RuntimeSDKError(str(exc)) from exc
 
 
 def _duplicates(values: tuple[str, ...]) -> tuple[str, ...]:

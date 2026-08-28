@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from universal_agent import (
@@ -23,7 +25,7 @@ from universal_agent import (
     UniversalAgentRuntime,
     immutable_json,
 )
-from universal_agent.core import JsonMapping
+from universal_agent.core import JsonMapping, JsonValue
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 
 
@@ -165,6 +167,15 @@ async def test_runtime_sdk_lifecycle_methods_return_public_results() -> None:
 def test_runtime_sdk_rejects_invalid_public_inputs() -> None:
     with pytest.raises(RuntimeSDKError, match="success criteria must not be empty"):
         SDKGoal("No criteria", ())
+
+    with pytest.raises(RuntimeSDKError, match="success criterion key must not be empty"):
+        SDKSuccessCriterion(" ", True)
+    with pytest.raises(RuntimeSDKError, match=r"success_criteria\.healthy.*JSON-compatible"):
+        SDKSuccessCriterion("healthy", cast(JsonValue, {"bad": object()}))
+    with pytest.raises(RuntimeSDKError, match=r"success_criteria\.healthy.*key.*string"):
+        SDKSuccessCriterion("healthy", cast(JsonValue, {1: "bad"}))
+    with pytest.raises(RuntimeSDKError, match="task required criteria must not include empty"):
+        SDKTask("Inspect workload", ("healthy", " "))
 
     with pytest.raises(RuntimeSDKError, match="task description must not be empty"):
         SDKTask("", ())

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 
 from universal_agent.core import JsonMapping, JsonValue, SessionId, dumps_json, immutable_json
+from universal_agent.core.config_validation import parse_non_empty_string
 from universal_agent.evidence import Evidence, EvidenceId
 from universal_agent.world.models import (
     EntityId,
@@ -49,8 +50,7 @@ class InMemoryWorldModel:
         return True
 
     def apply_entity(self, session_id: SessionId, entity: WorldEntity) -> bool:
-        if not entity.kind.strip():
-            raise ValueError("world entity kind must not be empty")
+        parse_non_empty_string(entity.kind, "world entity kind")
         key = (session_id, entity.id)
         existing = self._entities.get(key)
         kind = self._kind_for_subject(session_id, entity.id) or entity.kind
@@ -70,8 +70,7 @@ class InMemoryWorldModel:
         return True
 
     def apply_relation(self, session_id: SessionId, relation: WorldRelation) -> bool:
-        if not relation.relation.strip():
-            raise ValueError("world relation must not be empty")
+        parse_non_empty_string(relation.relation, "world relation")
         key = (session_id, relation.source, relation.relation, relation.target)
         existing = self._relations.get(key)
         if existing is None:

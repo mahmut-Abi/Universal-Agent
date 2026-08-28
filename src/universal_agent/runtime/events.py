@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from universal_agent.core import EventId, RuntimeEvent, SessionId
+from universal_agent.core.config_validation import parse_positive_int
 
 
 class EventCursorError(ValueError):
@@ -58,8 +59,8 @@ def filter_events(
     shared by memory and file adapters so future SSE delivery can sit above one
     interface instead of reimplementing filtering in every application adapter.
     """
-    if limit is not None and limit < 1:
-        raise ValueError("event stream limit must be positive")
+    if limit is not None:
+        parse_positive_int(limit, "event stream limit")
 
     selected: list[RuntimeEvent] = []
     cursor_seen = after_event_id is None

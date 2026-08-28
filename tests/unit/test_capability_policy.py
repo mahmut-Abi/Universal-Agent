@@ -65,6 +65,17 @@ def policy_context(
     )
 
 
+def test_capability_registry_rejects_empty_capability_name() -> None:
+    capability = CapabilityDefinition(
+        " ",
+        "Inspect",
+        CapabilityCategory.OBSERVATION,
+    )
+
+    with pytest.raises(ValueError, match="capability name must not be empty"):
+        CapabilityRegistry().register(capability)
+
+
 def test_capability_resolver_selects_lowest_priority_tool() -> None:
     capabilities = CapabilityRegistry()
     capability = CapabilityDefinition(
