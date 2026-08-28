@@ -52,7 +52,7 @@
 
 | 项 | 说明 |
 |---|---|
-| 现状 | 已新增 `core/json_codec.py` 作为统一 JSON codec seam，并用 `orjson` 接管 Runtime 源码中的 JSON dumps/loads、JSON-safe value coercion、文件读写、model prompt 编码、agentd 请求体解析与响应序列化、persistence payload、distributed queue/lock/worker registry payload、evaluation recording/config、ecosystem registry、Kubernetes API/kubectl 响应解析，以及 web/tui value text 的 JSON 渲染；`write_json_file()` 已用标准库 `tempfile` 做同目录临时文件 + atomic replace，persistence、distributed、evaluation、ecosystem、domain scaffold 与 CLI init 的完整 JSON 文件写入都走同一入口 |
+| 现状 | 已新增 `core/json_codec.py` 作为统一 JSON codec seam，并用 `orjson` 接管 Runtime 源码中的 JSON dumps/loads、JSON-safe value coercion、文件读写、model prompt 编码、CLI JSON 输出、agentd 请求体解析与响应序列化、persistence payload、distributed queue/lock/worker registry payload、evaluation recording/config、ecosystem registry、Kubernetes API/kubectl 响应解析，以及 web/tui value text 的 JSON 渲染；`write_json_file()` 已用标准库 `tempfile` 做同目录临时文件 + atomic replace，persistence、distributed、evaluation、ecosystem、domain scaffold 与 CLI init 的完整 JSON 文件写入都走同一入口 |
 | 收益 | JSON 编解码、JSON-safe value coercion 和完整 JSON 文件写入从调用点收口到一个库适配层；compact canonical JSON 用于 hash/fingerprint，pretty JSON 用于 CLI/config/report 文件输出；写入失败时统一清理临时文件 |
 | 兼容性 | `JsonCodecError` 继承 `ValueError`；HTTP/CLI 的用户可见错误保持原语义；UI 中嵌入的小 JSON 片段改为 `orjson` compact one-line 格式；文件写入输出格式保持不变 |
 | 剩余 | 测试和 examples 仍可继续使用标准库 JSON 构造 fixture；若未来要强制全 repo 收口，再单独迁移测试工具层 |

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from datetime import datetime
 from typing import TextIO
 
@@ -11,6 +11,7 @@ from universal_agent.core import (
     SuccessCriterion,
     loads_json,
     parse_iso_datetime,
+    to_json_value,
     write_json,
 )
 from universal_agent.core.config_validation import parse_json_value
@@ -66,7 +67,7 @@ def _parse_domain_identity(value: str) -> DomainIdentity:
 
 
 def _write_json(out: TextIO, payload: object) -> None:
-    write_json(out, _json_safe(payload), indent=True)
+    write_json(out, to_json_value(payload, fallback_to_string=True), indent=True)
 
 
 def _write_text(out: TextIO, payload: str) -> None:
@@ -75,16 +76,6 @@ def _write_text(out: TextIO, payload: str) -> None:
 
 def _write_error(out: TextIO, code: str, message: str) -> None:
     _write_json(out, {"error": {"code": code, "message": message}})
-
-
-def _json_safe(value: object) -> object:
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, Mapping):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
-        return [_json_safe(item) for item in value]
-    return str(value)
 
 
 def _optional_bool(value: str | None) -> bool | None:
