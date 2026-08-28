@@ -3,8 +3,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from importlib.metadata import PackageNotFoundError, version
+from inspect import isawaitable
 from pathlib import Path
 from typing import TextIO, cast
 
@@ -132,7 +133,7 @@ __all__ = [
     "run_cli",
 ]
 
-ServerRunner = Callable[[AgentdHttpServer], None]
+ServerRunner = Callable[[AgentdHttpServer], Awaitable[None] | None]
 
 
 def build_default_service() -> RuntimeService:
@@ -463,7 +464,7 @@ async def _dispatch(
         _dispatch_config(args, service, out)
         return
     if command == "serve":
-        _dispatch_serve(args, service, out, server_runner=server_runner)
+        await _dispatch_serve(args, service, out, server_runner=server_runner)
         return
     if command == "run":
         await _dispatch_run(args, service, out)
@@ -565,7 +566,7 @@ def _dispatch_config(
     raise ValueError(f"unknown config command: {command}")
 
 
-def _dispatch_serve(
+async def _dispatch_serve(
     args: argparse.Namespace,
     service: RuntimeService,
     out: TextIO,
@@ -609,13 +610,15 @@ def _dispatch_serve(
             },
         )
         out.flush()
-        (server_runner or _serve_forever)(server)
+        result = (server_runner or _serve_forever)(server)
+        if isawaitable(result):
+            await result
     finally:
         server.server_close()
 
 
-def _serve_forever(server: AgentdHttpServer) -> None:
-    server.serve_forever()
+async def _serve_forever(server: AgentdHttpServer) -> None:
+    await server.serve()
 
 
 def _resolve_cli_auth_token(

@@ -122,6 +122,11 @@ class AgentdHttpServer:
             raise RuntimeError("agentd server socket is closed")
         self._server.run(sockets=[self._socket])
 
+    async def serve(self) -> None:
+        if self._closed:
+            raise RuntimeError("agentd server socket is closed")
+        await self._server.serve(sockets=[self._socket])
+
     def shutdown(self) -> None:
         self._server.should_exit = True
 

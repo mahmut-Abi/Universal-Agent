@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import suppress
 from dataclasses import replace
 from datetime import UTC, datetime
 from io import StringIO
@@ -4154,6 +4155,46 @@ async def test_cli_serve_starts_agentd_http_server_with_injected_runner() -> Non
     assert payload["auth_required"] is False
     assert payload["read_only_auth_enabled"] is False
     assert payload["evaluation_report_dir"] is None
+
+
+@pytest.mark.asyncio
+async def test_cli_serve_default_runner_runs_inside_existing_event_loop() -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+    error = StringIO()
+    task = asyncio.create_task(
+        run_cli(
+            ["serve", "--port", "0"],
+            service=service,
+            stdout=output,
+            stderr=error,
+        )
+    )
+
+    try:
+        for _ in range(20):
+            if '"status": "serving"' in output.getvalue() or task.done():
+                break
+            await asyncio.sleep(0.05)
+        if task.done():
+            try:
+                status = await task
+            except PermissionError as exc:
+                pytest.skip(f"local socket bind unavailable: {exc}")
+            assert status == 0
+            pytest.fail("serve returned instead of keeping the HTTP server alive")
+
+        payload = read_json(output)
+        assert payload["status"] == "serving"
+        assert payload["base_url"].startswith("http://127.0.0.1:")
+
+        await asyncio.sleep(0.1)
+        assert not task.done()
+    finally:
+        if not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
 
 @pytest.mark.asyncio
