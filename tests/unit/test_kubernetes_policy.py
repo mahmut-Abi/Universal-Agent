@@ -81,6 +81,18 @@ def test_kubernetes_scale_policy_uses_pydantic_strict_argument_types() -> None:
     assert result.reason == "scale_workload replicas must be an integer"
 
 
+def test_kubernetes_scale_policy_rejects_unbounded_replicas() -> None:
+    low = KubernetesScalePolicy().evaluate(scale_policy_context(arguments={"replicas": 0}))
+    high = KubernetesScalePolicy().evaluate(scale_policy_context(arguments={"replicas": 11}))
+
+    assert low is not None
+    assert low.effect is PolicyEffect.DENY
+    assert low.reason == "scale_workload replicas must be between 1 and 10"
+    assert high is not None
+    assert high.effect is PolicyEffect.DENY
+    assert high.reason == "scale_workload replicas must be between 1 and 10"
+
+
 def test_kubernetes_scale_policy_rejects_invalid_scope() -> None:
     result = KubernetesScalePolicy().evaluate(
         scale_policy_context(

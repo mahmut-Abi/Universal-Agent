@@ -32,6 +32,7 @@ __all__ = [
     "parse_bool_text",
     "parse_bounded_float",
     "parse_bounded_float_text",
+    "parse_bounded_int",
     "parse_int",
     "parse_json_object",
     "parse_json_object_sequence",
@@ -389,6 +390,33 @@ def parse_positive_int_text(
     except PydanticValidationError as exc:
         details = pydantic_error_details(exc, field)
         raise ValueError(error_template.format(path=details.path)) from exc
+
+
+def parse_bounded_int(
+    value: object,
+    field: str,
+    *,
+    minimum: int,
+    maximum: int,
+    range_template: str = "{path} must be between {minimum:g} and {maximum:g}",
+    type_template: str = "{path} must be an integer",
+) -> int:
+    if minimum > maximum:
+        raise ValueError("minimum must not exceed maximum")
+    adapter: TypeAdapter[int] = TypeAdapter(Annotated[int, Field(ge=minimum, le=maximum)])
+    try:
+        return adapter.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        details = pydantic_error_details(exc, field)
+        if details.error_type in {"greater_than_equal", "less_than_equal"}:
+            raise ValueError(
+                range_template.format(
+                    path=details.path,
+                    minimum=minimum,
+                    maximum=maximum,
+                )
+            ) from exc
+        raise ValueError(type_template.format(path=details.path)) from exc
 
 
 def parse_positive_float(value: object, field: str) -> float:

@@ -11,6 +11,7 @@ from universal_agent.core.config_validation import (
     parse_bool_text,
     parse_bounded_float,
     parse_bounded_float_text,
+    parse_bounded_int,
     parse_int,
     parse_json_object,
     parse_json_object_sequence,
@@ -128,6 +129,7 @@ def test_parse_numeric_helpers_use_pydantic_range_validation() -> None:
     assert parse_optional_non_negative_int(None, "count") is None
     assert parse_optional_non_negative_int(2, "count") == 2
     assert parse_positive_int(1, "limit") == 1
+    assert parse_bounded_int(3, "replicas", minimum=1, maximum=10) == 3
     assert parse_positive_float(0.1, "timeout") == 0.1
     assert parse_bounded_float(0.25, "timeout_seconds", minimum=0.0, maximum=30.0) == 0.25
     assert parse_optional_positive_float(None, "timeout") is None
@@ -141,6 +143,10 @@ def test_parse_numeric_helpers_use_pydantic_range_validation() -> None:
         parse_non_negative_float(-0.1, "cost")
     with pytest.raises(ValueError, match="limit must be positive"):
         parse_positive_int(0, "limit")
+    with pytest.raises(ValueError, match="replicas must be an integer"):
+        parse_bounded_int(True, "replicas", minimum=1, maximum=10)
+    with pytest.raises(ValueError, match="replicas must be between 1 and 10"):
+        parse_bounded_int(0, "replicas", minimum=1, maximum=10)
     with pytest.raises(ValueError, match="timeout must be positive"):
         parse_positive_float(0.0, "timeout")
     with pytest.raises(ValueError, match="timeout_seconds must be a number"):

@@ -3,7 +3,11 @@ from __future__ import annotations
 from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import PolicyContext, PolicyEffect, PolicyResult
-from universal_agent.core.config_validation import ConfigPayload, pydantic_error_details
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    parse_bounded_int,
+    pydantic_error_details,
+)
 
 
 class _KubernetesEnvironmentPayload(ConfigPayload):
@@ -79,16 +83,17 @@ class KubernetesScalePolicy:
                 "scale_workload namespace is outside the requested workload scope",
                 self.name,
             )
-        if not isinstance(replicas, int) or isinstance(replicas, bool):
-            return PolicyResult(
-                PolicyEffect.DENY,
-                "scale_workload replicas must be an integer",
-                self.name,
+        try:
+            parse_bounded_int(
+                replicas,
+                "scale_workload replicas",
+                minimum=1,
+                maximum=self._max_replicas,
             )
-        if replicas < 1 or replicas > self._max_replicas:
+        except ValueError as exc:
             return PolicyResult(
                 PolicyEffect.DENY,
-                f"scale_workload replicas must be between 1 and {self._max_replicas}",
+                str(exc),
                 self.name,
             )
         if environment in self._protected_environments:
