@@ -21,8 +21,11 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
+    duplicate_values,
+    parse_non_empty_string,
     parse_payload,
     parse_string_sequence,
+    parse_unique_non_empty_string_sequence,
 )
 from universal_agent.core.config_validation import (
     json_mapping as _json_mapping,
@@ -93,8 +96,11 @@ class EvaluationScenarioRecording:
     metrics: ReplayMetrics = field(default_factory=lambda: ReplayMetrics(0, 0, 0, 0, 0, 0, 0, 0, 0))
 
     def __post_init__(self) -> None:
-        _validate_non_empty_name("evaluation scenario recording name", self.scenario_name)
-        _validate_tags("evaluation scenario recording tags", self.tags)
+        parse_non_empty_string(
+            self.scenario_name,
+            "evaluation scenario recording name",
+        )
+        _parse_unique_tags("evaluation scenario recording tags", self.tags)
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,8 +118,8 @@ class EvaluationReportRecording:
     gate: EvaluationGateRecording | None = None
 
     def __post_init__(self) -> None:
-        _validate_non_empty_name("evaluation report suite name", self.suite_name)
-        duplicates = _duplicate_values(tuple(scenario.scenario_name for scenario in self.scenarios))
+        parse_non_empty_string(self.suite_name, "evaluation report suite name")
+        duplicates = duplicate_values(scenario.scenario_name for scenario in self.scenarios)
         if duplicates:
             raise ValueError(
                 "duplicate evaluation scenario recording names: " + ", ".join(duplicates)
@@ -800,24 +806,10 @@ def _parse_recording_payload[T: ConfigPayload](
     return parse_payload(model_type, payload, missing_template="missing required field: {path}")
 
 
-def _validate_non_empty_name(field: str, value: str) -> None:
-    if not value.strip():
-        raise ValueError(f"{field} must not be empty")
-
-
-def _validate_tags(field: str, tags: tuple[str, ...]) -> None:
-    if any(not tag.strip() for tag in tags):
-        raise ValueError(f"{field} must not contain empty values")
-    duplicates = _duplicate_values(tags)
-    if duplicates:
-        raise ValueError(f"duplicate {field}: " + ", ".join(duplicates))
-
-
-def _duplicate_values(values: tuple[str, ...]) -> tuple[str, ...]:
-    seen: set[str] = set()
-    duplicates: set[str] = set()
-    for value in values:
-        if value in seen:
-            duplicates.add(value)
-        seen.add(value)
-    return tuple(sorted(duplicates))
+def _parse_unique_tags(field: str, tags: tuple[str, ...]) -> tuple[str, ...]:
+    return parse_unique_non_empty_string_sequence(
+        tags,
+        field,
+        empty_template=f"{field} must not contain empty values",
+        item_type_template=f"{field} must not contain empty values",
+    )

@@ -12,6 +12,7 @@ from universal_agent.core import (
     Task,
 )
 from universal_agent.core.config_validation import (
+    duplicate_values,
     parse_json_value,
     parse_non_empty_string,
     parse_non_empty_string_sequence,
@@ -49,7 +50,7 @@ class SDKGoal:
         _non_empty_string(self.description, "goal description")
         if not self.success_criteria:
             raise RuntimeSDKError("goal success criteria must not be empty")
-        duplicates = _duplicates(tuple(item.key for item in self.success_criteria))
+        duplicates = duplicate_values(item.key for item in self.success_criteria)
         if duplicates:
             raise RuntimeSDKError("duplicate goal success criteria: " + ", ".join(duplicates))
 
@@ -250,16 +251,6 @@ def _non_empty_string_sequence(
         )
     except ValueError as exc:
         raise RuntimeSDKError(str(exc)) from exc
-
-
-def _duplicates(values: tuple[str, ...]) -> tuple[str, ...]:
-    seen: set[str] = set()
-    duplicates: set[str] = set()
-    for value in values:
-        if value in seen:
-            duplicates.add(value)
-        seen.add(value)
-    return tuple(sorted(duplicates))
 
 
 __all__ = [

@@ -38,6 +38,7 @@ from universal_agent.core.config_validation import (
     parse_rate,
     parse_string,
     parse_string_sequence,
+    parse_unique_non_empty_string_sequence,
     pydantic_error_details,
 )
 
@@ -102,6 +103,23 @@ def test_parse_non_empty_string_sequence_reports_indexed_empty_values() -> None:
             ["ready", ""],
             "checks",
             empty_template="{path} must be a non-empty string",
+        )
+
+
+def test_parse_unique_non_empty_string_sequence_reports_duplicates() -> None:
+    assert parse_unique_non_empty_string_sequence(("smoke", "kubernetes"), "tags") == (
+        "smoke",
+        "kubernetes",
+    )
+
+    with pytest.raises(ValueError, match="duplicate tags: smoke"):
+        parse_unique_non_empty_string_sequence(("smoke", "smoke"), "tags")
+
+    with pytest.raises(ValueError, match=r"tags\[1\] must not contain empty values"):
+        parse_unique_non_empty_string_sequence(
+            ("smoke", " "),
+            "tags",
+            empty_template="{path} must not contain empty values",
         )
 
 

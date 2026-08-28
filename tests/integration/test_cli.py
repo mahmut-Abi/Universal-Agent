@@ -7,7 +7,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from xml.etree.ElementTree import fromstring
 
 import pytest
@@ -4128,6 +4128,22 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     assert backend.inspect_calls == 1
 
 
+def test_cli_main_returns_130_without_traceback_on_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def interrupted_run(coro: object) -> int:
+        cast(Any, coro).close()
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(asyncio, "run", interrupted_run)
+
+    assert cli_module.main(["serve"]) == 130
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Traceback" not in captured.err
+
+
 @pytest.mark.asyncio
 async def test_cli_serve_starts_agentd_http_server_with_injected_runner() -> None:
     service, _ = build_cli_service([])
@@ -4155,6 +4171,33 @@ async def test_cli_serve_starts_agentd_http_server_with_injected_runner() -> Non
     assert payload["auth_required"] is False
     assert payload["read_only_auth_enabled"] is False
     assert payload["evaluation_report_dir"] is None
+
+
+@pytest.mark.asyncio
+async def test_cli_serve_reports_socket_bind_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+    error = StringIO()
+
+    class BindFailingServer:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise OSError("Address already in use")
+
+    monkeypatch.setattr(cli_module, "AgentdHttpServer", BindFailingServer)
+
+    status = await run_cli(
+        ["serve", "--host", "127.0.0.1", "--port", "8765"],
+        service=service,
+        stdout=output,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert output.getvalue() == ""
+    assert "failed to bind agentd server on 127.0.0.1:8765" in error.getvalue()
+    assert "Address already in use" in error.getvalue()
 
 
 @pytest.mark.asyncio

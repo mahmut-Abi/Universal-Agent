@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
+from universal_agent.core.config_validation import duplicate_values
 from universal_agent.domain import (
     DomainPackage,
     DomainPackageRegistry,
@@ -751,16 +752,14 @@ def _reject_registry_install_duplicates(
     plan: EcosystemDomainPackageInstallPlan,
     registry: DomainPackageRegistry,
 ) -> None:
-    seen: set[DomainIdentity] = set()
-    duplicates: set[DomainIdentity] = set()
-    for identity in plan.identities:
-        if identity in seen:
-            duplicates.add(identity)
-        seen.add(identity)
+    identity_names = tuple(_format_domain_identity(identity) for identity in plan.identities)
+    duplicates = set(duplicate_values(identity_names))
     existing = frozenset(registry.identities())
-    duplicates.update(identity for identity in plan.identities if identity in existing)
+    duplicates.update(
+        _format_domain_identity(identity) for identity in plan.identities if identity in existing
+    )
     if duplicates:
-        formatted = ", ".join(sorted(_format_domain_identity(identity) for identity in duplicates))
+        formatted = ", ".join(sorted(duplicates))
         raise EcosystemRegistryInstallError(
             f"domain packages already registered or duplicated in install plan: {formatted}"
         )
@@ -770,20 +769,17 @@ def _reject_evaluation_dataset_install_duplicates(
     candidates: tuple[EcosystemEvaluationDatasetInstallCandidate, ...],
     registry: EvaluationDatasetRegistry,
 ) -> None:
-    seen: set[tuple[str, str]] = set()
-    duplicates: set[tuple[str, str]] = set()
     identities = tuple(
-        (candidate.dataset.identity.name, candidate.dataset.identity.version)
+        f"{candidate.dataset.identity.name}@{candidate.dataset.identity.version}"
         for candidate in candidates
     )
-    for identity in identities:
-        if identity in seen:
-            duplicates.add(identity)
-        seen.add(identity)
-    existing = frozenset((identity.name, identity.version) for identity in registry.identities())
+    duplicates = set(duplicate_values(identities))
+    existing = frozenset(
+        f"{identity.name}@{identity.version}" for identity in registry.identities()
+    )
     duplicates.update(identity for identity in identities if identity in existing)
     if duplicates:
-        formatted = ", ".join(f"{name}@{version}" for name, version in sorted(duplicates))
+        formatted = ", ".join(sorted(duplicates))
         raise EcosystemRegistryInstallError(
             f"evaluation datasets already registered or duplicated in install plan: {formatted}"
         )
@@ -794,13 +790,8 @@ def _profile_install_registry(
     registry: ProfileRegistry | None,
 ) -> ProfileRegistry:
     existing_profiles = registry.profiles if registry is not None else ()
-    seen: set[str] = set()
-    duplicates: set[str] = set()
     names = tuple(candidate.entry.profile.name for candidate in candidates)
-    for name in names:
-        if name in seen:
-            duplicates.add(name)
-        seen.add(name)
+    duplicates = set(duplicate_values(names))
     existing = frozenset(profile.name for profile in existing_profiles)
     duplicates.update(name for name in names if name in existing)
     if duplicates:

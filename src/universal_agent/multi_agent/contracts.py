@@ -205,8 +205,11 @@ class AgentTaskResult:
         parse_non_empty_string(str(self.task_id), "agent task result task_id")
         if self.status is AgentTaskResultStatus.COMPLETED and self.error_code is not None:
             raise ValueError("completed agent task result cannot include error_code")
-        if self.status is not AgentTaskResultStatus.COMPLETED and not self.reason.strip():
-            raise ValueError("non-completed agent task result requires reason")
+        if self.status is not AgentTaskResultStatus.COMPLETED:
+            try:
+                parse_non_empty_string(self.reason, "non-completed agent task result reason")
+            except ValueError as exc:
+                raise ValueError("non-completed agent task result requires reason") from exc
         object.__setattr__(self, "result", immutable_json(self.result))
 
 

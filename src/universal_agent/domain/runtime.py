@@ -24,10 +24,12 @@ from universal_agent.core import (
 )
 from universal_agent.core.config_validation import (
     ConfigPayload,
+    duplicate_values,
     parse_json_object,
     parse_non_empty_string,
     parse_non_empty_string_sequence,
     parse_payload,
+    parse_unique_non_empty_string_sequence,
 )
 from universal_agent.evaluation import Evaluator
 from universal_agent.evidence import EvidenceExtractor
@@ -258,15 +260,11 @@ class DomainComposition:
         return None
 
     def _validate_unique_identities(self) -> None:
-        seen: set[DomainIdentity] = set()
-        duplicates: set[DomainIdentity] = set()
-        for identity in self.identities:
-            if identity in seen:
-                duplicates.add(identity)
-            seen.add(identity)
+        duplicates = duplicate_values(
+            f"{identity.name}@{identity.version}" for identity in self.identities
+        )
         if duplicates:
-            names = ", ".join(f"{item.name}@{item.version}" for item in sorted(duplicates, key=str))
-            raise DomainValidationError(f"duplicate domain identities: {names}")
+            raise DomainValidationError(f"duplicate domain identities: {', '.join(duplicates)}")
 
     def _validate_unique_capabilities(self) -> None:
         owners: dict[str, DomainIdentity] = {}
@@ -524,27 +522,23 @@ def _require_domain_spec_items(label: str, values: tuple[object, ...]) -> None:
 
 def _validate_domain_spec_names(label: str, names: tuple[str, ...]) -> None:
     try:
-        parse_non_empty_string_sequence(
+        parse_unique_non_empty_string_sequence(
             names,
             label,
             empty_template=f"domain runtime spec {label} must not include empty names",
             item_type_template=f"domain runtime spec {label} must not include empty names",
+            duplicate_template=f"domain runtime spec contains duplicate {label}: "
+            "{duplicates}",
         )
     except ValueError as exc:
         raise DomainValidationError(str(exc)) from exc
-    _validate_unique_domain_spec_names(label, names)
 
 
 def _validate_unique_domain_spec_names(label: str, names: tuple[str, ...]) -> None:
-    seen: set[str] = set()
-    duplicates: set[str] = set()
-    for name in names:
-        if name in seen:
-            duplicates.add(name)
-        seen.add(name)
+    duplicates = duplicate_values(names)
     if duplicates:
         raise DomainValidationError(
-            f"domain runtime spec contains duplicate {label}: " + ", ".join(sorted(duplicates))
+            f"domain runtime spec contains duplicate {label}: " + ", ".join(duplicates)
         )
 
 

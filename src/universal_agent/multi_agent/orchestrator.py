@@ -22,6 +22,7 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
+    duplicate_values,
     parse_payload,
     parse_string,
 )
@@ -649,13 +650,7 @@ def _batch_reason(status: AgentDelegationBatchStatus) -> str:
 
 
 def _duplicates(values: tuple[AgentTaskId, ...]) -> tuple[str, ...]:
-    seen: set[AgentTaskId] = set()
-    duplicates: set[str] = set()
-    for value in values:
-        if value in seen:
-            duplicates.add(str(value))
-        seen.add(value)
-    return tuple(sorted(duplicates))
+    return duplicate_values(values)
 
 
 def _format_task_ids(task_ids: tuple[AgentTaskId, ...]) -> str:

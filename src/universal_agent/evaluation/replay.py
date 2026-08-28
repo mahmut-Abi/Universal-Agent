@@ -9,6 +9,7 @@ from universal_agent.core import (
     JsonValue,
     immutable_json,
 )
+from universal_agent.core.config_validation import parse_non_empty_string
 from universal_agent.evaluation.harness import (
     EvaluationHarness,
     EvaluationRuntime,
@@ -442,8 +443,7 @@ def _optional_error_code(value: str | None) -> ErrorCode | None:
 
 
 def _validate_non_empty_name(field: str, value: str) -> None:
-    if not value.strip():
-        raise ValueError(f"{field} must not be empty")
+    parse_non_empty_string(value, field)
 
 
 def _same(name: str, expected: object, actual: object) -> ReplayCheck:

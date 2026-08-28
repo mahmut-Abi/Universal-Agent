@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections import Counter
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Annotated
@@ -26,6 +27,7 @@ __all__ = [
     "ConfigPayload",
     "PydanticErrorDetails",
     "PydanticJsonValue",
+    "duplicate_values",
     "enum_value",
     "json_mapping",
     "parse_bool",
@@ -59,6 +61,7 @@ __all__ = [
     "parse_rate",
     "parse_string",
     "parse_string_sequence",
+    "parse_unique_non_empty_string_sequence",
     "pydantic_error_details",
     "pydantic_error_message",
     "string_mapping",
@@ -263,6 +266,36 @@ def parse_non_empty_string_sequence(
             raise ValueError(item_type_template.format(path=details.path)) from exc
         raise ValueError(pydantic_error_message(exc, field)) from exc
     return tuple(parsed)
+
+
+def parse_unique_non_empty_string_sequence(
+    value: object,
+    field: str,
+    *,
+    empty_template: str = "{path} must not be empty",
+    item_type_template: str | None = None,
+    duplicate_template: str = "duplicate {field}: {duplicates}",
+) -> tuple[str, ...]:
+    parsed = parse_non_empty_string_sequence(
+        value,
+        field,
+        empty_template=empty_template,
+        item_type_template=item_type_template,
+    )
+    duplicates = duplicate_values(parsed)
+    if duplicates:
+        raise ValueError(
+            duplicate_template.format(
+                field=field,
+                duplicates=", ".join(duplicates),
+            )
+        )
+    return parsed
+
+
+def duplicate_values(values: Iterable[object]) -> tuple[str, ...]:
+    counts = Counter(str(value) for value in values)
+    return tuple(sorted(value for value, count in counts.items() if count > 1))
 
 
 def _sequence_input(value: object) -> object:

@@ -17,6 +17,7 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
+    duplicate_values,
     enum_value,
     json_mapping,
     parse_json_object,
@@ -434,7 +435,7 @@ class RuntimeConfig:
     def validate(self) -> None:
         for secret in self.secrets:
             secret.validate()
-        duplicate_secrets = _duplicates(tuple(secret.name for secret in self.secrets))
+        duplicate_secrets = duplicate_values(secret.name for secret in self.secrets)
         if duplicate_secrets:
             raise ValueError("duplicate runtime secrets: " + ", ".join(duplicate_secrets))
         self.model.validate()
@@ -487,14 +488,4 @@ def _domain_configs(value: list[dict[str, PydanticJsonValue]] | None) -> tuple[D
 
 
 def _duplicate_domain_configs(domains: tuple[DomainConfig, ...]) -> tuple[str, ...]:
-    return _duplicates(tuple(f"{domain.name or ''}@{domain.version or ''}" for domain in domains))
-
-
-def _duplicates(values: tuple[str, ...]) -> tuple[str, ...]:
-    seen: set[str] = set()
-    duplicates: set[str] = set()
-    for value in values:
-        if value in seen:
-            duplicates.add(value)
-        seen.add(value)
-    return tuple(sorted(duplicates))
+    return duplicate_values(f"{domain.name or ''}@{domain.version or ''}" for domain in domains)

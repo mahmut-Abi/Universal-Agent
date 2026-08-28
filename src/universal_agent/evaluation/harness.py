@@ -15,11 +15,12 @@ from universal_agent.core import (
     immutable_json,
 )
 from universal_agent.core.config_validation import (
+    duplicate_values,
     parse_non_empty_string,
-    parse_non_empty_string_sequence,
     parse_optional_non_negative_float,
     parse_optional_rate,
     parse_rate,
+    parse_unique_non_empty_string_sequence,
 )
 from universal_agent.operations import AuditRecordView, RuntimeMetricsView, build_runtime_metrics
 from universal_agent.runtime import RuntimeEventView, RuntimeRun, SessionSummaryView, SessionView
@@ -81,8 +82,8 @@ class EvaluationScenario:
     tags: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        _validate_non_empty_name("evaluation scenario name", self.name)
-        _validate_tags("evaluation scenario tags", self.tags)
+        parse_non_empty_string(self.name, "evaluation scenario name")
+        _parse_unique_tags("evaluation scenario tags", self.tags)
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,9 +109,9 @@ class EvaluationSuite:
     tags: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        _validate_non_empty_name("evaluation suite name", self.name)
-        _validate_tags("evaluation suite tags", self.tags)
-        duplicates = _duplicate_values(tuple(scenario.name for scenario in self.scenarios))
+        parse_non_empty_string(self.name, "evaluation suite name")
+        _parse_unique_tags("evaluation suite tags", self.tags)
+        duplicates = duplicate_values(scenario.name for scenario in self.scenarios)
         if duplicates:
             raise ValueError("duplicate evaluation scenario names: " + ", ".join(duplicates))
 
@@ -274,41 +275,41 @@ class EvaluationQualityGate:
     max_total_model_estimated_cost_micros: int | None = None
 
     def __post_init__(self) -> None:
-        _validate_rate("min_pass_rate", self.min_pass_rate)
-        _validate_optional_rate("min_goal_completion_rate", self.min_goal_completion_rate)
-        _validate_optional_rate("min_task_success_rate", self.min_task_success_rate)
-        _validate_optional_rate("min_action_success_rate", self.min_action_success_rate)
-        _validate_optional_rate("max_tool_failure_rate", self.max_tool_failure_rate)
-        _validate_optional_rate("max_policy_denial_rate", self.max_policy_denial_rate)
-        _validate_optional_non_negative(
-            "max_average_recoveries_per_scenario",
+        parse_rate(self.min_pass_rate, "min_pass_rate")
+        parse_optional_rate(self.min_goal_completion_rate, "min_goal_completion_rate")
+        parse_optional_rate(self.min_task_success_rate, "min_task_success_rate")
+        parse_optional_rate(self.min_action_success_rate, "min_action_success_rate")
+        parse_optional_rate(self.max_tool_failure_rate, "max_tool_failure_rate")
+        parse_optional_rate(self.max_policy_denial_rate, "max_policy_denial_rate")
+        parse_optional_non_negative_float(
             self.max_average_recoveries_per_scenario,
+            "max_average_recoveries_per_scenario",
         )
-        _validate_optional_rate("max_human_intervention_rate", self.max_human_intervention_rate)
-        _validate_optional_rate("max_resource_conflict_rate", self.max_resource_conflict_rate)
-        _validate_optional_non_negative(
-            "max_average_active_resource_locks_per_scenario",
+        parse_optional_rate(self.max_human_intervention_rate, "max_human_intervention_rate")
+        parse_optional_rate(self.max_resource_conflict_rate, "max_resource_conflict_rate")
+        parse_optional_non_negative_float(
             self.max_average_active_resource_locks_per_scenario,
+            "max_average_active_resource_locks_per_scenario",
         )
-        _validate_optional_non_negative(
-            "max_average_actions_per_scenario",
+        parse_optional_non_negative_float(
             self.max_average_actions_per_scenario,
+            "max_average_actions_per_scenario",
         )
-        _validate_optional_non_negative(
-            "max_average_execution_duration_ms_per_scenario",
+        parse_optional_non_negative_float(
             self.max_average_execution_duration_ms_per_scenario,
+            "max_average_execution_duration_ms_per_scenario",
         )
-        _validate_optional_non_negative(
-            "max_average_model_calls_per_scenario",
+        parse_optional_non_negative_float(
             self.max_average_model_calls_per_scenario,
+            "max_average_model_calls_per_scenario",
         )
-        _validate_optional_non_negative(
-            "max_average_model_tokens_per_scenario",
+        parse_optional_non_negative_float(
             self.max_average_model_tokens_per_scenario,
+            "max_average_model_tokens_per_scenario",
         )
-        _validate_optional_non_negative(
-            "max_total_model_estimated_cost_micros",
+        parse_optional_non_negative_float(
             self.max_total_model_estimated_cost_micros,
+            "max_total_model_estimated_cost_micros",
         )
 
 
@@ -860,45 +861,13 @@ def _gate_maximum(name: str, actual: float, maximum: float) -> EvaluationGateChe
     )
 
 
-def _validate_optional_rate(name: str, value: float | None) -> None:
-    parse_optional_rate(value, name)
-
-
-def _validate_rate(name: str, value: float) -> None:
-    parse_rate(value, name)
-
-
-def _validate_optional_non_negative(name: str, value: float | int | None) -> None:
-    parse_optional_non_negative_float(value, name)
-
-
-def _validate_non_empty_name(field: str, value: str) -> None:
-    parse_non_empty_string(value, field)
-
-
-def _validate_tags(field: str, tags: tuple[str, ...]) -> None:
-    try:
-        parse_non_empty_string_sequence(
-            tags,
-            field,
-            empty_template=f"{field} must not contain empty values",
-            item_type_template=f"{field} must not contain empty values",
-        )
-    except ValueError as exc:
-        raise ValueError(str(exc)) from exc
-    duplicates = _duplicate_values(tags)
-    if duplicates:
-        raise ValueError(f"duplicate {field}: " + ", ".join(duplicates))
-
-
-def _duplicate_values(values: tuple[str, ...]) -> tuple[str, ...]:
-    seen: set[str] = set()
-    duplicates: set[str] = set()
-    for value in values:
-        if value in seen:
-            duplicates.add(value)
-        seen.add(value)
-    return tuple(sorted(duplicates))
+def _parse_unique_tags(field: str, tags: tuple[str, ...]) -> tuple[str, ...]:
+    return parse_unique_non_empty_string_sequence(
+        tags,
+        field,
+        empty_template=f"{field} must not contain empty values",
+        item_type_template=f"{field} must not contain empty values",
+    )
 
 
 def _evaluation_flag(report: ScenarioReport, flag: str) -> bool:

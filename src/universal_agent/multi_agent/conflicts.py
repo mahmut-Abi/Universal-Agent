@@ -18,6 +18,7 @@ from universal_agent.core import (
 )
 from universal_agent.core.config_validation import (
     ConfigPayload,
+    parse_non_empty_string,
     parse_payload,
     parse_string,
 )
@@ -63,16 +64,11 @@ class AgentActionProposal:
     reason: str = ""
 
     def __post_init__(self) -> None:
-        if not str(self.proposal_id).strip():
-            raise ValueError("agent proposal id must not be empty")
-        if not str(self.agent_id).strip():
-            raise ValueError("agent proposal agent_id must not be empty")
-        if not str(self.task_id).strip():
-            raise ValueError("agent proposal task_id must not be empty")
-        if not self.capability.strip():
-            raise ValueError("agent proposal capability must not be empty")
-        if not self.resource_key.strip():
-            raise ValueError("agent proposal resource_key must not be empty")
+        parse_non_empty_string(str(self.proposal_id), "agent proposal id")
+        parse_non_empty_string(str(self.agent_id), "agent proposal agent_id")
+        parse_non_empty_string(str(self.task_id), "agent proposal task_id")
+        parse_non_empty_string(self.capability, "agent proposal capability")
+        parse_non_empty_string(self.resource_key, "agent proposal resource_key")
         object.__setattr__(self, "arguments", immutable_json(self.arguments))
 
     @property

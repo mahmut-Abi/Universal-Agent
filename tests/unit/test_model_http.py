@@ -493,6 +493,72 @@ async def test_openai_sdk_transport_drives_responses_adapter() -> None:
 
 
 @pytest.mark.asyncio
+async def test_openai_sdk_transport_normalizes_endpoint_urls_with_httpx() -> None:
+    chat_factory = FakeOpenAIClientFactory(
+        immutable_json(
+            {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "content": json_text(
+                                {
+                                    "type": "finish",
+                                    "reason": "Runtime criteria are already satisfied.",
+                                }
+                            ),
+                        },
+                    }
+                ],
+            }
+        )
+    )
+    chat = OpenAIChatCompletionsModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        endpoint="https://api.openai.example.test/v1/chat/completions/",
+        transport=OpenAISdkModelTransport(cast(OpenAIClientFactory, chat_factory)),
+    )
+
+    await chat.decide(context())
+
+    assert chat_factory.records[0].base_url == "https://api.openai.example.test/v1"
+
+    responses_factory = FakeOpenAIClientFactory(
+        immutable_json(
+            {
+                "status": "completed",
+                "output_text": json_text(
+                    {
+                        "type": "finish",
+                        "reason": "Runtime criteria are already satisfied.",
+                    }
+                ),
+            }
+        )
+    )
+    responses = OpenAIResponsesModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        endpoint="https://api.openai.example.test/v1/responses",
+        transport=OpenAISdkModelTransport(cast(OpenAIClientFactory, responses_factory)),
+    )
+
+    await responses.decide(context())
+
+    assert responses_factory.records[0].base_url == "https://api.openai.example.test/v1"
+
+    query_adapter = OpenAIChatCompletionsModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        endpoint="https://api.openai.example.test/v1/chat/completions?debug=true",
+        transport=OpenAISdkModelTransport(cast(OpenAIClientFactory, chat_factory)),
+    )
+    with pytest.raises(ValueError, match="query or fragment"):
+        await query_adapter.decide(context())
+
+
+@pytest.mark.asyncio
 async def test_openai_chat_completions_model_adapter_posts_structured_request() -> None:
     transport = RecordingTransport(
         immutable_json(

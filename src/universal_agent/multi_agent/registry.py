@@ -10,7 +10,12 @@ from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import DomainIdentity, JsonMapping, SessionId
-from universal_agent.core.config_validation import ConfigPayload, pydantic_error_details
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    parse_non_empty_string,
+    parse_non_empty_string_sequence,
+    pydantic_error_details,
+)
 from universal_agent.multi_agent.contracts import AgentTaskRequest
 
 AgentId = NewType("AgentId", str)
@@ -73,10 +78,8 @@ class AgentProfileRecord:
     description: str = ""
 
     def __post_init__(self) -> None:
-        if not self.name.strip():
-            raise ValueError("agent profile name must not be empty")
-        if not self.version.strip():
-            raise ValueError("agent profile version must not be empty")
+        parse_non_empty_string(self.name, "agent profile name")
+        parse_non_empty_string(self.version, "agent profile version")
         if not self.domains:
             raise ValueError("agent profile domains must not be empty")
         _reject_empty_items(self.permissions, "permissions")
@@ -97,14 +100,11 @@ class AgentInstanceRecord:
     endpoint: str | None = None
 
     def __post_init__(self) -> None:
-        if not str(self.agent_id).strip():
-            raise ValueError("agent instance id must not be empty")
-        if not self.profile_name.strip():
-            raise ValueError("agent instance profile_name must not be empty")
-        if not self.profile_version.strip():
-            raise ValueError("agent instance profile_version must not be empty")
-        if self.endpoint is not None and not self.endpoint.strip():
-            raise ValueError("agent instance endpoint must not be empty")
+        parse_non_empty_string(str(self.agent_id), "agent instance id")
+        parse_non_empty_string(self.profile_name, "agent instance profile_name")
+        parse_non_empty_string(self.profile_version, "agent instance profile_version")
+        if self.endpoint is not None:
+            parse_non_empty_string(self.endpoint, "agent instance endpoint")
 
     @property
     def profile_identity(self) -> tuple[str, str]:
@@ -303,9 +303,7 @@ class AgentRegistry:
 
 
 def _reject_empty_items(values: tuple[str, ...], field_name: str) -> None:
-    for index, value in enumerate(values):
-        if not value.strip():
-            raise ValueError(f"agent profile {field_name}[{index}] must not be empty")
+    parse_non_empty_string_sequence(values, f"agent profile {field_name}")
 
 
 def _optional_session_id(value: str | None) -> SessionId | None:

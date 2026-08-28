@@ -16,6 +16,7 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
+    duplicate_values,
     json_mapping,
     parse_json_object,
     parse_non_empty_string,
@@ -119,7 +120,7 @@ class EvaluationDatasetManifest:
             raise EvaluationDatasetValidationError(
                 "evaluation dataset must include at least one suite"
             )
-        duplicates = _duplicates(tuple(suite.name for suite in self.suites))
+        duplicates = duplicate_values(suite.name for suite in self.suites)
         if duplicates:
             raise EvaluationDatasetValidationError(
                 "duplicate evaluation dataset suites: " + ", ".join(duplicates)
@@ -504,16 +505,6 @@ def _require_non_empty(value: str, field_name: str) -> None:
         parse_non_empty_string(value, field_name)
     except ValueError as exc:
         raise EvaluationDatasetValidationError(str(exc)) from exc
-
-
-def _duplicates(values: tuple[str, ...]) -> tuple[str, ...]:
-    seen: set[str] = set()
-    duplicates: set[str] = set()
-    for value in values:
-        if value in seen:
-            duplicates.add(value)
-        seen.add(value)
-    return tuple(sorted(duplicates))
 
 
 def _format_identity(identity: EvaluationDatasetIdentity) -> str:

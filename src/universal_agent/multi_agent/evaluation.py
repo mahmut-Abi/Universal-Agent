@@ -5,6 +5,7 @@ from types import MappingProxyType
 
 from universal_agent.core import JsonMapping
 from universal_agent.core.config_validation import (
+    duplicate_values,
     parse_bool,
     parse_json_object,
     parse_json_object_sequence,
@@ -324,14 +325,9 @@ def _validate_non_negative(name: str, value: int | None) -> None:
 
 
 def _reject_duplicates(label: str, values: tuple[object, ...]) -> None:
-    seen: set[object] = set()
-    duplicates: set[str] = set()
-    for value in values:
-        if value in seen:
-            duplicates.add(str(value))
-        seen.add(value)
+    duplicates = duplicate_values(values)
     if duplicates:
-        raise ValueError(f"duplicate {label}: " + ", ".join(sorted(duplicates)))
+        raise ValueError(f"duplicate {label}: " + ", ".join(duplicates))
 
 
 def _format_values(values: tuple[object, ...]) -> str:

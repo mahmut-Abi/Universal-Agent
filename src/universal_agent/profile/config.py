@@ -11,8 +11,10 @@ from universal_agent.core import JsonCodecError, JsonValue, read_json_file
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
+    duplicate_values,
     json_mapping,
     parse_json_object,
+    parse_non_empty_string,
     parse_payload,
 )
 
@@ -89,19 +91,11 @@ class ProfileConfig:
         return config
 
     def validate(self) -> None:
-        if not self.name.strip():
-            raise ValueError("profile name must not be empty")
-        if not self.version.strip():
-            raise ValueError("profile version must not be empty")
-        if self.domain.name is None or not self.domain.name.strip():
-            raise ValueError("profile domain name must not be empty")
-        if self.domain.version is None or not self.domain.version.strip():
-            raise ValueError("profile domain version must not be empty")
+        _require_non_empty(self.name, "profile name")
+        _require_non_empty(self.version, "profile version")
+        _require_domain_identity(self.domain)
         for domain in self.configured_domains():
-            if domain.name is None or not domain.name.strip():
-                raise ValueError("profile domain name must not be empty")
-            if domain.version is None or not domain.version.strip():
-                raise ValueError("profile domain version must not be empty")
+            _require_domain_identity(domain)
         duplicates = _duplicate_domain_configs(self.configured_domains())
         if duplicates:
             raise ValueError("duplicate profile domains: " + ", ".join(duplicates))
@@ -194,14 +188,9 @@ class ProfileRegistry:
     profiles: tuple[AgentProfile, ...] = ()
 
     def __post_init__(self) -> None:
-        seen: set[str] = set()
-        duplicates: set[str] = set()
-        for profile in self.profiles:
-            if profile.name in seen:
-                duplicates.add(profile.name)
-            seen.add(profile.name)
+        duplicates = duplicate_values(profile.name for profile in self.profiles)
         if duplicates:
-            raise ValueError("duplicate profiles: " + ", ".join(sorted(duplicates)))
+            raise ValueError("duplicate profiles: " + ", ".join(duplicates))
 
     def all(self) -> tuple[AgentProfile, ...]:
         return tuple(sorted(self.profiles, key=lambda item: item.name))
@@ -301,14 +290,16 @@ def _domain_configs(
 
 
 def _duplicate_domain_configs(domains: tuple[DomainConfig, ...]) -> tuple[str, ...]:
-    seen: set[tuple[str | None, str | None]] = set()
-    duplicates: set[tuple[str | None, str | None]] = set()
-    for domain in domains:
-        key = (domain.name, domain.version)
-        if key in seen:
-            duplicates.add(key)
-        seen.add(key)
-    return tuple(f"{name or ''}@{version or ''}" for name, version in sorted(duplicates))
+    return duplicate_values(f"{domain.name or ''}@{domain.version or ''}" for domain in domains)
+
+
+def _require_domain_identity(domain: DomainConfig) -> None:
+    _require_non_empty(domain.name or "", "profile domain name")
+    _require_non_empty(domain.version or "", "profile domain version")
+
+
+def _require_non_empty(value: str, field: str) -> None:
+    parse_non_empty_string(value, field)
 
 
 def _domain_identities(

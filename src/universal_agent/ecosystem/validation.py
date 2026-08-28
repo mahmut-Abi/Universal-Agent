@@ -5,6 +5,7 @@ from typing import Any, Protocol, cast
 
 from universal_agent.core import DomainIdentity
 from universal_agent.core.config_validation import (
+    duplicate_values,
     parse_non_empty_string,
     parse_non_empty_string_sequence,
     parse_optional_lower_sha256_hex_digest,
@@ -57,18 +58,12 @@ def _dependency_cycles(
 
 
 def _reject_duplicates(label: str, identities: tuple[str, ...]) -> None:
-    seen: set[str] = set()
-    duplicates: list[str] = []
-    for identity in identities:
-        if identity in seen:
-            duplicates.append(identity)
-            continue
-        seen.add(identity)
+    duplicates = duplicate_values(identities)
     if duplicates:
         from universal_agent.ecosystem.models import EcosystemRegistryValidationError
 
         raise EcosystemRegistryValidationError(
-            f"duplicate {label} references: {', '.join(dict.fromkeys(duplicates))}"
+            f"duplicate {label} references: {', '.join(duplicates)}"
         )
 
 

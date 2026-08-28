@@ -191,7 +191,10 @@ async def run_cli(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    return asyncio.run(run_cli(argv))
+    try:
+        return asyncio.run(run_cli(argv))
+    except KeyboardInterrupt:
+        return 130
 
 
 def _service_from_args(args: argparse.Namespace) -> RuntimeService:
@@ -585,17 +588,20 @@ async def _dispatch_serve(
         env_key=cast(str | None, args.read_only_auth_token_env),
         label="read-only auth token",
     )
-    server = AgentdHttpServer(
-        AgentdApp(
-            service,
-            auth=AgentdAuthPolicy(
-                bearer_token=auth_token,
-                read_only_bearer_token=read_only_auth_token,
+    try:
+        server = AgentdHttpServer(
+            AgentdApp(
+                service,
+                auth=AgentdAuthPolicy(
+                    bearer_token=auth_token,
+                    read_only_bearer_token=read_only_auth_token,
+                ),
+                evaluation_report_dir=cast(str | None, args.evaluation_report_dir),
             ),
-            evaluation_report_dir=cast(str | None, args.evaluation_report_dir),
-        ),
-        AgentdServerConfig(host=host, port=port),
-    )
+            AgentdServerConfig(host=host, port=port),
+        )
+    except OSError as exc:
+        raise ValueError(f"failed to bind agentd server on {host}:{port}: {exc}") from exc
     try:
         _write_json(
             out,

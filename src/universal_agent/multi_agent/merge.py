@@ -10,6 +10,7 @@ from universal_agent.core import JsonMapping
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
+    duplicate_values,
     parse_payload,
     parse_string,
 )
@@ -288,13 +289,7 @@ def _conflict_evidence_ids(
 
 
 def _duplicate_task_ids(task_ids: tuple[AgentTaskId, ...]) -> tuple[str, ...]:
-    seen: set[AgentTaskId] = set()
-    duplicates: set[str] = set()
-    for task_id in task_ids:
-        if task_id in seen:
-            duplicates.add(str(task_id))
-        seen.add(task_id)
-    return tuple(sorted(duplicates))
+    return duplicate_values(task_ids)
 
 
 def _agent_task_ids(values: list[str]) -> tuple[AgentTaskId, ...]:

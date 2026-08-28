@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any, Protocol, cast
-from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI, OpenAIError
@@ -698,16 +697,15 @@ def _openai_headers(api_key: str, extra_headers: Mapping[str, str]) -> Mapping[s
 
 
 def _openai_base_url(endpoint: str, resource_path: str) -> str:
-    parsed = urlsplit(endpoint)
-    if parsed.query or parsed.fragment:
+    url = httpx.URL(endpoint)
+    if url.query or url.fragment:
         raise ValueError("OpenAI model endpoint must not include query or fragment")
-    path = parsed.path.rstrip("/")
+    path = url.path.rstrip("/")
     normalized_resource_path = resource_path.rstrip("/")
     if path.endswith(normalized_resource_path):
         path = path[: -len(normalized_resource_path)].rstrip("/")
-        path = "" if not path else path
-        return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
-    return endpoint.rstrip("/")
+        return str(url.copy_with(path=path))
+    return str(url.copy_with(path=path))
 
 
 def _openai_response_mapping(response: object, field_name: str) -> JsonMapping:

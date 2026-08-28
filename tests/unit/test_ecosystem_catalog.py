@@ -633,6 +633,15 @@ def test_ecosystem_registry_plans_and_installs_full_ecosystem_artifacts(
     assert result.installed_domain_packages[0].identity.name == "kubernetes"
     assert result.installed_evaluation_datasets[0].identity.name == "kubernetes-remediation"
     assert result.installed_profiles[0].path.name == "kubernetes.profile.json"
+    with pytest.raises(
+        EcosystemRegistryInstallError,
+        match=r"evaluation datasets already registered or duplicated in install plan: "
+        r"kubernetes-remediation@1\.0\.0",
+    ):
+        install_ecosystem(
+            manifest,
+            evaluation_dataset_registry=result.evaluation_datasets,
+        )
 
 
 def test_ecosystem_registry_installs_domain_packages_from_relative_paths(
