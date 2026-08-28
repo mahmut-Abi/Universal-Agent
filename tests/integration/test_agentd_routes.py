@@ -1404,6 +1404,13 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
             immutable_json({"before": "2026-01-01T00:00:00"}),
         )
     )
+    non_string_prune_before = await app.handle(
+        HttpRequest(
+            "POST",
+            "/v1/distributed/prune-terminal",
+            immutable_json({"before": 123}),
+        )
+    )
     expired_work = coordinator.queue.lease(
         worker_id=WorkerId("worker-a"),
         ttl_seconds=1,
@@ -1458,6 +1465,11 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
     assert invalid_prune_before.body["error"] == {
         "code": "bad_request",
         "message": "distributed prune before must include a timezone",
+    }
+    assert non_string_prune_before.status_code == 400
+    assert non_string_prune_before.body["error"] == {
+        "code": "bad_request",
+        "message": "distributed prune before must be a string",
     }
     assert expired.status_code == 200
     expired_items = expired.body["expired_work_items"]

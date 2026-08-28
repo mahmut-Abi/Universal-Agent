@@ -25,6 +25,7 @@ from universal_agent.core.config_validation import (
     PydanticNonEmptyString,
     parse_non_empty_string_sequence,
     parse_optional_non_empty_string,
+    parse_optional_string,
     pydantic_error_details,
     pydantic_error_message,
 )
@@ -257,11 +258,9 @@ def _optional_datetime_field(
     key: str,
     field: str,
 ) -> datetime | None:
-    value = payload.get(key)
+    value = parse_optional_string(payload.get(key), field)
     if value is None:
         return None
-    if not isinstance(value, str):
-        raise ValueError(f"{field} must be an ISO 8601 datetime string")
     return parse_iso_datetime(
         value,
         field=field,
