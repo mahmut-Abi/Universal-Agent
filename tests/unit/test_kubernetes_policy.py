@@ -79,6 +79,20 @@ def test_kubernetes_scale_policy_uses_pydantic_strict_argument_types() -> None:
     assert result.reason == "scale_workload replicas must be an integer"
 
 
+def test_kubernetes_scale_policy_uses_pydantic_non_empty_arguments() -> None:
+    empty_namespace = KubernetesScalePolicy().evaluate(
+        scale_policy_context(arguments={"namespace": " "})
+    )
+    empty_name = KubernetesScalePolicy().evaluate(scale_policy_context(arguments={"name": " "}))
+
+    assert empty_namespace is not None
+    assert empty_namespace.effect is PolicyEffect.DENY
+    assert empty_namespace.reason == "scale_workload requires a namespace"
+    assert empty_name is not None
+    assert empty_name.effect is PolicyEffect.DENY
+    assert empty_name.reason == "scale_workload target does not match the workload name"
+
+
 def test_kubernetes_scale_policy_rejects_unbounded_replicas() -> None:
     low = KubernetesScalePolicy().evaluate(scale_policy_context(arguments={"replicas": 0}))
     high = KubernetesScalePolicy().evaluate(scale_policy_context(arguments={"replicas": 11}))

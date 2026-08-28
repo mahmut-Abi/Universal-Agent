@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from universal_agent.core import JsonValue
 from universal_agent.domains.kubernetes import resources as k8s
 
@@ -97,6 +99,31 @@ def test_event_summary_maps_kubernetes_alias_fields() -> None:
         "involved_object_kind": "Pod",
         "involved_object_name": "api-123",
     }
+
+
+def test_kubernetes_argument_helpers_use_structured_scalar_validation() -> None:
+    assert k8s.required_string({"name": "api"}, "name") == "api"
+    assert k8s.required_int({"replicas": 3}, "replicas") == 3
+    assert k8s.positive_int(2, default=100) == 2
+    assert k8s.positive_int(None, default=100) == 100
+
+    with pytest.raises(ValueError, match="Kubernetes argument name must be a non-empty string"):
+        k8s.required_string({"name": True}, "name")
+    with pytest.raises(ValueError, match="Kubernetes argument replicas must be an integer"):
+        k8s.required_int({"replicas": True}, "replicas")
+    with pytest.raises(ValueError, match="Kubernetes integer argument must be positive"):
+        k8s.positive_int("10", default=100)
+
+
+def test_kubernetes_optional_helpers_remain_tolerant_for_cluster_json() -> None:
+    assert k8s.optional_int(3) == 3
+    assert k8s.optional_int(True) is None
+    assert k8s.optional_int("3") is None
+    assert k8s.optional_string("api") == "api"
+    assert k8s.optional_string(3) is None
+    assert k8s.optional_resource_version("rv-1") == "rv-1"
+    assert k8s.optional_resource_version(42) == "42"
+    assert k8s.optional_resource_version(True) is None
 
 
 def test_snake_case_uses_library_case_conversion_with_kubernetes_separators() -> None:

@@ -11,7 +11,11 @@ from universal_agent.core import JsonMapping, JsonValue
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
+    parse_int,
     parse_json_object,
+    parse_non_empty_string,
+    parse_optional_int,
+    parse_positive_int,
 )
 
 
@@ -378,45 +382,52 @@ def stable_mutation_id(stdout: str) -> str:
 
 
 def required_string(arguments: JsonMapping, key: str) -> str:
-    value = arguments.get(key)
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"Kubernetes argument {key} must be a non-empty string")
-    return value
+    try:
+        return parse_non_empty_string(
+            arguments.get(key),
+            f"Kubernetes argument {key}",
+            empty_template=f"Kubernetes argument {key} must be a non-empty string",
+        )
+    except ValueError as exc:
+        raise ValueError(f"Kubernetes argument {key} must be a non-empty string") from exc
 
 
 def required_int(arguments: JsonMapping, key: str) -> int:
-    value = arguments.get(key)
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise ValueError(f"Kubernetes argument {key} must be an integer")
-    return value
+    try:
+        return parse_int(arguments.get(key), f"Kubernetes argument {key}")
+    except ValueError as exc:
+        raise ValueError(f"Kubernetes argument {key} must be an integer") from exc
 
 
 def positive_int(value: JsonValue | None, *, default: int) -> int:
     if value is None:
         return default
-    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-        raise ValueError("Kubernetes integer argument must be positive")
-    return value
+    try:
+        return parse_positive_int(value, "Kubernetes integer argument")
+    except ValueError as exc:
+        raise ValueError("Kubernetes integer argument must be positive") from exc
 
 
 def optional_int(value: JsonValue | None) -> int | None:
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value
-    return None
+    try:
+        return parse_optional_int(value, "Kubernetes optional integer")
+    except ValueError:
+        return None
 
 
 def optional_resource_version(value: JsonValue | None) -> str | None:
-    if isinstance(value, str) and value.strip():
-        return value
-    if isinstance(value, int) and not isinstance(value, bool):
-        return str(value)
-    return None
+    text = optional_string(value)
+    if text is not None:
+        return text
+    parsed_int = optional_int(value)
+    return None if parsed_int is None else str(parsed_int)
 
 
 def optional_string(value: JsonValue | None) -> str | None:
-    if isinstance(value, str) and value.strip():
-        return value
-    return None
+    try:
+        return parse_non_empty_string(value, "Kubernetes optional string")
+    except ValueError:
+        return None
 
 
 def string_value(value: JsonValue | None) -> str:

@@ -5,18 +5,19 @@ from pydantic import ValidationError as PydanticValidationError
 from universal_agent.core import PolicyContext, PolicyEffect, PolicyResult
 from universal_agent.core.config_validation import (
     ConfigPayload,
+    PydanticNonEmptyString,
     parse_bounded_int,
     pydantic_error_details,
 )
 
 
 class _KubernetesEnvironmentPayload(ConfigPayload):
-    environment: str
+    environment: PydanticNonEmptyString
 
 
 class _ScaleWorkloadArgumentsPayload(ConfigPayload):
-    name: str
-    namespace: str
+    name: PydanticNonEmptyString
+    namespace: PydanticNonEmptyString
     replicas: int
 
 
@@ -57,16 +58,10 @@ class KubernetesScalePolicy:
         name = arguments.name
         namespace = arguments.namespace
         replicas = arguments.replicas
-        if not isinstance(name, str) or not name or target != f"deployment/{name}":
+        if target != f"deployment/{name}":
             return PolicyResult(
                 PolicyEffect.DENY,
                 "scale_workload target does not match the workload name",
-                self.name,
-            )
-        if not isinstance(namespace, str) or not namespace:
-            return PolicyResult(
-                PolicyEffect.DENY,
-                "scale_workload requires a namespace",
                 self.name,
             )
         expected_resource = _expected_criterion(context, "resource")
@@ -114,8 +109,7 @@ def _environment_name(context: PolicyContext) -> str | None:
         payload = _KubernetesEnvironmentPayload.model_validate(dict(context.environment))
     except PydanticValidationError:
         return None
-    environment = payload.environment.strip()
-    return environment or None
+    return payload.environment.strip()
 
 
 def _scale_workload_arguments(
