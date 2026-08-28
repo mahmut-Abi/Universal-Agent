@@ -10,6 +10,7 @@ from universal_agent.core.config_validation import (
     parse_json_object_sequence,
     parse_optional_bool,
     parse_optional_int,
+    parse_optional_non_negative_int,
     parse_string,
     parse_string_sequence,
 )
@@ -315,8 +316,11 @@ def _review_conflict_count(merge: AgentResultMerge) -> int:
 
 
 def _validate_non_negative(name: str, value: int | None) -> None:
-    if value is not None and value < 0:
-        raise ValueError(f"{name} must be non-negative")
+    parse_optional_non_negative_int(
+        value,
+        name,
+        range_template="{path} must be non-negative",
+    )
 
 
 def _reject_duplicates(label: str, values: tuple[object, ...]) -> None:

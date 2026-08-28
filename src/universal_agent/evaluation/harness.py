@@ -14,6 +14,13 @@ from universal_agent.core import (
     Task,
     immutable_json,
 )
+from universal_agent.core.config_validation import (
+    parse_non_empty_string,
+    parse_non_empty_string_sequence,
+    parse_optional_non_negative_float,
+    parse_optional_rate,
+    parse_rate,
+)
 from universal_agent.operations import AuditRecordView, RuntimeMetricsView, build_runtime_metrics
 from universal_agent.runtime import RuntimeEventView, RuntimeRun, SessionSummaryView, SessionView
 
@@ -854,29 +861,31 @@ def _gate_maximum(name: str, actual: float, maximum: float) -> EvaluationGateChe
 
 
 def _validate_optional_rate(name: str, value: float | None) -> None:
-    if value is not None:
-        _validate_rate(name, value)
+    parse_optional_rate(value, name)
 
 
 def _validate_rate(name: str, value: float) -> None:
-    if value < 0.0 or value > 1.0:
-        raise ValueError(f"{name} must be between 0.0 and 1.0")
+    parse_rate(value, name)
 
 
 def _validate_optional_non_negative(name: str, value: float | int | None) -> None:
-    if value is not None and value < 0:
-        raise ValueError(f"{name} must be non-negative")
+    parse_optional_non_negative_float(value, name)
 
 
 def _validate_non_empty_name(field: str, value: str) -> None:
-    if not value.strip():
-        raise ValueError(f"{field} must not be empty")
+    parse_non_empty_string(value, field)
 
 
 def _validate_tags(field: str, tags: tuple[str, ...]) -> None:
-    empty = tuple(tag for tag in tags if not tag.strip())
-    if empty:
-        raise ValueError(f"{field} must not contain empty values")
+    try:
+        parse_non_empty_string_sequence(
+            tags,
+            field,
+            empty_template=f"{field} must not contain empty values",
+            item_type_template=f"{field} must not contain empty values",
+        )
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
     duplicates = _duplicate_values(tags)
     if duplicates:
         raise ValueError(f"duplicate {field}: " + ", ".join(duplicates))

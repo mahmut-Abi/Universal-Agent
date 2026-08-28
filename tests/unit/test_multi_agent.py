@@ -280,6 +280,23 @@ def test_agent_task_usage_rejects_invalid_values() -> None:
     with pytest.raises(ValueError, match="estimated_cost must not be negative"):
         AgentTaskUsage(estimated_cost=-0.1)
 
+    with pytest.raises(ValueError, match="input_tokens must be an integer"):
+        AgentTaskUsage(input_tokens=cast(int, True))
+
+    with pytest.raises(ValueError, match="currency must not be empty"):
+        AgentTaskUsage(currency=" ")
+
+
+def test_agent_task_constraints_use_strict_pydantic_numeric_validation() -> None:
+    with pytest.raises(ValueError, match="max_depth must be an integer"):
+        AgentTaskConstraints(max_depth=cast(int, True))
+
+    with pytest.raises(ValueError, match="max_duration_seconds must be positive"):
+        AgentTaskConstraints(max_duration_seconds=0)
+
+    with pytest.raises(ValueError, match=r"allowed_profiles\[0\] must not be empty"):
+        AgentTaskConstraints(allowed_profiles=("",))
+
 
 def test_agent_task_decoders_reject_invalid_payload_values() -> None:
     with pytest.raises(ValueError, match="unsupported agent task result status"):

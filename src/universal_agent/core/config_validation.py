@@ -5,7 +5,18 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints, TypeAdapter
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+    StringConstraints,
+    TypeAdapter,
+)
 from pydantic import JsonValue as PydanticJsonValue
 from pydantic import ValidationError as PydanticValidationError
 
@@ -25,12 +36,21 @@ __all__ = [
     "parse_lower_sha256_hex_digest",
     "parse_non_empty_string",
     "parse_non_empty_string_sequence",
+    "parse_non_negative_float",
+    "parse_non_negative_int",
     "parse_optional_bool",
     "parse_optional_int",
     "parse_optional_lower_sha256_hex_digest",
     "parse_optional_non_empty_string",
+    "parse_optional_non_negative_float",
+    "parse_optional_non_negative_int",
+    "parse_optional_positive_float",
+    "parse_optional_rate",
     "parse_optional_string",
     "parse_payload",
+    "parse_positive_float",
+    "parse_positive_int",
+    "parse_rate",
     "parse_string",
     "parse_string_sequence",
     "pydantic_error_details",
@@ -61,6 +81,7 @@ _PydanticLowerSha256HexDigest = Annotated[
     str,
     StringConstraints(pattern=r"^[0-9a-f]{64}$"),
 ]
+_PydanticRate = Annotated[float, Field(ge=0.0, le=1.0)]
 
 
 _JSON_OBJECT_ADAPTER: TypeAdapter[dict[str, PydanticJsonValue]] = TypeAdapter(
@@ -72,6 +93,11 @@ _JSON_OBJECT_SEQUENCE_ADAPTER: TypeAdapter[list[dict[str, PydanticJsonValue]]] =
 _JSON_VALUE_ADAPTER: TypeAdapter[PydanticJsonValue] = TypeAdapter(PydanticJsonValue)
 _BOOL_ADAPTER: TypeAdapter[bool] = TypeAdapter(bool)
 _INT_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
+_NON_NEGATIVE_FLOAT_ADAPTER: TypeAdapter[NonNegativeFloat] = TypeAdapter(NonNegativeFloat)
+_NON_NEGATIVE_INT_ADAPTER: TypeAdapter[NonNegativeInt] = TypeAdapter(NonNegativeInt)
+_POSITIVE_FLOAT_ADAPTER: TypeAdapter[PositiveFloat] = TypeAdapter(PositiveFloat)
+_POSITIVE_INT_ADAPTER: TypeAdapter[PositiveInt] = TypeAdapter(PositiveInt)
+_RATE_ADAPTER: TypeAdapter[_PydanticRate] = TypeAdapter(_PydanticRate)
 _STRING_ADAPTER: TypeAdapter[str] = TypeAdapter(str)
 _NON_EMPTY_STRING_ADAPTER: TypeAdapter[_PydanticNonEmptyString] = TypeAdapter(
     _PydanticNonEmptyString
@@ -265,6 +291,95 @@ def parse_optional_int(value: object, field: str) -> int | None:
     if value is None:
         return None
     return parse_int(value, field)
+
+
+def parse_non_negative_int(
+    value: object,
+    field: str,
+    *,
+    range_template: str = "{path} must not be negative",
+) -> int:
+    try:
+        return _NON_NEGATIVE_INT_ADAPTER.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        details = pydantic_error_details(exc, field)
+        if details.error_type == "greater_than_equal":
+            raise ValueError(range_template.format(path=details.path)) from exc
+        raise ValueError(pydantic_error_message(exc, field)) from exc
+
+
+def parse_non_negative_float(
+    value: object,
+    field: str,
+    *,
+    range_template: str = "{path} must be non-negative",
+) -> float:
+    try:
+        return _NON_NEGATIVE_FLOAT_ADAPTER.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        details = pydantic_error_details(exc, field)
+        if details.error_type == "greater_than_equal":
+            raise ValueError(range_template.format(path=details.path)) from exc
+        raise ValueError(pydantic_error_message(exc, field)) from exc
+
+
+def parse_optional_non_negative_float(value: object, field: str) -> float | None:
+    if value is None:
+        return None
+    return parse_non_negative_float(value, field)
+
+
+def parse_optional_non_negative_int(
+    value: object,
+    field: str,
+    *,
+    range_template: str = "{path} must not be negative",
+) -> int | None:
+    if value is None:
+        return None
+    return parse_non_negative_int(value, field, range_template=range_template)
+
+
+def parse_positive_int(value: object, field: str) -> int:
+    try:
+        return _POSITIVE_INT_ADAPTER.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        details = pydantic_error_details(exc, field)
+        if details.error_type == "greater_than":
+            raise ValueError(f"{details.path} must be positive") from exc
+        raise ValueError(pydantic_error_message(exc, field)) from exc
+
+
+def parse_positive_float(value: object, field: str) -> float:
+    try:
+        return _POSITIVE_FLOAT_ADAPTER.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        details = pydantic_error_details(exc, field)
+        if details.error_type == "greater_than":
+            raise ValueError(f"{details.path} must be positive") from exc
+        raise ValueError(pydantic_error_message(exc, field)) from exc
+
+
+def parse_optional_positive_float(value: object, field: str) -> float | None:
+    if value is None:
+        return None
+    return parse_positive_float(value, field)
+
+
+def parse_rate(value: object, field: str) -> float:
+    try:
+        return _RATE_ADAPTER.validate_python(value, strict=True)
+    except PydanticValidationError as exc:
+        details = pydantic_error_details(exc, field)
+        if details.error_type in {"greater_than_equal", "less_than_equal"}:
+            raise ValueError(f"{details.path} must be between 0.0 and 1.0") from exc
+        raise ValueError(pydantic_error_message(exc, field)) from exc
+
+
+def parse_optional_rate(value: object, field: str) -> float | None:
+    if value is None:
+        return None
+    return parse_rate(value, field)
 
 
 def json_mapping(value: Mapping[str, PydanticJsonValue]) -> JsonMapping:

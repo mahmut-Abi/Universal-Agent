@@ -23,6 +23,13 @@ from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     json_mapping,
+    parse_non_empty_string,
+    parse_non_empty_string_sequence,
+    parse_non_negative_float,
+    parse_non_negative_int,
+    parse_optional_non_negative_float,
+    parse_optional_positive_float,
+    parse_positive_int,
     pydantic_error_details,
 )
 from universal_agent.evidence import EvidenceId
@@ -101,14 +108,17 @@ class AgentTaskConstraints:
     required_permissions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.max_depth < 0:
-            raise ValueError("agent task max_depth must be non-negative")
-        if self.max_children < 1:
-            raise ValueError("agent task max_children must be positive")
-        if self.max_duration_seconds is not None and self.max_duration_seconds <= 0:
-            raise ValueError("agent task max_duration_seconds must be positive")
-        if self.max_cost is not None and self.max_cost < 0:
-            raise ValueError("agent task max_cost must be non-negative")
+        parse_non_negative_int(
+            self.max_depth,
+            "agent task max_depth",
+            range_template="{path} must be non-negative",
+        )
+        parse_positive_int(self.max_children, "agent task max_children")
+        parse_optional_positive_float(
+            self.max_duration_seconds,
+            "agent task max_duration_seconds",
+        )
+        parse_optional_non_negative_float(self.max_cost, "agent task max_cost")
         _reject_empty_items(self.allowed_profiles, "allowed_profiles")
         _reject_empty_items(self.required_permissions, "required_permissions")
 
@@ -119,8 +129,7 @@ class AgentExpectedOutput:
     schema: JsonMapping = field(default_factory=immutable_json)
 
     def __post_init__(self) -> None:
-        if not self.type.strip():
-            raise ValueError("agent expected output type must not be empty")
+        parse_non_empty_string(self.type, "agent expected output type")
         object.__setattr__(self, "schema", immutable_json(self.schema))
 
 
@@ -141,10 +150,12 @@ class AgentTaskRequest:
     def __post_init__(self) -> None:
         if self.api_version != AGENT_TASK_API_VERSION:
             raise ValueError(f"unsupported agent task api version: {self.api_version}")
-        if not self.goal.strip():
-            raise ValueError("agent task goal must not be empty")
-        if self.delegation_depth < 0:
-            raise ValueError("agent task delegation_depth must be non-negative")
+        parse_non_empty_string(self.goal, "agent task goal")
+        parse_non_negative_int(
+            self.delegation_depth,
+            "agent task delegation_depth",
+            range_template="{path} must be non-negative",
+        )
         if self.delegation_depth > self.constraints.max_depth:
             raise ValueError("agent task delegation_depth exceeds max_depth")
         object.__setattr__(self, "input", immutable_json(self.input))
@@ -161,16 +172,15 @@ class AgentTaskUsage:
     currency: str = "USD"
 
     def __post_init__(self) -> None:
-        if self.model_call_count < 0:
-            raise ValueError("agent task usage model_call_count must not be negative")
-        if self.input_tokens < 0:
-            raise ValueError("agent task usage input_tokens must not be negative")
-        if self.output_tokens < 0:
-            raise ValueError("agent task usage output_tokens must not be negative")
-        if self.estimated_cost < 0:
-            raise ValueError("agent task usage estimated_cost must not be negative")
-        if not self.currency.strip():
-            raise ValueError("agent task usage currency must not be empty")
+        parse_non_negative_int(self.model_call_count, "agent task usage model_call_count")
+        parse_non_negative_int(self.input_tokens, "agent task usage input_tokens")
+        parse_non_negative_int(self.output_tokens, "agent task usage output_tokens")
+        parse_non_negative_float(
+            self.estimated_cost,
+            "agent task usage estimated_cost",
+            range_template="{path} must not be negative",
+        )
+        parse_non_empty_string(self.currency, "agent task usage currency")
 
     @property
     def total_tokens(self) -> int:
@@ -192,8 +202,7 @@ class AgentTaskResult:
     def __post_init__(self) -> None:
         if self.api_version != AGENT_TASK_API_VERSION:
             raise ValueError(f"unsupported agent task result api version: {self.api_version}")
-        if not str(self.task_id).strip():
-            raise ValueError("agent task result task_id must not be empty")
+        parse_non_empty_string(str(self.task_id), "agent task result task_id")
         if self.status is AgentTaskResultStatus.COMPLETED and self.error_code is not None:
             raise ValueError("completed agent task result cannot include error_code")
         if self.status is not AgentTaskResultStatus.COMPLETED and not self.reason.strip():
@@ -418,6 +427,9 @@ def _missing_contract_field_type(path: str) -> str:
 
 
 def _reject_empty_items(values: tuple[str, ...], field_name: str) -> None:
-    for index, value in enumerate(values):
-        if not value.strip():
-            raise ValueError(f"agent task {field_name}[{index}] must not be empty")
+    parse_non_empty_string_sequence(
+        values,
+        f"agent task {field_name}",
+        empty_template="{path} must not be empty",
+        item_type_template="{path} must not be empty",
+    )

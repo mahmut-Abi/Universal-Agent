@@ -51,5 +51,25 @@ async def test_scripted_model_adapter_exposes_last_usage_record() -> None:
 
 
 def test_model_usage_rejects_negative_values() -> None:
-    with pytest.raises(ValueError, match="input_tokens"):
+    with pytest.raises(ValueError, match="model usage input_tokens must not be negative"):
         ModelUsage("provider", "model", input_tokens=-1)
+
+    with pytest.raises(ValueError, match="model usage output_tokens must not be negative"):
+        ModelUsage("provider", "model", output_tokens=-1)
+
+    with pytest.raises(
+        ValueError,
+        match="model usage estimated_cost_micros must not be negative",
+    ):
+        ModelUsage("provider", "model", estimated_cost_micros=-1)
+
+
+def test_model_usage_uses_strict_pydantic_scalar_validation() -> None:
+    with pytest.raises(ValueError, match="model usage provider must not be empty"):
+        ModelUsage(" ", "model")
+
+    with pytest.raises(ValueError, match="model usage currency must not be empty"):
+        ModelUsage("provider", "model", currency="")
+
+    with pytest.raises(ValueError, match="model usage input_tokens must be an integer"):
+        ModelUsage("provider", "model", input_tokens=True)

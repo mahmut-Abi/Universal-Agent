@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from universal_agent.core import Decision, DecisionContext
+from universal_agent.core.config_validation import (
+    parse_non_empty_string,
+    parse_non_negative_int,
+)
 
 
 class ModelAdapter(Protocol):
@@ -22,18 +26,15 @@ class ModelUsage:
     currency: str = "USD"
 
     def __post_init__(self) -> None:
-        if not self.provider.strip():
-            raise ValueError("model usage provider must not be empty")
-        if not self.model.strip():
-            raise ValueError("model usage model must not be empty")
-        if self.input_tokens < 0:
-            raise ValueError("model usage input_tokens must not be negative")
-        if self.output_tokens < 0:
-            raise ValueError("model usage output_tokens must not be negative")
-        if self.estimated_cost_micros < 0:
-            raise ValueError("model usage estimated_cost_micros must not be negative")
-        if not self.currency.strip():
-            raise ValueError("model usage currency must not be empty")
+        parse_non_empty_string(self.provider, "model usage provider")
+        parse_non_empty_string(self.model, "model usage model")
+        parse_non_negative_int(self.input_tokens, "model usage input_tokens")
+        parse_non_negative_int(self.output_tokens, "model usage output_tokens")
+        parse_non_negative_int(
+            self.estimated_cost_micros,
+            "model usage estimated_cost_micros",
+        )
+        parse_non_empty_string(self.currency, "model usage currency")
 
     @property
     def total_tokens(self) -> int:

@@ -15,12 +15,21 @@ from universal_agent.core.config_validation import (
     parse_lower_sha256_hex_digest,
     parse_non_empty_string,
     parse_non_empty_string_sequence,
+    parse_non_negative_float,
+    parse_non_negative_int,
     parse_optional_bool,
     parse_optional_int,
     parse_optional_lower_sha256_hex_digest,
     parse_optional_non_empty_string,
+    parse_optional_non_negative_float,
+    parse_optional_non_negative_int,
+    parse_optional_positive_float,
+    parse_optional_rate,
     parse_optional_string,
     parse_payload,
+    parse_positive_float,
+    parse_positive_int,
+    parse_rate,
     parse_string,
     parse_string_sequence,
     pydantic_error_details,
@@ -104,6 +113,38 @@ def test_parse_lower_sha256_hex_digest_uses_pydantic_pattern_validation() -> Non
         parse_lower_sha256_hex_digest("A" * 64, "manifest_sha256")
     with pytest.raises(ValueError, match="manifest_sha256 must be a string"):
         parse_lower_sha256_hex_digest(123, "manifest_sha256")
+
+
+def test_parse_numeric_helpers_use_pydantic_range_validation() -> None:
+    assert parse_non_negative_int(0, "count") == 0
+    assert parse_non_negative_float(1, "cost") == 1.0
+    assert parse_optional_non_negative_float(None, "cost") is None
+    assert parse_optional_non_negative_float(1.25, "cost") == 1.25
+    assert parse_optional_non_negative_int(None, "count") is None
+    assert parse_optional_non_negative_int(2, "count") == 2
+    assert parse_positive_int(1, "limit") == 1
+    assert parse_positive_float(0.1, "timeout") == 0.1
+    assert parse_optional_positive_float(None, "timeout") is None
+    assert parse_rate(0.0, "pass_rate") == 0.0
+    assert parse_rate(1, "pass_rate") == 1.0
+    assert parse_optional_rate(None, "pass_rate") is None
+
+    with pytest.raises(ValueError, match="count must not be negative"):
+        parse_non_negative_int(-1, "count")
+    with pytest.raises(ValueError, match="cost must be non-negative"):
+        parse_non_negative_float(-0.1, "cost")
+    with pytest.raises(ValueError, match="limit must be positive"):
+        parse_positive_int(0, "limit")
+    with pytest.raises(ValueError, match="timeout must be positive"):
+        parse_positive_float(0.0, "timeout")
+    with pytest.raises(ValueError, match="count must be an integer"):
+        parse_non_negative_int(True, "count")
+    with pytest.raises(ValueError, match="cost must be a number"):
+        parse_non_negative_float("1.0", "cost")
+    with pytest.raises(ValueError, match=r"pass_rate must be between 0\.0 and 1\.0"):
+        parse_rate(1.1, "pass_rate")
+    with pytest.raises(ValueError, match="pass_rate must be a number"):
+        parse_rate(True, "pass_rate")
 
 
 def test_parse_scalar_helpers_use_strict_pydantic_validation() -> None:
