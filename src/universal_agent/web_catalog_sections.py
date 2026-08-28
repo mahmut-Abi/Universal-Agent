@@ -22,18 +22,19 @@ from universal_agent.web_types import WebConsoleSnapshot
 from universal_agent.web_ui import (
     _detail_list,
     _empty_paragraph,
-    _empty_table_row,
     _link,
     _raw_table_cell,
     _section,
-    _table,
-    _table_row,
+    _table_from_cells,
+    _table_section,
 )
 
 
 def _domains(snapshot: WebConsoleSnapshot) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Active Domains",
+        ("Domain", "Primary", "Capabilities", "Evaluators"),
+        (
             (
                 _raw_table_cell(
                     _link(
@@ -45,17 +46,9 @@ def _domains(snapshot: WebConsoleSnapshot) -> str:
                 len(domain.capability_names),
                 len(domain.evaluator_names),
             )
-        )
-        for domain in snapshot.domains
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No active domains", colspan=4))
-    return _section(
-        "Active Domains",
-        _table(
-            ("Domain", "Primary", "Capabilities", "Evaluators"),
-            tuple(rows),
+            for domain in snapshot.domains
         ),
+        empty_message="No active domains",
     )
 
 
@@ -74,8 +67,10 @@ def _domain_details(domain: DomainView | None) -> str:
 
 
 def _configured_domains(snapshot: WebConsoleSnapshot) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Configured Domains",
+        ("Domain", "Version", "Primary", "Backend", "Settings"),
+        (
             (
                 domain.name,
                 domain.version,
@@ -83,20 +78,17 @@ def _configured_domains(snapshot: WebConsoleSnapshot) -> str:
                 domain.backend or "default",
                 _value_text(domain.settings) if domain.settings else "none",
             )
-        )
-        for domain in snapshot.config.domains
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No configured domains", colspan=5))
-    return _section(
-        "Configured Domains",
-        _table(("Domain", "Version", "Primary", "Backend", "Settings"), tuple(rows)),
+            for domain in snapshot.config.domains
+        ),
+        empty_message="No configured domains",
     )
 
 
 def _runtime_secrets(snapshot: WebConsoleSnapshot) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Runtime Secrets",
+        ("Name", "Source", "Key", "Required", "Status"),
+        (
             (
                 secret.name,
                 secret.source,
@@ -104,30 +96,26 @@ def _runtime_secrets(snapshot: WebConsoleSnapshot) -> str:
                 "yes" if secret.required else "no",
                 _secret_status_text(secret.available, secret.status),
             )
-        )
-        for secret in snapshot.config.secrets
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No runtime secrets", colspan=5))
-    return _section(
-        "Runtime Secrets",
-        _table(("Name", "Source", "Key", "Required", "Status"), tuple(rows)),
+            for secret in snapshot.config.secrets
+        ),
+        empty_message="No runtime secrets",
     )
 
 
 def _environment(snapshot: WebConsoleSnapshot) -> str:
-    rows = [
-        _table_row((key, _value_text(value)))
-        for key, value in sorted(snapshot.config.environment.items())
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No environment settings", colspan=2))
-    return _section("Environment", _table(("Key", "Value"), tuple(rows)))
+    return _table_section(
+        "Environment",
+        ("Key", "Value"),
+        ((key, _value_text(value)) for key, value in sorted(snapshot.config.environment.items())),
+        empty_message="No environment settings",
+    )
 
 
 def _profiles(profiles: tuple[ProfileView, ...]) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Profile Catalog",
+        ("Profile", "Version", "Primary Domain", "Domains", "Description"),
+        (
             (
                 profile.name,
                 profile.version,
@@ -135,20 +123,26 @@ def _profiles(profiles: tuple[ProfileView, ...]) -> str:
                 _profile_domain_text(profile),
                 profile.description,
             )
-        )
-        for profile in profiles
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No profiles", colspan=5))
-    return _section(
-        "Profile Catalog",
-        _table(("Profile", "Version", "Primary Domain", "Domains", "Description"), tuple(rows)),
+            for profile in profiles
+        ),
+        empty_message="No profiles",
     )
 
 
 def _domain_packages(packages: tuple[DomainPackageView, ...]) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Domain Package Catalog",
+        (
+            "Package",
+            "Entrypoint",
+            "Capabilities",
+            "Dependencies",
+            "Required Tools",
+            "Resources",
+            "Security",
+            "Manifest",
+        ),
+        (
             (
                 _raw_table_cell(
                     _link(
@@ -164,32 +158,17 @@ def _domain_packages(packages: tuple[DomainPackageView, ...]) -> str:
                 _value_text(package.security),
                 package.manifest_path,
             )
-        )
-        for package in packages
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No domain packages", colspan=8))
-    return _section(
-        "Domain Package Catalog",
-        _table(
-            (
-                "Package",
-                "Entrypoint",
-                "Capabilities",
-                "Dependencies",
-                "Required Tools",
-                "Resources",
-                "Security",
-                "Manifest",
-            ),
-            tuple(rows),
+            for package in packages
         ),
+        empty_message="No domain packages",
     )
 
 
 def _capabilities(capabilities: tuple[CapabilityView, ...]) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Capability Catalog",
+        ("Capability", "Category", "Risk", "Domain", "Tools", "Description"),
+        (
             (
                 capability.name,
                 capability.category.value,
@@ -198,20 +177,17 @@ def _capabilities(capabilities: tuple[CapabilityView, ...]) -> str:
                 ", ".join(capability.tool_names),
                 capability.description,
             )
-        )
-        for capability in capabilities
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No capabilities", colspan=6))
-    return _section(
-        "Capability Catalog",
-        _table(("Capability", "Category", "Risk", "Domain", "Tools", "Description"), tuple(rows)),
+            for capability in capabilities
+        ),
+        empty_message="No capabilities",
     )
 
 
 def _tools(tools: tuple[ToolView, ...]) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Tool Catalog",
+        ("Tool", "Side Effect", "Risk", "Capabilities", "Required Args", "Timeout", "Domain"),
+        (
             (
                 tool.name,
                 tool.side_effect.value,
@@ -221,23 +197,17 @@ def _tools(tools: tuple[ToolView, ...]) -> str:
                 f"{tool.timeout_seconds:g}s",
                 f"{tool.domain_name}@{tool.domain_version}",
             )
-        )
-        for tool in tools
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No tools", colspan=7))
-    return _section(
-        "Tool Catalog",
-        _table(
-            ("Tool", "Side Effect", "Risk", "Capabilities", "Required Args", "Timeout", "Domain"),
-            tuple(rows),
+            for tool in tools
         ),
+        empty_message="No tools",
     )
 
 
 def _policies(policies: tuple[PolicyView, ...]) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Policy Catalog",
+        ("Policy", "Type", "Effect", "Categories", "Risks", "Capabilities", "Domain", "Reason"),
+        (
             (
                 policy.name,
                 policy.policy_type,
@@ -248,42 +218,33 @@ def _policies(policies: tuple[PolicyView, ...]) -> str:
                 f"{policy.domain_name}@{policy.domain_version}",
                 policy.description,
             )
-        )
-        for policy in policies
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No policies", colspan=8))
-    return _section(
-        "Policy Catalog",
-        _table(
-            ("Policy", "Type", "Effect", "Categories", "Risks", "Capabilities", "Domain", "Reason"),
-            tuple(rows),
+            for policy in policies
         ),
+        empty_message="No policies",
     )
 
 
 def _evaluators(evaluators: tuple[EvaluatorView, ...]) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Evaluator Catalog",
+        ("Evaluator", "Type", "Domain"),
+        (
             (
                 evaluator.name,
                 evaluator.evaluator_type,
                 f"{evaluator.domain_name}@{evaluator.domain_version}",
             )
-        )
-        for evaluator in evaluators
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No evaluators", colspan=3))
-    return _section(
-        "Evaluator Catalog",
-        _table(("Evaluator", "Type", "Domain"), tuple(rows)),
+            for evaluator in evaluators
+        ),
+        empty_message="No evaluators",
     )
 
 
 def _memory(memories: tuple[MemoryView, ...]) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Memory Catalog",
+        ("Memory", "Kind", "Subject", "Scope", "Confidence", "Source Session", "Content"),
+        (
             (
                 memory.memory_id,
                 memory.kind.value,
@@ -293,17 +254,9 @@ def _memory(memories: tuple[MemoryView, ...]) -> str:
                 memory.source_session_id or "none",
                 memory.content,
             )
-        )
-        for memory in memories
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No memory", colspan=7))
-    return _section(
-        "Memory Catalog",
-        _table(
-            ("Memory", "Kind", "Subject", "Scope", "Confidence", "Source Session", "Content"),
-            tuple(rows),
+            for memory in memories
         ),
+        empty_message="No memory",
     )
 
 
@@ -336,12 +289,13 @@ def _domain_package_details(package: DomainPackageView | None) -> str:
 
 
 def _domain_package_resources(package: DomainPackageView | None) -> str:
-    rows = []
-    if package is not None:
-        rows = [_table_row((resource,)) for resource in package.resource_names]
-    if not rows:
-        rows.append(_empty_table_row("No package resources", colspan=1))
-    return _section("Package Resources", _table(("Resource",), tuple(rows)))
+    resources = () if package is None else package.resource_names
+    return _table_section(
+        "Package Resources",
+        ("Resource",),
+        ((resource,) for resource in resources),
+        empty_message="No package resources",
+    )
 
 
 def _domain_package_security(package: DomainPackageView | None) -> str:
@@ -384,8 +338,10 @@ def _domain_package_profiles(
             for identity in profile.domains
         )
     )
-    rows = [
-        _table_row(
+    return _table_section(
+        "Matching Profiles",
+        ("Profile", "Version", "Primary Domain", "Domains", "Description"),
+        (
             (
                 profile.name,
                 profile.version,
@@ -393,20 +349,16 @@ def _domain_package_profiles(
                 _profile_domain_text(profile),
                 profile.description,
             )
-        )
-        for profile in matches
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No matching profiles", colspan=5))
-    return _section(
-        "Matching Profiles",
-        _table(("Profile", "Version", "Primary Domain", "Domains", "Description"), tuple(rows)),
+            for profile in matches
+        ),
+        empty_message="No matching profiles",
     )
 
 
 def _domain_rows(domains: tuple[DomainView, ...]) -> str:
-    rows = [
-        _table_row(
+    return _table_from_cells(
+        ("Domain", "Primary", "Capabilities", "Evaluators"),
+        (
             (
                 _raw_table_cell(
                     _link(
@@ -418,9 +370,7 @@ def _domain_rows(domains: tuple[DomainView, ...]) -> str:
                 len(domain.capability_names),
                 len(domain.evaluator_names),
             )
-        )
-        for domain in domains
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No matching active domains", colspan=4))
-    return _table(("Domain", "Primary", "Capabilities", "Evaluators"), tuple(rows))
+            for domain in domains
+        ),
+        empty_message="No matching active domains",
+    )

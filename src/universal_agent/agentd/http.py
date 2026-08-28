@@ -7,6 +7,7 @@ from datetime import datetime
 from types import MappingProxyType
 
 from pydantic import field_validator
+from starlette.datastructures import Headers
 
 from universal_agent.core import (
     Goal,
@@ -195,7 +196,7 @@ def _authenticate(
 ) -> HttpResponse | None:
     if not policy.enabled or path in policy.public_paths:
         return None
-    token = _bearer_token(_header_value(request.headers, "authorization"))
+    token = _bearer_token(_authorization_header(request.headers))
     if token is None:
         return unauthorized()
     if _token_matches(token, policy.bearer_token):
@@ -217,12 +218,8 @@ def _token_matches(token: str, expected: str | None) -> bool:
     return hmac.compare_digest(token, expected)
 
 
-def _header_value(headers: Mapping[str, str], name: str) -> str | None:
-    normalized = name.lower()
-    for key, value in headers.items():
-        if key.lower() == normalized:
-            return value
-    return None
+def _authorization_header(headers: Mapping[str, str]) -> str | None:
+    return Headers(headers=headers).get("authorization")
 
 
 def _bearer_token(value: str | None) -> str | None:

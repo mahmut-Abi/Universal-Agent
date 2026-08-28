@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from html import escape
 
@@ -43,9 +44,7 @@ _METRIC_CARD_TEMPLATE = _WEB_ENV.from_string(
 </article>"""
 )
 _METRIC_GRID_TEMPLATE = _WEB_ENV.from_string(
-    '<section class="grid cards" aria-label="{{ label }}">'
-    "{{ cards|join|safe }}"
-    "</section>"
+    '<section class="grid cards" aria-label="{{ label }}">{{ cards|join|safe }}</section>'
 )
 _TABLE_TEMPLATE = _WEB_ENV.from_string(
     '<div class="table-wrap"><table><thead><tr>'
@@ -60,6 +59,21 @@ _TABLE_ROW_TEMPLATE = _WEB_ENV.from_string(
     "</td>"
     "{% endfor %}"
     "</tr>"
+)
+_TABLE_FROM_CELLS_TEMPLATE = _WEB_ENV.from_string(
+    '<div class="table-wrap"><table><thead><tr>'
+    "{% for header in headers %}<th>{{ header }}</th>{% endfor %}"
+    "</tr></thead><tbody>"
+    "{% for row in rows %}"
+    "<tr>"
+    "{% for cell in row %}"
+    '<td{% if cell.colspan != 1 %} colspan="{{ cell.colspan }}"{% endif %}>'
+    "{% if cell.raw %}{{ cell.value|safe }}{% else %}{{ cell.value|html_text }}{% endif %}"
+    "</td>"
+    "{% endfor %}"
+    "</tr>"
+    "{% endfor %}"
+    "</tbody></table></div>"
 )
 _HERO_TEMPLATE = _WEB_ENV.from_string(
     '<section class="hero">\n'
@@ -82,15 +96,9 @@ _HERO_TEMPLATE = _WEB_ENV.from_string(
 _PILL_TEMPLATE = _WEB_ENV.from_string(
     '<span class="pill {{ class_name }}">{{ value|html_text }}</span>'
 )
-_SPAN_TEMPLATE = _WEB_ENV.from_string(
-    '<span class="{{ class_name }}">{{ value|html_text }}</span>'
-)
-_LINK_TEMPLATE = _WEB_ENV.from_string(
-    '<a href="{{ href }}">{{ label|html_text }}</a>'
-)
-_EMPTY_PARAGRAPH_TEMPLATE = _WEB_ENV.from_string(
-    '<p class="empty">{{ message|html_text }}</p>'
-)
+_SPAN_TEMPLATE = _WEB_ENV.from_string('<span class="{{ class_name }}">{{ value|html_text }}</span>')
+_LINK_TEMPLATE = _WEB_ENV.from_string('<a href="{{ href }}">{{ label|html_text }}</a>')
+_EMPTY_PARAGRAPH_TEMPLATE = _WEB_ENV.from_string('<p class="empty">{{ message|html_text }}</p>')
 _DETAIL_LIST_TEMPLATE = _WEB_ENV.from_string(
     '<dl class="details">'
     "{% for label, value in items %}"
@@ -118,6 +126,9 @@ class _TableCell:
     value: object
     colspan: int = 1
     raw: bool = False
+
+
+_TableRow = tuple[object | _TableCell, ...]
 
 
 def _page(title: str, sections: tuple[str, ...], *, stylesheet: str | None = None) -> str:
@@ -152,10 +163,44 @@ def _table(headers: tuple[str, ...], rows: tuple[str, ...]) -> str:
     return _TABLE_TEMPLATE.render(headers=headers, rows=rows)
 
 
-def _table_row(cells: tuple[object | _TableCell, ...]) -> str:
-    return _TABLE_ROW_TEMPLATE.render(
-        cells=tuple(cell if isinstance(cell, _TableCell) else _TableCell(cell) for cell in cells)
+def _table_from_cells(
+    headers: tuple[str, ...],
+    rows: Iterable[_TableRow],
+    *,
+    empty_message: str | None = None,
+    empty_colspan: int | None = None,
+) -> str:
+    normalized = tuple(_normalize_table_row(row) for row in rows)
+    if not normalized and empty_message is not None:
+        normalized = ((_TableCell(empty_message, colspan=empty_colspan or len(headers)),),)
+    return _TABLE_FROM_CELLS_TEMPLATE.render(headers=headers, rows=normalized)
+
+
+def _table_section(
+    title: str,
+    headers: tuple[str, ...],
+    rows: Iterable[_TableRow],
+    *,
+    empty_message: str,
+    empty_colspan: int | None = None,
+) -> str:
+    return _section(
+        title,
+        _table_from_cells(
+            headers,
+            rows,
+            empty_message=empty_message,
+            empty_colspan=empty_colspan,
+        ),
     )
+
+
+def _table_row(cells: tuple[object | _TableCell, ...]) -> str:
+    return _TABLE_ROW_TEMPLATE.render(cells=_normalize_table_row(cells))
+
+
+def _normalize_table_row(cells: _TableRow) -> tuple[_TableCell, ...]:
+    return tuple(cell if isinstance(cell, _TableCell) else _TableCell(cell) for cell in cells)
 
 
 def _raw_table_cell(value: str) -> _TableCell:

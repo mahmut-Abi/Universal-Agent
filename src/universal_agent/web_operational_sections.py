@@ -14,14 +14,13 @@ from universal_agent.web_types import WebConsoleSnapshot
 from universal_agent.web_ui import (
     _detail_list,
     _empty_paragraph,
-    _empty_table_row,
     _raw_table_cell,
     _section,
     _section_blocks,
     _span,
     _status_class,
-    _table,
-    _table_row,
+    _table_from_cells,
+    _table_section,
 )
 
 
@@ -54,8 +53,10 @@ def _runtime_settings(snapshot: WebConsoleSnapshot) -> str:
 
 
 def _doctor_checks(doctor: DoctorReportView) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Doctor Checks",
+        ("Check", "Status", "Message"),
+        (
             (
                 check.name,
                 _raw_table_cell(
@@ -63,14 +64,9 @@ def _doctor_checks(doctor: DoctorReportView) -> str:
                 ),
                 check.message,
             )
-        )
-        for check in doctor.checks
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No doctor checks", colspan=3))
-    return _section(
-        "Doctor Checks",
-        _table(("Check", "Status", "Message"), tuple(rows)),
+            for check in doctor.checks
+        ),
+        empty_message="No doctor checks",
     )
 
 
@@ -94,148 +90,122 @@ def _distributed_not_configured(distributed: DistributedRuntimeSnapshot | None) 
 
 
 def _distributed_health_checks(health: DistributedHealthReport | None) -> str:
-    rows = []
-    if health is not None:
-        rows = [
-            _table_row(
-                (
-                    check.name,
-                    _raw_table_cell(
-                        _span(
-                            check.status.value,
-                            class_name=f"severity {_status_class(check.status.value)}",
-                        )
-                    ),
-                    check.message,
-                )
-            )
-            for check in health.checks
-        ]
-    if not rows:
-        rows.append(_empty_table_row("No distributed health checks", colspan=3))
-    return _section(
+    checks = () if health is None else health.checks
+    return _table_section(
         "Distributed Health Checks",
-        _table(("Check", "Status", "Message"), tuple(rows)),
+        ("Check", "Status", "Message"),
+        (
+            (
+                check.name,
+                _raw_table_cell(
+                    _span(
+                        check.status.value,
+                        class_name=f"severity {_status_class(check.status.value)}",
+                    )
+                ),
+                check.message,
+            )
+            for check in checks
+        ),
+        empty_message="No distributed health checks",
     )
 
 
 def _distributed_recommendations(health: DistributedHealthReport | None) -> str:
-    rows = []
-    if health is not None:
-        rows = [
-            _table_row(
-                (
-                    recommendation.code,
-                    _raw_table_cell(
-                        _span(
-                            recommendation.severity.value,
-                            class_name=f"severity {_status_class(recommendation.severity.value)}",
-                        )
-                    ),
-                    recommendation.target or "runtime",
-                    recommendation.message,
-                )
-            )
-            for recommendation in health.recommendations
-        ]
-    if not rows:
-        rows.append(_empty_table_row("No distributed recommendations", colspan=4))
-    return _section(
+    recommendations = () if health is None else health.recommendations
+    return _table_section(
         "Distributed Recommendations",
-        _table(("Code", "Severity", "Target", "Message"), tuple(rows)),
+        ("Code", "Severity", "Target", "Message"),
+        (
+            (
+                recommendation.code,
+                _raw_table_cell(
+                    _span(
+                        recommendation.severity.value,
+                        class_name=f"severity {_status_class(recommendation.severity.value)}",
+                    )
+                ),
+                recommendation.target or "runtime",
+                recommendation.message,
+            )
+            for recommendation in recommendations
+        ),
+        empty_message="No distributed recommendations",
     )
 
 
 def _distributed_work_queue(distributed: DistributedRuntimeSnapshot | None) -> str:
-    rows = []
-    if distributed is not None:
-        rows = [
-            _table_row(
-                (
-                    item.work_item_id,
-                    item.kind,
-                    item.status.value,
-                    item.session_id or "-",
-                    item.task_id or "-",
-                    item.action_id or "-",
-                    item.priority,
-                    f"{item.attempts}/{item.max_attempts}",
-                    item.worker_id or "-",
-                    item.last_error or "-",
-                )
-            )
-            for item in distributed.work_queue.items
-        ]
-    if not rows:
-        rows.append(_empty_table_row("No distributed work items", colspan=10))
-    return _section(
+    items = () if distributed is None else distributed.work_queue.items
+    return _table_section(
         "Distributed Work Queue",
-        _table(
-            (
-                "Work Item",
-                "Kind",
-                "Status",
-                "Session",
-                "Task",
-                "Action",
-                "Priority",
-                "Attempts",
-                "Worker",
-                "Last Error",
-            ),
-            tuple(rows),
+        (
+            "Work Item",
+            "Kind",
+            "Status",
+            "Session",
+            "Task",
+            "Action",
+            "Priority",
+            "Attempts",
+            "Worker",
+            "Last Error",
         ),
+        (
+            (
+                item.work_item_id,
+                item.kind,
+                item.status.value,
+                item.session_id or "-",
+                item.task_id or "-",
+                item.action_id or "-",
+                item.priority,
+                f"{item.attempts}/{item.max_attempts}",
+                item.worker_id or "-",
+                item.last_error or "-",
+            )
+            for item in items
+        ),
+        empty_message="No distributed work items",
     )
 
 
 def _distributed_workers(distributed: DistributedRuntimeSnapshot | None) -> str:
-    rows = []
-    if distributed is not None:
-        rows = [
-            _table_row(
-                (
-                    worker.worker_id,
-                    worker.status.value,
-                    ", ".join(worker.capabilities) or "none",
-                    worker.heartbeat_at.isoformat(),
-                    worker.lease_expires_at.isoformat(),
-                    worker.last_error or "-",
-                )
-            )
-            for worker in distributed.workers.workers
-        ]
-    if not rows:
-        rows.append(_empty_table_row("No distributed workers", colspan=6))
-    return _section(
+    workers = () if distributed is None else distributed.workers.workers
+    return _table_section(
         "Distributed Workers",
-        _table(
-            ("Worker", "Status", "Capabilities", "Heartbeat", "Lease Expires", "Last Error"),
-            tuple(rows),
+        ("Worker", "Status", "Capabilities", "Heartbeat", "Lease Expires", "Last Error"),
+        (
+            (
+                worker.worker_id,
+                worker.status.value,
+                ", ".join(worker.capabilities) or "none",
+                worker.heartbeat_at.isoformat(),
+                worker.lease_expires_at.isoformat(),
+                worker.last_error or "-",
+            )
+            for worker in workers
         ),
+        empty_message="No distributed workers",
     )
 
 
 def _distributed_locks(distributed: DistributedRuntimeSnapshot | None) -> str:
-    rows = []
-    if distributed is not None:
-        rows = [
-            _table_row(
-                (
-                    lock.lock_key,
-                    lock.owner_id,
-                    lock.lease_id,
-                    lock.heartbeat_at.isoformat(),
-                    lock.lease_expires_at.isoformat(),
-                    _value_text(lock.metadata),
-                )
-            )
-            for lock in distributed.locks
-        ]
-    if not rows:
-        rows.append(_empty_table_row("No distributed locks", colspan=6))
-    return _section(
+    locks = () if distributed is None else distributed.locks
+    return _table_section(
         "Distributed Locks",
-        _table(("Lock", "Owner", "Lease", "Heartbeat", "Lease Expires", "Metadata"), tuple(rows)),
+        ("Lock", "Owner", "Lease", "Heartbeat", "Lease Expires", "Metadata"),
+        (
+            (
+                lock.lock_key,
+                lock.owner_id,
+                lock.lease_id,
+                lock.heartbeat_at.isoformat(),
+                lock.lease_expires_at.isoformat(),
+                _value_text(lock.metadata),
+            )
+            for lock in locks
+        ),
+        empty_message="No distributed locks",
     )
 
 
@@ -245,55 +215,52 @@ def _multi_agent(multi_agent: MultiAgentView) -> str:
             "Multi-Agent",
             _empty_paragraph("Multi-Agent registry is not configured"),
         )
-    profile_rows = [
-        _table_row(
-            (
-                f"{profile.name}@{profile.version}",
-                _identity_tuple_text(profile.domains),
-                _string_tuple_text(profile.permissions),
-                _string_tuple_text(profile.capabilities),
-                profile.description,
-            )
+    profile_rows = (
+        (
+            f"{profile.name}@{profile.version}",
+            _identity_tuple_text(profile.domains),
+            _string_tuple_text(profile.permissions),
+            _string_tuple_text(profile.capabilities),
+            profile.description,
         )
         for profile in multi_agent.profiles
-    ]
-    instance_rows = [
-        _table_row(
-            (
-                instance.agent_id,
-                f"{instance.profile_name}@{instance.profile_version}",
-                instance.status.value,
-                instance.session_id or "none",
-                instance.endpoint or "none",
-            )
+    )
+    instance_rows = (
+        (
+            instance.agent_id,
+            f"{instance.profile_name}@{instance.profile_version}",
+            instance.status.value,
+            instance.session_id or "none",
+            instance.endpoint or "none",
         )
         for instance in multi_agent.instances
-    ]
-    task_rows = [
-        _table_row(
-            (
-                task.task_id,
-                task.child_count,
-                _delegation_depth_text(task.delegation_depth),
-            )
+    )
+    task_rows = (
+        (
+            task.task_id,
+            task.child_count,
+            _delegation_depth_text(task.delegation_depth),
         )
         for task in multi_agent.delegation_tasks
-    ]
-    if not profile_rows:
-        profile_rows.append(_empty_table_row("No agent profiles", colspan=5))
-    if not instance_rows:
-        instance_rows.append(_empty_table_row("No agent instances", colspan=5))
-    if not task_rows:
-        task_rows.append(_empty_table_row("No delegation tasks", colspan=3))
+    )
     return _section_blocks(
         "Multi-Agent",
         (
-            _table(
+            _table_from_cells(
                 ("Profile", "Domains", "Permissions", "Capabilities", "Description"),
-                tuple(profile_rows),
+                profile_rows,
+                empty_message="No agent profiles",
             ),
-            _table(("Agent", "Profile", "Status", "Session", "Endpoint"), tuple(instance_rows)),
-            _table(("Task", "Children", "Depth"), tuple(task_rows)),
+            _table_from_cells(
+                ("Agent", "Profile", "Status", "Session", "Endpoint"),
+                instance_rows,
+                empty_message="No agent instances",
+            ),
+            _table_from_cells(
+                ("Task", "Children", "Depth"),
+                task_rows,
+                empty_message="No delegation tasks",
+            ),
         ),
     )
 
@@ -317,13 +284,13 @@ def _operational_diagnostics(snapshot: WebConsoleSnapshot) -> str:
         )
     return _section(
         "Operational Diagnostics",
-        _table(("Severity", "Signal", "Value", "Reason"), rows),
+        _table_from_cells(("Severity", "Signal", "Value", "Reason"), rows),
     )
 
 
-def _operational_diagnostic_rows(snapshot: WebConsoleSnapshot) -> list[str]:
+def _operational_diagnostic_rows(snapshot: WebConsoleSnapshot) -> list[tuple[object, ...]]:
     metrics = snapshot.metrics
-    rows: list[str] = []
+    rows: list[tuple[object, ...]] = []
     if not snapshot.ready.ready:
         rows.append(_diagnostic_row("error", "ready", "no", snapshot.ready.reason))
     if metrics.failed_goal_count:
@@ -364,12 +331,10 @@ def _diagnostic_row(
     signal: str,
     value: object,
     reason: str = "",
-) -> str:
-    return _table_row(
-        (
-            _raw_table_cell(_span(severity, class_name=f"severity {severity}")),
-            signal,
-            value,
-            reason,
-        )
+) -> tuple[object, ...]:
+    return (
+        _raw_table_cell(_span(severity, class_name=f"severity {severity}")),
+        signal,
+        value,
+        reason,
     )

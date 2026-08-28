@@ -53,8 +53,8 @@
 
 | 项 | 说明 |
 |---|---|
-| 现状 | `AgentdHttpServer` 已从 stdlib `http.server` 切到 Starlette ASGI + uvicorn；`AgentdRouteMatcher` 已用 Starlette `Route.matches()` 接管 agentd API 与 console route family 的模板匹配，并用 `QueryParams` 接管 HTTP query 解析；旧私有 path helper 已清理，稳定 Runtime API / Console 路由契约保留 |
-| 收益 | 生产服务边界获得 ASGI/uvicorn 生命周期、并发、socket 处理和标准 path matching；CLI/server 注入测试契约保持兼容 |
+| 现状 | `AgentdHttpServer` 已从 stdlib `http.server` 切到 Starlette ASGI + uvicorn；`AgentdRouteMatcher` 已用 Starlette `Route.matches()` 接管 agentd API 与 console route family 的模板匹配，并用 `QueryParams` 接管 HTTP query 解析；agentd auth header lookup 已用 Starlette `Headers` 接管大小写不敏感匹配；旧私有 path helper 已清理，稳定 Runtime API / Console 路由契约保留 |
+| 收益 | 生产服务边界获得 ASGI/uvicorn 生命周期、并发、socket 处理、标准 path matching 与 HTTP header 语义；CLI/server 注入测试契约保持兼容 |
 | 剩余 | 后续在稳定 schema 后补 OpenAPI；更大范围的 CLI Typer 迁移单独排期，避免扰动现有命令契约 |
 | 风险 | 中：依赖树变大；需持续保证 Runtime API 行为不变（现有 test_agentd_routes / test_agentd_server 兜底） |
 
@@ -86,9 +86,9 @@
 
 | 项 | 说明 |
 |---|---|
-| 现状 | `web_ui._page()`、`_fragment()`、`_section()`、`_section_blocks()`、`_empty_paragraph()`、`_metric_card()`、`_metric_grid()`、`_table()`、`_hero_block()`、`_table_row()` 与 `_detail_list()` 已用 Jinja2 接管 Web Console 与 Evaluation Console 的页面骨架、公共 section/card/grid/table/empty-state 片段、hero/nav/status pill 片段，以及 Evaluation/World/Session/Catalog/Operational 页面族的第一批 row/detail 与多表 section 片段；`domain/package_runtime_stub.py` 也已改用 Jinja2 接管 scaffold runtime stub 源码模板；Evaluation Console 已复用公共 helper，去除第二套手写 hero HTML 与 summary grid HTML |
-| 收益 | HTML 外壳与高频片段渲染统一到模板 seam，减少重复拼接和 escaping 漏洞面；后续可按页面族继续迁移更细的复杂 section 模板，不必一次性重写全部 UI |
-| 风险 | 低：渲染内容顺序和现有 URL/section helper 不变，Web/Evaluation/agentd route 测试覆盖 escaping、导航链接、row/detail 输出与关键页面文本 |
+| 现状 | `web_ui._page()`、`_fragment()`、`_section()`、`_section_blocks()`、`_empty_paragraph()`、`_metric_card()`、`_metric_grid()`、`_table()`、`_table_from_cells()`、`_table_section()`、`_hero_block()`、`_table_row()` 与 `_detail_list()` 已用 Jinja2 接管 Web Console 与 Evaluation Console 的页面骨架、公共 section/card/grid/table/empty-state 片段、hero/nav/status pill 片段；Session、World、Catalog 与 Operational 页面族的主要 table section 已从逐行手写 HTML 组装迁到公共 Jinja2 table helper；`domain/package_runtime_stub.py` 也已改用 Jinja2 接管 scaffold runtime stub 源码模板；Evaluation Console 已复用公共 helper，去除第二套手写 hero HTML 与 summary grid HTML |
+| 收益 | HTML 外壳与高频片段渲染统一到模板 seam，减少重复拼接和 escaping 漏洞面；后续复杂页面只需要准备 cell 数据，不必重复编写空表、row 渲染与 raw cell handling |
+| 风险 | 低：渲染内容顺序和现有 URL/section helper 不变，Web/Evaluation/agentd route 测试覆盖 escaping、导航链接、table section 输出与关键页面文本 |
 
 ### 9. python-dateutil → 替换手写 ISO datetime 兼容解析（已完成）
 
@@ -123,7 +123,7 @@
 | 库 | 触发条件 | 说明 |
 |---|---|---|
 | Redis 或 PostgreSQL | P6 分布式超过本地原语 | 文件轮询队列 → `FOR UPDATE SKIP LOCKED` / Redis TTL 锁的生产级语义 |
-| Jinja2 | Web 复杂 section helper 继续膨胀 | 页面外壳、hero/nav 与主要 row/detail 已完成；后续只在 section 复杂度继续上升时迁移更细模板 |
+| Jinja2 | Web 复杂 section helper 继续膨胀 | 页面外壳、hero/nav、公共 table section 与主要 row/detail 已完成；后续只在 section 复杂度继续上升时迁移更细模板 |
 
 ---
 

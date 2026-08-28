@@ -6,18 +6,18 @@ from universal_agent.web_helpers import _event_detail, _mapping_text, _string_tu
 from universal_agent.web_ui import (
     _detail_list,
     _empty_paragraph,
-    _empty_table_row,
     _link,
     _raw_table_cell,
     _section,
-    _table,
-    _table_row,
+    _table_section,
 )
 
 
 def _sessions(sessions: tuple[SessionSummaryView, ...]) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Sessions",
+        ("Session", "Goal", "Task", "Iter", "Domain", "Description"),
+        (
             (
                 _raw_table_cell(
                     _link(session.session_id, f"/console/sessions/{session.session_id}")
@@ -28,17 +28,9 @@ def _sessions(sessions: tuple[SessionSummaryView, ...]) -> str:
                 f"{session.domain_name}@{session.domain_version}",
                 session.goal_description,
             )
-        )
-        for session in sessions
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No sessions", colspan=6))
-    return _section(
-        "Sessions",
-        _table(
-            ("Session", "Goal", "Task", "Iter", "Domain", "Description"),
-            tuple(rows),
+            for session in sessions
         ),
+        empty_message="No sessions",
     )
 
 
@@ -77,31 +69,29 @@ def _selected_session(session: SessionView | None) -> str:
 
 
 def _task_timeline(session: SessionView | None) -> str:
-    rows = []
-    if session is not None:
-        rows = [
-            _table_row(
-                (
-                    task.task_id,
-                    task.status.value,
-                    task.description,
-                    _string_tuple_text(task.required_criteria),
-                    _string_tuple_text(task.depends_on),
-                )
-            )
-            for task in session.tasks
-        ]
-    if not rows:
-        rows.append(_empty_table_row("No tasks", colspan=5))
-    return _section(
+    tasks = () if session is None else session.tasks
+    return _table_section(
         "Task Timeline",
-        _table(("Task", "Status", "Description", "Required Criteria", "Depends On"), tuple(rows)),
+        ("Task", "Status", "Description", "Required Criteria", "Depends On"),
+        (
+            (
+                task.task_id,
+                task.status.value,
+                task.description,
+                _string_tuple_text(task.required_criteria),
+                _string_tuple_text(task.depends_on),
+            )
+            for task in tasks
+        ),
+        empty_message="No tasks",
     )
 
 
 def _events(events: tuple[RuntimeEventView, ...]) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Recent Events",
+        ("Time", "Type", "Task", "Action", "Detail"),
+        (
             (
                 event.occurred_at.isoformat(),
                 event.type,
@@ -109,20 +99,17 @@ def _events(events: tuple[RuntimeEventView, ...]) -> str:
                 event.action_id or "-",
                 _event_detail(event.data),
             )
-        )
-        for event in events
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No events", colspan=5))
-    return _section(
-        "Recent Events",
-        _table(("Time", "Type", "Task", "Action", "Detail"), tuple(rows)),
+            for event in events
+        ),
+        empty_message="No events",
     )
 
 
 def _audit(records: tuple[AuditRecordView, ...]) -> str:
-    rows = [
-        _table_row(
+    return _table_section(
+        "Audit",
+        ("Time", "Capability", "Tool", "Policy", "Status"),
+        (
             (
                 record.occurred_at.isoformat(),
                 record.capability,
@@ -130,12 +117,7 @@ def _audit(records: tuple[AuditRecordView, ...]) -> str:
                 f"{record.policy_effect}:{record.policy_name}",
                 record.status,
             )
-        )
-        for record in records
-    ]
-    if not rows:
-        rows.append(_empty_table_row("No audit records", colspan=5))
-    return _section(
-        "Audit",
-        _table(("Time", "Capability", "Tool", "Policy", "Status"), tuple(rows)),
+            for record in records
+        ),
+        empty_message="No audit records",
     )
