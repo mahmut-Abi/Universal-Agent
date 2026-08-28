@@ -21,6 +21,11 @@ from universal_agent.core import (
     utc_now,
     write_json,
 )
+from universal_agent.core.config_validation import (
+    parse_non_empty_string,
+    parse_non_empty_string_sequence,
+    parse_positive_float,
+)
 from universal_agent.distributed.queue_codec import (
     _decode_work_item,
     _decode_work_queue_payload,
@@ -178,8 +183,7 @@ class InMemoryWorkQueue:
         retry: bool = True,
         now: datetime | None = None,
     ) -> WorkItem:
-        if not reason.strip():
-            raise ValueError("failure reason must not be empty")
+        parse_non_empty_string(reason, "failure reason")
         timestamp = now or utc_now()
         item = self._leased_item(lease_id, worker_id, now=timestamp)
         if retry and item.attempts < item.max_attempts:
@@ -208,8 +212,7 @@ class InMemoryWorkQueue:
         reason: str = "cancelled",
         now: datetime | None = None,
     ) -> WorkItem:
-        if not reason.strip():
-            raise ValueError("cancellation reason must not be empty")
+        parse_non_empty_string(reason, "cancellation reason")
         item = self.get(work_item_id)
         if item.status in {
             WorkItemStatus.COMPLETED,
@@ -815,18 +818,23 @@ class SQLiteWorkQueue(InMemoryWorkQueue):
 
 
 def _lease_deadline(now: datetime, ttl_seconds: float) -> datetime:
-    if ttl_seconds <= 0:
-        raise ValueError("ttl_seconds must be positive")
+    parse_positive_float(ttl_seconds, "ttl_seconds")
     return now + timedelta(seconds=ttl_seconds)
 
 
 def _normalize_accepted_kinds(accepted_kinds: Collection[str] | None) -> frozenset[str] | None:
     if accepted_kinds is None:
         return None
-    normalized = frozenset(kind.strip() for kind in accepted_kinds)
-    if any(not kind for kind in normalized):
-        raise ValueError("accepted_kinds must not include empty kinds")
-    return normalized
+    validated = parse_non_empty_string_sequence(
+        tuple(accepted_kinds),
+        "accepted_kinds",
+        empty_template="accepted_kinds must not include empty kinds",
+        item_type_template="accepted_kinds must not include empty kinds",
+    )
+    return frozenset(
+        kind.strip()
+        for kind in validated
+    )
 
 
 def _sort_key(item: WorkItem) -> tuple[int, datetime, str]:

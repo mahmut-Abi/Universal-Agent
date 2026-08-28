@@ -6,6 +6,11 @@ from enum import StrEnum
 from typing import NewType
 
 from universal_agent.core import ActionId, JsonMapping, SessionId, TaskId, immutable_json, utc_now
+from universal_agent.core.config_validation import (
+    parse_non_empty_string,
+    parse_non_negative_int,
+    parse_positive_int,
+)
 
 WorkItemId = NewType("WorkItemId", str)
 WorkerId = NewType("WorkerId", str)
@@ -63,14 +68,14 @@ class WorkItem:
     last_error: str | None = None
 
     def __post_init__(self) -> None:
-        if not str(self.work_item_id).strip():
-            raise ValueError("work_item_id must not be empty")
-        if not self.kind.strip():
-            raise ValueError("work item kind must not be empty")
-        if self.max_attempts < 1:
-            raise ValueError("max_attempts must be positive")
-        if self.attempts < 0:
-            raise ValueError("attempts must be non-negative")
+        parse_non_empty_string(str(self.work_item_id), "work_item_id")
+        parse_non_empty_string(self.kind, "work item kind")
+        parse_positive_int(self.max_attempts, "max_attempts")
+        parse_non_negative_int(
+            self.attempts,
+            "attempts",
+            range_template="{path} must be non-negative",
+        )
         if self.attempts > self.max_attempts:
             raise ValueError("attempts must not exceed max_attempts")
         if self.status is WorkItemStatus.LEASED and self.lease is None:
