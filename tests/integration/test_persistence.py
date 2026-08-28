@@ -329,6 +329,21 @@ async def test_file_runtime_store_recovers_incomplete_journal_commit(
     assert not list((tmp_path / "commits").glob("*.json"))
 
 
+@pytest.mark.asyncio
+async def test_file_runtime_store_rejects_invalid_journal_commit_payload(
+    tmp_path: Path,
+) -> None:
+    commit_path = tmp_path / "commits" / "event-1.json"
+    commit_path.parent.mkdir(parents=True)
+    with commit_path.open("w", encoding="utf-8") as handle:
+        json.dump({"session": [], "event": {}}, handle)
+
+    store = FileRuntimeStore(tmp_path)
+
+    with pytest.raises(ValueError, match="invalid file runtime commit record"):
+        await store.list_sessions()
+
+
 def goal_state(goal: Goal, task: Task) -> AgentState:
     state = AgentState(session_id=new_session_id(), goal=goal, current_task=task)
     state.tasks.append(task)

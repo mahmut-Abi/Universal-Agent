@@ -183,6 +183,15 @@ async def test_httpx_kubernetes_api_transport_preserves_api_server_base_path() -
     assert str(requests[0].url) == "https://gateway.example.test/kubernetes/prod/api/v1/nodes"
 
 
+@pytest.mark.asyncio
+async def test_kubectl_backend_rejects_non_object_json_output() -> None:
+    runner = RecordingKubectlRunner({("get", "nodes", "-o", "json"): []})
+    backend = KubectlBackend(runner=runner)
+
+    with pytest.raises(KubectlCommandError, match="kubectl returned JSON that was not an object"):
+        await backend.inspect("inspect_cluster", immutable_json())
+
+
 class RecordingScaleBackend:
     def __init__(self) -> None:
         self.arguments: JsonMapping | None = None
@@ -570,6 +579,30 @@ async def test_kubernetes_api_backend_inspects_workload_health() -> None:
         {},
         4.5,
     )
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_api_backend_rejects_non_object_json_response() -> None:
+    transport = RecordingKubernetesApiTransport(
+        {
+            (
+                "GET",
+                "/apis/apps/v1/namespaces/prod/deployments/api",
+                (),
+            ): [],
+        }
+    )
+    backend = KubernetesApiBackend(
+        api_server="https://cluster.example.test",
+        transport=transport,
+        default_namespace="prod",
+    )
+
+    with pytest.raises(
+        KubernetesApiError,
+        match="Kubernetes API returned JSON that was not an object",
+    ):
+        await backend.inspect("inspect_workload", immutable_json({"name": "deployment/api"}))
 
 
 @pytest.mark.asyncio

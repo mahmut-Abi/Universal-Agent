@@ -309,6 +309,37 @@ async def test_json_http_model_adapter_accepts_top_level_decision_without_usage(
 
 
 @pytest.mark.asyncio
+async def test_json_http_model_adapter_rejects_non_object_decision_payload() -> None:
+    adapter = JsonHttpModelAdapter(
+        "https://models.example.test/decide",
+        "runtime-model",
+        transport=RecordingTransport(immutable_json({"decision": []})),
+    )
+
+    with pytest.raises(JsonHttpModelError, match="model response decision must be an object"):
+        await adapter.decide(context())
+
+
+@pytest.mark.asyncio
+async def test_json_http_model_adapter_rejects_non_object_usage_payload() -> None:
+    adapter = JsonHttpModelAdapter(
+        "https://models.example.test/decide",
+        "runtime-model",
+        transport=RecordingTransport(
+            immutable_json(
+                {
+                    "decision": {"type": "finish", "reason": "All criteria satisfied."},
+                    "usage": [],
+                }
+            )
+        ),
+    )
+
+    with pytest.raises(JsonHttpModelError, match="model usage must be an object"):
+        await adapter.decide(context())
+
+
+@pytest.mark.asyncio
 async def test_json_http_model_adapter_rejects_invalid_decision_contract() -> None:
     adapter = JsonHttpModelAdapter(
         "https://models.example.test/decide",

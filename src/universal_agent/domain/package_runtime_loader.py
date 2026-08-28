@@ -70,8 +70,7 @@ def _load_domain_runtime_entrypoint(root_path: Path, entrypoint: str) -> DomainR
             ) from exc
         except AttributeError as exc:
             raise DomainPackageRuntimeLoadError(
-                "domain package entrypoint attribute not found: "
-                f"{parsed.module}.{parsed.attr}"
+                f"domain package entrypoint attribute not found: {parsed.module}.{parsed.attr}"
             ) from exc
         return _coerce_domain_runtime(target, entrypoint)
 

@@ -69,9 +69,7 @@ class _TaskPayload(ConfigPayload):
 class _ExpectationsPayload(ConfigPayload):
     expected_status: str = ExecutionStatus.COMPLETED.value
     expected_error_code: str | None = None
-    expected_criteria: dict[PydanticNonEmptyString, PydanticJsonValue] = Field(
-        default_factory=dict
-    )
+    expected_criteria: dict[PydanticNonEmptyString, PydanticJsonValue] = Field(default_factory=dict)
     required_events: list[PydanticNonEmptyString] = Field(default_factory=list)
     forbidden_events: list[PydanticNonEmptyString] = Field(default_factory=list)
     required_evidence_claims: list[PydanticNonEmptyString] = Field(default_factory=list)

@@ -811,9 +811,10 @@ def _fragment_payloads(fragments: tuple[ContextFragment, ...]) -> list[JsonValue
 
 def _decision_payload(response: JsonMapping) -> JsonMapping:
     raw_decision = response.get("decision", response)
-    if not isinstance(raw_decision, Mapping):
-        raise JsonHttpModelError("model response decision must be an object")
-    return _json_mapping(raw_decision, "decision")
+    try:
+        return _json_mapping(raw_decision, "decision")
+    except JsonHttpModelError as exc:
+        raise JsonHttpModelError("model response decision must be an object") from exc
 
 
 def _decode_decision(payload: JsonMapping) -> Decision:
@@ -860,9 +861,11 @@ def _validate_decision_against_context(decision: Decision, context: DecisionCont
 def _decode_usage(provider: str, model: str, value: JsonValue) -> ModelUsage | None:
     if value is None:
         return None
-    if not isinstance(value, Mapping):
-        raise JsonHttpModelError("model usage must be an object")
-    usage = _parse_model_payload(_UsagePayload, value, "usage")
+    try:
+        usage_payload = _json_mapping(value, "usage")
+    except JsonHttpModelError as exc:
+        raise JsonHttpModelError("model usage must be an object") from exc
+    usage = _parse_model_payload(_UsagePayload, usage_payload, "usage")
     input_tokens = usage.input_tokens if usage.input_tokens is not None else usage.prompt_tokens
     output_tokens = (
         usage.output_tokens if usage.output_tokens is not None else usage.completion_tokens

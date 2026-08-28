@@ -213,10 +213,11 @@ class FileRuntimeStore(FileSessionStore, FileEventStore):
             return
         for path in sorted(self._commits.glob("*.json")):
             payload = _load_json_object(path, "file runtime commit record")
-            snapshot_payload = payload.get("session")
-            event_payload = payload.get("event")
-            if not isinstance(snapshot_payload, dict) or not isinstance(event_payload, dict):
-                raise ValueError(f"invalid file runtime commit record: {path}")
+            try:
+                snapshot_payload = parse_json_object(payload.get("session"), "commit session")
+                event_payload = parse_json_object(payload.get("event"), "commit event")
+            except ValueError as exc:
+                raise ValueError(f"invalid file runtime commit record: {path}") from exc
             snapshot = decode_session_snapshot(snapshot_payload)
             event = decode_runtime_event(event_payload)
             session_path = self._session_path(snapshot.state.session_id)

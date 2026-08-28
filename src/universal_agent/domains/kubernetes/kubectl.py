@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from universal_agent.core import JsonCodecError, JsonMapping, JsonValue, immutable_json, loads_json
-from universal_agent.core.config_validation import parse_non_empty_string, parse_positive_float
+from universal_agent.core.config_validation import (
+    parse_json_object,
+    parse_non_empty_string,
+    parse_positive_float,
+)
 from universal_agent.domains.kubernetes import resources as k8s
 
 
@@ -316,9 +320,10 @@ class KubectlBackend:
             payload = loads_json(result.stdout)
         except JsonCodecError as exc:
             raise KubectlCommandError(f"kubectl returned invalid JSON: {exc}") from exc
-        if not isinstance(payload, dict):
-            raise KubectlCommandError("kubectl returned JSON that was not an object")
-        return k8s.json_object(payload)
+        try:
+            return dict(parse_json_object(payload, "kubectl output"))
+        except ValueError as exc:
+            raise KubectlCommandError("kubectl returned JSON that was not an object") from exc
 
     async def _run(self, *args: str) -> KubectlResult:
         command = self._base_args() + tuple(args)

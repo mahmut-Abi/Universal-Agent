@@ -113,9 +113,7 @@ _POSITIVE_FLOAT_ADAPTER: TypeAdapter[PositiveFloat] = TypeAdapter(PositiveFloat)
 _POSITIVE_INT_ADAPTER: TypeAdapter[PositiveInt] = TypeAdapter(PositiveInt)
 _RATE_ADAPTER: TypeAdapter[_PydanticRate] = TypeAdapter(_PydanticRate)
 _STRING_ADAPTER: TypeAdapter[str] = TypeAdapter(str)
-_NON_EMPTY_STRING_ADAPTER: TypeAdapter[PydanticNonEmptyString] = TypeAdapter(
-    PydanticNonEmptyString
-)
+_NON_EMPTY_STRING_ADAPTER: TypeAdapter[PydanticNonEmptyString] = TypeAdapter(PydanticNonEmptyString)
 _NON_EMPTY_STRING_SEQUENCE_ADAPTER: TypeAdapter[list[PydanticNonEmptyString]] = TypeAdapter(
     list[PydanticNonEmptyString]
 )

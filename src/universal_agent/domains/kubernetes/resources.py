@@ -8,7 +8,11 @@ from pydantic import BeforeValidator, Field, TypeAdapter
 from pydantic.alias_generators import to_snake
 
 from universal_agent.core import JsonMapping, JsonValue
-from universal_agent.core.config_validation import ConfigPayload, PydanticJsonValue, json_mapping
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    PydanticJsonValue,
+    parse_json_object,
+)
 
 
 def _text_or_empty(value: object) -> str:
@@ -151,9 +155,6 @@ class _EventPayload(ConfigPayload):
 
 _OBJECT_LIST_ADAPTER: TypeAdapter[_ObjectListPayload] = TypeAdapter(_ObjectListPayload)
 _CONDITIONS_ADAPTER: TypeAdapter[list[_ConditionPayload]] = TypeAdapter(list[_ConditionPayload])
-_JSON_OBJECT_ADAPTER: TypeAdapter[dict[str, PydanticJsonValue]] = TypeAdapter(
-    dict[str, PydanticJsonValue]
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -433,7 +434,7 @@ def object_value(value: JsonValue | None) -> dict[str, JsonValue]:
 
 
 def json_object(value: object) -> dict[str, JsonValue]:
-    return dict(json_mapping(_JSON_OBJECT_ADAPTER.validate_python(value, strict=True)))
+    return dict(parse_json_object(value, "Kubernetes JSON object"))
 
 
 def snake_case(value: str) -> str:

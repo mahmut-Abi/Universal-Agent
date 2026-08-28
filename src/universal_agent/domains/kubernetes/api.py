@@ -6,17 +6,15 @@ from typing import Protocol
 from urllib.parse import quote
 
 import httpx
-from pydantic import TypeAdapter
 
 from universal_agent.core import JsonCodecError, JsonMapping, JsonValue, immutable_json, loads_json
 from universal_agent.core.config_validation import (
-    PydanticJsonValue,
+    parse_json_object,
+    parse_json_value,
     parse_non_empty_string,
     parse_positive_float,
 )
 from universal_agent.domains.kubernetes import resources as k8s
-
-_JSON_VALUE_ADAPTER: TypeAdapter[PydanticJsonValue] = TypeAdapter(PydanticJsonValue)
 
 
 @dataclass(frozen=True, slots=True)
@@ -385,9 +383,10 @@ class KubernetesApiBackend:
         payload = response.payload
         if payload is None and response.text:
             payload = _decode_optional_json(response.text)
-        if not isinstance(payload, dict):
-            raise KubernetesApiError("Kubernetes API returned JSON that was not an object")
-        return k8s.json_object(payload)
+        try:
+            return dict(parse_json_object(payload, "Kubernetes API response"))
+        except ValueError as exc:
+            raise KubernetesApiError("Kubernetes API returned JSON that was not an object") from exc
 
     async def _request(
         self,
@@ -478,4 +477,4 @@ def _decode_optional_json(text: str) -> JsonValue:
         loaded = loads_json(text)
     except JsonCodecError:
         return None
-    return _JSON_VALUE_ADAPTER.validate_python(loaded, strict=True)
+    return parse_json_value(loaded, "Kubernetes API response")

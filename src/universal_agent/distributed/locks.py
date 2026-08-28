@@ -24,6 +24,7 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     PydanticJsonValue,
     json_mapping,
+    parse_json_object,
     parse_non_empty_string,
     parse_positive_float,
     pydantic_error_details,
@@ -458,9 +459,9 @@ class SQLiteDistributedLockRegistry(InMemoryDistributedLockRegistry):
         loaded: dict[str, DistributedLockLease] = {}
         for row in rows:
             payload = loads_json(row[0])
-            if not isinstance(payload, dict):
-                raise ValueError("sqlite distributed lock payload must be an object")
-            lease = _decode_distributed_lock_lease(payload)
+            lease = _decode_distributed_lock_lease(
+                dict(parse_json_object(payload, "sqlite distributed lock payload"))
+            )
             if lease.lock_key in loaded:
                 raise ValueError(f"duplicate sqlite distributed lock: {lease.lock_key}")
             loaded[lease.lock_key] = lease

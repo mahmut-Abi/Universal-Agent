@@ -24,6 +24,7 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     PydanticJsonValue,
     json_mapping,
+    parse_json_object,
     parse_non_empty_string,
     parse_positive_float,
     pydantic_error_details,
@@ -507,9 +508,9 @@ class SQLiteWorkerRegistry(InMemoryWorkerRegistry):
         loaded: dict[WorkerId, WorkerRecord] = {}
         for row in rows:
             payload = loads_json(row[0])
-            if not isinstance(payload, dict):
-                raise ValueError("sqlite worker registry payload must be an object")
-            record = _decode_worker_record(payload)
+            record = _decode_worker_record(
+                dict(parse_json_object(payload, "sqlite worker registry payload"))
+            )
             if record.worker_id in loaded:
                 raise ValueError(f"duplicate sqlite worker registry worker: {record.worker_id}")
             loaded[record.worker_id] = record

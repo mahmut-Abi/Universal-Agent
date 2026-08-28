@@ -22,6 +22,7 @@ from universal_agent.core import (
     write_json_file,
 )
 from universal_agent.core.config_validation import (
+    parse_json_object,
     parse_non_empty_string,
     parse_non_empty_string_sequence,
     parse_positive_float,
@@ -781,9 +782,9 @@ class SQLiteWorkQueue(InMemoryWorkQueue):
         loaded: dict[WorkItemId, WorkItem] = {}
         for row in rows:
             payload = loads_json(row[0])
-            if not isinstance(payload, dict):
-                raise ValueError("sqlite work queue item payload must be an object")
-            item = _decode_work_item(payload)
+            item = _decode_work_item(
+                dict(parse_json_object(payload, "sqlite work queue item payload"))
+            )
             if item.work_item_id in loaded:
                 raise ValueError(f"duplicate sqlite work queue item: {item.work_item_id}")
             loaded[item.work_item_id] = item
