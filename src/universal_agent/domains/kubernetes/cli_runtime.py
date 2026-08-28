@@ -4,7 +4,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
-from universal_agent.core import Decision, DecisionType, JsonMapping, JsonValue, immutable_json
+from pydantic import PositiveFloat
+
+from universal_agent.core import Decision, DecisionType, JsonMapping, immutable_json
+from universal_agent.core.config_validation import (
+    ConfigPayload,
+    PydanticNonEmptyString,
+    parse_payload,
+)
 from universal_agent.distributed import DistributedRuntimeCoordinator
 from universal_agent.domain import DomainLoader, RuntimeBuilder
 from universal_agent.domains.kubernetes.api import KubernetesApiBackend
@@ -35,6 +42,15 @@ PREFLIGHT_CAPABILITIES = (
 )
 
 ModelAdapterBuilder = Callable[..., ModelAdapter]
+
+
+class _KubernetesBackendSettingsPayload(ConfigPayload):
+    default_namespace: PydanticNonEmptyString = "default"
+    context: PydanticNonEmptyString | None = None
+    kubeconfig: PydanticNonEmptyString | None = None
+    timeout_seconds: PositiveFloat = 10.0
+    api_server: PydanticNonEmptyString | None = None
+    bearer_token_secret: PydanticNonEmptyString | None = None
 
 
 def local_domain() -> DomainConfig:
@@ -183,31 +199,26 @@ def configured_kubernetes_backend(
     backend = primary.backend or "fake"
     if backend == "fake":
         return DefaultKubernetesCliBackend()
+    settings = _kubernetes_backend_settings(primary.settings)
     if backend == "kubectl":
         return KubectlBackend(
-            default_namespace=setting_string(
-                primary.settings,
-                "default_namespace",
-                default="default",
-            ),
-            context=optional_setting_string(primary.settings, "context"),
-            kubeconfig=optional_setting_string(primary.settings, "kubeconfig"),
-            timeout_seconds=setting_float(primary.settings, "timeout_seconds", default=10.0),
+            default_namespace=settings.default_namespace,
+            context=settings.context,
+            kubeconfig=settings.kubeconfig,
+            timeout_seconds=float(settings.timeout_seconds),
         )
     if backend == "kubernetes_api":
+        if settings.api_server is None:
+            raise ValueError("domain setting api_server must be a non-empty string")
         return KubernetesApiBackend(
-            api_server=setting_string(primary.settings, "api_server", default=""),
+            api_server=settings.api_server,
             bearer_token=configured_kubernetes_api_token(
-                primary.settings,
+                settings.bearer_token_secret,
                 config=config,
                 secret_provider=secret_provider,
             ),
-            default_namespace=setting_string(
-                primary.settings,
-                "default_namespace",
-                default="default",
-            ),
-            timeout_seconds=setting_float(primary.settings, "timeout_seconds", default=10.0),
+            default_namespace=settings.default_namespace,
+            timeout_seconds=float(settings.timeout_seconds),
         )
     raise ValueError(f"unsupported Kubernetes domain backend: {backend}")
 
@@ -255,29 +266,19 @@ def profile_domain_config(
     raise ValueError(f"unsupported domain backend: {domain_backend}")
 
 
-def setting_string(settings: JsonMapping, key: str, *, default: str) -> str:
-    value = settings.get(key, default)
-    if isinstance(value, str) and value.strip():
-        return value
-    raise ValueError(f"domain setting {key} must be a non-empty string")
-
-
-def optional_setting_string(settings: JsonMapping, key: str) -> str | None:
-    value = settings.get(key)
-    if value is None:
-        return None
-    if isinstance(value, str) and value.strip():
-        return value
-    raise ValueError(f"domain setting {key} must be a non-empty string")
+def _kubernetes_backend_settings(settings: JsonMapping) -> _KubernetesBackendSettingsPayload:
+    try:
+        return parse_payload(_KubernetesBackendSettingsPayload, settings)
+    except ValueError as exc:
+        raise ValueError(f"invalid Kubernetes domain settings: {exc}") from exc
 
 
 def configured_kubernetes_api_token(
-    settings: JsonMapping,
+    secret_name: str | None,
     *,
     config: RuntimeConfig | None,
     secret_provider: SecretProvider | None,
 ) -> str | None:
-    secret_name = optional_setting_string(settings, "bearer_token_secret")
     if secret_name is None:
         return None
     if config is None:
@@ -286,10 +287,3 @@ def configured_kubernetes_api_token(
         if secret.name == secret_name:
             return resolve_secret_value(secret, provider=secret_provider)
     raise ValueError(f"domain setting bearer_token_secret is not declared: {secret_name}")
-
-
-def setting_float(settings: JsonMapping, key: str, *, default: float) -> float:
-    value: JsonValue = settings.get(key, default)
-    if isinstance(value, int | float) and not isinstance(value, bool) and value > 0:
-        return float(value)
-    raise ValueError(f"domain setting {key} must be a positive number")
