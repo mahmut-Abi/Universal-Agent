@@ -3,14 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
+from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
 from universal_agent.core import JsonMapping
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     duplicate_values,
+    enum_before_validator,
     parse_payload,
 )
 from universal_agent.evidence import EvidenceId
@@ -37,8 +39,18 @@ class AgentResultMergeStatus(StrEnum):
     REQUIRES_REVIEW = "requires_review"
 
 
+_AgentResultMergeStatusPayload = Annotated[
+    AgentResultMergeStatus,
+    enum_before_validator(
+        AgentResultMergeStatus,
+        "status",
+        invalid_template="unsupported agent result merge status: {value}",
+    ),
+]
+
+
 class _AgentResultMergePayload(ConfigPayload):
-    status: AgentResultMergeStatus
+    status: _AgentResultMergeStatusPayload
     passed: bool | None = None
     reason: str = ""
     evidence: list[str] = Field(default_factory=list)
@@ -49,18 +61,6 @@ class _AgentResultMergePayload(ConfigPayload):
     missing_evidence_task_ids: list[str] = Field(default_factory=list)
     results: list[dict[str, PydanticJsonValue]] = Field(default_factory=list)
     conflict_resolutions: list[dict[str, PydanticJsonValue]] = Field(default_factory=list)
-
-    @field_validator("status", mode="before")
-    @classmethod
-    def _parse_status(cls, value: object) -> AgentResultMergeStatus:
-        if isinstance(value, AgentResultMergeStatus):
-            return value
-        if not isinstance(value, str):
-            raise ValueError(f"unsupported agent result merge status: {value}")
-        try:
-            return AgentResultMergeStatus(value)
-        except ValueError as exc:
-            raise ValueError(f"unsupported agent result merge status: {value}") from exc
 
 
 @dataclass(frozen=True, slots=True)

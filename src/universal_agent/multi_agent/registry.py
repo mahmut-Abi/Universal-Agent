@@ -4,15 +4,16 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from types import MappingProxyType
-from typing import NewType
+from typing import Annotated, NewType
 
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import DomainIdentity, JsonMapping, SessionId
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticNonEmptyString,
+    enum_before_validator,
     parse_non_empty_string,
     parse_non_empty_string_sequence,
     pydantic_error_details,
@@ -41,6 +42,16 @@ class AgentInstanceStatus(StrEnum):
     DRAINING = "draining"
 
 
+_AgentInstanceStatusPayload = Annotated[
+    AgentInstanceStatus,
+    enum_before_validator(
+        AgentInstanceStatus,
+        "status",
+        invalid_template="unsupported agent instance status: {value}",
+    ),
+]
+
+
 class _DomainIdentityPayload(ConfigPayload):
     name: PydanticNonEmptyString
     version: PydanticNonEmptyString
@@ -59,21 +70,9 @@ class _AgentInstanceRecordPayload(ConfigPayload):
     agent_id: PydanticNonEmptyString
     profile_name: PydanticNonEmptyString
     profile_version: PydanticNonEmptyString
-    status: AgentInstanceStatus = AgentInstanceStatus.READY
+    status: _AgentInstanceStatusPayload = AgentInstanceStatus.READY
     session_id: PydanticNonEmptyString | None = None
     endpoint: PydanticNonEmptyString | None = None
-
-    @field_validator("status", mode="before")
-    @classmethod
-    def _parse_status(cls, value: object) -> AgentInstanceStatus:
-        if isinstance(value, AgentInstanceStatus):
-            return value
-        if not isinstance(value, str):
-            raise ValueError(f"unsupported agent instance status: {value}")
-        try:
-            return AgentInstanceStatus(value)
-        except ValueError as exc:
-            raise ValueError(f"unsupported agent instance status: {value}") from exc
 
 
 class _AgentRegistrySnapshotPayload(ConfigPayload):

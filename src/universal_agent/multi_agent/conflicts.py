@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
-from typing import NewType
+from typing import Annotated, NewType
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
 from universal_agent.core import (
     JsonMapping,
@@ -18,6 +18,7 @@ from universal_agent.core import (
 )
 from universal_agent.core.config_validation import (
     ConfigPayload,
+    enum_before_validator,
     parse_non_empty_string,
     parse_payload,
 )
@@ -35,26 +36,24 @@ class ConflictResolutionStatus(StrEnum):
     REQUIRES_REVIEW = "requires_review"
 
 
+_ConflictResolutionStatusPayload = Annotated[
+    ConflictResolutionStatus,
+    enum_before_validator(
+        ConflictResolutionStatus,
+        "status",
+        invalid_template="unsupported conflict resolution status: {value}",
+    ),
+]
+
+
 class _ConflictResolutionPayload(ConfigPayload):
     resource_key: str
-    status: ConflictResolutionStatus
+    status: _ConflictResolutionStatusPayload
     selected_proposal_id: str | None = None
     rejected_proposal_ids: list[str] = Field(default_factory=list)
     review_proposal_ids: list[str] = Field(default_factory=list)
     supporting_evidence_ids: list[str] = Field(default_factory=list)
     reason: str = ""
-
-    @field_validator("status", mode="before")
-    @classmethod
-    def _parse_status(cls, value: object) -> ConflictResolutionStatus:
-        if isinstance(value, ConflictResolutionStatus):
-            return value
-        if not isinstance(value, str):
-            raise ValueError(f"unsupported conflict resolution status: {value}")
-        try:
-            return ConflictResolutionStatus(value)
-        except ValueError as exc:
-            raise ValueError(f"unsupported conflict resolution status: {value}") from exc
 
 
 @dataclass(frozen=True, slots=True)

@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import MappingProxyType
+from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
 from universal_agent.core import JsonMapping
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     duplicate_values,
+    enum_before_validator,
+    optional_enum_before_validator,
     parse_optional_non_negative_int,
     parse_payload,
 )
@@ -22,9 +25,26 @@ from universal_agent.multi_agent.merge import (
     decode_agent_result_merge,
 )
 
+_AgentResultMergeStatusPayload = Annotated[
+    AgentResultMergeStatus,
+    enum_before_validator(
+        AgentResultMergeStatus,
+        "expected_status",
+        invalid_template="unsupported agent result merge status: {value}",
+    ),
+]
+_OptionalAgentResultMergeStatusPayload = Annotated[
+    AgentResultMergeStatus | None,
+    optional_enum_before_validator(
+        AgentResultMergeStatus,
+        "merge_status",
+        invalid_template="unsupported agent result merge status: {value}",
+    ),
+]
+
 
 class _MultiAgentEvaluationExpectationsPayload(ConfigPayload):
-    expected_status: AgentResultMergeStatus = AgentResultMergeStatus.COMPLETED
+    expected_status: _AgentResultMergeStatusPayload = AgentResultMergeStatus.COMPLETED
     required_evidence_ids: list[str] = Field(default_factory=list)
     required_completed_task_ids: list[str] = Field(default_factory=list)
     forbidden_failed_task_ids: list[str] = Field(default_factory=list)
@@ -33,11 +53,6 @@ class _MultiAgentEvaluationExpectationsPayload(ConfigPayload):
     max_failed_task_count: int | None = 0
     max_review_conflict_count: int | None = 0
     min_completed_task_count: int | None = None
-
-    @field_validator("expected_status", mode="before")
-    @classmethod
-    def _parse_expected_status(cls, value: object) -> AgentResultMergeStatus:
-        return _parse_merge_status(value)
 
 
 class _MultiAgentEvaluationCheckPayload(ConfigPayload):
@@ -48,17 +63,10 @@ class _MultiAgentEvaluationCheckPayload(ConfigPayload):
 
 class _MultiAgentEvaluationReportPayload(ConfigPayload):
     passed: bool | None = None
-    merge_status: AgentResultMergeStatus | None = None
+    merge_status: _OptionalAgentResultMergeStatusPayload = None
     merge: dict[str, PydanticJsonValue]
     expectations: dict[str, PydanticJsonValue]
     checks: list[_MultiAgentEvaluationCheckPayload] = Field(default_factory=list)
-
-    @field_validator("merge_status", mode="before")
-    @classmethod
-    def _parse_merge_status(cls, value: object) -> AgentResultMergeStatus | None:
-        if value is None:
-            return None
-        return _parse_merge_status(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -351,14 +359,3 @@ def _decode_evaluation_check(
         passed=payload.passed,
         message=payload.message,
     )
-
-
-def _parse_merge_status(value: object) -> AgentResultMergeStatus:
-    if isinstance(value, AgentResultMergeStatus):
-        return value
-    if not isinstance(value, str):
-        raise ValueError(f"unsupported agent result merge status: {value}")
-    try:
-        return AgentResultMergeStatus(value)
-    except ValueError as exc:
-        raise ValueError(f"unsupported agent result merge status: {value}") from exc

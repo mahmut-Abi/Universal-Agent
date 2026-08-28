@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from types import MappingProxyType
+from typing import Annotated
 
 import pytest
 from pydantic import Field, ValidationError
@@ -8,6 +10,8 @@ from pydantic import Field, ValidationError
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticNonEmptyString,
+    enum_before_validator,
+    optional_enum_before_validator,
     parse_bool,
     parse_bool_text,
     parse_bounded_float,
@@ -55,6 +59,30 @@ class _NestedNonEmptyPayload(ConfigPayload):
 
 class _NestedPayload(ConfigPayload):
     item: _NestedNonEmptyPayload
+
+
+class _RuntimeColor(StrEnum):
+    BLUE = "blue"
+    GREEN = "green"
+
+
+_RuntimeColorPayload = Annotated[
+    _RuntimeColor,
+    enum_before_validator(_RuntimeColor, "color"),
+]
+_OptionalRuntimeColorPayload = Annotated[
+    _RuntimeColor | None,
+    optional_enum_before_validator(
+        _RuntimeColor,
+        "optional_color",
+        invalid_template="unsupported color: {value}",
+    ),
+]
+
+
+class _EnumPayload(ConfigPayload):
+    color: _RuntimeColorPayload
+    optional_color: _OptionalRuntimeColorPayload = None
 
 
 def test_parse_json_value_accepts_nested_json_values() -> None:
@@ -287,6 +315,22 @@ def test_parse_payload_prefixes_error_paths_and_accepts_expected_type_overrides(
             field="provider",
             expected_types={"list_type": "custom list"},
         )
+
+
+def test_enum_before_validators_parse_strict_pydantic_payload_fields() -> None:
+    parsed = parse_payload(
+        _EnumPayload,
+        {"color": "blue", "optional_color": "green"},
+    )
+
+    assert parsed.color is _RuntimeColor.BLUE
+    assert parsed.optional_color is _RuntimeColor.GREEN
+    assert parse_payload(_EnumPayload, {"color": "blue"}).optional_color is None
+
+    with pytest.raises(ValueError, match="color must be one of blue, green"):
+        parse_payload(_EnumPayload, {"color": "red"})
+    with pytest.raises(ValueError, match="unsupported color: red"):
+        parse_payload(_EnumPayload, {"color": "blue", "optional_color": "red"})
 
 
 def test_pydantic_error_details_exposes_first_error_path_type_and_message() -> None:

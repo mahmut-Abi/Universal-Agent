@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from enum import StrEnum
 from graphlib import CycleError, TopologicalSorter
 from types import MappingProxyType
-from typing import Protocol
+from typing import Annotated, Protocol
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
 from universal_agent.core import (
     ErrorCode,
@@ -24,6 +24,7 @@ from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     duplicate_values,
+    enum_before_validator,
     parse_payload,
     parse_string,
 )
@@ -78,6 +79,16 @@ class AgentDelegationBatchStatus(StrEnum):
     FAILED = "failed"
 
 
+_AgentDelegationBatchStatusPayload = Annotated[
+    AgentDelegationBatchStatus,
+    enum_before_validator(
+        AgentDelegationBatchStatus,
+        "status",
+        invalid_template="unsupported agent delegation batch status: {value}",
+    ),
+]
+
+
 class _AgentDelegationSpecPayload(ConfigPayload):
     request: dict[str, PydanticJsonValue]
     agent_id: str | None = None
@@ -85,22 +96,10 @@ class _AgentDelegationSpecPayload(ConfigPayload):
 
 
 class _AgentDelegationBatchResultPayload(ConfigPayload):
-    status: AgentDelegationBatchStatus
+    status: _AgentDelegationBatchStatusPayload
     reason: str = ""
     skipped_task_ids: list[str] = Field(default_factory=list)
     results: list[dict[str, PydanticJsonValue]] = Field(default_factory=list)
-
-    @field_validator("status", mode="before")
-    @classmethod
-    def _parse_status(cls, value: object) -> AgentDelegationBatchStatus:
-        if isinstance(value, AgentDelegationBatchStatus):
-            return value
-        if not isinstance(value, str):
-            raise ValueError(f"unsupported agent delegation batch status: {value}")
-        try:
-            return AgentDelegationBatchStatus(value)
-        except ValueError as exc:
-            raise ValueError(f"unsupported agent delegation batch status: {value}") from exc
 
 
 class _AgentDelegationTaskStatePayload(ConfigPayload):

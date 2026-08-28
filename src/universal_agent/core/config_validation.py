@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from functools import cache
@@ -10,6 +10,7 @@ from typing import Annotated
 from pydantic import (
     AfterValidator,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     NonNegativeFloat,
@@ -30,8 +31,10 @@ __all__ = [
     "PydanticJsonValue",
     "PydanticNonEmptyString",
     "duplicate_values",
+    "enum_before_validator",
     "enum_value",
     "json_mapping",
+    "optional_enum_before_validator",
     "parse_bool",
     "parse_bool_text",
     "parse_bounded_float",
@@ -560,6 +563,52 @@ def enum_value[T: StrEnum](enum_type: type[T], value: object, field: str) -> T:
     except ValueError as exc:
         values = ", ".join(item.value for item in enum_type)
         raise ValueError(f"{field} must be one of {values}") from exc
+
+
+def enum_before_validator[T: StrEnum](
+    enum_type: type[T],
+    field: str,
+    *,
+    invalid_template: str | None = None,
+) -> BeforeValidator:
+    return BeforeValidator(_enum_parser(enum_type, field, invalid_template=invalid_template))
+
+
+def optional_enum_before_validator[T: StrEnum](
+    enum_type: type[T],
+    field: str,
+    *,
+    invalid_template: str | None = None,
+) -> BeforeValidator:
+    parse_enum = _enum_parser(enum_type, field, invalid_template=invalid_template)
+
+    def parse(value: object) -> T | None:
+        if value is None:
+            return None
+        return parse_enum(value)
+
+    return BeforeValidator(parse)
+
+
+def _enum_parser[T: StrEnum](
+    enum_type: type[T],
+    field: str,
+    *,
+    invalid_template: str | None,
+) -> Callable[[object], T]:
+    def parse(value: object) -> T:
+        if invalid_template is None:
+            return enum_value(enum_type, value, field)
+        if isinstance(value, enum_type):
+            return value
+        if not isinstance(value, str):
+            raise ValueError(invalid_template.format(field=field, value=value))
+        try:
+            return enum_type(value)
+        except ValueError as exc:
+            raise ValueError(invalid_template.format(field=field, value=value)) from exc
+
+    return parse
 
 
 def string_mapping(value: object, field: str) -> Mapping[str, str]:

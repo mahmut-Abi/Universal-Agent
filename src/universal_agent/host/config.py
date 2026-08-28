@@ -4,8 +4,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
 from universal_agent.core import (
     DomainIdentity,
@@ -18,7 +19,7 @@ from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
     duplicate_values,
-    enum_value,
+    enum_before_validator,
     json_mapping,
     parse_json_object,
     parse_non_empty_string,
@@ -49,25 +50,20 @@ class ModelProvider(StrEnum):
     OPENAI_RESPONSES = "openai_responses"
 
 
+_SecretSourcePayload = Annotated[SecretSource, enum_before_validator(SecretSource, "source")]
+_StoreBackendPayload = Annotated[StoreBackend, enum_before_validator(StoreBackend, "backend")]
+_ModelProviderPayload = Annotated[ModelProvider, enum_before_validator(ModelProvider, "provider")]
+
+
 class _SecretRefPayload(ConfigPayload):
-    source: SecretSource = SecretSource.ENV
+    source: _SecretSourcePayload = SecretSource.ENV
     key: str
     required: bool = True
 
-    @field_validator("source", mode="before")
-    @classmethod
-    def _parse_source(cls, value: object) -> SecretSource:
-        return enum_value(SecretSource, value, "source")
-
 
 class _StoreConfigPayload(ConfigPayload):
-    backend: StoreBackend = StoreBackend.MEMORY
+    backend: _StoreBackendPayload = StoreBackend.MEMORY
     path: str | None = None
-
-    @field_validator("backend", mode="before")
-    @classmethod
-    def _parse_backend(cls, value: object) -> StoreBackend:
-        return enum_value(StoreBackend, value, "backend")
 
 
 class _RuntimeLimitsConfigPayload(ConfigPayload):
@@ -83,18 +79,13 @@ class _DomainConfigPayload(ConfigPayload):
 
 
 class _ModelConfigPayload(ConfigPayload):
-    provider: ModelProvider = ModelProvider.SCRIPTED
+    provider: _ModelProviderPayload = ModelProvider.SCRIPTED
     name: str = "scripted"
     endpoint: str | None = None
     api_key_secret: str | None = None
     timeout_seconds: float = 30.0
     headers: dict[str, str] = Field(default_factory=dict)
     response_format: str | None = None
-
-    @field_validator("provider", mode="before")
-    @classmethod
-    def _parse_provider(cls, value: object) -> ModelProvider:
-        return enum_value(ModelProvider, value, "provider")
 
 
 class _RuntimeConfigPayload(ConfigPayload):

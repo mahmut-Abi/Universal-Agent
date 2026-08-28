@@ -4,9 +4,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
-from typing import NewType
+from typing import Annotated, NewType
 
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import (
@@ -22,7 +22,9 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
+    enum_before_validator,
     json_mapping,
+    optional_enum_before_validator,
     parse_non_empty_string,
     parse_non_empty_string_sequence,
     parse_non_negative_float,
@@ -45,6 +47,24 @@ class AgentTaskResultStatus(StrEnum):
     CANCELLED = "cancelled"
     REJECTED = "rejected"
     WAITING = "waiting"
+
+
+_AgentTaskResultStatusPayload = Annotated[
+    AgentTaskResultStatus,
+    enum_before_validator(
+        AgentTaskResultStatus,
+        "status",
+        invalid_template="unsupported agent task result status: {value}",
+    ),
+]
+_AgentTaskErrorCodePayload = Annotated[
+    ErrorCode | None,
+    optional_enum_before_validator(
+        ErrorCode,
+        "error_code",
+        invalid_template="unsupported agent task error_code: {value}",
+    ),
+]
 
 
 class _AgentExpectedOutputPayload(ConfigPayload):
@@ -87,38 +107,14 @@ class _AgentTaskUsagePayload(ConfigPayload):
 
 class _AgentTaskResultPayload(ConfigPayload):
     task_id: str
-    status: AgentTaskResultStatus
+    status: _AgentTaskResultStatusPayload
     result: dict[str, PydanticJsonValue] = Field(default_factory=dict)
     evidence: list[str] = Field(default_factory=list)
     reason: str = ""
     session_id: str | None = None
-    error_code: ErrorCode | None = None
+    error_code: _AgentTaskErrorCodePayload = None
     api_version: str = AGENT_TASK_API_VERSION
     usage: _AgentTaskUsagePayload = Field(default_factory=_AgentTaskUsagePayload)
-
-    @field_validator("status", mode="before")
-    @classmethod
-    def _parse_status(cls, value: object) -> AgentTaskResultStatus:
-        if isinstance(value, AgentTaskResultStatus):
-            return value
-        if not isinstance(value, str):
-            raise ValueError(f"unsupported agent task result status: {value}")
-        try:
-            return AgentTaskResultStatus(value)
-        except ValueError as exc:
-            raise ValueError(f"unsupported agent task result status: {value}") from exc
-
-    @field_validator("error_code", mode="before")
-    @classmethod
-    def _parse_error_code(cls, value: object) -> ErrorCode | None:
-        if value is None or isinstance(value, ErrorCode):
-            return value
-        if not isinstance(value, str):
-            raise ValueError(f"unsupported agent task error_code: {value}")
-        try:
-            return ErrorCode(value)
-        except ValueError as exc:
-            raise ValueError(f"unsupported agent task error_code: {value}") from exc
 
 
 @dataclass(frozen=True, slots=True)
