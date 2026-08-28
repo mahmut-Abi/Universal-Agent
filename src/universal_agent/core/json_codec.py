@@ -41,6 +41,13 @@ def to_json_value(value: object, *, fallback_to_string: bool = False) -> JsonVal
     return cast(JsonValue, loads_json(payload))
 
 
+def to_json_object(value: object, *, fallback_to_string: bool = False) -> dict[str, JsonValue]:
+    body = to_json_value(value, fallback_to_string=fallback_to_string)
+    if not isinstance(body, dict):
+        raise JsonCodecError(f"{type(value).__name__} did not serialize to a JSON object")
+    return body
+
+
 def loads_json(value: str | bytes | bytearray) -> object:
     try:
         return orjson.loads(value)

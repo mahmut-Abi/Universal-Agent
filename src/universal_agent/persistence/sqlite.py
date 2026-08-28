@@ -174,9 +174,7 @@ class SQLiteEventStore:
         limit: int | None = None,
     ) -> tuple[RuntimeEvent, ...]:
         with self._connect() as connection:
-            query = sql_select(_RUNTIME_EVENTS.c.payload).order_by(
-                _RUNTIME_EVENTS.c.sequence.asc()
-            )
+            query = sql_select(_RUNTIME_EVENTS.c.payload).order_by(_RUNTIME_EVENTS.c.sequence.asc())
             if session_id is None:
                 rows = connection.execute(query).all()
             else:

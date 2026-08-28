@@ -486,9 +486,7 @@ class SQLiteDistributedLockRegistry(InMemoryDistributedLockRegistry):
 
     def _load(self, connection: Connection) -> None:
         rows = connection.execute(
-            sql_select(_SQLITE_LOCK_LEASES.c.payload).order_by(
-                _SQLITE_LOCK_LEASES.c.lock_key.asc()
-            )
+            sql_select(_SQLITE_LOCK_LEASES.c.payload).order_by(_SQLITE_LOCK_LEASES.c.lock_key.asc())
         ).all()
         loaded: dict[str, DistributedLockLease] = {}
         for row in rows:

@@ -18,6 +18,7 @@ from universal_agent.core import (
     Task,
     immutable_json,
     read_json_file,
+    to_json_object,
 )
 from universal_agent.evaluation.console import (
     build_evaluation_console_snapshot,
@@ -385,6 +386,10 @@ def _load_evaluation_report(path: Path) -> EvaluationReportRecording:
     return decode_evaluation_report(json_mapping(read_json_file(path)))
 
 
+def _object_body(value: object) -> dict[str, object]:
+    return cast(dict[str, object], to_json_object(value, fallback_to_string=True))
+
+
 def _evaluation_run_body(
     result: EvaluationRunResult,
     report_dir: str | None,
@@ -499,62 +504,30 @@ def _evaluation_scenario_definition_body(scenario: EvaluationScenario) -> dict[s
 
 
 def _evaluation_report_body(recording: EvaluationReportRecording) -> dict[str, object]:
-    return {
-        "suite_name": recording.suite_name,
-        "passed": recording.passed,
-        "summary": _evaluation_summary_body(recording.summary),
-        "scenarios": [_evaluation_scenario_body(item) for item in recording.scenarios],
-    }
+    body = _object_body(recording)
+    body["summary"] = _evaluation_summary_body(recording.summary)
+    body["scenarios"] = [_evaluation_scenario_body(item) for item in recording.scenarios]
+    body.pop("gate", None)
+    return body
 
 
 def _evaluation_summary_body(summary: EvaluationSummaryRecording) -> dict[str, object]:
-    return {
-        "scenario_count": summary.scenario_count,
-        "passed_count": summary.passed_count,
-        "failed_count": summary.failed_count,
-        "goal_completed_count": summary.goal_completed_count,
-        "task_completed_count": summary.task_completed_count,
-        "action_started_count": summary.action_started_count,
-        "action_completed_count": summary.action_completed_count,
-        "tool_failure_count": summary.tool_failure_count,
-        "policy_denial_count": summary.policy_denial_count,
-        "recovery_planned_count": summary.recovery_planned_count,
-        "human_intervention_count": summary.human_intervention_count,
-        "resource_conflict_count": summary.resource_conflict_count,
-        "active_resource_lock_count": summary.active_resource_lock_count,
-        "execution_duration_ms": summary.execution_duration_ms,
-        "model_call_count": summary.model_call_count,
-        "model_total_token_count": summary.model_total_token_count,
-        "model_estimated_cost_micros": summary.model_estimated_cost_micros,
-    }
+    return _object_body(summary)
 
 
 def _evaluation_scenario_body(scenario: EvaluationScenarioRecording) -> dict[str, object]:
-    return {
-        "scenario_name": scenario.scenario_name,
-        "kind": scenario.kind.value,
-        "tags": list(scenario.tags),
-        "passed": scenario.passed,
-        "result_status": scenario.result_status.value,
-        "error_code": None if scenario.error_code is None else scenario.error_code.value,
-        "satisfied_criteria": dict(scenario.satisfied_criteria),
-        "checks": [_evaluation_check_body(check) for check in scenario.checks],
-        "event_types": list(scenario.event_types),
-        "action_capabilities": list(scenario.action_capabilities),
-        "audit_capabilities": list(scenario.audit_capabilities),
-        "evidence_claims": list(scenario.evidence_claims),
-    }
+    body = _object_body(scenario)
+    body["checks"] = [_evaluation_check_body(check) for check in scenario.checks]
+    body.pop("metrics", None)
+    return body
 
 
 def _evaluation_gate_body(gate: EvaluationGateRecording) -> dict[str, object]:
-    return {
-        "passed": gate.passed,
-        "checks": [_evaluation_check_body(check) for check in gate.checks],
-    }
+    return _object_body(gate)
 
 
 def _evaluation_check_body(check: EvaluationCheckRecording) -> dict[str, object]:
-    return {"name": check.name, "passed": check.passed, "message": check.message}
+    return _object_body(check)
 
 
 def _replay_report_body(report: ReplayReport) -> dict[str, object]:
@@ -598,7 +571,7 @@ def _replay_recording_summary_body(recording: ReplayRecording) -> dict[str, obje
 
 
 def _replay_check_body(check: ReplayCheck) -> dict[str, object]:
-    return {"name": check.name, "passed": check.passed, "message": check.message}
+    return _object_body(check)
 
 
 def _evaluation_comparison_body(comparison: EvaluationReportComparison) -> dict[str, object]:
@@ -610,8 +583,4 @@ def _evaluation_comparison_body(comparison: EvaluationReportComparison) -> dict[
 
 
 def _comparison_check_body(check: EvaluationReportComparisonCheck) -> dict[str, object]:
-    return {
-        "name": check.name,
-        "passed": check.passed,
-        "message": check.message,
-    }
+    return _object_body(check)

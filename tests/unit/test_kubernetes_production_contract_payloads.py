@@ -71,8 +71,4 @@ def test_kubernetes_production_contract_payloads_keep_malformed_probe_tolerant()
 
 def _checks(report: JsonMapping) -> dict[str, Mapping[str, JsonValue]]:
     raw_checks = cast(list[JsonValue], report["checks"])
-    return {
-        str(check["name"]): check
-        for check in raw_checks
-        if isinstance(check, Mapping)
-    }
+    return {str(check["name"]): check for check in raw_checks if isinstance(check, Mapping)}

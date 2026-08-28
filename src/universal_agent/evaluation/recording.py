@@ -15,6 +15,7 @@ from universal_agent.core import (
     JsonValue,
     immutable_json,
     read_json_file,
+    to_json_object,
     to_json_value,
     write_json_file,
 )
@@ -531,14 +532,7 @@ def _event_values(report: ScenarioReport, event_type: str, data_key: str) -> tup
 
 
 def encode_evaluation_report(recording: EvaluationReportRecording) -> JsonObject:
-    return {
-        "schema_version": EVALUATION_REPORT_SCHEMA_VERSION,
-        "suite_name": recording.suite_name,
-        "passed": recording.passed,
-        "summary": _encode_evaluation_summary(recording.summary),
-        "scenarios": [_encode_evaluation_scenario(scenario) for scenario in recording.scenarios],
-        "gate": None if recording.gate is None else _encode_evaluation_gate(recording.gate),
-    }
+    return _schema_versioned_body(recording, schema_version=EVALUATION_REPORT_SCHEMA_VERSION)
 
 
 def decode_evaluation_report(payload: Mapping[str, JsonValue]) -> EvaluationReportRecording:
@@ -556,28 +550,7 @@ def decode_evaluation_report(payload: Mapping[str, JsonValue]) -> EvaluationRepo
 
 
 def encode_replay_recording(recording: ReplayRecording) -> JsonObject:
-    return {
-        "schema_version": REPLAY_RECORDING_SCHEMA_VERSION,
-        "scenario_name": recording.scenario_name,
-        "result_status": recording.result_status.value,
-        "error_code": None if recording.error_code is None else recording.error_code.value,
-        "satisfied_criteria": _to_json(recording.satisfied_criteria),
-        "event_types": list(recording.event_types),
-        "action_capabilities": list(recording.action_capabilities),
-        "action_statuses": list(recording.action_statuses),
-        "policy_effects": list(recording.policy_effects),
-        "audit_entries": [
-            {
-                "capability": item.capability,
-                "tool_name": item.tool_name,
-                "policy_effect": item.policy_effect,
-                "status": item.status,
-                "error_code": None if item.error_code is None else item.error_code.value,
-            }
-            for item in recording.audit_entries
-        ],
-        "metrics": _encode_metrics(recording.metrics),
-    }
+    return _schema_versioned_body(recording, schema_version=REPLAY_RECORDING_SCHEMA_VERSION)
 
 
 def decode_replay_recording(payload: Mapping[str, JsonValue]) -> ReplayRecording:
@@ -601,30 +574,6 @@ def decode_replay_recording(payload: Mapping[str, JsonValue]) -> ReplayRecording
 
 def json_mapping(value: object) -> JsonMapping:
     return _parse_json_object(value, "evaluation recording")
-
-
-def _encode_evaluation_summary(summary: EvaluationSummaryRecording) -> JsonObject:
-    return {
-        "scenario_count": summary.scenario_count,
-        "passed_count": summary.passed_count,
-        "failed_count": summary.failed_count,
-        "goal_completed_count": summary.goal_completed_count,
-        "task_completed_count": summary.task_completed_count,
-        "action_started_count": summary.action_started_count,
-        "action_completed_count": summary.action_completed_count,
-        "tool_failure_count": summary.tool_failure_count,
-        "policy_denial_count": summary.policy_denial_count,
-        "recovery_planned_count": summary.recovery_planned_count,
-        "human_intervention_count": summary.human_intervention_count,
-        "resource_lock_acquired_count": summary.resource_lock_acquired_count,
-        "resource_lock_released_count": summary.resource_lock_released_count,
-        "resource_conflict_count": summary.resource_conflict_count,
-        "active_resource_lock_count": summary.active_resource_lock_count,
-        "execution_duration_ms": summary.execution_duration_ms,
-        "model_call_count": summary.model_call_count,
-        "model_total_token_count": summary.model_total_token_count,
-        "model_estimated_cost_micros": summary.model_estimated_cost_micros,
-    }
 
 
 def _decode_evaluation_summary(payload: _EvaluationSummaryPayload) -> EvaluationSummaryRecording:
@@ -651,24 +600,6 @@ def _decode_evaluation_summary(payload: _EvaluationSummaryPayload) -> Evaluation
     )
 
 
-def _encode_evaluation_scenario(scenario: EvaluationScenarioRecording) -> JsonObject:
-    return {
-        "scenario_name": scenario.scenario_name,
-        "kind": scenario.kind.value,
-        "tags": list(scenario.tags),
-        "passed": scenario.passed,
-        "result_status": scenario.result_status.value,
-        "error_code": None if scenario.error_code is None else scenario.error_code.value,
-        "satisfied_criteria": _to_json(scenario.satisfied_criteria),
-        "checks": [_encode_evaluation_check(check) for check in scenario.checks],
-        "event_types": list(scenario.event_types),
-        "action_capabilities": list(scenario.action_capabilities),
-        "audit_capabilities": list(scenario.audit_capabilities),
-        "evidence_claims": list(scenario.evidence_claims),
-        "metrics": _encode_metrics(scenario.metrics),
-    }
-
-
 def _decode_evaluation_scenario(payload: _EvaluationScenarioPayload) -> EvaluationScenarioRecording:
     return EvaluationScenarioRecording(
         scenario_name=payload.scenario_name,
@@ -687,22 +618,11 @@ def _decode_evaluation_scenario(payload: _EvaluationScenarioPayload) -> Evaluati
     )
 
 
-def _encode_evaluation_gate(gate: EvaluationGateRecording) -> JsonObject:
-    return {
-        "passed": gate.passed,
-        "checks": [_encode_evaluation_check(check) for check in gate.checks],
-    }
-
-
 def _decode_evaluation_gate(payload: _EvaluationGatePayload) -> EvaluationGateRecording:
     return EvaluationGateRecording(
         passed=payload.passed,
         checks=tuple(_decode_evaluation_check(item) for item in payload.checks),
     )
-
-
-def _encode_evaluation_check(check: EvaluationCheckRecording) -> JsonObject:
-    return {"name": check.name, "passed": check.passed, "message": check.message}
 
 
 def _decode_evaluation_check(payload: _EvaluationCheckPayload) -> EvaluationCheckRecording:
@@ -711,30 +631,6 @@ def _decode_evaluation_check(payload: _EvaluationCheckPayload) -> EvaluationChec
         passed=payload.passed,
         message=payload.message,
     )
-
-
-def _encode_metrics(metrics: ReplayMetrics) -> JsonObject:
-    return {
-        "event_count": metrics.event_count,
-        "action_started_count": metrics.action_started_count,
-        "action_completed_count": metrics.action_completed_count,
-        "tool_failure_count": metrics.tool_failure_count,
-        "policy_denial_count": metrics.policy_denial_count,
-        "confirmation_required_count": metrics.confirmation_required_count,
-        "recovery_planned_count": metrics.recovery_planned_count,
-        "recovery_exhausted_count": metrics.recovery_exhausted_count,
-        "human_intervention_count": metrics.human_intervention_count,
-        "resource_lock_acquired_count": metrics.resource_lock_acquired_count,
-        "resource_lock_released_count": metrics.resource_lock_released_count,
-        "resource_conflict_count": metrics.resource_conflict_count,
-        "active_resource_lock_count": metrics.active_resource_lock_count,
-        "decision_generated_count": metrics.decision_generated_count,
-        "decision_validated_count": metrics.decision_validated_count,
-        "decision_rejected_count": metrics.decision_rejected_count,
-        "model_call_count": metrics.model_call_count,
-        "model_total_token_count": metrics.model_total_token_count,
-        "model_estimated_cost_micros": metrics.model_estimated_cost_micros,
-    }
 
 
 def _decode_audit_entry(payload: _ReplayAuditEntryPayload) -> ReplayAuditEntry:
@@ -773,6 +669,11 @@ def _decode_metrics(payload: _ReplayMetricsPayload) -> ReplayMetrics:
 
 def _to_json(value: object) -> JsonValue:
     return to_json_value(value, fallback_to_string=True)
+
+
+def _schema_versioned_body(value: object, *, schema_version: int) -> JsonObject:
+    body = to_json_object(value, fallback_to_string=True)
+    return {"schema_version": schema_version, **body}
 
 
 def _string_tuple(value: list[str]) -> tuple[str, ...]:

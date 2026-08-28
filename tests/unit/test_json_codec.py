@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from io import StringIO
@@ -13,6 +14,7 @@ from universal_agent.core import (
     dumps_json,
     loads_json,
     read_json_file,
+    to_json_object,
     to_json_value,
     write_json,
     write_json_file,
@@ -26,6 +28,13 @@ class _Status(StrEnum):
 class _UnknownObject:
     def __str__(self) -> str:
         return "unknown-object"
+
+
+@dataclass(frozen=True, slots=True)
+class _Event:
+    status: _Status
+    observed_at: datetime
+    labels: tuple[str, ...]
 
 
 class _ReadOnlyMapping(Mapping[object, object]):
@@ -83,6 +92,27 @@ def test_json_codec_can_stringify_unknown_objects_for_projection_boundaries() ->
     assert to_json_value({"value": _UnknownObject()}, fallback_to_string=True) == {
         "value": "unknown-object"
     }
+
+
+def test_json_codec_projects_dataclasses_to_json_objects() -> None:
+    payload = to_json_object(
+        _Event(
+            status=_Status.RUNNING,
+            observed_at=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+            labels=("api", "prod"),
+        )
+    )
+
+    assert payload == {
+        "labels": ["api", "prod"],
+        "observed_at": "2026-01-02T03:04:05+00:00",
+        "status": "running",
+    }
+
+
+def test_json_codec_rejects_non_object_projection() -> None:
+    with pytest.raises(JsonCodecError, match="did not serialize to a JSON object"):
+        to_json_object(["not", "an", "object"])
 
 
 def test_json_codec_writes_stream_with_trailing_newline() -> None:
