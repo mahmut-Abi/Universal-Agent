@@ -12,10 +12,16 @@ def test_agentd_server_config_validates_boundary_inputs() -> None:
 
     with pytest.raises(ValueError, match="agentd host must not be empty"):
         AgentdServerConfig(host=" ")
+    with pytest.raises(ValueError, match="agentd host must be a string"):
+        AgentdServerConfig(host=cast(str, 1))
     with pytest.raises(ValueError, match="agentd port must be an integer"):
         AgentdServerConfig(port=cast(int, "8765"))
+    with pytest.raises(ValueError, match="agentd port must be non-negative"):
+        AgentdServerConfig(port=-1)
     with pytest.raises(ValueError, match="agentd max_body_bytes must be non-negative"):
         AgentdServerConfig(max_body_bytes=-1)
+    with pytest.raises(ValueError, match="agentd max_body_bytes must be an integer"):
+        AgentdServerConfig(max_body_bytes=cast(int, "1000"))
 
 
 def test_agentd_auth_policy_validates_tokens_and_public_paths() -> None:

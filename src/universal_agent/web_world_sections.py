@@ -4,7 +4,14 @@ from typing import Any
 
 from universal_agent.service import SessionExplorerView, WorldNeighborhoodView
 from universal_agent.web_helpers import _value_text
-from universal_agent.web_ui import _empty_table_row, _section, _table, _table_row
+from universal_agent.web_ui import (
+    _empty_paragraph,
+    _empty_table_row,
+    _section,
+    _section_blocks,
+    _table,
+    _table_row,
+)
 
 
 def _world_facts(explorer: SessionExplorerView | None) -> str:
@@ -57,42 +64,44 @@ def _world_neighborhood(neighborhood: WorldNeighborhoodView | None) -> str:
     if neighborhood is None:
         return _section(
             "Focused World Neighborhood",
-            '<p class="empty">No focused world neighborhood selected</p>',
+            _empty_paragraph("No focused world neighborhood selected"),
         )
     root = (
-        '<p class="empty">No root entity matched the requested focus</p>'
+        _empty_paragraph("No root entity matched the requested focus")
         if neighborhood.root is None
         else _table(
             ("Entity", "Kind", "Attributes", "Evidence"),
             (_world_entity_row(neighborhood.root),),
         )
     )
-    return _section(
+    return _section_blocks(
         "Focused World Neighborhood",
-        root
-        + _table(
-            ("Fact Subject", "Claim", "Value", "Confidence", "Evidence"),
-            _world_fact_rows(neighborhood.facts, empty="No focused world facts"),
-        )
-        + _table(
-            ("Source", "Relation", "Target", "Evidence"),
-            _world_relation_rows(
-                neighborhood.outgoing_relations,
-                empty="No outgoing focused relations",
+        (
+            root,
+            _table(
+                ("Fact Subject", "Claim", "Value", "Confidence", "Evidence"),
+                _world_fact_rows(neighborhood.facts, empty="No focused world facts"),
             ),
-        )
-        + _table(
-            ("Source", "Relation", "Target", "Evidence"),
-            _world_relation_rows(
-                neighborhood.incoming_relations,
-                empty="No incoming focused relations",
+            _table(
+                ("Source", "Relation", "Target", "Evidence"),
+                _world_relation_rows(
+                    neighborhood.outgoing_relations,
+                    empty="No outgoing focused relations",
+                ),
             ),
-        )
-        + _table(
-            ("Related Entity", "Kind", "Attributes", "Evidence"),
-            _world_entity_rows(
-                neighborhood.related_entities,
-                empty="No related focused entities",
+            _table(
+                ("Source", "Relation", "Target", "Evidence"),
+                _world_relation_rows(
+                    neighborhood.incoming_relations,
+                    empty="No incoming focused relations",
+                ),
+            ),
+            _table(
+                ("Related Entity", "Kind", "Attributes", "Evidence"),
+                _world_entity_rows(
+                    neighborhood.related_entities,
+                    empty="No related focused entities",
+                ),
             ),
         ),
     )

@@ -21,6 +21,7 @@ from universal_agent.web_helpers import (
 from universal_agent.web_types import WebConsoleSnapshot
 from universal_agent.web_ui import (
     _detail_list,
+    _empty_paragraph,
     _empty_table_row,
     _link,
     _raw_table_cell,
@@ -60,7 +61,7 @@ def _domains(snapshot: WebConsoleSnapshot) -> str:
 
 def _domain_details(domain: DomainView | None) -> str:
     if domain is None:
-        return _section("Domain", '<p class="empty">No selected domain</p>')
+        return _section("Domain", _empty_paragraph("No selected domain"))
     items = (
         ("Domain", f"{domain.name}@{domain.version}"),
         ("Primary", "yes" if domain.primary else "no"),
@@ -308,7 +309,7 @@ def _memory(memories: tuple[MemoryView, ...]) -> str:
 
 def _domain_package_details(package: DomainPackageView | None) -> str:
     if package is None:
-        return _section("Domain Package", '<p class="empty">No selected domain package</p>')
+        return _section("Domain Package", _empty_paragraph("No selected domain package"))
     items = (
         ("Package", f"{package.name}@{package.version}"),
         ("Description", package.description),
@@ -345,7 +346,7 @@ def _domain_package_resources(package: DomainPackageView | None) -> str:
 
 def _domain_package_security(package: DomainPackageView | None) -> str:
     if package is None:
-        return _section("Package Security", '<p class="empty">No package security metadata</p>')
+        return _section("Package Security", _empty_paragraph("No package security metadata"))
     items = (
         ("Security Metadata", _value_text(package.security)),
         ("Required Tools", _string_tuple_text(package.required_tools)),
@@ -360,7 +361,7 @@ def _domain_package_active_domains(
     package: DomainPackageView | None,
 ) -> str:
     if package is None:
-        return _section("Matching Active Domains", '<p class="empty">No selected package</p>')
+        return _section("Matching Active Domains", _empty_paragraph("No selected package"))
     matches = tuple(
         domain
         for domain in snapshot.domains
@@ -374,7 +375,7 @@ def _domain_package_profiles(
     package: DomainPackageView | None,
 ) -> str:
     if package is None:
-        return _section("Matching Profiles", '<p class="empty">No selected package</p>')
+        return _section("Matching Profiles", _empty_paragraph("No selected package"))
     matches = tuple(
         profile
         for profile in snapshot.profiles

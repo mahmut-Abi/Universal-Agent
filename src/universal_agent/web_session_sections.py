@@ -5,6 +5,7 @@ from universal_agent.runtime import RuntimeEventView, SessionSummaryView, Sessio
 from universal_agent.web_helpers import _event_detail, _mapping_text, _string_tuple_text
 from universal_agent.web_ui import (
     _detail_list,
+    _empty_paragraph,
     _empty_table_row,
     _link,
     _raw_table_cell,
@@ -43,7 +44,7 @@ def _sessions(sessions: tuple[SessionSummaryView, ...]) -> str:
 
 def _selected_session(session: SessionView | None) -> str:
     if session is None:
-        return _section("Selected Session", '<p class="empty">No selected session</p>')
+        return _section("Selected Session", _empty_paragraph("No selected session"))
     pending = "none"
     if session.pending_action is not None:
         pending = (

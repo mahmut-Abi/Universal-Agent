@@ -13,9 +13,11 @@ from universal_agent.web_helpers import (
 from universal_agent.web_types import WebConsoleSnapshot
 from universal_agent.web_ui import (
     _detail_list,
+    _empty_paragraph,
     _empty_table_row,
     _raw_table_cell,
     _section,
+    _section_blocks,
     _span,
     _status_class,
     _table,
@@ -87,7 +89,7 @@ def _distributed_not_configured(distributed: DistributedRuntimeSnapshot | None) 
         return ""
     return _section(
         "Distributed Runtime",
-        '<p class="empty">Distributed runtime coordinator is not configured</p>',
+        _empty_paragraph("Distributed runtime coordinator is not configured"),
     )
 
 
@@ -241,7 +243,7 @@ def _multi_agent(multi_agent: MultiAgentView) -> str:
     if not multi_agent.enabled:
         return _section(
             "Multi-Agent",
-            '<p class="empty">Multi-Agent registry is not configured</p>',
+            _empty_paragraph("Multi-Agent registry is not configured"),
         )
     profile_rows = [
         _table_row(
@@ -283,14 +285,16 @@ def _multi_agent(multi_agent: MultiAgentView) -> str:
         instance_rows.append(_empty_table_row("No agent instances", colspan=5))
     if not task_rows:
         task_rows.append(_empty_table_row("No delegation tasks", colspan=3))
-    return _section(
+    return _section_blocks(
         "Multi-Agent",
-        _table(
-            ("Profile", "Domains", "Permissions", "Capabilities", "Description"),
-            tuple(profile_rows),
-        )
-        + _table(("Agent", "Profile", "Status", "Session", "Endpoint"), tuple(instance_rows))
-        + _table(("Task", "Children", "Depth"), tuple(task_rows)),
+        (
+            _table(
+                ("Profile", "Domains", "Permissions", "Capabilities", "Description"),
+                tuple(profile_rows),
+            ),
+            _table(("Agent", "Profile", "Status", "Session", "Endpoint"), tuple(instance_rows)),
+            _table(("Task", "Children", "Depth"), tuple(task_rows)),
+        ),
     )
 
 

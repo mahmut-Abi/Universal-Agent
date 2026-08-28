@@ -5,6 +5,8 @@ from contextlib import suppress
 from dataclasses import dataclass
 from types import MappingProxyType
 
+from pydantic import Field, field_validator
+from pydantic import ValidationError as PydanticValidationError
 from starlette.applications import Starlette
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response as StarletteResponse
@@ -15,11 +17,24 @@ from universal_agent.agentd.app import AgentdApp
 from universal_agent.agentd.http import HttpRequest, HttpResponse
 from universal_agent.core import JsonCodecError, JsonMapping, dumps_json, immutable_json, loads_json
 from universal_agent.core.config_validation import (
+    ConfigPayload,
     parse_json_object,
-    parse_non_empty_string,
-    parse_non_negative_int,
     parse_non_negative_int_text,
+    pydantic_error_details,
 )
+
+
+class _AgentdServerConfigPayload(ConfigPayload):
+    host: str
+    port: int = Field(ge=0)
+    max_body_bytes: int = Field(ge=0)
+
+    @field_validator("host")
+    @classmethod
+    def _require_host(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("agentd host must not be empty")
+        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,17 +44,37 @@ class AgentdServerConfig:
     max_body_bytes: int = 1_000_000
 
     def __post_init__(self) -> None:
-        parse_non_empty_string(self.host, "agentd host")
-        parse_non_negative_int(
-            self.port,
-            "agentd port",
-            range_template="{path} must be non-negative",
+        _validate_agentd_server_config(self)
+
+
+def _validate_agentd_server_config(config: AgentdServerConfig) -> None:
+    try:
+        _AgentdServerConfigPayload.model_validate(
+            {
+                "host": config.host,
+                "port": config.port,
+                "max_body_bytes": config.max_body_bytes,
+            }
         )
-        parse_non_negative_int(
-            self.max_body_bytes,
-            "agentd max_body_bytes",
-            range_template="{path} must be non-negative",
-        )
+    except PydanticValidationError as exc:
+        raise ValueError(_agentd_server_config_error_message(exc)) from exc
+
+
+def _agentd_server_config_error_message(error: PydanticValidationError) -> str:
+    details = pydantic_error_details(error)
+    if details.path == "host":
+        if details.error_type == "string_type":
+            return "agentd host must be a string"
+        return details.message.removeprefix("Value error, ")
+    if details.path == "port":
+        if details.error_type == "greater_than_equal":
+            return "agentd port must be non-negative"
+        return "agentd port must be an integer"
+    if details.path == "max_body_bytes":
+        if details.error_type == "greater_than_equal":
+            return "agentd max_body_bytes must be non-negative"
+        return "agentd max_body_bytes must be an integer"
+    return details.message or str(error)
 
 
 class AgentdHttpServer:

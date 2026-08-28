@@ -24,6 +24,12 @@ _PAGE_TEMPLATE = _WEB_ENV.from_string(
 </body>
 </html>"""
 )
+_FRAGMENT_TEMPLATE = _WEB_ENV.from_string(
+    "{% for block in blocks %}"
+    "{% if not loop.first %}{{ separator|safe }}{% endif %}"
+    "{{ block|safe }}"
+    "{% endfor %}"
+)
 _SECTION_TEMPLATE = _WEB_ENV.from_string(
     """<section class="panel">
 <h2>{{ title }}</h2>
@@ -82,6 +88,9 @@ _SPAN_TEMPLATE = _WEB_ENV.from_string(
 _LINK_TEMPLATE = _WEB_ENV.from_string(
     '<a href="{{ href }}">{{ label|html_text }}</a>'
 )
+_EMPTY_PARAGRAPH_TEMPLATE = _WEB_ENV.from_string(
+    '<p class="empty">{{ message|html_text }}</p>'
+)
 _DETAIL_LIST_TEMPLATE = _WEB_ENV.from_string(
     '<dl class="details">'
     "{% for label, value in items %}"
@@ -115,12 +124,20 @@ def _page(title: str, sections: tuple[str, ...], *, stylesheet: str | None = Non
     return _PAGE_TEMPLATE.render(
         title=title,
         stylesheet=_stylesheet() if stylesheet is None else stylesheet,
-        body="\n".join(sections),
+        body=_fragment(sections, separator="\n"),
     )
+
+
+def _fragment(blocks: tuple[str, ...], *, separator: str = "") -> str:
+    return _FRAGMENT_TEMPLATE.render(blocks=blocks, separator=separator)
 
 
 def _section(title: str, body: str) -> str:
     return _SECTION_TEMPLATE.render(title=title, body=body)
+
+
+def _section_blocks(title: str, blocks: tuple[str, ...]) -> str:
+    return _section(title, _fragment(blocks))
 
 
 def _metric_card(label: str, value: object) -> str:
@@ -159,6 +176,10 @@ def _span(value: object, *, class_name: str) -> str:
 
 def _link(label: object, href: str) -> str:
     return _LINK_TEMPLATE.render(label=label, href=href)
+
+
+def _empty_paragraph(message: object) -> str:
+    return _EMPTY_PARAGRAPH_TEMPLATE.render(message=message)
 
 
 def _detail_list(items: tuple[tuple[object, object], ...]) -> str:

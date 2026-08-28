@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, TypedDict
+
+from jinja2 import Environment
 
 from universal_agent.core import dumps_json
 
+_TEMPLATE_ENV = Environment(autoescape=False, lstrip_blocks=True)
 
-def runtime_stub_source(manifest: Any, factory_name: str) -> str:
-    return f"""from __future__ import annotations
+_RUNTIME_STUB_TEMPLATE = _TEMPLATE_ENV.from_string(
+    """from __future__ import annotations
 
 from universal_agent import BaseDomainRuntime, immutable_json
 from universal_agent.core import (
@@ -30,7 +33,7 @@ class _ScaffoldTool:
         self.definition = definition
 
     async def execute(self, arguments: JsonMapping) -> JsonMapping:
-        return immutable_json({{"scaffold": True, "arguments": dict(arguments)}})
+        return immutable_json({"scaffold": True, "arguments": dict(arguments)})
 
 
 class _ScaffoldEvaluator:
@@ -54,66 +57,111 @@ class _ScaffoldEvaluator:
 
 class ScaffoldDomain(BaseDomainRuntime):
     manifest = DomainManifest(
-        {_py_string(manifest.api_version)},
+        {{ api_version }},
         "Domain",
         DomainMetadata(
-            {_py_string(manifest.name)},
-            {_py_string(manifest.version)},
-            {_py_string(manifest.description)},
+            {{ name }},
+            {{ version }},
+            {{ description }},
         ),
-        {_py_string_tuple(manifest.ontology)},
-        {_py_string_tuple(manifest.capabilities)},
-        {_py_string_tuple(manifest.evaluators)},
+        {{ ontology }},
+        {{ capabilities }},
+        {{ evaluators }},
     )
 
     def capabilities(self) -> tuple[CapabilityDefinition, ...]:
         return (
-{_runtime_stub_capabilities(manifest)}
+{% for capability in capability_rows %}
+            CapabilityDefinition(
+                {{ capability.name }},
+                {{ capability.description }},
+                CapabilityCategory.OBSERVATION,
+            ),
+{% endfor %}
         )
 
     def tools(self) -> tuple[Tool, ...]:
         return (
-{_runtime_stub_tools(manifest)}
+{% for tool in tool_rows %}
+            _ScaffoldTool(
+                ToolDefinition(
+                    {{ tool.name }},
+                    {{ tool.description }},
+                    {{ tool.capabilities }},
+                )
+            ),
+{% endfor %}
         )
 
     def evaluators(self) -> tuple[Evaluator, ...]:
         return (
-{_runtime_stub_evaluators(manifest)}
+{% for evaluator in evaluator_rows %}
+            _ScaffoldEvaluator({{ evaluator.name }}),
+{% endfor %}
         )
 
 
-def {factory_name}() -> ScaffoldDomain:
+def {{ factory_name }}() -> ScaffoldDomain:
     return ScaffoldDomain()
 """
+)
 
 
-def _runtime_stub_capabilities(manifest: Any) -> str:
-    return "\n".join(
-        (
-            "            CapabilityDefinition("
-            f"{_py_string(capability)}, "
-            f"{_py_string(f'Scaffold capability: {capability}')}, "
-            "CapabilityCategory.OBSERVATION),"
-        )
+class _RuntimeStubCapability(TypedDict):
+    name: str
+    description: str
+
+
+class _RuntimeStubTool(TypedDict):
+    name: str
+    description: str
+    capabilities: str
+
+
+class _RuntimeStubEvaluator(TypedDict):
+    name: str
+
+
+def runtime_stub_source(manifest: Any, factory_name: str) -> str:
+    return _RUNTIME_STUB_TEMPLATE.render(
+        api_version=_py_string(manifest.api_version),
+        name=_py_string(manifest.name),
+        version=_py_string(manifest.version),
+        description=_py_string(manifest.description),
+        ontology=_py_string_tuple(manifest.ontology),
+        capabilities=_py_string_tuple(manifest.capabilities),
+        evaluators=_py_string_tuple(manifest.evaluators),
+        capability_rows=_runtime_stub_capabilities(manifest),
+        tool_rows=_runtime_stub_tools(manifest),
+        evaluator_rows=_runtime_stub_evaluators(manifest),
+        factory_name=factory_name,
+    )
+
+
+def _runtime_stub_capabilities(manifest: Any) -> tuple[_RuntimeStubCapability, ...]:
+    return tuple(
+        {
+            "name": _py_string(capability),
+            "description": _py_string(f"Scaffold capability: {capability}"),
+        }
         for capability in manifest.capabilities
     )
 
 
-def _runtime_stub_tools(manifest: Any) -> str:
-    return "\n".join(
-        (
-            "            _ScaffoldTool(ToolDefinition("
-            f"{_py_string(tool)}, "
-            f"{_py_string(f'Scaffold tool: {tool}')}, "
-            f"{_py_string_tuple(manifest.capabilities)})),"
-        )
+def _runtime_stub_tools(manifest: Any) -> tuple[_RuntimeStubTool, ...]:
+    return tuple(
+        {
+            "name": _py_string(tool),
+            "description": _py_string(f"Scaffold tool: {tool}"),
+            "capabilities": _py_string_tuple(manifest.capabilities),
+        }
         for tool in manifest.tools
     )
 
 
-def _runtime_stub_evaluators(manifest: Any) -> str:
-    return "\n".join(
-        f"            _ScaffoldEvaluator({_py_string(evaluator)}),"
+def _runtime_stub_evaluators(manifest: Any) -> tuple[_RuntimeStubEvaluator, ...]:
+    return tuple(
+        {"name": _py_string(evaluator)}
         for evaluator in manifest.evaluators
     )
 
