@@ -23,7 +23,7 @@
 
 | 项 | 说明 |
 |---|---|
-| 现状 | 已引入 `HttpxJsonHttpTransport` / `HttpxKubernetesApiTransport` 作为默认实现；OpenAI SDK base_url 归一化也改用 `httpx.URL`；旧 `StdlibJsonHttpTransport` / `UrllibKubernetesApiTransport` 名称保留为兼容别名 |
+| 现状 | 已引入 `HttpxJsonHttpTransport` / `HttpxKubernetesApiTransport` 作为默认实现；OpenAI SDK base_url 归一化和 agentd thin-client query 序列化也改用 `httpx.URL` / `httpx.QueryParams`；旧 `StdlibJsonHttpTransport` / `UrllibKubernetesApiTransport` 名称保留为兼容别名 |
 | 改动面 | 传输层已是 Protocol（`JsonHttpModelTransport` / `KubernetesApiTransport`），调用方仍可注入测试 adapter |
 | 收益 | 真 async + 连接池；原生流式读取（SSE / streaming LLM 前置条件）；重试、超时、代理语义标准化 |
 | 预估 | 改动 ~100 行，ROI 最高的单点改动 |

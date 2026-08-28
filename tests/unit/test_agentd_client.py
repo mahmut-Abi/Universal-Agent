@@ -38,6 +38,32 @@ async def test_agentd_client_gets_json_with_bearer_token_and_query() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agentd_client_uses_httpx_query_params_for_encoding() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"status": "ok"}, request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    agentd = AgentdClient("http://agentd.example.test", client=client)
+
+    try:
+        await agentd.get_json(
+            "v1/domain-packages",
+            query={"tag": "ops team/a", "enabled": False, "limit": 10, "empty": None},
+        )
+    finally:
+        await client.aclose()
+
+    assert len(requests) == 1
+    assert (
+        str(requests[0].url)
+        == "http://agentd.example.test/v1/domain-packages?tag=ops+team%2Fa&enabled=false&limit=10"
+    )
+
+
+@pytest.mark.asyncio
 async def test_agentd_client_posts_json() -> None:
     requests: list[httpx.Request] = []
 

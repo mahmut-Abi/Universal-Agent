@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import TracebackType
+from typing import Any, cast
 from urllib.parse import quote
 
 import httpx
@@ -174,18 +175,12 @@ def _request_url(
 ) -> str:
     normalized_path = "/" + path.lstrip("/")
     url = httpx.URL(f"{base_url}{normalized_path}")
-    params: list[tuple[str, str | int | float | bool | None]] = [
-        (key, _query_value(value)) for key, value in (query or {}).items() if value is not None
-    ]
+    params = httpx.QueryParams(
+        cast(Any, tuple((key, value) for key, value in (query or {}).items() if value is not None))
+    )
     if not params:
         return str(url)
     return str(url.copy_merge_params(params))
-
-
-def _query_value(value: object) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    return str(value)
 
 
 def _response_json(response: httpx.Response) -> JsonMapping:
