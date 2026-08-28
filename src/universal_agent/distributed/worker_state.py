@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -11,6 +10,10 @@ from pathlib import Path
 from filelock import FileLock
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 from pydantic import ValidationError as PydanticValidationError
+from sqlalchemy import URL, Column, Engine, Index, MetaData, String, Table, Text, create_engine
+from sqlalchemy import insert as sql_insert
+from sqlalchemy import select as sql_select
+from sqlalchemy.engine import Connection
 
 from universal_agent.core import (
     JsonMapping,
@@ -73,6 +76,24 @@ class _WorkerRecordPayload(BaseModel):
     capabilities: list[StrictStr]
     metadata: dict[str, PydanticJsonValue] | None = None
     last_error: StrictStr | None = None
+
+
+_SQLITE_METADATA = MetaData()
+_SQLITE_WORKER_RECORDS = Table(
+    "worker_registry_records",
+    _SQLITE_METADATA,
+    Column("worker_id", String, primary_key=True),
+    Column("status", String, nullable=False),
+    Column("heartbeat_at", String, nullable=False),
+    Column("lease_expires_at", String, nullable=False),
+    Column("payload", Text, nullable=False),
+)
+Index(
+    "idx_worker_registry_records_status",
+    _SQLITE_WORKER_RECORDS.c.status,
+    _SQLITE_WORKER_RECORDS.c.lease_expires_at,
+    _SQLITE_WORKER_RECORDS.c.worker_id,
+)
 
 
 class InMemoryWorkerRegistry:
@@ -365,9 +386,9 @@ class SQLiteWorkerRegistry(InMemoryWorkerRegistry):
     def __init__(self, path: str | Path) -> None:
         super().__init__()
         self._path = Path(path)
-        self._transaction_connection: sqlite3.Connection | None = None
+        self._engine: Engine | None = None
+        self._transaction_connection: Connection | None = None
         with self._connect() as connection:
-            _ensure_sqlite_worker_registry_schema(connection)
             self._load(connection)
 
     def register(
@@ -470,14 +491,13 @@ class SQLiteWorkerRegistry(InMemoryWorkerRegistry):
         self,
         *,
         commit_on: tuple[type[Exception], ...] = (),
-    ) -> Iterator[sqlite3.Connection]:
+    ) -> Iterator[Connection]:
         active = self._transaction_connection
         if active is not None:
             yield active
             return
         with self._connect() as connection:
-            _ensure_sqlite_worker_registry_schema(connection)
-            connection.execute("BEGIN IMMEDIATE")
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
             self._transaction_connection = connection
             try:
                 yield connection
@@ -492,19 +512,27 @@ class SQLiteWorkerRegistry(InMemoryWorkerRegistry):
             finally:
                 self._transaction_connection = None
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[Connection]:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        return sqlite3.connect(self._path, timeout=30.0, isolation_level=None)
+        with self._sqlite_engine().connect() as connection:
+            yield connection
 
-    def _load(self, connection: sqlite3.Connection) -> None:
-        _ensure_sqlite_worker_registry_schema(connection)
+    def _sqlite_engine(self) -> Engine:
+        if self._engine is None:
+            self._engine = create_engine(
+                URL.create("sqlite", database=str(self._path)),
+                connect_args={"timeout": 30.0},
+            )
+            _SQLITE_METADATA.create_all(self._engine)
+        return self._engine
+
+    def _load(self, connection: Connection) -> None:
         rows = connection.execute(
-            """
-            SELECT payload
-            FROM worker_registry_records
-            ORDER BY worker_id ASC
-            """
-        ).fetchall()
+            sql_select(_SQLITE_WORKER_RECORDS.c.payload).order_by(
+                _SQLITE_WORKER_RECORDS.c.worker_id.asc()
+            )
+        ).all()
         loaded: dict[WorkerId, WorkerRecord] = {}
         for row in rows:
             payload = loads_json(row[0])
@@ -516,21 +544,11 @@ class SQLiteWorkerRegistry(InMemoryWorkerRegistry):
             loaded[record.worker_id] = record
         self._workers = loaded
 
-    def _save(self, connection: sqlite3.Connection) -> None:
-        connection.execute("DELETE FROM worker_registry_records")
-        connection.executemany(
-            """
-            INSERT INTO worker_registry_records(
-                worker_id,
-                status,
-                heartbeat_at,
-                lease_expires_at,
-                payload
-            )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (_sqlite_worker_record_row(record) for record in super().list()),
-        )
+    def _save(self, connection: Connection) -> None:
+        connection.execute(_SQLITE_WORKER_RECORDS.delete())
+        rows = [_sqlite_worker_record_values(record) for record in super().list()]
+        if rows:
+            connection.execute(sql_insert(_SQLITE_WORKER_RECORDS), rows)
 
 
 def _encode_worker_record(record: WorkerRecord) -> dict[str, object]:
@@ -650,31 +668,11 @@ def _missing_worker_record_field_type(path: str) -> str:
     return "a string"
 
 
-def _ensure_sqlite_worker_registry_schema(connection: sqlite3.Connection) -> None:
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS worker_registry_records (
-            worker_id TEXT PRIMARY KEY,
-            status TEXT NOT NULL,
-            heartbeat_at TEXT NOT NULL,
-            lease_expires_at TEXT NOT NULL,
-            payload TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_worker_registry_records_status
-        ON worker_registry_records(status, lease_expires_at ASC, worker_id ASC)
-        """
-    )
-
-
-def _sqlite_worker_record_row(record: WorkerRecord) -> tuple[str, str, str, str, str]:
-    return (
-        str(record.worker_id),
-        record.status.value,
-        record.heartbeat_at.isoformat(),
-        record.lease_expires_at.isoformat(),
-        dumps_json(_encode_worker_record(record)),
-    )
+def _sqlite_worker_record_values(record: WorkerRecord) -> dict[str, str]:
+    return {
+        "worker_id": str(record.worker_id),
+        "status": record.status.value,
+        "heartbeat_at": record.heartbeat_at.isoformat(),
+        "lease_expires_at": record.lease_expires_at.isoformat(),
+        "payload": dumps_json(_encode_worker_record(record)),
+    }
