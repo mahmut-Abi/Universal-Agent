@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 from collections.abc import Mapping
 from typing import TextIO, cast
 
@@ -9,6 +8,7 @@ from universal_agent.agentd.client import AgentdClient, quote_path_segment
 from universal_agent.cli_io import _optional_bool, _success_criteria, _write_json, _write_text
 from universal_agent.core import EventId, JsonMapping, JsonValue, SuccessCriterion
 from universal_agent.core.config_validation import parse_bounded_float
+from universal_agent.core.polling import poll_async_result
 from universal_agent.security import EnvSecretProvider
 
 _REMOTE_STATIC_JSON_ROUTES: Mapping[str, str] = {
@@ -338,13 +338,12 @@ async def _remote_event_batch(args: argparse.Namespace, client: AgentdClient) ->
         minimum=0.001,
         maximum=5.0,
     )
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout_seconds
-    batch = await client.get_json(path, query=query)
-    while not _has_events(batch) and loop.time() < deadline:
-        await asyncio.sleep(min(poll_interval_seconds, max(0.0, deadline - loop.time())))
-        batch = await client.get_json(path, query=query)
-    return batch
+    return await poll_async_result(
+        lambda: client.get_json(path, query=query),
+        retry_if=lambda batch: not _has_events(batch),
+        timeout_seconds=timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+    )
 
 
 def _session_events_query(

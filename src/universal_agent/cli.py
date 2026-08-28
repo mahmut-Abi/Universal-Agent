@@ -81,6 +81,7 @@ from universal_agent.core import (
     TaskId,
 )
 from universal_agent.core.config_validation import parse_bounded_float
+from universal_agent.core.polling import poll_async_result
 from universal_agent.distributed import (
     DistributedLockConflictError,
     DistributedLockLeaseId,
@@ -797,21 +798,16 @@ async def _stream_events_for_cli(
         maximum=5.0,
     )
 
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout_seconds
-    batch = await service.stream_events(
-        session_id,
-        after_event_id=after_event_id,
-        limit=limit,
-    )
-    while not batch.events and loop.time() < deadline:
-        await asyncio.sleep(min(poll_interval_seconds, max(0.0, deadline - loop.time())))
-        batch = await service.stream_events(
+    return await poll_async_result(
+        lambda: service.stream_events(
             session_id,
             after_event_id=after_event_id,
             limit=limit,
-        )
-    return batch
+        ),
+        retry_if=lambda batch: not batch.events,
+        timeout_seconds=timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+    )
 
 
 def _package_version() -> str:

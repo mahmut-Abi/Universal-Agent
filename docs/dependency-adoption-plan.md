@@ -10,8 +10,8 @@
 ## 现状基线
 
 - 源码约 39.7k 行，已引入 `httpx`、`openai`、`jsonschema`、`pydantic`、`orjson`、
-  `filelock`、`jinja2`、`junit-xml`、`python-dateutil`、`rapidfuzz`、`rich`、`sqlalchemy`
-  等基础运行时依赖，mypy strict + ruff 全量约束
+  `filelock`、`jinja2`、`junit-xml`、`python-dateutil`、`rapidfuzz`、`rich`、
+  `sqlalchemy`、`tenacity` 等基础运行时依赖，mypy strict + ruff 全量约束
 - 早期超 2000 行源码文件已被压回 1000 行以内；后续先优先做库替换和 seam 收口，
   暂不继续以拆文件作为主线
 - 主要瓶颈是**代码量增长速度**，非性能（主循环为 I/O 密集：LLM 秒级、kubectl 子进程、HTTP）
@@ -148,6 +148,15 @@
 | 收益 | SQLite persistence、work queue、worker registry 与 distributed lock registry 的 schema/DML 从多段手写 SQL 字符串收口到 typed Core expression seam，减少字段漂移、参数顺序错误和事务入口分叉；重复 session 仍映射为现有 `ValueError`，重复 event 继续保留旧 sqlite integrity 异常兼容 |
 | 剩余 | 本地 SQLite DDL/DML 替换已完成；生产数据库迁移/versioning 后续再评估 Alembic |
 | 风险 | 低：persistence integration tests、queue/worker/lock registry / SQLite serialization tests、RuntimeHost/CLI SQLite 配置路径、ruff 和 mypy 已覆盖 |
+
+### 16. Tenacity → 替换手写 async polling / deadline loop（已完成）
+
+| 项 | 说明 |
+|---|---|
+| 现状 | 已新增 `core.polling.poll_async_result()` 作为 Tenacity-backed polling seam，并用它接管本地 CLI session events、agentd thin-client session events、agentd SSE events stream 的等待循环；调用方仍负责 Pydantic 数值边界校验，RuntimeService 仍负责事件读取和状态语义 |
+| 收益 | 去掉三处重复 `loop.time()` / `asyncio.sleep()` / deadline 计算；超时返回最后一次 batch、异常透传、poll interval capped wait 等行为集中在一个测试过的 adapter 里 |
+| 合规性 | 不引入 LLM/control-flow 框架；只替换 HTTP/CLI 边界的等待机制，不改变 Runtime-owned scheduling、recovery 或 completion 判断 |
+| 风险 | 低：新增 `test_polling.py` 覆盖 ready/retry/timeout，CLI 与 agentd wait 集成测试覆盖对外行为 |
 
 ---
 
