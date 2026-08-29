@@ -3,10 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from universal_agent.capability import CapabilityUnavailableError, UnknownCapabilityError
 from universal_agent.core import (
     ActionId,
-    DomainIdentity,
     EventId,
     Goal,
     JsonMapping,
@@ -68,6 +66,18 @@ from universal_agent.runtime import (
     SessionView,
 )
 from universal_agent.security import SecretResolutionReport
+from universal_agent.service.catalog import (
+    capability_views,
+    domain_package_detail,
+    domain_package_views,
+    domain_views,
+    evaluator_views,
+    memory_views,
+    multi_agent_view,
+    policy_views,
+    profile_views,
+    tool_views,
+)
 from universal_agent.service.config_views import (
     format_identities,
     not_ready_reason,
@@ -80,14 +90,7 @@ from universal_agent.service.config_views import (
 )
 from universal_agent.service.distributed_runtime import DistributedRuntimeController
 from universal_agent.service.projections import (
-    domain_package_view,
-    domain_view,
-    evaluator_view,
     evidence_from_view,
-    memory_view,
-    multi_agent_instance_view,
-    multi_agent_profile_view,
-    policy_view,
     profile_view,
     world_neighborhood_view,
     world_projection_views_from_snapshot,
@@ -106,7 +109,6 @@ from universal_agent.service.views import (
     EvaluatorView,
     HealthView,
     MemoryView,
-    MultiAgentDelegationTaskView,
     MultiAgentView,
     PolicyView,
     ProfileView,
@@ -198,24 +200,13 @@ class RuntimeService:
         )
 
     def domains(self) -> tuple[DomainView, ...]:
-        primary = self._components.domain_composition.primary.identity
-        return tuple(
-            domain_view(domain, primary=domain.identity == primary)
-            for domain in self._components.domain_composition.domains
-        )
+        return domain_views(self._components)
 
     def domain_packages(self, *, tag: str | None = None) -> tuple[DomainPackageView, ...]:
-        return tuple(
-            domain_package_view(package) for package in self._domain_packages.list(tag=tag)
-        )
+        return domain_package_views(self._domain_packages, tag=tag)
 
     def domain_package(self, name: str, version: str | None = None) -> DomainPackageView:
-        package = (
-            self._domain_packages.get_by_name(name)
-            if version is None
-            else self._domain_packages.get(DomainIdentity(name, version))
-        )
-        return domain_package_view(package)
+        return domain_package_detail(self._domain_packages, name, version)
 
     def domain_package_verification(
         self,
@@ -225,104 +216,25 @@ class RuntimeService:
         return self._domain_packages.verify(verify_paths=verify_paths)
 
     def capabilities(self) -> tuple[CapabilityView, ...]:
-        views: list[CapabilityView] = []
-        for domain in self._components.domain_composition.domains:
-            for capability in domain.capabilities:
-                tool_names = tuple(
-                    registration.tool.definition.name
-                    for registration in sorted(
-                        self._components.tools.registrations_for_capability(capability.name),
-                        key=lambda item: item.tool.definition.name,
-                    )
-                )
-                views.append(
-                    CapabilityView(
-                        name=capability.name,
-                        description=capability.description,
-                        category=capability.category,
-                        risk=capability.risk,
-                        domain_name=domain.identity.name,
-                        domain_version=domain.identity.version,
-                        tool_names=tool_names,
-                        required_arguments=self._capability_required_arguments(capability.name),
-                        argument_schema=self._capability_argument_schema(capability.name),
-                    )
-                )
-        return tuple(sorted(views, key=lambda item: item.name))
-
-    def _capability_required_arguments(self, capability: str) -> tuple[str, ...]:
-        try:
-            return self._components.resolver.resolve_registration(
-                capability
-            ).tool.definition.required_arguments
-        except (UnknownCapabilityError, CapabilityUnavailableError):
-            return ()
-
-    def _capability_argument_schema(self, capability: str) -> JsonMapping:
-        try:
-            return self._components.resolver.resolve_registration(
-                capability
-            ).tool.definition.argument_schema
-        except (UnknownCapabilityError, CapabilityUnavailableError):
-            return immutable_json()
+        return capability_views(self._components)
 
     def tools(self) -> tuple[ToolView, ...]:
-        views: list[ToolView] = []
-        for domain in self._components.domain_composition.domains:
-            for tool in domain.tools:
-                definition = tool.definition
-                views.append(
-                    ToolView(
-                        name=definition.name,
-                        description=definition.description,
-                        capabilities=definition.capabilities,
-                        required_arguments=definition.required_arguments,
-                        argument_schema=definition.argument_schema,
-                        side_effect=definition.side_effect,
-                        risk=definition.risk,
-                        timeout_seconds=definition.timeout_seconds,
-                        priority=definition.priority,
-                        domain_name=domain.identity.name,
-                        domain_version=domain.identity.version,
-                    )
-                )
-        return tuple(sorted(views, key=lambda item: item.name))
+        return tool_views(self._components)
 
     def policies(self) -> tuple[PolicyView, ...]:
-        views: list[PolicyView] = []
-        for domain in self._components.domain_composition.domains:
-            views.extend(policy_view(policy, domain) for policy in domain.policies)
-        return tuple(sorted(views, key=lambda item: item.name))
+        return policy_views(self._components)
 
     def evaluators(self) -> tuple[EvaluatorView, ...]:
-        views: list[EvaluatorView] = []
-        for domain in self._components.domain_composition.domains:
-            views.extend(evaluator_view(evaluator, domain) for evaluator in domain.evaluators)
-        return tuple(sorted(views, key=lambda item: item.name))
+        return evaluator_views(self._components)
 
     def memories(self) -> tuple[MemoryView, ...]:
-        return tuple(memory_view(record) for record in self._components.memory_store.export())
+        return memory_views(self._components)
 
     def profiles(self) -> tuple[ProfileView, ...]:
-        return tuple(profile_view(profile) for profile in self._profiles.all())
+        return profile_views(self._profiles)
 
     def multi_agent(self) -> MultiAgentView:
-        if self._agent_registry is None:
-            return MultiAgentView(enabled=False)
-        snapshot = self._agent_registry.snapshot()
-        return MultiAgentView(
-            enabled=True,
-            profiles=tuple(multi_agent_profile_view(item) for item in snapshot.profiles),
-            instances=tuple(multi_agent_instance_view(item) for item in snapshot.instances),
-            delegation_tasks=tuple(
-                MultiAgentDelegationTaskView(
-                    task_id=str(task.task_id),
-                    child_count=task.child_count,
-                    delegation_depth=task.delegation_depth,
-                )
-                for task in self._agent_delegation_state.tasks
-            ),
-        )
+        return multi_agent_view(self._agent_registry, self._agent_delegation_state)
 
     def profile(self, name: str) -> ProfileView:
         return profile_view(self._profiles.get(name))
