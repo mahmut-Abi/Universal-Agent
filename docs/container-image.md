@@ -11,6 +11,10 @@ variables.
 docker build -t universal-agent-runtime:local .
 ```
 
+The build installs runtime dependencies from `uv.lock` with `uv sync --locked`
+and excludes development dependency groups. If dependencies change, refresh and
+commit the lock file before building the image.
+
 ## Run the default runtime API
 
 ```bash

@@ -16,6 +16,16 @@ def test_container_image_uses_generic_agentd_entrypoint() -> None:
     assert "kubernetes" not in dockerfile.lower()
 
 
+def test_container_image_installs_from_locked_runtime_dependencies() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "COPY pyproject.toml uv.lock README.md ./" in dockerfile
+    assert "uv sync --locked --no-dev --no-editable" in dockerfile
+    assert "VIRTUAL_ENV=/app/.venv" in dockerfile
+    assert 'PATH="/app/.venv/bin:$PATH"' in dockerfile
+    assert "pip install" not in dockerfile
+
+
 def test_container_build_context_excludes_local_state_and_caches() -> None:
     ignored = set((ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines())
 
