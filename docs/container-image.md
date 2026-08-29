@@ -23,6 +23,9 @@ The default command is equivalent to:
 agent serve --host 0.0.0.0 --port 8765
 ```
 
+The image includes a Docker health check against `GET /ready`. Override
+`AGENTD_HEALTH_URL` if the container command binds a different internal port.
+
 ## Run with a Profile config
 
 Generate or provide a Profile JSON on the host, then mount it read-only and pass
