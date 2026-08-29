@@ -64,6 +64,7 @@ from universal_agent.cli_evaluation import _dispatch_eval
 from universal_agent.cli_init import _dispatch_init
 from universal_agent.cli_io import (
     CliExit,
+    _doctor_should_fail,
     _optional_bool,
     _parse_optional_datetime,
     _success_criteria,
@@ -267,7 +268,10 @@ async def _dispatch(
         _write_json(out, trace_spans_body(await service.traces()))
         return
     if command == "doctor":
-        _write_json(out, doctor_body(await service.doctor()))
+        report = await service.doctor()
+        _write_json(out, doctor_body(report))
+        if _doctor_should_fail(report.status, cast(str, args.fail_on)):
+            raise CliExit(1)
         return
     if command == "audit":
         _write_json(out, audit_records_body(await service.audit_records()))

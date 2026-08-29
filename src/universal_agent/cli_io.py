@@ -78,6 +78,16 @@ def _write_error(out: TextIO, code: str, message: str) -> None:
     _write_json(out, {"error": {"code": code, "message": message}})
 
 
+def _doctor_should_fail(status: str, fail_on: str) -> bool:
+    if fail_on == "never":
+        return False
+    if status == "error":
+        return fail_on in {"error", "warn"}
+    if status == "warn":
+        return fail_on == "warn"
+    return False
+
+
 def _optional_bool(value: str | None) -> bool | None:
     if value is None:
         return None

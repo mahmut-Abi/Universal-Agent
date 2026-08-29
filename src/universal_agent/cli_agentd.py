@@ -5,7 +5,14 @@ from collections.abc import Mapping
 from typing import TextIO, cast
 
 from universal_agent.agentd.client import AgentdClient, quote_path_segment
-from universal_agent.cli_io import _optional_bool, _success_criteria, _write_json, _write_text
+from universal_agent.cli_io import (
+    CliExit,
+    _doctor_should_fail,
+    _optional_bool,
+    _success_criteria,
+    _write_json,
+    _write_text,
+)
 from universal_agent.core import (
     ActionId,
     EventId,
@@ -45,6 +52,12 @@ async def dispatch_agentd_cli(args: argparse.Namespace, out: TextIO) -> None:
         bearer_token=_agentd_api_token(args),
     ) as client:
         command = cast(str, args.command)
+        if command == "doctor":
+            payload = await client.get_json(_REMOTE_STATIC_JSON_ROUTES[command])
+            _write_json(out, payload)
+            if _doctor_should_fail(str(payload.get("status") or ""), cast(str, args.fail_on)):
+                raise CliExit(1)
+            return
         if command in _REMOTE_STATIC_JSON_ROUTES:
             _write_json(out, await client.get_json(_REMOTE_STATIC_JSON_ROUTES[command]))
             return

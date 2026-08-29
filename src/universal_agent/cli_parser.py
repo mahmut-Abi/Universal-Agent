@@ -39,7 +39,13 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("logs")
     traces = commands.add_parser("traces")
     traces.add_argument("--format", choices=("runtime", "otlp"), default="runtime")
-    commands.add_parser("doctor")
+    doctor = commands.add_parser("doctor")
+    doctor.add_argument(
+        "--fail-on",
+        choices=("never", "error", "warn"),
+        default="never",
+        help="Exit with status 1 when Doctor status reaches the selected severity.",
+    )
     commands.add_parser("audit")
     commands.add_parser("multi-agent")
     repair = commands.add_parser("repair")

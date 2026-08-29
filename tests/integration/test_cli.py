@@ -58,6 +58,7 @@ from universal_agent.evaluation.recording import (
     FileReplayRecordingStore,
     encode_evaluation_report,
 )
+from universal_agent.operations import DoctorCheckView, DoctorReportView
 from universal_agent.security import EnvSecretProvider, SecretResolutionReport, resolve_secret_refs
 
 
@@ -87,6 +88,14 @@ class CliBackend:
         name = str(arguments.get("name") or "example")
         resource = name if "/" in name else f"deployment/{name}"
         return immutable_json({"resource": resource, "mutation_applied": True})
+
+
+class DoctorOnlyService:
+    def __init__(self, report: DoctorReportView) -> None:
+        self._report = report
+
+    async def doctor(self) -> DoctorReportView:
+        return self._report
 
 
 class UnhealthyCliBackend(CliBackend):
@@ -4220,6 +4229,61 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     assert record["capability"] == "scale_workload"
     assert record["status"] == "succeeded"
     assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cli_doctor_can_fail_on_warning_status() -> None:
+    output = StringIO()
+    service = DoctorOnlyService(
+        DoctorReportView(
+            "warn",
+            (DoctorCheckView("runtime_paths", "warn", "runtime_store directory will be created"),),
+        )
+    )
+
+    status = await run_cli(
+        ["doctor", "--fail-on", "warn"],
+        service=cast(RuntimeService, service),
+        stdout=output,
+    )
+    payload = read_json(output)
+
+    assert status == 1
+    assert payload["status"] == "warn"
+
+
+@pytest.mark.asyncio
+async def test_cli_doctor_fail_on_error_keeps_warning_status_successful() -> None:
+    output = StringIO()
+    service = DoctorOnlyService(
+        DoctorReportView("warn", (DoctorCheckView("runtime_paths", "warn", "pending"),))
+    )
+
+    status = await run_cli(
+        ["doctor", "--fail-on", "error"],
+        service=cast(RuntimeService, service),
+        stdout=output,
+    )
+
+    assert status == 0
+    assert read_json(output)["status"] == "warn"
+
+
+@pytest.mark.asyncio
+async def test_cli_doctor_can_fail_on_error_status() -> None:
+    output = StringIO()
+    service = DoctorOnlyService(
+        DoctorReportView("error", (DoctorCheckView("runtime_paths", "error", "bad path"),))
+    )
+
+    status = await run_cli(
+        ["doctor", "--fail-on", "error"],
+        service=cast(RuntimeService, service),
+        stdout=output,
+    )
+
+    assert status == 1
+    assert read_json(output)["status"] == "error"
 
 
 def test_cli_main_returns_130_without_traceback_on_interrupt(

@@ -326,6 +326,8 @@ Run:
 .venv/bin/python -m universal_agent.cli metrics --format prometheus
 .venv/bin/python -m universal_agent.cli config show
 .venv/bin/python -m universal_agent.cli doctor
+.venv/bin/python -m universal_agent.cli doctor --fail-on error
+.venv/bin/python -m universal_agent.cli doctor --fail-on warn
 .venv/bin/python -m universal_agent.cli repair state-events --dry-run
 ```
 
@@ -334,7 +336,9 @@ metadata. For file and SQLite runtime stores, Doctor reports an error if the
 session store is not also the event reader/sink used for committed state/event
 writes. Doctor also validates configured runtime paths without creating files:
 missing persistent paths are reported before startup work depends on them, and
-bad path shapes such as a file where a directory is expected are errors.
+bad path shapes such as a file where a directory is expected are errors. Use
+`--fail-on error` or `--fail-on warn` when running Doctor as a deployment or CI
+gate; the JSON report is still written before the CLI exits with status `1`.
 
 When local distributed coordination is configured, `doctor` also reports queue
 health, invalid session work references and terminal work backlog that should be
