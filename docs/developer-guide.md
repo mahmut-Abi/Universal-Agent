@@ -26,6 +26,10 @@ Run these before committing meaningful changes:
 Targeted checks are acceptable while developing, but a feature node should pass
 the relevant focused tests and the full static gates before commit.
 
+The CI workflow in `.github/workflows/ci.yml` runs the same formatting, lint,
+type-checking and test gates on pull requests and `main` pushes, plus a
+container image build gate for the generic runtime Dockerfile.
+
 ## Development Rules
 
 - Read `AGENTS.md` and the architecture design before changing runtime behavior.
