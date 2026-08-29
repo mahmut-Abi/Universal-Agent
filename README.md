@@ -19,6 +19,10 @@ design document also defines later productization layers such as production data
 long-lived event delivery, OpenTelemetry exporters, deeper Multi-Agent orchestration, distributed
 runtime, and ecosystem packaging.
 
+The runtime also has a generic container image entrypoint for local or Kubernetes-hosted `agentd`
+serving. See `docs/container-image.md` for build, Profile config, auth-token and Kubernetes
+deployment examples.
+
 ## Architectural boundaries
 
 - The model proposes structured capability decisions; it never selects concrete tools or owns state.
