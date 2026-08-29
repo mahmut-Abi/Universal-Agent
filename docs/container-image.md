@@ -11,9 +11,21 @@ variables.
 docker build -t universal-agent-runtime:local .
 ```
 
+For traceable builds, pass OCI metadata as build arguments:
+
+```bash
+docker build \
+  --build-arg IMAGE_VERSION=0.1.0 \
+  --build-arg VCS_REF="$(git rev-parse --short HEAD)" \
+  --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -t universal-agent-runtime:local .
+```
+
 The build installs runtime dependencies from `uv.lock` with `uv sync --locked`
-and excludes development dependency groups. If dependencies change, refresh and
-commit the lock file before building the image.
+and excludes development dependency groups. It also runs `agent version` and
+`agent health` during the image build so packaging or console-script regressions
+fail before the image is shipped. If dependencies change, refresh and commit the
+lock file before building the image.
 
 ## Run the default runtime API
 
@@ -27,8 +39,20 @@ The default command is equivalent to:
 agent serve --host 0.0.0.0 --port 8765
 ```
 
+The image creates `/data` and `/config`, exposes them through
+`AGENT_DATA_DIR` and `AGENT_CONFIG_DIR`, and runs as the non-root `agent` user.
+Mount persistent runtime state under `/data` and mount Profile or Domain package
+configuration under `/config`.
+
 The image includes a Docker health check against `GET /ready`. Override
 `AGENTD_HEALTH_URL` if the container command binds a different internal port.
+
+To smoke-test the packaged CLI without starting `agentd`:
+
+```bash
+docker run --rm --entrypoint agent universal-agent-runtime:local version
+docker run --rm --entrypoint agent universal-agent-runtime:local health
+```
 
 ## Run with a Profile config
 
