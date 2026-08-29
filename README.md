@@ -166,6 +166,8 @@ can also load an
 `RuntimeHost`, so generated memory/file/SQLite store settings are used by subsequent CLI commands.
 It also exposes operations commands for metrics, cost, logs, traces, doctor, audit and
 `agent repair state-events --dry-run` / `--confirmed true` projections;
+`--api-url` thin-client mode forwards supported Runtime, session, catalog, repair and distributed
+commands to a running `agentd` instance instead of assembling a local service.
 `agent metrics --format prometheus` emits Prometheus text exposition, while
 `agent traces --format otlp` and `agent session traces <id> --format otlp` emit OTLP
 JSON-compatible trace payloads from the same event-derived span projection. `agent serve` starts the

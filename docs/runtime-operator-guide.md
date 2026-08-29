@@ -359,6 +359,9 @@ Useful inspection and maintenance commands:
 .venv/bin/python -m universal_agent.cli --profile-config .tmp/retention-profile.json distributed prune-terminal
 ```
 
+These distributed commands also support `--api-url` for operating against a
+running `agentd` Runtime API instead of assembling a local service.
+
 Useful scheduling and worker commands:
 
 ```bash

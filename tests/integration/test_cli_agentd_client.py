@@ -14,6 +14,7 @@ from universal_agent import (
     AgentRuntime,
     Decision,
     DecisionType,
+    DistributedRuntimeCoordinator,
     DomainConfig,
     DomainLoader,
     InMemoryEventSink,
@@ -78,6 +79,7 @@ def build_app(
     decisions: list[Decision],
     *,
     auth: AgentdAuthPolicy | None = None,
+    distributed_coordinator: DistributedRuntimeCoordinator | None = None,
 ) -> tuple[AgentdApp, RemoteCliBackend]:
     backend = RemoteCliBackend()
     store = InMemoryStateStore()
@@ -97,6 +99,7 @@ def build_app(
         components=components,
         profiles=(cli_profile(),),
         config=cli_profile().runtime,
+        distributed_coordinator=distributed_coordinator,
     )
     return AgentdApp(service, auth=auth), backend
 
@@ -183,6 +186,153 @@ async def test_cli_api_url_runs_goal_and_reads_remote_session() -> None:
     events = array_value(read_json(events_output)["events"])
     assert events[-1]["type"] == "GoalCompleted"
     assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cli_api_url_forwards_repair_state_events() -> None:
+    app, _ = build_app([])
+    output = StringIO()
+
+    with running_server(app) as base_url:
+        status = await run_cli(
+            [
+                "--api-url",
+                base_url,
+                "repair",
+                "state-events",
+                "--dry-run",
+            ],
+            stdout=output,
+        )
+
+    payload = read_json(output)
+    assert status == 0
+    assert payload["status"] == "clean"
+    assert payload["repaired_event_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_cli_api_url_forwards_distributed_goal_to_remote_worker() -> None:
+    coordinator = DistributedRuntimeCoordinator()
+    app, backend = build_app(
+        [inspect_workload(), finish()],
+        distributed_coordinator=coordinator,
+    )
+    schedule_output = StringIO()
+    worker_output = StringIO()
+    sessions_output = StringIO()
+
+    with running_server(app) as base_url:
+        schedule_status = await run_cli(
+            [
+                "--api-url",
+                base_url,
+                "distributed",
+                "schedule-goal",
+                "production-operator",
+                "Verify workload through remote distributed worker",
+                "--success",
+                "healthy=true",
+                "--priority",
+                "4",
+                "--max-attempts",
+                "2",
+            ],
+            stdout=schedule_output,
+        )
+        worker_status = await run_cli(
+            [
+                "--api-url",
+                base_url,
+                "distributed",
+                "worker-run-once",
+                "worker-a",
+                "--lease-ttl-seconds",
+                "30",
+                "--worker-ttl-seconds",
+                "30",
+            ],
+            stdout=worker_output,
+        )
+        sessions_status = await run_cli(
+            ["--api-url", base_url, "session", "list"],
+            stdout=sessions_output,
+        )
+
+    scheduled = read_json(schedule_output)
+    worker = read_json(worker_output)
+    sessions = array_value(read_json(sessions_output)["sessions"])
+    assert schedule_status == 0
+    assert scheduled["scheduled_work_item"]["kind"] == "agent_goal"
+    assert scheduled["scheduled_work_item"]["priority"] == 4
+    assert scheduled["scheduled_work_item"]["max_attempts"] == 2
+    assert worker_status == 0
+    assert worker["status"] == "completed"
+    assert worker["work_item"]["status"] == "completed"
+    assert sessions_status == 0
+    assert sessions[0]["goal_status"] == "completed"
+    assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_cli_api_url_forwards_distributed_lock_lifecycle() -> None:
+    app, _ = build_app([], distributed_coordinator=DistributedRuntimeCoordinator())
+    acquire_output = StringIO()
+    heartbeat_output = StringIO()
+    release_output = StringIO()
+
+    with running_server(app) as base_url:
+        acquire_status = await run_cli(
+            [
+                "--api-url",
+                base_url,
+                "distributed",
+                "lock-acquire",
+                "session/session-1",
+                "--owner-id",
+                "worker-a",
+                "--ttl-seconds",
+                "30",
+            ],
+            stdout=acquire_output,
+        )
+        acquired = read_json(acquire_output)
+        lease_id = str(object_value(acquired["lock"])["lease_id"])
+        heartbeat_status = await run_cli(
+            [
+                "--api-url",
+                base_url,
+                "distributed",
+                "lock-heartbeat",
+                lease_id,
+                "--owner-id",
+                "worker-a",
+                "--ttl-seconds",
+                "60",
+            ],
+            stdout=heartbeat_output,
+        )
+        release_status = await run_cli(
+            [
+                "--api-url",
+                base_url,
+                "distributed",
+                "lock-release",
+                lease_id,
+                "--owner-id",
+                "worker-a",
+            ],
+            stdout=release_output,
+        )
+
+    heartbeat = read_json(heartbeat_output)
+    released = read_json(release_output)
+    assert acquire_status == 0
+    assert object_value(acquired["lock"])["lock_key"] == "session/session-1"
+    assert heartbeat_status == 0
+    assert object_value(heartbeat["lock"])["lease_id"] == lease_id
+    assert release_status == 0
+    assert released["snapshot"]["locks"] == []
 
 
 @pytest.mark.asyncio

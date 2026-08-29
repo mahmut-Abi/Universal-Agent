@@ -229,8 +229,9 @@
 
 ## 关联待办（非依赖类，同批考虑）
 
-1. CLI thin-client 模式（`--api-url` 转发到 agentd）—— 对齐设计文档 §34
-   "CLI must call the Runtime API"；当前每个 CLI 命令自建 service
+1. CLI thin-client 模式（`--api-url` 转发到 agentd）—— 已覆盖 Runtime/session/catalog/
+   operations、`repair state-events` 与 distributed scheduling/worker/lock/maintenance
+   命令；`init`、`serve`、`kubernetes`、`tui`、`ecosystem`、`eval` 等本地装配或本地文件命令仍保持本地执行
 2. agentd/app.py 的 `domain_package_body()` 与 `DomainPackageView` 字段对齐
 3. 引入第二个真实 Domain（如 observability/prometheus），验证多域共享 World Model
 4. 按设计文档 §82 建立成熟度指标基线（Goal Completion Rate 等，用 eval harness）
