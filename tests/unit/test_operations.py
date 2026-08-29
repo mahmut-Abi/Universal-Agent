@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from types import MappingProxyType
 
 from universal_agent.core import (
@@ -681,6 +682,7 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
         "readiness",
         "catalog",
         "runtime_config",
+        "runtime_paths",
         "runtime_secrets",
         "secret_scanning",
         "session_store",
@@ -708,6 +710,7 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
     assert next(check for check in report.checks if check.name == "traces").status == "warn"
     assert next(check for check in report.checks if check.name == "resource_locks").status == "ok"
     assert next(check for check in report.checks if check.name == "runtime_config").status == "ok"
+    assert next(check for check in report.checks if check.name == "runtime_paths").status == "ok"
     assert next(check for check in report.checks if check.name == "runtime_secrets").status == "ok"
     assert next(check for check in report.checks if check.name == "secret_scanning").status == "ok"
 
@@ -872,6 +875,99 @@ def test_doctor_report_errors_on_invalid_runtime_config_projection() -> None:
     assert "unsupported store backend: unsupported" in runtime_config.message
     assert "max_iterations=0" in runtime_config.message
     assert "max_recovery_steps=0" in runtime_config.message
+
+
+def test_doctor_report_accepts_ready_persistent_runtime_paths(tmp_path: Path) -> None:
+    store_path = tmp_path / "runtime-store"
+    store_path.mkdir()
+
+    report = build_doctor_report(
+        health_status="ok",
+        ready=True,
+        ready_reason="ready",
+        domain_count=1,
+        capability_count=2,
+        tool_count=2,
+        sessions=(),
+        events=(),
+        store_backend="file",
+        store_path=str(store_path),
+        distributed_queue_backend="file",
+        distributed_queue_path=str(tmp_path / "work-queue.json"),
+        distributed_locks_backend="sqlite",
+        distributed_locks_path=str(tmp_path / "distributed-locks.sqlite3"),
+        distributed_workers_backend="memory",
+    )
+
+    runtime_paths = next(check for check in report.checks if check.name == "runtime_paths")
+
+    assert report.status == "ok"
+    assert runtime_paths.status == "ok"
+    assert runtime_paths.message == "persistent runtime paths ready: 3"
+
+
+def test_doctor_report_warns_on_runtime_paths_that_will_be_created(tmp_path: Path) -> None:
+    report = build_doctor_report(
+        health_status="ok",
+        ready=True,
+        ready_reason="ready",
+        domain_count=1,
+        capability_count=2,
+        tool_count=2,
+        sessions=(),
+        events=(),
+        store_backend="file",
+        store_path=str(tmp_path / "runtime-store"),
+        distributed_queue_backend="file",
+        distributed_queue_path=str(tmp_path / "missing" / "work-queue.json"),
+    )
+
+    runtime_paths = next(check for check in report.checks if check.name == "runtime_paths")
+
+    assert report.status == "warn"
+    assert runtime_paths.status == "warn"
+    assert f"runtime_store directory will be created: {tmp_path / 'runtime-store'}" in (
+        runtime_paths.message
+    )
+    assert (
+        f"distributed_queue parent directory will be created: {tmp_path / 'missing'}"
+        in runtime_paths.message
+    )
+
+
+def test_doctor_report_errors_on_invalid_runtime_path_shapes(tmp_path: Path) -> None:
+    store_path = tmp_path / "runtime-store"
+    queue_path = tmp_path / "work-queue.json"
+    store_path.write_text("not a directory", encoding="utf-8")
+    queue_path.mkdir()
+
+    report = build_doctor_report(
+        health_status="ok",
+        ready=True,
+        ready_reason="ready",
+        domain_count=1,
+        capability_count=2,
+        tool_count=2,
+        sessions=(),
+        events=(),
+        store_backend="file",
+        store_path=str(store_path),
+        distributed_queue_backend="file",
+        distributed_queue_path=str(queue_path),
+        distributed_locks_backend="sqlite",
+    )
+
+    runtime_paths = next(check for check in report.checks if check.name == "runtime_paths")
+
+    assert report.status == "error"
+    assert runtime_paths.status == "error"
+    assert f"runtime_store expected directory but path is file: {store_path}" in (
+        runtime_paths.message
+    )
+    assert f"distributed_queue expected file but path is directory: {queue_path}" in (
+        runtime_paths.message
+    )
+    assert "distributed_locks sqlite backend requires path" in runtime_paths.message
 
 
 def test_doctor_report_warns_on_resource_lock_conflicts() -> None:

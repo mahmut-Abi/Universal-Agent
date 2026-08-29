@@ -316,6 +316,7 @@ Runtime operations are event-derived:
 - audit records
 - doctor checks
 - state/event commit strategy checks for persistent store wiring
+- runtime path checks for configured file and SQLite stores
 - state/event consistency repair for terminal sessions missing terminal events
 
 Run:
@@ -331,7 +332,9 @@ Run:
 `config show`, TUI/Web settings and `/v1/config` include `state_event_commit`
 metadata. For file and SQLite runtime stores, Doctor reports an error if the
 session store is not also the event reader/sink used for committed state/event
-writes.
+writes. Doctor also validates configured runtime paths without creating files:
+missing persistent paths are reported before startup work depends on them, and
+bad path shapes such as a file where a directory is expected are errors.
 
 When local distributed coordination is configured, `doctor` also reports queue
 health, invalid session work references and terminal work backlog that should be

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path
 
 from universal_agent.core import ActionId, GoalStatus, SessionId, TaskStatus
 from universal_agent.operations.audit_logs import build_audit_records, build_runtime_logs
@@ -140,6 +143,13 @@ def build_doctor_report(
     events: tuple[RuntimeEventView, ...],
     configured_domain_count: int | None = None,
     store_backend: str | None = None,
+    store_path: str | None = None,
+    distributed_queue_backend: str | None = None,
+    distributed_queue_path: str | None = None,
+    distributed_locks_backend: str | None = None,
+    distributed_locks_path: str | None = None,
+    distributed_workers_backend: str | None = None,
+    distributed_workers_path: str | None = None,
     max_iterations: int | None = None,
     max_recovery_steps: int | None = None,
     distributed_health_status: str | None = None,
@@ -179,6 +189,16 @@ def build_doctor_report(
             max_iterations=max_iterations,
             max_recovery_steps=max_recovery_steps,
         ),
+        _runtime_paths_check(
+            store_backend=store_backend,
+            store_path=store_path,
+            distributed_queue_backend=distributed_queue_backend,
+            distributed_queue_path=distributed_queue_path,
+            distributed_locks_backend=distributed_locks_backend,
+            distributed_locks_path=distributed_locks_path,
+            distributed_workers_backend=distributed_workers_backend,
+            distributed_workers_path=distributed_workers_path,
+        ),
         _runtime_secrets_check(secret_resolution),
         _secret_scanning_check(secret_scan_payload),
         DoctorCheckView("session_store", "ok", f"sessions listed: {len(sessions)}"),
@@ -216,6 +236,14 @@ def build_doctor_report(
         ),
     )
     return DoctorReportView(_aggregate_status(checks), checks)
+
+
+@dataclass(frozen=True, slots=True)
+class _RuntimePathSpec:
+    name: str
+    backend: str | None
+    path: str | None
+    expected_kind: str
 
 
 def _runtime_secrets_check(report: SecretResolutionReport | None) -> DoctorCheckView:
@@ -526,6 +554,127 @@ def _runtime_config_check(
         f"max_iterations={max_iterations or 'unknown'} "
         f"max_recovery_steps={max_recovery_steps or 'unknown'}",
     )
+
+
+def _runtime_paths_check(
+    *,
+    store_backend: str | None,
+    store_path: str | None,
+    distributed_queue_backend: str | None,
+    distributed_queue_path: str | None,
+    distributed_locks_backend: str | None,
+    distributed_locks_path: str | None,
+    distributed_workers_backend: str | None,
+    distributed_workers_path: str | None,
+) -> DoctorCheckView:
+    specs = (
+        _RuntimePathSpec(
+            "runtime_store",
+            store_backend,
+            store_path,
+            "directory" if store_backend == "file" else "file",
+        ),
+        _RuntimePathSpec(
+            "distributed_queue",
+            distributed_queue_backend,
+            distributed_queue_path,
+            "file",
+        ),
+        _RuntimePathSpec(
+            "distributed_locks",
+            distributed_locks_backend,
+            distributed_locks_path,
+            "file",
+        ),
+        _RuntimePathSpec(
+            "distributed_workers",
+            distributed_workers_backend,
+            distributed_workers_path,
+            "file",
+        ),
+    )
+    persistent_count = 0
+    findings: list[tuple[str, str]] = []
+    for spec in specs:
+        backend = spec.backend
+        if backend is None:
+            continue
+        if backend == "memory":
+            if spec.path is not None:
+                findings.append(("warn", f"{spec.name} memory backend ignores path: {spec.path}"))
+            continue
+        if backend not in {"file", "sqlite"}:
+            continue
+        persistent_count += 1
+        finding = _runtime_path_finding(spec)
+        if finding is not None:
+            findings.append(finding)
+
+    if not findings:
+        if persistent_count:
+            return DoctorCheckView(
+                "runtime_paths",
+                "ok",
+                f"persistent runtime paths ready: {persistent_count}",
+            )
+        return DoctorCheckView("runtime_paths", "ok", "no persistent runtime paths configured")
+
+    status = "error" if any(finding[0] == "error" for finding in findings) else "warn"
+    return DoctorCheckView(
+        "runtime_paths",
+        status,
+        "; ".join(message for _, message in findings),
+    )
+
+
+def _runtime_path_finding(spec: _RuntimePathSpec) -> tuple[str, str] | None:
+    if spec.path is None:
+        return ("error", f"{spec.name} {spec.backend} backend requires path")
+    path = Path(spec.path)
+    if spec.expected_kind == "directory":
+        return _directory_path_finding(spec.name, path)
+    return _file_path_finding(spec.name, path)
+
+
+def _directory_path_finding(name: str, path: Path) -> tuple[str, str] | None:
+    if path.exists():
+        if not path.is_dir():
+            return ("error", f"{name} expected directory but path is file: {path}")
+        if not os.access(path, os.W_OK):
+            return ("error", f"{name} directory is not writable: {path}")
+        return None
+    ancestor = _nearest_existing_ancestor(path.parent)
+    if ancestor is not None and not os.access(ancestor, os.W_OK):
+        return ("error", f"{name} nearest existing parent is not writable: {ancestor}")
+    return ("warn", f"{name} directory will be created: {path}")
+
+
+def _file_path_finding(name: str, path: Path) -> tuple[str, str] | None:
+    if path.exists():
+        if path.is_dir():
+            return ("error", f"{name} expected file but path is directory: {path}")
+        if not os.access(path, os.W_OK):
+            return ("error", f"{name} file is not writable: {path}")
+        return None
+    if path.parent.exists():
+        if not path.parent.is_dir():
+            return ("error", f"{name} parent is not a directory: {path.parent}")
+        if not os.access(path.parent, os.W_OK):
+            return ("error", f"{name} parent is not writable: {path.parent}")
+        return None
+    ancestor = _nearest_existing_ancestor(path.parent)
+    if ancestor is not None and not os.access(ancestor, os.W_OK):
+        return ("error", f"{name} nearest existing parent is not writable: {ancestor}")
+    return ("warn", f"{name} parent directory will be created: {path.parent}")
+
+
+def _nearest_existing_ancestor(path: Path) -> Path | None:
+    current = path
+    while not current.exists():
+        if current == current.parent:
+            return None
+        current = current.parent
+    return current
 
 
 def _check(name: str, ok: bool, message: str) -> DoctorCheckView:
