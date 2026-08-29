@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
@@ -26,6 +25,7 @@ from universal_agent.core import (
     TaskId,
     TaskStatus,
     immutable_json,
+    to_json_value,
 )
 from universal_agent.evidence import Evidence, EvidenceId
 from universal_agent.runtime.agent import AgentRuntime
@@ -335,7 +335,7 @@ def session_view(snapshot: SessionSnapshot) -> SessionView:
             )
             for node in snapshot.task_graph.nodes
         ),
-        satisfied_criteria=immutable_json(state.satisfied_criteria),
+        satisfied_criteria=_copy_json_mapping(state.satisfied_criteria),
         pending_action=pending_action_view(state.pending_action),
         latest_evaluation=evaluation_view(state.latest_evaluation),
         termination_reason=state.termination_reason,
@@ -411,7 +411,7 @@ def pending_action_view(pending: PendingAction | None) -> PendingActionView | No
         pending.capability,
         pending.tool_name,
         pending.target,
-        immutable_json(pending.arguments),
+        _copy_json_mapping(pending.arguments),
         pending.domain_name,
         pending.domain_version,
         pending.idempotency_key,
@@ -429,7 +429,7 @@ def evaluation_view(evaluation: EvaluationResult | None) -> EvaluationView | Non
         evaluation.status,
         evaluation.reason,
         evaluation.evaluator_name,
-        immutable_json(evaluation.matched_criteria),
+        _copy_json_mapping(evaluation.matched_criteria),
         evaluation.task_completed,
         evaluation.goal_completed,
     )
@@ -443,7 +443,7 @@ def event_view(event: RuntimeEvent) -> RuntimeEventView:
         goal_id=event.goal_id,
         task_id=event.task_id,
         action_id=event.action_id,
-        data=MappingProxyType(dict(event.data)),
+        data=MappingProxyType(_copy_json_mapping(event.data)),
         occurred_at=event.occurred_at,
     )
 
@@ -470,7 +470,14 @@ def evidence_view(evidence: Evidence) -> EvidenceView:
 
 
 def _copy_json_value(value: JsonValue) -> JsonValue:
-    return deepcopy(value)
+    return to_json_value(value)
+
+
+def _copy_json_mapping(value: JsonMapping) -> JsonMapping:
+    copied = to_json_value(value)
+    if not isinstance(copied, dict):  # pragma: no cover - JsonMapping contract guard
+        raise TypeError("JSON mapping did not copy to an object")
+    return immutable_json(copied)
 
 
 def _cursor_value(event_id: EventId | None) -> str | None:

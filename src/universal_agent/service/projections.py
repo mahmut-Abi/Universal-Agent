@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from copy import deepcopy
-
-from universal_agent.core import JsonValue, immutable_json
+from universal_agent.core import JsonValue, immutable_json, to_json_value
 from universal_agent.domain import ActiveDomain, DomainPackage
 from universal_agent.evidence import Evidence
 from universal_agent.memory import MemoryRecord
@@ -258,4 +256,4 @@ def evidence_from_view(view: EvidenceView) -> Evidence:
 
 
 def copy_json_value(value: JsonValue) -> JsonValue:
-    return deepcopy(value)
+    return to_json_value(value)

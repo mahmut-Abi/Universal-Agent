@@ -29,13 +29,16 @@ from universal_agent.core import (
     ErrorCode,
     EventId,
     ExecutionStatus,
+    GoalId,
     GoalStatus,
     JsonMapping,
+    RuntimeEvent,
     SessionId,
+    TaskId,
     TaskStatus,
 )
 from universal_agent.domains.kubernetes import KubernetesDomain, KubernetesRemediationDomain
-from universal_agent.runtime import RuntimeEventView
+from universal_agent.runtime import RuntimeEventView, event_view
 
 
 class HealthBackend:
@@ -181,6 +184,25 @@ def build_remediation_api(
         environment=immutable_json({"environment": "production"}),
     )
     return RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
+
+
+def test_runtime_event_view_deep_copies_nested_json_data() -> None:
+    nested_items = [1]
+    nested = {"items": nested_items}
+    event = RuntimeEvent(
+        "NestedEvent",
+        SessionId("session-1"),
+        GoalId("goal-1"),
+        TaskId("task-1"),
+        data={"nested": nested},
+    )
+
+    view = event_view(event)
+    nested_items.append(2)
+
+    assert view.data["nested"] == {"items": [1]}
+    with pytest.raises(TypeError):
+        cast(dict[str, object], view.data)["changed"] = True
 
 
 @pytest.mark.asyncio

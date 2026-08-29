@@ -12,6 +12,7 @@ from universal_agent.core import (
     JsonMapping,
     immutable_json,
     read_json_file,
+    to_json_object,
     write_json_file,
 )
 from universal_agent.core.config_validation import (
@@ -115,77 +116,22 @@ class _EcosystemRegistryManifestPayload(ConfigPayload):
 
 
 def encode_ecosystem_registry_manifest(manifest: EcosystemRegistryManifest) -> dict[str, Any]:
-    metadata = dict(manifest.metadata)
-    metadata.update(
-        {
-            "name": manifest.name,
-            "version": manifest.version,
-            "description": manifest.description,
-        }
-    )
+    summary = to_json_object(manifest.summary, fallback_to_string=True)
+    summary["total_items"] = manifest.summary.total_items
     return {
         "apiVersion": manifest.api_version,
         "kind": manifest.kind,
-        "metadata": metadata,
-        "summary": {
-            "domain_package_count": manifest.summary.domain_package_count,
-            "evaluation_dataset_count": manifest.summary.evaluation_dataset_count,
-            "profile_count": manifest.summary.profile_count,
-            "total_items": manifest.summary.total_items,
-        },
+        "metadata": _manifest_metadata(manifest),
+        "summary": summary,
         "domain_packages": [
-            {
-                "name": package.name,
-                "version": package.version,
-                "description": package.description,
-                "author": package.author,
-                "entrypoint": package.entrypoint,
-                "tags": list(package.tags),
-                "capability_names": list(package.capability_names),
-                "required_tools": list(package.required_tools),
-                "resources": list(package.resources),
-                "dependencies": [_identity_body(item) for item in package.dependencies],
-                "compatibility": _compatibility_body(package.compatibility),
-                "security": dict(package.security),
-                "root_path": package.root_path,
-                "manifest_path": package.manifest_path,
-                "manifest_sha256": package.manifest_sha256,
-            }
-            for package in manifest.domain_packages
+            _domain_package_ref_body(package) for package in manifest.domain_packages
         ],
         "evaluation_datasets": [
-            {
-                "name": dataset.name,
-                "version": dataset.version,
-                "description": dataset.description,
-                "author": dataset.author,
-                "tags": list(dataset.tags),
-                "domains": [_identity_body(item) for item in dataset.domains],
-                "suites": [
-                    {
-                        "name": suite.name,
-                        "path": suite.path,
-                        "description": suite.description,
-                        "tags": list(suite.tags),
-                    }
-                    for suite in dataset.suites
-                ],
-                "root_path": dataset.root_path,
-                "manifest_path": dataset.manifest_path,
-                "manifest_sha256": dataset.manifest_sha256,
-            }
+            to_json_object(dataset, fallback_to_string=True)
             for dataset in manifest.evaluation_datasets
         ],
         "profiles": [
-            {
-                "name": profile.name,
-                "version": profile.version,
-                "description": profile.description,
-                "domains": [_identity_body(item) for item in profile.domains],
-                "path": profile.path,
-                "config_sha256": profile.config_sha256,
-            }
-            for profile in manifest.profiles
+            to_json_object(profile, fallback_to_string=True) for profile in manifest.profiles
         ],
     }
 
@@ -386,8 +332,22 @@ def _parse_registry_payload[T: ConfigPayload](
         raise EcosystemRegistryValidationError(str(exc)) from exc
 
 
-def _identity_body(identity: DomainIdentity) -> dict[str, str]:
-    return {"name": identity.name, "version": identity.version}
+def _manifest_metadata(manifest: EcosystemRegistryManifest) -> dict[str, Any]:
+    metadata = dict(manifest.metadata)
+    metadata.update(
+        {
+            "name": manifest.name,
+            "version": manifest.version,
+            "description": manifest.description,
+        }
+    )
+    return metadata
+
+
+def _domain_package_ref_body(package: EcosystemDomainPackageRef) -> dict[str, Any]:
+    body: dict[str, Any] = to_json_object(package, fallback_to_string=True)
+    body["compatibility"] = _compatibility_body(package.compatibility)
+    return body
 
 
 def _compatibility_body(compatibility: DomainPackageCompatibility) -> dict[str, str]:

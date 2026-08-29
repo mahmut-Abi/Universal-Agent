@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from dataclasses import dataclass
 
 from universal_agent.core import (
@@ -16,6 +15,7 @@ from universal_agent.core import (
     Task,
     TaskId,
     immutable_json,
+    to_json_value,
 )
 from universal_agent.evidence import Evidence
 from universal_agent.tasks import TaskGraphSnapshot, TaskNodeSnapshot
@@ -220,8 +220,11 @@ def _copy_evidence(evidence: Evidence) -> Evidence:
 
 
 def _copy_mapping(values: JsonMapping) -> JsonMapping:
-    return immutable_json(deepcopy(dict(values)))
+    copied = to_json_value(values)
+    if not isinstance(copied, dict):  # pragma: no cover - JsonMapping contract guard
+        raise TypeError("JSON mapping did not copy to an object")
+    return immutable_json(copied)
 
 
 def _copy_json(value: JsonValue) -> JsonValue:
-    return deepcopy(value)
+    return to_json_value(value)

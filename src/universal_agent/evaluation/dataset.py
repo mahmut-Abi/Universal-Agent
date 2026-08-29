@@ -12,6 +12,7 @@ from universal_agent.core import (
     JsonMapping,
     immutable_json,
     read_json_file,
+    to_json_object,
 )
 from universal_agent.core.config_validation import (
     ConfigPayload,
@@ -305,34 +306,13 @@ def decode_evaluation_dataset_manifest(payload: JsonMapping) -> EvaluationDatase
 
 
 def encode_evaluation_dataset_manifest(manifest: EvaluationDatasetManifest) -> dict[str, Any]:
-    metadata = dict(manifest.metadata)
-    metadata.update(
-        {
-            "name": manifest.name,
-            "version": manifest.version,
-            "description": manifest.description,
-        }
-    )
-    if manifest.author is not None:
-        metadata["author"] = manifest.author
-    if manifest.tags:
-        metadata["tags"] = list(manifest.tags)
+    body = to_json_object(manifest, fallback_to_string=True)
     return {
-        "apiVersion": manifest.api_version,
-        "kind": manifest.kind,
-        "metadata": metadata,
-        "domains": [
-            {"name": domain.name, "version": domain.version} for domain in manifest.domains
-        ],
-        "suites": [
-            {
-                "name": suite.name,
-                "path": suite.path,
-                "description": suite.description,
-                "tags": list(suite.tags),
-            }
-            for suite in manifest.suites
-        ],
+        "apiVersion": body["api_version"],
+        "kind": body["kind"],
+        "metadata": _manifest_metadata(manifest),
+        "domains": body["domains"],
+        "suites": body["suites"],
     }
 
 
@@ -510,6 +490,22 @@ def _require_non_empty(value: str, field_name: str) -> None:
 
 def _format_identity(identity: EvaluationDatasetIdentity) -> str:
     return f"{identity.name}@{identity.version}"
+
+
+def _manifest_metadata(manifest: EvaluationDatasetManifest) -> dict[str, Any]:
+    metadata = dict(manifest.metadata)
+    metadata.update(
+        {
+            "name": manifest.name,
+            "version": manifest.version,
+            "description": manifest.description,
+        }
+    )
+    if manifest.author is not None:
+        metadata["author"] = manifest.author
+    if manifest.tags:
+        metadata["tags"] = list(manifest.tags)
+    return metadata
 
 
 __all__ = [

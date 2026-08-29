@@ -7,7 +7,7 @@ import yaml
 from pydantic import Field
 from yaml import YAMLError
 
-from universal_agent.core import DomainIdentity, JsonMapping, immutable_json
+from universal_agent.core import DomainIdentity, JsonMapping, immutable_json, to_json_object
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticJsonValue,
@@ -175,48 +175,30 @@ def domain_package_scaffold_spec_from_runtime_spec(
 
 
 def encode_domain_package_manifest(manifest: DomainPackageManifest) -> dict[str, Any]:
-    metadata = dict(manifest.metadata)
-    metadata.update(
-        {
-            "name": manifest.name,
-            "version": manifest.version,
-            "description": manifest.description,
-        }
-    )
-    if manifest.author is not None:
-        metadata["author"] = manifest.author
-    if manifest.tags:
-        metadata["tags"] = list(manifest.tags)
+    body = to_json_object(manifest, fallback_to_string=True)
     payload: dict[str, Any] = {
-        "apiVersion": manifest.api_version,
-        "kind": manifest.kind,
-        "metadata": metadata,
-        "entrypoint": manifest.entrypoint,
-        "ontology": list(manifest.ontology),
-        "capabilities": list(manifest.capabilities),
-        "tools": list(manifest.tools),
-        "policies": list(manifest.policies),
-        "procedures": list(manifest.procedures),
-        "knowledge": list(manifest.knowledge),
-        "evaluators": list(manifest.evaluators),
-        "context_providers": list(manifest.context_providers),
-        "prompts": list(manifest.prompts),
-        "resources": list(manifest.resources),
-        "dependencies": [
-            {"name": dependency.name, "version": dependency.version}
-            for dependency in manifest.dependencies
-        ],
-        "required_tools": list(manifest.required_tools),
+        "apiVersion": body["api_version"],
+        "kind": body["kind"],
+        "metadata": _manifest_metadata(manifest),
+        "entrypoint": body["entrypoint"],
+        "ontology": body["ontology"],
+        "capabilities": body["capabilities"],
+        "tools": body["tools"],
+        "policies": body["policies"],
+        "procedures": body["procedures"],
+        "knowledge": body["knowledge"],
+        "evaluators": body["evaluators"],
+        "context_providers": body["context_providers"],
+        "prompts": body["prompts"],
+        "resources": body["resources"],
+        "dependencies": body["dependencies"],
+        "required_tools": body["required_tools"],
     }
-    compatibility: dict[str, str] = {}
-    if manifest.compatibility.runtime_api is not None:
-        compatibility["runtime_api"] = manifest.compatibility.runtime_api
-    if manifest.compatibility.domain_api is not None:
-        compatibility["domain_api"] = manifest.compatibility.domain_api
+    compatibility = _compatibility_body(manifest.compatibility)
     if compatibility:
         payload["compatibility"] = compatibility
     if manifest.security:
-        payload["security"] = dict(manifest.security)
+        payload["security"] = body["security"]
     return payload
 
 
@@ -351,3 +333,28 @@ def _string_tuple(value: list[str], key: str) -> tuple[str, ...]:
         )
     except ValueError as exc:
         raise DomainPackageValidationError(str(exc)) from exc
+
+
+def _manifest_metadata(manifest: DomainPackageManifest) -> dict[str, Any]:
+    metadata = dict(manifest.metadata)
+    metadata.update(
+        {
+            "name": manifest.name,
+            "version": manifest.version,
+            "description": manifest.description,
+        }
+    )
+    if manifest.author is not None:
+        metadata["author"] = manifest.author
+    if manifest.tags:
+        metadata["tags"] = list(manifest.tags)
+    return metadata
+
+
+def _compatibility_body(compatibility: DomainPackageCompatibility) -> dict[str, str]:
+    body: dict[str, str] = {}
+    if compatibility.runtime_api is not None:
+        body["runtime_api"] = compatibility.runtime_api
+    if compatibility.domain_api is not None:
+        body["domain_api"] = compatibility.domain_api
+    return body
