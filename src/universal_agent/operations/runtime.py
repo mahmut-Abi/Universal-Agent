@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from universal_agent.core import ActionId, GoalStatus, SessionId
+from universal_agent.core import ActionId, GoalStatus, SessionId, TaskStatus
 from universal_agent.operations.audit_logs import build_audit_records, build_runtime_logs
 from universal_agent.operations.cost import build_runtime_cost
 from universal_agent.operations.helpers import string as _string
@@ -31,8 +31,42 @@ def build_runtime_metrics(
     cost = build_runtime_cost(events)
     event_counts = Counter(event.type for event in events)
     active_resource_locks = _active_resource_locks(events)
+    session_count = len(sessions)
+    completed_goal_count = sum(
+        1 for session in sessions if session.goal_status is GoalStatus.COMPLETED
+    )
+    current_task_completed_count = sum(
+        1 for session in sessions if session.current_task_status is TaskStatus.COMPLETED
+    )
+    action_completed_count = event_counts["ActionCompleted"]
+    tool_failure_count = sum(
+        1
+        for event in events
+        if event.type == "ActionCompleted" and _string(event.data.get("status")) != "succeeded"
+    )
+    policy_checked_count = event_counts["PolicyChecked"]
+    policy_denial_count = sum(
+        1
+        for event in events
+        if event.type == "PolicyChecked" and _string(event.data.get("effect")) == "deny"
+    )
+    recovery_planned_count = event_counts["RecoveryPlanned"]
+    human_intervention_count = sum(
+        1 for event in events if event.type in {"ConfirmationRequired", "GoalWaiting"}
+    )
+    evaluation_count = event_counts["EvaluationCompleted"]
+    evaluation_success_count = sum(
+        1
+        for event in events
+        if event.type == "EvaluationCompleted" and _string(event.data.get("status")) == "completed"
+    )
+    evaluation_failure_count = sum(
+        1
+        for event in events
+        if event.type == "EvaluationCompleted" and _string(event.data.get("status")) == "failed"
+    )
     return RuntimeMetricsView(
-        session_count=len(sessions),
+        session_count=session_count,
         active_session_count=sum(
             1
             for session in sessions
@@ -41,9 +75,7 @@ def build_runtime_metrics(
         waiting_session_count=sum(
             1 for session in sessions if session.goal_status is GoalStatus.WAITING
         ),
-        completed_goal_count=sum(
-            1 for session in sessions if session.goal_status is GoalStatus.COMPLETED
-        ),
+        completed_goal_count=completed_goal_count,
         failed_goal_count=sum(
             1 for session in sessions if session.goal_status is GoalStatus.FAILED
         ),
@@ -52,23 +84,13 @@ def build_runtime_metrics(
         ),
         event_count=len(events),
         action_started_count=event_counts["ActionStarted"],
-        action_completed_count=event_counts["ActionCompleted"],
-        tool_failure_count=sum(
-            1
-            for event in events
-            if event.type == "ActionCompleted" and _string(event.data.get("status")) != "succeeded"
-        ),
-        policy_denial_count=sum(
-            1
-            for event in events
-            if event.type == "PolicyChecked" and _string(event.data.get("effect")) == "deny"
-        ),
+        action_completed_count=action_completed_count,
+        tool_failure_count=tool_failure_count,
+        policy_denial_count=policy_denial_count,
         confirmation_required_count=event_counts["ConfirmationRequired"],
-        recovery_planned_count=event_counts["RecoveryPlanned"],
+        recovery_planned_count=recovery_planned_count,
         recovery_exhausted_count=event_counts["RecoveryExhausted"],
-        human_intervention_count=sum(
-            1 for event in events if event.type in {"ConfirmationRequired", "GoalWaiting"}
-        ),
+        human_intervention_count=human_intervention_count,
         resource_lock_acquired_count=event_counts["ResourceLockAcquired"],
         resource_lock_released_count=event_counts["ResourceLockReleased"],
         resource_conflict_count=event_counts["ResourceConflictDetected"],
@@ -76,12 +98,34 @@ def build_runtime_metrics(
         decision_generated_count=event_counts["DecisionGenerated"],
         decision_validated_count=event_counts["DecisionValidated"],
         decision_rejected_count=event_counts["DecisionRejected"],
+        policy_checked_count=policy_checked_count,
+        evaluation_count=evaluation_count,
+        evaluation_success_count=evaluation_success_count,
+        evaluation_failure_count=evaluation_failure_count,
+        current_task_completed_count=current_task_completed_count,
+        goal_completion_rate=_rate(completed_goal_count, session_count),
+        task_success_rate=_rate(current_task_completed_count, session_count),
+        action_success_rate=_rate(
+            action_completed_count - tool_failure_count,
+            action_completed_count,
+        ),
+        tool_failure_rate=_rate(tool_failure_count, action_completed_count),
+        policy_denial_rate=_rate(policy_denial_count, policy_checked_count),
+        recovery_rate=_rate(recovery_planned_count, session_count),
+        human_intervention_rate=_rate(human_intervention_count, session_count),
+        verification_success_rate=_rate(evaluation_success_count, evaluation_count),
         model_call_count=cost.model_call_count,
         model_input_token_count=cost.input_tokens,
         model_output_token_count=cost.output_tokens,
         model_total_token_count=cost.total_tokens,
         model_estimated_cost_micros=cost.estimated_cost_micros,
     )
+
+
+def _rate(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return numerator / denominator
 
 
 def build_doctor_report(

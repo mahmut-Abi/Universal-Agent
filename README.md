@@ -294,6 +294,9 @@ detect accidental split state/event wiring. These adapters are local persistence
   agentd-shaped routes and CLI commands, plus optional
   `ModelUsageRecorded` events from model adapters. A shared security redaction projection keeps
   sensitive keyed values out of config, log and trace surfaces while preserving public token metrics.
+  Runtime metrics now expose both counts and maturity rates for goal completion, current task
+  success, action success, tool failures, policy denials, recovery, human intervention and
+  verification success.
   Structured log projections preserve runtime identifiers, event types, severity and redacted event
   data for CLI/agentd consumers. Trace span projections derive session/action trees plus decision,
   model usage, policy, observation, resource lock, resource conflict and evaluation phase spans from

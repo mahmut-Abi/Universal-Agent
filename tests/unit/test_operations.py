@@ -33,6 +33,7 @@ from universal_agent.security import (
 def session(
     status: GoalStatus = GoalStatus.COMPLETED,
     *,
+    task_status: TaskStatus = TaskStatus.COMPLETED,
     pending_action: bool = False,
 ) -> SessionSummaryView:
     return SessionSummaryView(
@@ -42,7 +43,7 @@ def session(
         goal_status=status,
         current_task_id=TaskId("task-1"),
         current_task_description="Inspect workload",
-        current_task_status=TaskStatus.COMPLETED,
+        current_task_status=task_status,
         iteration=3,
         task_count=1,
         pending_action=pending_action,
@@ -78,6 +79,7 @@ def event(
 def test_runtime_metrics_are_derived_from_sessions_and_events() -> None:
     events = (
         event("event-1", "PolicyChecked", action_id="action-1", data={"effect": "allow"}),
+        event("event-13", "PolicyChecked", action_id="action-2", data={"effect": "deny"}),
         event("event-2", "ActionStarted", action_id="action-1"),
         event("event-3", "ActionCompleted", action_id="action-1", data={"status": "succeeded"}),
         event("event-4", "DecisionGenerated", data={"decision_type": "execute"}),
@@ -115,27 +117,56 @@ def test_runtime_metrics_are_derived_from_sessions_and_events() -> None:
             action_id="action-4",
             data={"resource_key": "deployment/example"},
         ),
+        event(
+            "event-14",
+            "EvaluationCompleted",
+            action_id="action-1",
+            data={"status": "completed", "evaluator": "workload-health"},
+        ),
+        event(
+            "event-15",
+            "EvaluationCompleted",
+            action_id="action-4",
+            data={"status": "failed", "evaluator": "workload-health"},
+        ),
     )
 
-    metrics = build_runtime_metrics((session(), session(GoalStatus.WAITING)), events)
+    metrics = build_runtime_metrics(
+        (session(), session(GoalStatus.WAITING, task_status=TaskStatus.WAITING)),
+        events,
+    )
 
     assert metrics.session_count == 2
     assert metrics.completed_goal_count == 1
     assert metrics.waiting_session_count == 1
-    assert metrics.event_count == 12
+    assert metrics.event_count == 15
     assert metrics.action_started_count == 1
     assert metrics.action_completed_count == 1
     assert metrics.decision_generated_count == 1
     assert metrics.decision_validated_count == 1
     assert metrics.decision_rejected_count == 1
     assert metrics.tool_failure_count == 0
+    assert metrics.policy_checked_count == 2
+    assert metrics.policy_denial_count == 1
     assert metrics.confirmation_required_count == 1
     assert metrics.human_intervention_count == 1
     assert metrics.recovery_planned_count == 1
+    assert metrics.evaluation_count == 2
+    assert metrics.evaluation_success_count == 1
+    assert metrics.evaluation_failure_count == 1
+    assert metrics.current_task_completed_count == 1
     assert metrics.resource_lock_acquired_count == 1
     assert metrics.resource_lock_released_count == 1
     assert metrics.resource_conflict_count == 1
     assert metrics.active_resource_lock_count == 0
+    assert metrics.goal_completion_rate == 0.5
+    assert metrics.task_success_rate == 0.5
+    assert metrics.action_success_rate == 1.0
+    assert metrics.tool_failure_rate == 0.0
+    assert metrics.policy_denial_rate == 0.5
+    assert metrics.recovery_rate == 0.5
+    assert metrics.human_intervention_rate == 0.5
+    assert metrics.verification_success_rate == 0.5
     assert metrics.model_call_count == 1
     assert metrics.model_input_token_count == 100
     assert metrics.model_output_token_count == 25
@@ -152,6 +183,7 @@ def test_prometheus_metrics_export_projects_runtime_metrics_text() -> None:
             event("event-5", "DecisionGenerated", data={"decision_type": "execute"}),
             event("event-6", "DecisionValidated", data={"decision_type": "execute"}),
             event("event-7", "DecisionRejected", data={"decision_type": "execute"}),
+            event("event-8", "EvaluationCompleted", data={"status": "completed"}),
             event(
                 "event-4",
                 "ResourceLockAcquired",
@@ -182,6 +214,8 @@ def test_prometheus_metrics_export_projects_runtime_metrics_text() -> None:
     assert "universal_agent_runtime_decisions_generated 1.0\n" in exported
     assert "universal_agent_runtime_decisions_validated 1.0\n" in exported
     assert "universal_agent_runtime_decisions_rejected 1.0\n" in exported
+    assert "universal_agent_runtime_evaluations 1.0\n" in exported
+    assert "universal_agent_runtime_verification_success_rate 1.0\n" in exported
     assert "universal_agent_runtime_active_resource_locks 1.0\n" in exported
     assert "universal_agent_runtime_model_total_tokens 125.0\n" in exported
     assert "universal_agent_runtime_model_estimated_cost_micros 42.0\n" in exported

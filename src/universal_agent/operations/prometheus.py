@@ -67,6 +67,31 @@ _METRICS: tuple[MetricDescriptor, ...] = (
         lambda metrics: metrics.decision_rejected_count,
     ),
     (
+        "policy_checks",
+        "Runtime policy checks completed",
+        lambda metrics: metrics.policy_checked_count,
+    ),
+    (
+        "evaluations",
+        "Runtime evaluations completed",
+        lambda metrics: metrics.evaluation_count,
+    ),
+    (
+        "evaluation_successes",
+        "Runtime evaluations that verified completion",
+        lambda metrics: metrics.evaluation_success_count,
+    ),
+    (
+        "evaluation_failures",
+        "Runtime evaluations that failed execution",
+        lambda metrics: metrics.evaluation_failure_count,
+    ),
+    (
+        "current_tasks_completed",
+        "Runtime sessions whose current task is completed",
+        lambda metrics: metrics.current_task_completed_count,
+    ),
+    (
         "tool_failures",
         "Runtime tool failures observed",
         lambda metrics: metrics.tool_failure_count,
@@ -140,6 +165,46 @@ _METRICS: tuple[MetricDescriptor, ...] = (
         "model_estimated_cost_micros",
         "Runtime model estimated cost in micros",
         lambda metrics: metrics.model_estimated_cost_micros,
+    ),
+    (
+        "goal_completion_rate",
+        "Runtime completed goals divided by listed sessions",
+        lambda metrics: metrics.goal_completion_rate,
+    ),
+    (
+        "task_success_rate",
+        "Runtime completed current tasks divided by listed sessions",
+        lambda metrics: metrics.task_success_rate,
+    ),
+    (
+        "action_success_rate",
+        "Runtime successful actions divided by completed actions",
+        lambda metrics: metrics.action_success_rate,
+    ),
+    (
+        "tool_failure_rate",
+        "Runtime tool failures divided by completed actions",
+        lambda metrics: metrics.tool_failure_rate,
+    ),
+    (
+        "policy_denial_rate",
+        "Runtime policy denials divided by policy checks",
+        lambda metrics: metrics.policy_denial_rate,
+    ),
+    (
+        "recovery_rate",
+        "Runtime recoveries planned divided by listed sessions",
+        lambda metrics: metrics.recovery_rate,
+    ),
+    (
+        "human_intervention_rate",
+        "Runtime human interventions divided by listed sessions",
+        lambda metrics: metrics.human_intervention_rate,
+    ),
+    (
+        "verification_success_rate",
+        "Runtime successful evaluations divided by completed evaluations",
+        lambda metrics: metrics.verification_success_rate,
     ),
 )
 

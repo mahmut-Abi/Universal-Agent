@@ -234,4 +234,6 @@
    命令；`init`、`serve`、`kubernetes`、`tui`、`ecosystem`、`eval` 等本地装配或本地文件命令仍保持本地执行
 2. agentd/app.py 的 `domain_package_body()` 与 `DomainPackageView` 字段对齐
 3. 引入第二个真实 Domain（如 observability/prometheus），验证多域共享 World Model
-4. 按设计文档 §82 建立成熟度指标基线（Goal Completion Rate 等，用 eval harness）
+4. 成熟度指标基线—— Runtime metrics 已暴露 goal/task/action/tool/policy/recovery/
+   human-intervention/verification 计数与 rate；Evaluation Harness quality gate 已消费场景级
+   completion/action/policy/recovery/cost 等指标用于回归门禁
