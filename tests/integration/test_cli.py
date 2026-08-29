@@ -931,6 +931,140 @@ async def test_cli_init_can_write_json_http_model_file_secret_config(tmp_path: P
 
 
 @pytest.mark.asyncio
+async def test_cli_config_validate_reports_profile_and_available_secrets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile_path = tmp_path / "profile.json"
+    output = StringIO()
+    init_output = StringIO()
+    monkeypatch.setenv("RUNTIME_MODEL_API_KEY", "secret-value")
+
+    init_status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--model-provider",
+            "json_http",
+            "--model-name",
+            "runtime-decider",
+            "--model-endpoint",
+            "https://models.example.test/decide",
+            "--model-api-key-env",
+            "RUNTIME_MODEL_API_KEY",
+            "--model-api-key-secret",
+            "runtime_model_api_key",
+        ],
+        stdout=init_output,
+    )
+    status = await run_cli(
+        ["--profile-config", str(profile_path), "config", "validate"], stdout=output
+    )
+    payload = read_json(output)
+
+    assert init_status == 0
+    assert status == 0
+    assert payload["status"] == "ok"
+    assert payload["profile"]["name"] == "local-kubernetes"
+    assert payload["runtime"]["model"]["provider"] == "json_http"
+    assert payload["runtime"]["store"]["backend"] == "file"
+    assert payload["secrets"] == {
+        "status": "ok",
+        "checked": True,
+        "declared": 1,
+        "available": 1,
+        "missing_required": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_cli_config_validate_fails_on_missing_required_secret(tmp_path: Path) -> None:
+    profile_path = tmp_path / "profile.json"
+    output = StringIO()
+    init_output = StringIO()
+
+    init_status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--model-provider",
+            "json_http",
+            "--model-name",
+            "runtime-decider",
+            "--model-endpoint",
+            "https://models.example.test/decide",
+            "--model-api-key-env",
+            "UNIVERSAL_AGENT_TEST_MISSING_MODEL_API_KEY",
+            "--model-api-key-secret",
+            "runtime_model_api_key",
+        ],
+        stdout=init_output,
+    )
+    status = await run_cli(
+        ["--profile-config", str(profile_path), "config", "validate"], stdout=output
+    )
+    payload = read_json(output)
+
+    assert init_status == 0
+    assert status == 1
+    assert payload["status"] == "error"
+    assert payload["secrets"]["status"] == "missing_required"
+    assert payload["secrets"]["missing_required"] == ["runtime_model_api_key"]
+
+
+@pytest.mark.asyncio
+async def test_cli_config_validate_can_skip_secret_resolution(tmp_path: Path) -> None:
+    profile_path = tmp_path / "profile.json"
+    output = StringIO()
+    init_output = StringIO()
+
+    init_status = await run_cli(
+        [
+            "init",
+            "--output",
+            str(profile_path),
+            "--model-provider",
+            "json_http",
+            "--model-name",
+            "runtime-decider",
+            "--model-endpoint",
+            "https://models.example.test/decide",
+            "--model-api-key-env",
+            "UNIVERSAL_AGENT_TEST_MISSING_MODEL_API_KEY",
+            "--model-api-key-secret",
+            "runtime_model_api_key",
+        ],
+        stdout=init_output,
+    )
+    status = await run_cli(
+        ["--profile-config", str(profile_path), "config", "validate", "--skip-secret-resolution"],
+        stdout=output,
+    )
+    payload = read_json(output)
+
+    assert init_status == 0
+    assert status == 0
+    assert payload["status"] == "ok"
+    assert payload["secrets"]["status"] == "not_checked"
+    assert payload["secrets"]["checked"] is False
+    assert payload["secrets"]["missing_required"] == []
+
+
+@pytest.mark.asyncio
+async def test_cli_config_validate_requires_profile_config() -> None:
+    output = StringIO()
+    error = StringIO()
+
+    status = await run_cli(["config", "validate"], stdout=output, stderr=error)
+
+    assert status == 2
+    assert output.getvalue() == ""
+    assert "config validate requires --profile-config" in error.getvalue()
+
+
+@pytest.mark.asyncio
 async def test_cli_init_can_write_openai_chat_completions_kubectl_profile(
     tmp_path: Path,
 ) -> None:

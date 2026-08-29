@@ -17,6 +17,7 @@ Frequently used commands:
 
 ```bash
 .venv/bin/python -m universal_agent.cli ready
+.venv/bin/python -m universal_agent.cli --profile-config profile.json config validate
 .venv/bin/python -m universal_agent.cli config show
 .venv/bin/python -m universal_agent.cli capabilities list   # includes required_arguments and argument_schema
 .venv/bin/python -m universal_agent.cli tools list
@@ -39,6 +40,12 @@ When `AGENT_CONFIG_DIR` or `AGENT_DATA_DIR` is set, `agent init` uses those
 directories for default Profile output and local runtime state paths. This keeps
 the same command usable inside the generic container image, where the defaults
 are `/config/profile.json` and `/data/*`.
+
+Use `config validate` before starting a configured runtime. It parses the
+Profile JSON, validates the nested Runtime config, checks declared env/file
+secret availability by default, and exits with status `1` when required secrets
+are missing. Add `--skip-secret-resolution` for schema-only validation in CI
+environments that intentionally do not expose runtime credentials.
 
 For an end-to-end production-style Kubernetes profile and run sequence, follow
 [`kubernetes-live-operator-runbook.md`](kubernetes-live-operator-runbook.md).

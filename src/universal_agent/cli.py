@@ -59,6 +59,7 @@ from universal_agent.cli_catalog_commands import (
     _dispatch_domain_packages,
     _dispatch_profile,
 )
+from universal_agent.cli_config import validate_profile_config_file
 from universal_agent.cli_ecosystem import _dispatch_ecosystem
 from universal_agent.cli_evaluation import _dispatch_eval
 from universal_agent.cli_init import _dispatch_init
@@ -190,6 +191,9 @@ async def run_cli(
                 raise ValueError(f"command does not support --api-url: {cast(str, args.command)}")
             await dispatch_agentd_cli(args, out)
             return 0
+        if _is_config_validate_command(args):
+            _dispatch_config_validate(args, out)
+            return 0
         runtime_service = service or _service_from_args(args)
         await _dispatch(args, runtime_service, out, server_runner=server_runner)
     except (
@@ -230,6 +234,23 @@ def _service_from_args(args: argparse.Namespace) -> RuntimeService:
     if is_kubernetes_probe_service_command(args):
         return build_configured_probe_service(profile_config)
     return build_configured_service(profile_config)
+
+
+def _is_config_validate_command(args: argparse.Namespace) -> bool:
+    return cast(str, args.command) == "config" and cast(str, args.config_command) == "validate"
+
+
+def _dispatch_config_validate(args: argparse.Namespace, out: TextIO) -> None:
+    profile_config = cast(str | None, args.profile_config)
+    if profile_config is None:
+        raise ValueError("config validate requires --profile-config")
+    report = validate_profile_config_file(
+        profile_config,
+        check_secrets=not cast(bool, args.skip_secret_resolution),
+    )
+    _write_json(out, report)
+    if report["status"] != "ok":
+        raise CliExit(1)
 
 
 async def _dispatch(

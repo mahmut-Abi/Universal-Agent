@@ -108,6 +108,8 @@ def command_supports_agentd(args: argparse.Namespace) -> bool:
         return False
     if command == "repair":
         return cast(str, args.repair_command) == "state-events"
+    if command == "config":
+        return cast(str, args.config_command) == "show"
     if command == "profile":
         return cast(str, args.profile_command) in {"list", "show"}
     if command == "domain-packages":

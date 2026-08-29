@@ -212,6 +212,12 @@ def build_parser() -> argparse.ArgumentParser:
     config = commands.add_parser("config")
     config_commands = config.add_subparsers(dest="config_command", required=True)
     config_commands.add_parser("show")
+    config_validate = config_commands.add_parser("validate")
+    config_validate.add_argument(
+        "--skip-secret-resolution",
+        action="store_true",
+        help="Validate config shape without checking env/file secret availability.",
+    )
 
     serve = commands.add_parser("serve")
     serve.add_argument("--host", default="127.0.0.1")
