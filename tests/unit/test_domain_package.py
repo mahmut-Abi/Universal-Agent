@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from universal_agent.core import DomainIdentity, JsonMapping, JsonValue
+from universal_agent.core import DomainIdentity, JsonMapping, JsonValue, immutable_json
 from universal_agent.domain import (
     AmbiguousDomainPackageError,
     DomainPackageCompatibility,
@@ -16,6 +16,7 @@ from universal_agent.domain import (
     DomainPackageRuntimeLoadError,
     DomainPackageScaffoldSpec,
     DomainPackageValidationError,
+    DomainRuntimeLoadContext,
     build_domain_package_manifest,
     decode_domain_package_manifest,
     encode_domain_package_manifest,
@@ -173,6 +174,84 @@ class WidgetDomain(BaseDomainRuntime):
 
 def build_domain() -> WidgetDomain:
     return WidgetDomain()
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+
+def write_context_runtime_module(
+    root: Path,
+    *,
+    module_name: str = "widget_domain_context",
+) -> None:
+    (root / f"{module_name}.py").write_text(
+        """
+from __future__ import annotations
+
+from universal_agent import BaseDomainRuntime, immutable_json
+from universal_agent.core import (
+    CapabilityCategory,
+    CapabilityDefinition,
+    DomainManifest,
+    DomainMetadata,
+    JsonMapping,
+    ToolDefinition,
+)
+from universal_agent.evaluation import CriteriaEvaluator, Evaluator
+from universal_agent.tools import Tool
+
+
+class InspectWidgetTool:
+    definition = ToolDefinition("inspect_widget", "Inspect widget state", ("inspect_widget",))
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        return immutable_json({"healthy": True})
+
+
+class WidgetDomain(BaseDomainRuntime):
+    def __init__(self, description: str) -> None:
+        self._description = description
+
+    @property
+    def manifest(self) -> DomainManifest:
+        return DomainManifest(
+            "agent.nantian.dev/v1alpha1",
+            "Domain",
+            DomainMetadata("widget", "1.0.0", self._description),
+            ("Widget",),
+            ("inspect_widget",),
+            ("criteria",),
+        )
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        return (
+            CapabilityDefinition(
+                "inspect_widget",
+                "Inspect widget health",
+                CapabilityCategory.OBSERVATION,
+            ),
+        )
+
+    def tools(self) -> tuple[Tool, ...]:
+        return (InspectWidgetTool(),)
+
+    def evaluators(self) -> tuple[Evaluator, ...]:
+        return (CriteriaEvaluator(),)
+
+
+def build_domain(context) -> WidgetDomain:
+    resolver = context.resolve_secret
+    token = None if resolver is None else resolver("domain_token")
+    return WidgetDomain(
+        "backend="
+        + str(context.backend)
+        + ";mode="
+        + str(context.settings.get("mode"))
+        + ";token="
+        + str(token)
+        + ";environment="
+        + str(context.environment.get("environment"))
+    )
 """.lstrip(),
         encoding="utf-8",
     )
@@ -616,6 +695,33 @@ def test_domain_package_runtime_loader_imports_explicit_entrypoint(tmp_path: Pat
     assert activation.active_domain.tools[0].definition.name == "inspect_widget"
     assert module_name in sys.modules
     assert tuple(sys.path) == sys_path_before
+
+
+def test_domain_package_runtime_loader_passes_host_context_to_entrypoint(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "widget-domain"
+    module_name = "widget_domain_runtime_context"
+    write_manifest(root, runtime_package_payload(module_name=module_name))
+    write_context_runtime_module(root, module_name=module_name)
+    package = DomainPackageRegistry().install(root)
+
+    activation = load_domain_package_runtime(
+        package,
+        context=DomainRuntimeLoadContext(
+            identity=DomainIdentity("widget", "1.0.0"),
+            backend="fixture",
+            settings=immutable_json({"mode": "production"}),
+            environment=immutable_json({"environment": "production"}),
+            resolve_secret=lambda name: "secret-value" if name == "domain_token" else None,
+        ),
+    )
+
+    assert activation.active_domain.identity == DomainIdentity("widget", "1.0.0")
+    assert (
+        activation.active_domain.manifest.metadata.description
+        == "backend=fixture;mode=production;token=secret-value;environment=production"
+    )
 
 
 def test_domain_package_runtime_loader_requires_explicit_entrypoint(tmp_path: Path) -> None:

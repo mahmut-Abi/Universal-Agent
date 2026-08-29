@@ -321,6 +321,23 @@ def test_runtime_config_from_mapping_parses_multi_domain_values() -> None:
     )
 
 
+def test_runtime_config_from_mapping_parses_domain_package_paths() -> None:
+    config = RuntimeConfig.from_mapping(
+        {
+            "domain": {"name": "widget", "version": "1.0.0"},
+            "domain_package_paths": [
+                "/opt/universal-agent/domains/widget",
+                "./domains/observability",
+            ],
+        }
+    )
+
+    assert config.domain_package_paths == (
+        "/opt/universal-agent/domains/widget",
+        "./domains/observability",
+    )
+
+
 def test_runtime_config_from_mapping_parses_domain_backend_settings() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -454,6 +471,12 @@ def test_runtime_config_rejects_invalid_store_and_limits() -> None:
                 ]
             }
         )
+
+    with pytest.raises(ValueError, match=r"domain_package_paths\[0\] must not be empty"):
+        RuntimeConfig.from_mapping({"domain_package_paths": [""]})
+
+    with pytest.raises(ValueError, match="duplicate domain_package_paths"):
+        RuntimeConfig.from_mapping({"domain_package_paths": ["/domains/widget", "/domains/widget"]})
 
 
 def test_runtime_config_rejects_non_object_json_file(tmp_path: Path) -> None:

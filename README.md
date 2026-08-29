@@ -114,8 +114,9 @@ access Kernel internals directly. `RuntimeHost` is the typed application assembl
 Configuration: it validates the configured Domain identity, resolves environment-backed and
 file-backed secret references into non-value availability reports, builds memory or file-backed stores, applies runtime
 limits/environment, optionally builds a configured model adapter from non-secret model metadata
-and secret-reference names, optionally binds an application-level Agent Profile, and exposes both
-`RuntimeAPI` and `RuntimeService` without teaching applications Kernel internals.
+and secret-reference names, can activate configured Domain packages from
+`RuntimeConfig.domain_package_paths`, optionally binds an application-level Agent Profile, and exposes
+both `RuntimeAPI` and `RuntimeService` without teaching applications Kernel internals.
 `UniversalAgentRuntime` is the first embedding SDK facade over `RuntimeService`, with public
 SDK input/result types for goal submission, lifecycle control, session reads and event reads. See
 `examples/p3_5_runtime_api.py`, `examples/p3_5_runtime_service.py`,
@@ -387,6 +388,10 @@ detect accidental split state/event wiring. These adapters are local persistence
   drift between package metadata and runtime code; registry install/discovery still never imports
   Domain code. `agent domain-packages load-runtime <path>` exposes the same explicit runtime
   activation check for CLI/CI without changing metadata-only install semantics.
+  Domain package entrypoints may accept `DomainRuntimeLoadContext` when they need Profile backend
+  settings, environment metadata or secret resolution, and `RuntimeHost.from_configured_domain_packages`
+  can assemble a Runtime from `RuntimeConfig.domain_package_paths` without application code importing
+  concrete Domain modules.
   `DomainPackageScaffoldSpec`, `domain_package_scaffold_spec_from_runtime_spec` and
   `scaffold_domain_package` provide the first Domain SDK surface for generating a standard package
   layout and validated manifest from typed metadata, including package-local resource parents for

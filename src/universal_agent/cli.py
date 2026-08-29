@@ -116,8 +116,9 @@ from universal_agent.ecosystem import (
 from universal_agent.evaluation.dataset import (
     EvaluationDatasetNotFoundError,
 )
-from universal_agent.host import build_configured_model_adapter
+from universal_agent.host import RuntimeHost, build_configured_model_adapter
 from universal_agent.profile import (
+    ProfileConfig,
     ProfileConfigNotFoundError,
 )
 from universal_agent.runtime import (
@@ -145,6 +146,18 @@ def build_default_service() -> RuntimeService:
 
 
 def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
+    profile = ProfileConfig.from_json_file(profile_config_path).to_profile()
+    if profile.runtime.domain_package_paths:
+        secret_provider = EnvSecretProvider()
+        return RuntimeHost.from_configured_domain_packages(
+            config=profile.runtime,
+            model=build_configured_model_adapter(
+                profile.runtime,
+                secret_provider=secret_provider,
+            ),
+            profile=profile,
+            secret_provider=secret_provider,
+        ).service
     return build_kubernetes_configured_service(
         profile_config_path,
         model_adapter_builder=build_configured_model_adapter,

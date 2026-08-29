@@ -28,6 +28,7 @@ from universal_agent.core.config_validation import (
     parse_payload,
     parse_positive_float,
     parse_positive_int,
+    parse_unique_non_empty_string_sequence,
     string_mapping,
 )
 
@@ -100,6 +101,7 @@ class _RuntimeConfigPayload(ConfigPayload):
     limits: dict[str, PydanticJsonValue] = Field(default_factory=dict)
     domain: dict[str, PydanticJsonValue] = Field(default_factory=dict)
     domains: list[dict[str, PydanticJsonValue]] | None = None
+    domain_package_paths: list[str] = Field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -392,6 +394,7 @@ class RuntimeConfig:
     limits: RuntimeLimitsConfig = field(default_factory=RuntimeLimitsConfig)
     domain: DomainConfig = field(default_factory=DomainConfig)
     domains: tuple[DomainConfig, ...] = ()
+    domain_package_paths: tuple[str, ...] = ()
 
     @classmethod
     def from_json_file(cls, path: str | Path) -> RuntimeConfig:
@@ -415,6 +418,7 @@ class RuntimeConfig:
             limits=RuntimeLimitsConfig.from_mapping(json_mapping(payload.limits)),
             domain=domain,
             domains=domains,
+            domain_package_paths=tuple(payload.domain_package_paths),
         )
         config.validate()
         return config
@@ -449,6 +453,11 @@ class RuntimeConfig:
         duplicates = _duplicate_domain_configs(self.configured_domains())
         if duplicates:
             raise ValueError("duplicate configured domains: " + ", ".join(duplicates))
+        parse_unique_non_empty_string_sequence(
+            self.domain_package_paths,
+            "domain_package_paths",
+            duplicate_template="duplicate domain_package_paths: {duplicates}",
+        )
 
     def configured_domains(self) -> tuple[DomainConfig, ...]:
         if self.domains:

@@ -9,6 +9,7 @@ from universal_agent import (
     Decision,
     DecisionType,
     DomainConfig,
+    DomainPackageScaffoldSpec,
     Goal,
     ModelConfig,
     ProfileConfig,
@@ -21,11 +22,13 @@ from universal_agent import (
     Task,
     build_configured_model_adapter,
     immutable_json,
+    scaffold_domain_package,
 )
 from universal_agent.core import (
     CapabilityCategory,
     CapabilitySummary,
     DecisionContext,
+    DomainIdentity,
     ExecutionStatus,
     GoalId,
     GoalStatus,
@@ -814,6 +817,41 @@ def test_runtime_host_from_profile_exposes_profile_catalog(tmp_path: Path) -> No
     assert host.config == profile.runtime
     assert profiles[0].name == "production-operator"
     assert profiles[0].domain_name == "kubernetes"
+
+
+def test_runtime_host_loads_domains_from_configured_domain_package_paths(
+    tmp_path: Path,
+) -> None:
+    package_root = tmp_path / "widget-domain"
+    scaffold_domain_package(
+        package_root,
+        DomainPackageScaffoldSpec(
+            name="widget",
+            version="1.0.0",
+            description="Widget inspection domain package",
+            ontology=("Widget",),
+            capabilities=("inspect_widget",),
+            tools=("inspect_widget",),
+            evaluators=("criteria",),
+            runtime_stub=True,
+        ),
+    )
+    config = RuntimeConfig(
+        domain=DomainConfig("widget", "1.0.0"),
+        domain_package_paths=(str(package_root),),
+    )
+
+    host = RuntimeHost.from_configured_domain_packages(
+        config=config,
+        model=ScriptedModelAdapter([]),
+    )
+
+    packages = host.service.domain_packages()
+
+    assert host.domain_identity == DomainIdentity("widget", "1.0.0")
+    assert host.service.config().domain_package_paths == (str(package_root),)
+    assert packages[0].name == "widget"
+    assert packages[0].root_path == str(package_root)
 
 
 def test_runtime_host_rejects_profile_domain_mismatch(tmp_path: Path) -> None:

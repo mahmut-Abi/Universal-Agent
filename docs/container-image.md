@@ -51,6 +51,11 @@ mounted service-account token or an environment-backed token reference in the
 Profile config. The image intentionally does not bake Kubernetes-specific
 behavior into the runtime entrypoint.
 
+When a Profile uses package-loaded Domain runtimes, include
+`runtime.domain_package_paths` in the Profile config and mount those package
+roots into the container. The image entrypoint remains `agent`; Domain code is
+selected by the mounted config and package paths.
+
 ## Authenticated serving
 
 ```bash

@@ -263,6 +263,7 @@ class RuntimeService:
         if self._config is None:
             return RuntimeConfigView(
                 environment=immutable_json(),
+                domain_package_paths=(),
                 secrets=(),
                 store_backend="memory",
                 store_path=None,
@@ -282,6 +283,7 @@ class RuntimeService:
             )
         return RuntimeConfigView(
             environment=redact_environment(self._config.environment),
+            domain_package_paths=self._config.domain_package_paths,
             model=runtime_model_config_view(self._config.model),
             secrets=runtime_secret_ref_views(
                 self._config.secrets,

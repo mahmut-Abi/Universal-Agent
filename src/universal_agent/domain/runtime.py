@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -20,6 +21,7 @@ from universal_agent.core import (
     SessionId,
     Task,
     ToolDefinition,
+    immutable_json,
     read_json_file,
 )
 from universal_agent.core.config_validation import (
@@ -60,6 +62,22 @@ class ActionArgumentProvider(Protocol):
     def capability_names(self) -> tuple[str, ...]: ...
 
     def provide(self, context: ActionArgumentContext) -> JsonMapping: ...
+
+
+@dataclass(frozen=True, slots=True)
+class DomainRuntimeLoadContext:
+    """Host-owned configuration passed to a Domain package entrypoint.
+
+    Domain package factories can use this to construct Domain-owned adapters
+    from Profile/RuntimeConfig data without making the generic Host import a
+    concrete Domain module.
+    """
+
+    identity: DomainIdentity
+    backend: str | None = None
+    settings: JsonMapping = field(default_factory=immutable_json)
+    environment: JsonMapping = field(default_factory=immutable_json)
+    resolve_secret: Callable[[str], str | None] | None = None
 
 
 class DomainRuntime(Protocol):

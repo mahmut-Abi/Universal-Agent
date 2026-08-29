@@ -109,6 +109,7 @@ def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
         ready=ReadyView(True, "ready", 1, 1, 1),
         config=RuntimeConfigView(
             environment={},
+            domain_package_paths=(),
             store_backend="memory",
             store_path=None,
             distributed_queue_backend="memory",

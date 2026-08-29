@@ -4,6 +4,7 @@ import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from importlib.metadata import EntryPoint
+from inspect import Parameter, signature
 from pathlib import Path
 from typing import Any, cast
 
@@ -16,12 +17,18 @@ from universal_agent.domain.package_models import (
     _format_identity,
 )
 from universal_agent.domain.package_verification import verify_domain_package
-from universal_agent.domain.runtime import ActiveDomain, DomainLoader, DomainRuntime
+from universal_agent.domain.runtime import (
+    ActiveDomain,
+    DomainLoader,
+    DomainRuntime,
+    DomainRuntimeLoadContext,
+)
 
 
 def load_domain_package_runtime(
     package_or_path: DomainPackage | Path,
     *,
+    context: DomainRuntimeLoadContext | None = None,
     loader: DomainLoader | None = None,
     verify_paths: bool = True,
 ) -> DomainPackageRuntimeActivation:
@@ -46,7 +53,7 @@ def load_domain_package_runtime(
             f"domain package {_format_identity(package.identity)} has no entrypoint"
         )
 
-    runtime = _load_domain_runtime_entrypoint(package.root_path, entrypoint)
+    runtime = _load_domain_runtime_entrypoint(package.root_path, entrypoint, context=context)
     domain_loader = loader or DomainLoader()
     active = domain_loader.load(runtime)
     if active.identity != package.identity:
@@ -59,7 +66,12 @@ def load_domain_package_runtime(
     return DomainPackageRuntimeActivation(package, runtime, active)
 
 
-def _load_domain_runtime_entrypoint(root_path: Path, entrypoint: str) -> DomainRuntime:
+def _load_domain_runtime_entrypoint(
+    root_path: Path,
+    entrypoint: str,
+    *,
+    context: DomainRuntimeLoadContext | None = None,
+) -> DomainRuntime:
     parsed = _entrypoint(entrypoint)
     with _package_import_path(root_path):
         try:
@@ -72,7 +84,7 @@ def _load_domain_runtime_entrypoint(root_path: Path, entrypoint: str) -> DomainR
             raise DomainPackageRuntimeLoadError(
                 f"domain package entrypoint attribute not found: {parsed.module}.{parsed.attr}"
             ) from exc
-        return _coerce_domain_runtime(target, entrypoint)
+        return _coerce_domain_runtime(target, entrypoint, context=context)
 
 
 def _parse_entrypoint(entrypoint: str) -> tuple[str, tuple[str, ...]]:
@@ -126,32 +138,85 @@ def _package_import_path(root_path: Path) -> Iterator[None]:
                 pass
 
 
-def _coerce_domain_runtime(target: Any, entrypoint: str) -> DomainRuntime:
+def _coerce_domain_runtime(
+    target: Any,
+    entrypoint: str,
+    *,
+    context: DomainRuntimeLoadContext | None = None,
+) -> DomainRuntime:
     if _looks_like_domain_runtime(target):
         return cast(DomainRuntime, target)
     if isinstance(target, type):
-        try:
-            instance = target()
-        except TypeError as exc:
-            raise DomainPackageRuntimeLoadError(
-                f"domain package entrypoint class requires unsupported arguments: {entrypoint}"
-            ) from exc
+        instance = _call_entrypoint(target, entrypoint, context=context, kind="class")
         if _looks_like_domain_runtime(instance):
             return cast(DomainRuntime, instance)
     if callable(target):
-        try:
-            result = target()
-        except TypeError as exc:
-            raise DomainPackageRuntimeLoadError(
-                f"domain package entrypoint callable requires unsupported arguments: {entrypoint}"
-            ) from exc
+        result = _call_entrypoint(target, entrypoint, context=context, kind="callable")
         if _looks_like_domain_runtime(result):
             return cast(DomainRuntime, result)
         if isinstance(result, type):
-            return _coerce_domain_runtime(result, entrypoint)
+            return _coerce_domain_runtime(result, entrypoint, context=context)
     raise DomainPackageRuntimeLoadError(
         f"domain package entrypoint did not produce a DomainRuntime: {entrypoint}"
     )
+
+
+def _call_entrypoint(
+    target: Any,
+    entrypoint: str,
+    *,
+    context: DomainRuntimeLoadContext | None,
+    kind: str,
+) -> Any:
+    context_mode = _context_argument_mode(target)
+    if context is not None and context_mode == "positional":
+        try:
+            return target(context)
+        except TypeError as exc:
+            raise DomainPackageRuntimeLoadError(
+                f"domain package entrypoint {kind} requires unsupported arguments: {entrypoint}"
+            ) from exc
+    if context is not None and context_mode == "keyword":
+        try:
+            return target(context=context)
+        except TypeError as exc:
+            raise DomainPackageRuntimeLoadError(
+                f"domain package entrypoint {kind} requires unsupported arguments: {entrypoint}"
+            ) from exc
+    try:
+        return target()
+    except TypeError as exc:
+        raise DomainPackageRuntimeLoadError(
+            f"domain package entrypoint {kind} requires unsupported arguments: {entrypoint}"
+        ) from exc
+
+
+def _context_argument_mode(target: Any) -> str | None:
+    try:
+        parameters = tuple(signature(target).parameters.values())
+    except (TypeError, ValueError):
+        return None
+    required = tuple(
+        parameter
+        for parameter in parameters
+        if parameter.default is Parameter.empty
+        and parameter.kind
+        in {
+            Parameter.POSITIONAL_ONLY,
+            Parameter.POSITIONAL_OR_KEYWORD,
+            Parameter.KEYWORD_ONLY,
+        }
+    )
+    if not required:
+        return None
+    if any(parameter.kind is Parameter.VAR_POSITIONAL for parameter in parameters):
+        return "positional"
+    if len(required) != 1:
+        return None
+    parameter = required[0]
+    if parameter.kind is Parameter.KEYWORD_ONLY:
+        return "keyword"
+    return "positional"
 
 
 def _looks_like_domain_runtime(candidate: object) -> bool:

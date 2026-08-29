@@ -86,6 +86,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
         ready=ReadyView(True, "ready", 1, 1, 1),
         config=RuntimeConfigView(
             environment={},
+            domain_package_paths=(),
             store_backend="memory",
             store_path=None,
             distributed_queue_backend="memory",

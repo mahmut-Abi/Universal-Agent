@@ -90,6 +90,31 @@ That call imports the declared entrypoint, validates it through `DomainLoader`
 and rejects identity, capability, tool or evaluator drift between package
 metadata and runtime code.
 
+Entrypoints may also accept one `DomainRuntimeLoadContext` argument when the
+Domain must build its own adapters from Profile/RuntimeConfig data:
+
+```python
+from universal_agent import DomainRuntimeLoadContext
+
+
+def build_domain(context: DomainRuntimeLoadContext):
+    backend = context.backend or "fake"
+    settings = context.settings
+    token = None if context.resolve_secret is None else context.resolve_secret("api_token")
+    ...
+```
+
+Applications that want configuration-driven activation can point RuntimeConfig
+at package roots and let `RuntimeHost` activate them:
+
+```python
+config = RuntimeConfig(
+    domain=DomainConfig("widget", "1.0.0"),
+    domain_package_paths=(".tmp/widget-domain",),
+)
+host = RuntimeHost.from_configured_domain_packages(config=config, model=model)
+```
+
 ## CLI Checks
 
 Useful local commands:

@@ -157,6 +157,7 @@ def config_body(view: RuntimeConfigView) -> JsonMapping:
     return immutable_json(
         {
             "environment": _json_value(view.environment),
+            "domain_package_paths": list(view.domain_package_paths),
             "model": _runtime_model_config_body(view.model),
             "store": {
                 "backend": view.store_backend,

@@ -127,6 +127,11 @@ Examples are organized by roadmap slice. Useful entry points:
   install/discovery must remain metadata-only. Use
   `agent domain-packages load-runtime <path>` when the same check is needed from
   CLI/CI.
+- Host-level configured activation should go through
+  `RuntimeHost.from_configured_domain_packages` with
+  `RuntimeConfig.domain_package_paths`. Domain package entrypoints that need
+  backend settings or secrets should accept `DomainRuntimeLoadContext` and keep
+  concrete Domain adapter construction inside the Domain package.
 - Domain package resources should stay package-local; scaffold custom resource
   parents through `DomainPackageScaffoldSpec.resources` rather than writing
   paths outside the package root.

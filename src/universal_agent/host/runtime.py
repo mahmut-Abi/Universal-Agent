@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
-from universal_agent.core import Decision, DomainIdentity
+from universal_agent.core import Decision, DomainIdentity, JsonMapping, immutable_json
 from universal_agent.distributed import (
     DistributedRuntimeCoordinator,
     FileDistributedLockRegistry,
@@ -21,11 +22,16 @@ from universal_agent.domain import (
     DomainComposition,
     DomainManager,
     DomainNotFoundError,
+    DomainPackageRegistry,
+    DomainPackageRuntimeActivation,
     DomainRuntime,
+    DomainRuntimeLoadContext,
     RuntimeBuilder,
     RuntimeComponents,
+    load_domain_package,
+    load_domain_package_runtime,
 )
-from universal_agent.host.config import ModelProvider, RuntimeConfig, StoreBackend
+from universal_agent.host.config import DomainConfig, ModelProvider, RuntimeConfig, StoreBackend
 from universal_agent.model import (
     JsonHttpModelAdapter,
     JsonHttpModelTransport,
@@ -124,6 +130,14 @@ def _configured_model_api_key(
     secret_name = config.model.api_key_secret
     if secret_name is None:
         return None
+    return _configured_secret_value(config, secret_name, provider)
+
+
+def _configured_secret_value(
+    config: RuntimeConfig,
+    secret_name: str,
+    provider: SecretProvider | None,
+) -> str | None:
     for secret in config.secrets:
         if secret.name == secret_name:
             return resolve_secret_value(secret, provider=provider)
@@ -163,6 +177,7 @@ class RuntimeHost:
         domain: DomainRuntime,
         profile: AgentProfile | None = None,
         secret_provider: SecretProvider | None = None,
+        domain_packages: DomainPackageRegistry | None = None,
     ) -> RuntimeHost:
         return cls.build_composed(
             config=config,
@@ -170,6 +185,7 @@ class RuntimeHost:
             domains=(domain,),
             profile=profile,
             secret_provider=secret_provider,
+            domain_packages=domain_packages,
         )
 
     @classmethod
@@ -181,6 +197,7 @@ class RuntimeHost:
         domains: tuple[DomainRuntime, ...],
         profile: AgentProfile | None = None,
         secret_provider: SecretProvider | None = None,
+        domain_packages: DomainPackageRegistry | None = None,
     ) -> RuntimeHost:
         if not domains:
             raise ValueError("runtime host requires at least one domain")
@@ -225,6 +242,7 @@ class RuntimeHost:
                 config=config,
                 secret_resolution=secret_resolution,
                 distributed_coordinator=distributed_coordinator,
+                domain_packages=domain_packages,
             ),
             components=components,
             domain_identity=identity,
@@ -243,6 +261,7 @@ class RuntimeHost:
         model: ModelAdapter,
         domain: DomainRuntime,
         secret_provider: SecretProvider | None = None,
+        domain_packages: DomainPackageRegistry | None = None,
     ) -> RuntimeHost:
         return cls.build(
             config=profile.runtime,
@@ -250,6 +269,7 @@ class RuntimeHost:
             domain=domain,
             profile=profile,
             secret_provider=secret_provider,
+            domain_packages=domain_packages,
         )
 
     @classmethod
@@ -260,6 +280,7 @@ class RuntimeHost:
         model: ModelAdapter,
         domains: tuple[DomainRuntime, ...],
         secret_provider: SecretProvider | None = None,
+        domain_packages: DomainPackageRegistry | None = None,
     ) -> RuntimeHost:
         return cls.build_composed(
             config=profile.runtime,
@@ -267,7 +288,80 @@ class RuntimeHost:
             domains=domains,
             profile=profile,
             secret_provider=secret_provider,
+            domain_packages=domain_packages,
         )
+
+    @classmethod
+    def from_configured_domain_packages(
+        cls,
+        *,
+        config: RuntimeConfig,
+        model: ModelAdapter,
+        profile: AgentProfile | None = None,
+        secret_provider: SecretProvider | None = None,
+        verify_paths: bool = True,
+    ) -> RuntimeHost:
+        """Build a Host by activating DomainRuntime code declared in config."""
+
+        activations = _load_configured_domain_package_runtimes(
+            config,
+            secret_provider=secret_provider,
+            verify_paths=verify_paths,
+        )
+        return cls.build_composed(
+            config=config,
+            model=model,
+            domains=tuple(activation.runtime for activation in activations),
+            profile=profile,
+            secret_provider=secret_provider,
+            domain_packages=DomainPackageRegistry(
+                tuple(activation.package for activation in activations)
+            ),
+        )
+
+
+def _load_configured_domain_package_runtimes(
+    config: RuntimeConfig,
+    *,
+    secret_provider: SecretProvider | None,
+    verify_paths: bool,
+) -> tuple[DomainPackageRuntimeActivation, ...]:
+    if not config.domain_package_paths:
+        raise ValueError("runtime config requires domain_package_paths to load Domain packages")
+    config.validate()
+    configured = {
+        domain.identity(): domain
+        for domain in config.configured_domains()
+        if domain.name is not None and domain.version is not None
+    }
+    activations: list[DomainPackageRuntimeActivation] = []
+    for package_path in config.domain_package_paths:
+        package = load_domain_package(Path(package_path))
+        domain_config = configured.get(package.identity)
+        activations.append(
+            load_domain_package_runtime(
+                package,
+                context=DomainRuntimeLoadContext(
+                    identity=package.identity,
+                    backend=None if domain_config is None else domain_config.backend,
+                    settings=_domain_settings(domain_config),
+                    environment=config.environment,
+                    resolve_secret=lambda name: _configured_secret_value(
+                        config,
+                        name,
+                        secret_provider,
+                    ),
+                ),
+                verify_paths=verify_paths,
+            )
+        )
+    return tuple(activations)
+
+
+def _domain_settings(domain_config: DomainConfig | None) -> JsonMapping:
+    if domain_config is None:
+        return immutable_json()
+    return domain_config.settings
 
 
 def _validate_domain_config(

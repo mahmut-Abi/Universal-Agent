@@ -21,6 +21,7 @@ from universal_agent import (
     DistributedRuntimeCoordinator,
     DomainConfig,
     DomainLoader,
+    DomainPackageScaffoldSpec,
     Goal,
     InMemoryEventSink,
     InMemoryStateStore,
@@ -40,6 +41,7 @@ from universal_agent import (
     WorkerId,
     immutable_json,
     load_ecosystem_registry_manifest,
+    scaffold_domain_package,
 )
 from universal_agent.agentd import AgentdHttpServer
 from universal_agent.cli import run_cli
@@ -3690,6 +3692,7 @@ async def test_cli_config_show_exposes_runtime_configuration() -> None:
     assert status == 0
     assert payload == {
         "environment": {"environment": "staging"},
+        "domain_package_paths": [],
         "model": {"provider": "scripted", "name": "scripted", "timeout_seconds": 30.0},
         "secrets": [],
         "store": {"backend": "memory", "path": None},
@@ -3705,6 +3708,59 @@ async def test_cli_config_show_exposes_runtime_configuration() -> None:
         "limits": {"max_iterations": 12, "max_recovery_steps": 4},
         "domains": [{"name": "kubernetes", "version": "0.2.0", "primary": True}],
     }
+
+
+@pytest.mark.asyncio
+async def test_cli_profile_config_loads_domain_package_runtime(tmp_path: Path) -> None:
+    package_root = tmp_path / "widget-domain"
+    profile_path = tmp_path / "widget.profile.json"
+    scaffold_domain_package(
+        package_root,
+        DomainPackageScaffoldSpec(
+            name="widget",
+            version="1.0.0",
+            description="Widget inspection domain package",
+            ontology=("Widget",),
+            capabilities=("inspect_widget",),
+            tools=("inspect_widget",),
+            evaluators=("criteria",),
+            runtime_stub=True,
+        ),
+    )
+    profile_path.write_text(
+        json.dumps(
+            {
+                "name": "widget-operator",
+                "version": "1.0.0",
+                "domain": {"name": "widget", "version": "1.0.0"},
+                "runtime": {
+                    "domain": {"name": "widget", "version": "1.0.0"},
+                    "domain_package_paths": [str(package_root)],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    config_output = StringIO()
+    packages_output = StringIO()
+
+    config_status = await run_cli(
+        ["--profile-config", str(profile_path), "config", "show"],
+        stdout=config_output,
+    )
+    packages_status = await run_cli(
+        ["--profile-config", str(profile_path), "domain-packages", "list"],
+        stdout=packages_output,
+    )
+    config_payload = read_json(config_output)
+    packages_payload = read_json(packages_output)
+
+    assert config_status == 0
+    assert packages_status == 0
+    assert config_payload["domain_package_paths"] == [str(package_root)]
+    assert config_payload["domains"] == [{"name": "widget", "version": "1.0.0", "primary": True}]
+    assert packages_payload["domain_packages"][0]["name"] == "widget"
+    assert packages_payload["domain_packages"][0]["root_path"] == str(package_root)
 
 
 @pytest.mark.asyncio

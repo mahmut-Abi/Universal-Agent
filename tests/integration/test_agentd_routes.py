@@ -702,6 +702,7 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     assert config.status_code == 200
     assert config.body == {
         "environment": {"environment": "staging"},
+        "domain_package_paths": [],
         "model": {"provider": "scripted", "name": "scripted", "timeout_seconds": 30.0},
         "secrets": [],
         "store": {"backend": "memory", "path": None},

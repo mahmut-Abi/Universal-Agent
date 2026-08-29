@@ -247,6 +247,7 @@ class RuntimeModelConfigView:
 @dataclass(frozen=True, slots=True)
 class RuntimeConfigView:
     environment: JsonMapping
+    domain_package_paths: tuple[str, ...]
     store_backend: str
     store_path: str | None
     distributed_queue_backend: str
