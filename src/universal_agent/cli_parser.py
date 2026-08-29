@@ -2,6 +2,13 @@ from __future__ import annotations
 
 import argparse
 
+from universal_agent.cli_defaults import (
+    default_distributed_locks_path,
+    default_init_output_path,
+    default_store_path,
+    default_work_queue_path,
+    default_workers_path,
+)
 from universal_agent.domains.kubernetes.cli import LOCAL_PROFILE_NAME, add_kubernetes_command
 from universal_agent.evaluation.harness import EvaluationScenarioKind
 
@@ -137,27 +144,27 @@ def build_parser() -> argparse.ArgumentParser:
     distributed_lock_release.add_argument("--owner-id", required=True)
 
     init = commands.add_parser("init")
-    init.add_argument("--output", default="profile.json")
+    init.add_argument("--output", default=default_init_output_path())
     init.add_argument("--profile", default=LOCAL_PROFILE_NAME)
     init.add_argument("--environment", default="local")
     init.add_argument("--store-backend", choices=("memory", "file", "sqlite"), default="file")
-    init.add_argument("--store-path", default=".universal-agent/store")
+    init.add_argument("--store-path", default=default_store_path())
     init.add_argument(
         "--distributed-queue-backend",
         choices=("memory", "file", "sqlite"),
         default="memory",
     )
-    init.add_argument("--distributed-queue-path", default=".universal-agent/work-queue.json")
+    init.add_argument("--distributed-queue-path", default=default_work_queue_path())
     init.add_argument(
         "--distributed-locks-backend", choices=("memory", "file", "sqlite"), default="memory"
     )
-    init.add_argument("--distributed-locks-path", default=".universal-agent/distributed-locks.json")
+    init.add_argument("--distributed-locks-path", default=default_distributed_locks_path())
     init.add_argument(
         "--distributed-workers-backend",
         choices=("memory", "file", "sqlite"),
         default="memory",
     )
-    init.add_argument("--distributed-workers-path", default=".universal-agent/workers.json")
+    init.add_argument("--distributed-workers-path", default=default_workers_path())
     init.add_argument("--distributed-terminal-retention-seconds", type=float)
     init.add_argument(
         "--domain-backend",

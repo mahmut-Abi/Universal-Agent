@@ -44,6 +44,10 @@ The image creates `/data` and `/config`, exposes them through
 Mount persistent runtime state under `/data` and mount Profile or Domain package
 configuration under `/config`.
 
+Inside the image, `agent init` uses those environment variables for its default
+paths. Running `agent init --force` writes `/config/profile.json`, and file or
+SQLite-backed runtime stores default under `/data`.
+
 The image includes a Docker health check against `GET /ready`. Override
 `AGENTD_HEALTH_URL` if the container command binds a different internal port.
 

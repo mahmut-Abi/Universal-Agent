@@ -35,6 +35,11 @@ references:
 .venv/bin/python -m universal_agent.cli init --domain-backend kubernetes_api --kubernetes-api-server https://cluster.example.test --kubernetes-api-token-file /run/secrets/kubernetes-token
 ```
 
+When `AGENT_CONFIG_DIR` or `AGENT_DATA_DIR` is set, `agent init` uses those
+directories for default Profile output and local runtime state paths. This keeps
+the same command usable inside the generic container image, where the defaults
+are `/config/profile.json` and `/data/*`.
+
 For an end-to-end production-style Kubernetes profile and run sequence, follow
 [`kubernetes-live-operator-runbook.md`](kubernetes-live-operator-runbook.md).
 
