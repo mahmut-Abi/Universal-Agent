@@ -66,7 +66,11 @@ jobs:
             fi
             sleep 1
           done
-          test "$ready" = true
+          if [ "$ready" != true ]; then
+            docker logs agentd-smoke
+            echo "agentd container did not become ready" >&2
+            exit 1
+          fi
           curl -fsS http://127.0.0.1:8765/health
           docker exec agentd-smoke test -f /config/profile.json
           docker rm -f agentd-smoke

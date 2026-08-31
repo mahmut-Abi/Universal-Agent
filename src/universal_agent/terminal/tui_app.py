@@ -63,8 +63,7 @@ def service_tui_actions(service: RuntimeService) -> TuiActions:
 
 _EVENT_TAIL = 8
 _KEY_HINTS = (
-    "j/k or arrows: select · enter: resume/confirm · "
-    "p: pause · c: cancel · r: refresh · q: quit"
+    "j/k or arrows: select · enter: resume/confirm · p: pause · c: cancel · r: refresh · q: quit"
 )
 _SELECTED_STYLE = "bold cyan"
 
@@ -77,9 +76,7 @@ def _service_provider(
 ) -> SnapshotProvider:
     async def provider(session_id: SessionId | None) -> TuiSnapshot:
         if service is None:
-            raise ValueError(
-                "RuntimeTuiApp requires a service when no snapshot_provider is given"
-            )
+            raise ValueError("RuntimeTuiApp requires a service when no snapshot_provider is given")
         return await build_tui_snapshot(
             service,
             session_id=session_id,
@@ -366,9 +363,7 @@ class RuntimeTuiApp(App[None]):
         if kind == "pause":
             await self._actions.pause(session_id, str(payload) if payload else None)
         elif kind == "resume":
-            await self._actions.resume(
-                session_id, payload if isinstance(payload, bool) else None
-            )
+            await self._actions.resume(session_id, payload if isinstance(payload, bool) else None)
         else:
             await self._actions.cancel(session_id, str(payload) if payload else None)
         self._set_hint(f"{kind} completed")
