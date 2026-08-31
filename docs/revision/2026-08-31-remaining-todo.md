@@ -89,9 +89,12 @@ real deployment environment, credentials, or production infrastructure.
   - [x] Execute the gated live flow with real profile, model credential,
     scoped Kubernetes credential and approved workload target.
     - Note: the kubectl-backend remediation flow has been verified end-to-end
-    against a real cluster (namespace isolation, pod diagnostics, scale fix and
-    fresh verification); the LLM-driven operator flow additionally requires a
-    model provider credential.
+    against a real cluster, including a fault-injection drill: a deployment
+    scaled to zero replicas was detected as unhealthy, remediated via scale,
+    held through a bounded availability wait and verified with all criteria
+    matched. The loop is hardened against zero-replica false health, scale
+    idempotency re-issues and the pod startup window. The LLM-driven operator
+    flow additionally requires a model provider credential.
 - [ ] P3.5 persistence: add production Postgres-backed session/event/world
   stores, schema migrations, production transactional outbox publisher and
   replay repair semantics.
