@@ -75,9 +75,12 @@ def _as_int(value: JsonValue) -> int:
 
 
 def _as_float(value: JsonValue) -> float:
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
+    try:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"expected a numeric projection value, got: {value!r}")
         return float(value)
-    raise ValueError(f"expected a numeric projection value, got: {value!r}")
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def _as_str(value: JsonValue) -> str:

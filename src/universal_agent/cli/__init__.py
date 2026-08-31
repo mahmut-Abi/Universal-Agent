@@ -140,7 +140,8 @@ async def run_cli(
         _write_error(err, "not_found", str(exc))
         return 1
     except AgentdClientError as exc:
-        _write_error(err, exc.code or "agentd_request_failed", str(exc))
+        message = exc.code if exc.code else "agentd_request_failed"
+        _write_error(err, message, str(exc))
         return 1 if exc.status_code == 404 else 2
     except CliExit as exc:
         return exc.status
