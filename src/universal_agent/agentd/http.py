@@ -122,6 +122,16 @@ def json_response(body: JsonMapping, *, status_code: int = 200) -> HttpResponse:
     return HttpResponse(status_code=status_code, body=body)
 
 
+def see_other(location: str) -> HttpResponse:
+    """303 redirect used by console action forms (POST-redirect-GET)."""
+
+    return HttpResponse(
+        status_code=303,
+        body=immutable_json(),
+        headers=MappingProxyType({"location": location}),
+    )
+
+
 def text_response(
     text_body: str,
     *,

@@ -119,7 +119,7 @@ real deployment environment, credentials, or production infrastructure.
   - [x] Add bounded multi-hop relation traversal to `WorldSnapshot`.
   - [x] Add configurable fact merge policy.
   - [x] Add explicit conflict resolution strategy and graph query predicates.
-- [ ] P5 UI controls: upgrade Web UI from read-only snapshots to controlled
+- [x] P5 UI controls: upgrade Web UI from read-only snapshots to controlled
   operator actions with the same policy/confirmation boundaries as CLI and
   agentd.
 - [ ] P4 Multi-Agent productionization: add parent/child runtime event

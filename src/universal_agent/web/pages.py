@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from markupsafe import escape as escape_html
+
 from universal_agent.distributed import DistributedHealthReport, DistributedRuntimeSnapshot
 from universal_agent.operations import DoctorReportView
 from universal_agent.web.catalog import _catalog_metrics, _catalog_sections, _catalog_title
@@ -94,9 +96,10 @@ from universal_agent.web.session_sections import (
     _selected_session,
     _sessions,
     _task_timeline,
+    render_session_operator_actions,
 )
 from universal_agent.web.types import WebCatalogPage, WebConsoleSnapshot
-from universal_agent.web.ui import _metric_card, _metric_grid, _page
+from universal_agent.web.ui import _metric_card, _metric_grid, _page, _section
 from universal_agent.web.world_sections import (
     _evidence,
     _world_entities,
@@ -148,30 +151,45 @@ def render_web_console(snapshot: WebConsoleSnapshot) -> str:
     )
 
 
-def render_web_session_detail(snapshot: WebConsoleSnapshot) -> str:
+def render_web_session_detail(
+    snapshot: WebConsoleSnapshot,
+    *,
+    action_error: str | None = None,
+) -> str:
     title = "Universal Agent Runtime Session Detail"
-    return _page(
-        title,
-        (
-            _session_scoped_hero(snapshot, "Session Detail"),
-            _metric_grid(
-                "Session summary",
-                (
-                    _metric_card("Iteration", _selected_iteration(snapshot.selected_session)),
-                    _metric_card("Tasks", _selected_task_count(snapshot.selected_session)),
-                    _metric_card("Events", len(snapshot.events)),
-                    _metric_card("Evidence", _selected_evidence_count(snapshot.session_explorer)),
-                    _metric_card(
-                        "World Facts",
-                        _selected_world_fact_count(snapshot.session_explorer),
-                    ),
-                    _metric_card(
-                        "World Entities",
-                        _selected_world_entity_count(snapshot.session_explorer),
-                    ),
-                    _metric_card("Audit", len(snapshot.audit_records)),
+    sections: list[str] = [
+        _session_scoped_hero(snapshot, "Session Detail"),
+    ]
+    if action_error is not None:
+        sections.append(
+            _section(
+                "Action failed",
+                f'<p class="error">{escape_html(action_error)}</p>',
+            )
+        )
+    sections.append(
+        _metric_grid(
+            "Session summary",
+            (
+                _metric_card("Iteration", _selected_iteration(snapshot.selected_session)),
+                _metric_card("Tasks", _selected_task_count(snapshot.selected_session)),
+                _metric_card("Events", len(snapshot.events)),
+                _metric_card("Evidence", _selected_evidence_count(snapshot.session_explorer)),
+                _metric_card(
+                    "World Facts",
+                    _selected_world_fact_count(snapshot.session_explorer),
                 ),
+                _metric_card(
+                    "World Entities",
+                    _selected_world_entity_count(snapshot.session_explorer),
+                ),
+                _metric_card("Audit", len(snapshot.audit_records)),
             ),
+        )
+    )
+    sections.append(render_session_operator_actions(snapshot.selected_session))
+    sections.extend(
+        (
             _selected_session(snapshot.selected_session),
             _task_timeline(snapshot.selected_session),
             _world_facts(snapshot.session_explorer),
@@ -181,8 +199,9 @@ def render_web_session_detail(snapshot: WebConsoleSnapshot) -> str:
             _evidence(snapshot.session_explorer),
             _events(snapshot.events),
             _audit(snapshot.audit_records),
-        ),
+        )
     )
+    return _page(title, tuple(sections))
 
 
 def render_web_sessions(snapshot: WebConsoleSnapshot) -> str:

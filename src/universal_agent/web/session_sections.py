@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from html import escape as escape_html
+
+from universal_agent.core import GoalStatus
 from universal_agent.operations import AuditRecordView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
 from universal_agent.web.helpers import _event_detail, _mapping_text, _string_tuple_text
@@ -11,6 +14,101 @@ from universal_agent.web.ui import (
     _section,
     _table_section,
 )
+
+
+def render_session_operator_actions(session: SessionView | None) -> str:
+    """Render controlled operator action forms for the selected session.
+
+    Forms POST to console action routes that dispatch through the same
+    RuntimeService methods the CLI and agentd use, so policy checks and the
+    pending-action confirmation boundary stay identical across surfaces:
+
+    - WAITING with a pending action: explicit confirm-and-resume and reject
+      forms (the CLI ``resume --confirmed`` boundary).
+    - WAITING without a pending action: plain resume.
+    - RUNNING: pause and cancel.
+    """
+    if session is None:
+        return ""
+    status = session.goal_status
+    if status in (
+        GoalStatus.PENDING,
+        GoalStatus.COMPLETED,
+        GoalStatus.FAILED,
+        GoalStatus.CANCELLED,
+    ):
+        return ""
+    session_path = f"/console/sessions/{escape_html(str(session.session_id), quote=True)}"
+    pending = session.pending_action
+    blocks: list[str] = []
+    if status is GoalStatus.WAITING and pending is not None:
+        target = f" on <code>{escape_html(pending.target)}</code>" if pending.target else ""
+        blocks.append(
+            "<p>Pending action <strong>"
+            f"{escape_html(pending.capability)}</strong> via "
+            f"<code>{escape_html(pending.tool_name)}</code>{target} "
+            f"(attempt {pending.attempt}) requires operator confirmation.</p>"
+        )
+        blocks.append(
+            _action_form(
+                f"{session_path}/resume",
+                "Confirm &amp; resume",
+                confirmed="true",
+            )
+        )
+        blocks.append(
+            _action_form(
+                f"{session_path}/resume",
+                "Reject pending action",
+                confirmed="false",
+            )
+        )
+    elif status is GoalStatus.WAITING:
+        blocks.append(_action_form(f"{session_path}/resume", "Resume"))
+    if status is GoalStatus.RUNNING:
+        blocks.append(
+            _action_form(
+                f"{session_path}/pause",
+                "Pause",
+                text_name="reason",
+                text_label="Reason",
+            )
+        )
+    blocks.append(
+        _action_form(
+            f"{session_path}/cancel",
+            "Cancel",
+            text_name="reason",
+            text_label="Reason",
+        )
+    )
+    body = "".join(f'<div class="operator-action">{block}</div>' for block in blocks)
+    return _section("Operator actions", body)
+
+
+def _action_form(
+    action: str,
+    label: str,
+    *,
+    confirmed: str | None = None,
+    text_name: str | None = None,
+    text_label: str | None = None,
+) -> str:
+    hidden = (
+        f'<input type="hidden" name="confirmed" value="{escape_html(confirmed, quote=True)}" />'
+        if confirmed is not None
+        else ""
+    )
+    text = (
+        f'<label for="{text_name}-input">{text_label}</label>'
+        f'<input id="{text_name}-input" name="{text_name}" type="text" />'
+        if text_name is not None
+        else ""
+    )
+    return (
+        f'<form method="post" action="{escape_html(action, quote=True)}">'
+        f"{hidden}{text}<button type='submit'>{label}</button></form>"
+    )
 
 
 def _sessions(sessions: tuple[SessionSummaryView, ...]) -> str:

@@ -4,6 +4,7 @@ import socket
 from contextlib import suppress
 from dataclasses import dataclass
 from types import MappingProxyType
+from urllib.parse import parse_qs
 
 from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
@@ -16,7 +17,14 @@ from uvicorn import Config, Server
 
 from universal_agent.agentd.app import AgentdApp
 from universal_agent.agentd.http import HttpRequest, HttpResponse
-from universal_agent.core import JsonCodecError, JsonMapping, dumps_json, immutable_json, loads_json
+from universal_agent.core import (
+    JsonCodecError,
+    JsonMapping,
+    JsonValue,
+    dumps_json,
+    immutable_json,
+    loads_json,
+)
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticNonEmptyString,
@@ -208,12 +216,21 @@ async def _request_body(
     if not chunks:
         return immutable_json()
 
+    content_type = request.headers.get("content-type", "")
     try:
         raw_body = b"".join(chunks)
-        raw_body.decode("utf-8")
-        loaded = loads_json(raw_body)
+        text = raw_body.decode("utf-8")
     except UnicodeDecodeError:
-        return _error_response(400, "bad_request", "request body must be UTF-8 JSON")
+        return _error_response(400, "bad_request", "request body must be UTF-8")
+    if content_type.split(";", 1)[0].strip() == "application/x-www-form-urlencoded":
+        fields: dict[str, JsonValue] = {
+            key: single[0]
+            for key, single in parse_qs(text, keep_blank_values=True).items()
+            if single
+        }
+        return immutable_json(fields)
+    try:
+        loaded = loads_json(text)
     except JsonCodecError as exc:
         return _error_response(400, "bad_request", f"invalid JSON body: {_json_error_message(exc)}")
     try:
@@ -284,5 +301,5 @@ def _bind_socket(host: str, port: int) -> socket.socket:
 
 
 def _socket_address(sock: socket.socket) -> tuple[str, int]:
-    address = sock.getsockname()
-    return str(address[0]), int(address[1])
+    host, port = sock.getsockname()
+    return str(host), int(port)

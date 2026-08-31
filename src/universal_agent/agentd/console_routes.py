@@ -8,10 +8,12 @@ from universal_agent.agentd.http import (
     bad_request,
     method_not_allowed,
     not_found,
+    see_other,
     text_response,
 )
 from universal_agent.agentd.routing import (
     AgentdRouteDefinition,
+    AgentdRouteMatch,
     AgentdRouteMatcher,
     _console_domain_package_view,
     _console_domain_view,
@@ -21,7 +23,7 @@ from universal_agent.agentd.routing import (
     _optional_query_value,
     _optional_session_id_query,
 )
-from universal_agent.core import SessionId
+from universal_agent.core import JsonMapping, SessionId
 from universal_agent.evaluation.console import (
     EvaluationConsoleSnapshot,
     build_evaluation_console_snapshot,
@@ -67,6 +69,21 @@ _CONSOLE_ROUTES = AgentdRouteMatcher(
         AgentdRouteDefinition("console_domain_version", "/console/domains/{name}/{version}"),
         AgentdRouteDefinition("console_domain", "/console/domains/{name}"),
         AgentdRouteDefinition("console_sessions", "/console/sessions"),
+        AgentdRouteDefinition(
+            "console_session_pause",
+            "/console/sessions/{session_id}/pause",
+            ("POST",),
+        ),
+        AgentdRouteDefinition(
+            "console_session_resume",
+            "/console/sessions/{session_id}/resume",
+            ("POST",),
+        ),
+        AgentdRouteDefinition(
+            "console_session_cancel",
+            "/console/sessions/{session_id}/cancel",
+            ("POST",),
+        ),
         AgentdRouteDefinition("console_session_suffix", "/console/sessions/{session_id}/{suffix}"),
         AgentdRouteDefinition("console_session", "/console/sessions/{session_id}"),
         AgentdRouteDefinition("console_catalog", "/console/{page}"),
@@ -94,6 +111,62 @@ _SESSION_CONSOLE_RENDERERS: dict[str, Callable[[WebConsoleSnapshot], str]] = {
 }
 
 
+_CONSOLE_SESSION_ACTION_ROUTES = {
+    "console_session_pause",
+    "console_session_resume",
+    "console_session_cancel",
+}
+
+_CONFIRMED_FORM_VALUES = {"true": True, "false": False}
+
+
+async def _handle_console_session_action(
+    service: RuntimeService,
+    route: AgentdRouteMatch,
+    request: HttpRequest,
+) -> HttpResponse:
+    """Dispatch a console operator action through the same RuntimeService
+    methods the CLI and agentd use, so policy checks and the pending-action
+    confirmation boundary stay identical across surfaces."""
+
+    session_id = SessionId(route.path_params["session_id"])
+    reason = _form_text(request.body, "reason")
+    confirmed_value = request.body.get("confirmed")
+    confirmed = (
+        _CONFIRMED_FORM_VALUES.get(confirmed_value) if isinstance(confirmed_value, str) else None
+    )
+    try:
+        if route.name == "console_session_pause":
+            run = await service.pause_session(
+                session_id,
+                reason=reason or "session paused",
+            )
+        elif route.name == "console_session_resume":
+            run = await service.resume_session(session_id, confirmed=confirmed)
+        else:
+            run = await service.cancel_session(
+                session_id,
+                reason=reason or "session cancelled",
+            )
+    except StateNotFoundError:
+        return not_found(f"session not found: {session_id}")
+    if run.result.error_code is not None:
+        snapshot = await build_web_console_snapshot(service, session_id=session_id)
+        message = f"{run.result.error_code.value}: {run.result.reason}"
+        return text_response(
+            render_web_session_detail(snapshot, action_error=message),
+            content_type="text/html; charset=utf-8",
+        )
+    return see_other(f"/console/sessions/{session_id}")
+
+
+def _form_text(body: JsonMapping, key: str) -> str | None:
+    value = body.get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
 async def handle_console_route(
     service: RuntimeService,
     evaluation_report_dir: str | None,
@@ -114,6 +187,9 @@ async def handle_console_route(
 
     if not route.method_allowed:
         return method_not_allowed(route.allowed_methods)
+
+    if route.name in _CONSOLE_SESSION_ACTION_ROUTES:
+        return await _handle_console_session_action(service, route, request)
 
     if route.name == "console_evaluations":
         evaluation_snapshot = (

@@ -55,7 +55,7 @@ Important invariants:
 | Persistence | `src/universal_agent/persistence/`, `src/universal_agent/state/` | in-memory/file/SQLite session and event stores |
 | Operations | `src/universal_agent/operations/` | metrics, logs, traces, cost, audit, doctor, repair views |
 | Evaluation | `src/universal_agent/evaluation/` | scenarios, suites, quality gates, reports, replay, deterministic mode |
-| UI | `src/universal_agent/tui.py`, `src/universal_agent/web.py`, `src/universal_agent/console.py` | read-only TUI/Web/console projections |
+| UI | `src/universal_agent/tui.py`, `src/universal_agent/web/`, `src/universal_agent/console.py` | TUI/Web/console projections; the Web Console adds controlled operator actions (pause/resume/confirm/cancel) behind the same policy and confirmation boundaries as the CLI and agentd |
 | Distributed local primitives | `src/universal_agent/distributed/`, `src/universal_agent/coordination/` | queue, worker, lease, lock, scheduler, coordinator, health |
 | Multi-Agent optional layer | `src/universal_agent/multi_agent/` | structured task/result contracts, registry, delegation, merge/evaluation |
 | Ecosystem | `src/universal_agent/ecosystem/`, `src/universal_agent/profile/` | package/dataset/profile catalogs and registry metadata |
@@ -83,7 +83,9 @@ implementation objects directly.
   and Kubernetes-label-to-resource subject mapping for shared world identity.
 - File and SQLite adapters are local persistence/coordination adapters, not a
   high-availability distributed database layer.
-- Web and TUI are read-only inspection surfaces.
+- The Web and TUI surfaces render the same projections; only the Web Console
+  exposes operator actions, and those dispatch through RuntimeService so policy
+  checks and pending-action confirmation stay identical to CLI and agentd.
 - Multi-Agent is optional and structured; Domain Composition remains the
   default way to combine multiple domains inside one Agent.
 - Ecosystem registry install planning validates metadata and checksums; it does
