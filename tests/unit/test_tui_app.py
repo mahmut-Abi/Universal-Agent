@@ -1,13 +1,13 @@
-"""Unit tests for the interactive TUI dashboard (state machine + layout)."""
+"""Unit tests for the Textual runtime TUI dashboard (projections + pilot)."""
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from io import StringIO
 from types import MappingProxyType
 
 import pytest
-from rich.console import Console
+from textual.widgets import DataTable, Static
 
 from universal_agent.core import (
     GoalId,
@@ -34,12 +34,9 @@ from universal_agent.service import (
 )
 from universal_agent.terminal.tui import TuiSnapshot
 from universal_agent.terminal.tui_app import (
-    TuiState,
-    build_dashboard,
-    handle_key,
-    map_key,
-    run_tui_app,
-    selected_session_id,
+    RuntimeTuiApp,
+    session_detail_lines,
+    session_table_rows,
 )
 
 pytestmark = pytest.mark.unit
@@ -93,7 +90,7 @@ def _selected_session(summary: SessionSummaryView) -> SessionView:
 
 def _snapshot(
     *,
-    sessions: tuple[SessionSummaryView, ...] | None = None,
+    sessions: tuple[SessionSummaryView, ...] = (),
     selected: SessionView | None = None,
     events: tuple[RuntimeEventView, ...] = (),
 ) -> TuiSnapshot:
@@ -133,7 +130,7 @@ def _snapshot(
         evaluators=(),
         memories=(),
         metrics=RuntimeMetricsView(
-            session_count=len(sessions or ()),
+            session_count=len(sessions),
             active_session_count=0,
             waiting_session_count=0,
             completed_goal_count=0,
@@ -157,7 +154,7 @@ def _snapshot(
         doctor=DoctorReportView("ok", ()),
         distributed_snapshot=None,
         distributed_health=None,
-        sessions=sessions or (),
+        sessions=sessions,
         selected_session=selected,
         session_explorer=None,
         events=events,
@@ -170,7 +167,6 @@ def _two_session_snapshot() -> TuiSnapshot:
         _session_summary("s-1"),
         _session_summary("s-2", goal_status=GoalStatus.WAITING, description="Second goal"),
     )
-    selected = _selected_session(sessions[0])
     events = (
         RuntimeEventView(
             "ev-1",
@@ -183,139 +179,102 @@ def _two_session_snapshot() -> TuiSnapshot:
             datetime(2026, 1, 1, tzinfo=UTC),
         ),
     )
-    return _snapshot(sessions=sessions, selected=selected, events=events)
+    return _snapshot(sessions=sessions, selected=_selected_session(sessions[0]), events=events)
 
 
-def _dashboard_text(snapshot: TuiSnapshot, state: TuiState) -> str:
-    buffer = StringIO()
-    console = Console(file=buffer, force_terminal=False, width=120)
-    console.print(build_dashboard(snapshot, state))
-    return buffer.getvalue()
+def fake_provider(
+    snapshot: TuiSnapshot,
+) -> tuple[
+    Callable[[SessionId | None], Awaitable[TuiSnapshot]],
+    list[SessionId | None],
+]:
+    calls: list[SessionId | None] = []
+
+    async def provider(session_id: SessionId | None) -> TuiSnapshot:
+        calls.append(session_id)
+        return snapshot
+
+    return provider, calls
 
 
-def test_map_key_translates_sequences_and_single_chars() -> None:
-    assert map_key("\x1b[A") == "up"
-    assert map_key("\x1b[B") == "down"
-    assert map_key("\x1b[H") == "home"
-    assert map_key("\x1b[F") == "end"
-    assert map_key("j") == "down"
-    assert map_key("k") == "up"
-    assert map_key("q") == "quit"
-    assert map_key("x") is None
+def test_session_table_rows_projects_sessions() -> None:
+    rows = session_table_rows(_two_session_snapshot())
+
+    assert rows[0] == (
+        "s-1",
+        "completed",
+        "Verify workload health — Inspect workload",
+    )
+    assert rows[1][0] == "s-2"
+    assert rows[1][1] == "waiting"
 
 
-def test_handle_key_moves_selection_with_wraparound() -> None:
-    state = TuiState()
-    down = handle_key(state, "down", 2)
-    assert down.selected_index == 1
-    wrapped = handle_key(down, "down", 2)
-    assert wrapped.selected_index == 0
-    up = handle_key(state, "up", 2)
-    assert up.selected_index == 1
-    first = handle_key(state, "home", 2)
-    assert first.selected_index == 0
-    last = handle_key(state, "end", 2)
-    assert last.selected_index == 1
-
-
-def test_handle_key_quit_refresh_and_unknown_keys() -> None:
-    state = TuiState()
-    assert handle_key(state, "quit", 2).quit_requested is True
-    refreshed = handle_key(state, "refresh", 2)
-    assert refreshed.refresh_requested is True
-    assert refreshed.status_hint == "refreshing…"
-    unknown = handle_key(state, "z", 2)
-    assert unknown.status_hint == "unmapped key: 'z'"
-    assert handle_key(state, None, 2) is state
-
-
-def test_handle_key_without_sessions_reports_hint() -> None:
-    state = handle_key(TuiState(), "down", 0)
-    assert state.selected_index == 0
-    assert state.status_hint == "no sessions to select"
-
-
-def test_selected_session_id_maps_current_index() -> None:
+def test_session_detail_lines_include_goal_events_and_counts() -> None:
     snapshot = _two_session_snapshot()
-    first = selected_session_id(snapshot, TuiState())
-    assert first is not None
-    assert first == SessionId("s-1")
-    moved = handle_key(TuiState(), "down", 2)
-    second = selected_session_id(snapshot, moved)
-    assert second is not None
-    assert second == SessionId("s-2")
-    beyond = TuiState(selected_index=9)
-    assert selected_session_id(snapshot, beyond) is None
+    summary = snapshot.sessions[1]
 
+    lines = session_detail_lines(snapshot, 1, summary)
 
-def test_build_dashboard_renders_selection_detail_and_hints() -> None:
-    snapshot = _two_session_snapshot()
-    state = handle_key(TuiState(), "down", 2)
-    text = _dashboard_text(snapshot, state)
-
-    assert "Universal Agent Runtime TUI" in text
-    assert "health=ok" in text
-    assert "> " in text
-    assert "s-2" in text
-    assert "Second goal" in text
-    assert "goal: waiting Second goal" in text
-    assert "ActionStarted" in text
-    assert "q: quit" in text
-
-
-def test_build_dashboard_without_sessions_renders_empty_hint() -> None:
-    snapshot = _snapshot()
-    text = _dashboard_text(snapshot, TuiState())
-    assert "No sessions yet." in text
-    assert "No session selected." in text
+    assert "session: s-2" in lines
+    assert "goal: waiting Second goal" in lines
+    assert "Recent events" in lines
+    assert any("ActionStarted" in line for line in lines)
 
 
 @pytest.mark.asyncio
-async def test_run_tui_app_quits_via_injected_keys_and_rebuilds_on_selection() -> None:
+async def test_dashboard_lists_sessions_and_tracks_selection() -> None:
     snapshot = _two_session_snapshot()
-    builds: list[str | None] = []
+    provider, calls = fake_provider(snapshot)
+    app = RuntimeTuiApp(snapshot_provider=provider)
 
-    async def builder(session_id: str | None) -> TuiSnapshot:
-        builds.append(session_id)
-        return snapshot
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
 
-    keys = iter(["down", "quit"])
+        table = app.query_one("#sessions-table", DataTable)
+        assert table.row_count == 2
+        assert app._selected_index == 0
 
-    def key_source(_timeout: float) -> str | None:
-        return next(keys, "q")
+        await pilot.press("j")
+        await pilot.pause()
 
-    console = Console(file=StringIO(), force_terminal=False, width=120)
-    status = await run_tui_app(
-        None,
-        snapshot_builder=builder,
-        key_source=key_source,
-        console=console,
-    )
+        assert app._selected_index == 1
+        assert table.cursor_row == 1
+        assert calls[-1] == SessionId("s-2")
 
-    assert status == 0
-    assert builds == [None, SessionId("s-2")]
+        detail = app.query_one("#detail", Static)
+        content = session_detail_lines(snapshot, 1, snapshot.sessions[1])
+        assert detail is not None
+        assert "Second goal" in "".join(content)
 
 
 @pytest.mark.asyncio
-async def test_run_tui_app_refresh_key_triggers_rebuild() -> None:
+async def test_refresh_binding_reloads_snapshot() -> None:
     snapshot = _two_session_snapshot()
-    builds: list[str | None] = []
+    provider, calls = fake_provider(snapshot)
+    app = RuntimeTuiApp(snapshot_provider=provider)
 
-    async def builder(session_id: str | None) -> TuiSnapshot:
-        builds.append(session_id)
-        return snapshot
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        assert len(calls) >= 1
 
-    keys = iter(["refresh", "quit"])
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.pause()
 
-    def key_source(_timeout: float) -> str | None:
-        return next(keys, "q")
+        assert len(calls) >= 2
+        assert calls[-1] == SessionId("s-1")
 
-    status = await run_tui_app(
-        None,
-        snapshot_builder=builder,
-        key_source=key_source,
-        console=Console(file=StringIO(), force_terminal=False, width=120),
-    )
 
-    assert status == 0
-    assert builds == [None, "s-1"]
+@pytest.mark.asyncio
+async def test_quit_binding_exits_cleanly() -> None:
+    snapshot = _two_session_snapshot()
+    provider, _ = fake_provider(snapshot)
+    app = RuntimeTuiApp(snapshot_provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("q")
+
+    assert app.return_code == 0

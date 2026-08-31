@@ -4,27 +4,20 @@ from universal_agent.terminal.console import RuntimeConsoleSnapshot, build_runti
 from universal_agent.terminal.render import TerminalLineStyler, render_terminal_lines
 from universal_agent.terminal.tui import TuiSnapshot, build_tui_snapshot, render_tui_snapshot
 from universal_agent.terminal.tui_app import (
-    TuiState,
-    build_dashboard,
-    handle_key,
-    map_key,
-    run_tui_app,
-    selected_session_id,
+    RuntimeTuiApp,
+    session_detail_lines,
+    session_table_rows,
 )
 
 __all__ = [
     "RuntimeConsoleSnapshot",
-    "TerminalKeyReader",
+    "RuntimeTuiApp",
     "TerminalLineStyler",
     "TuiSnapshot",
-    "TuiState",
-    "build_dashboard",
     "build_runtime_console_snapshot",
     "build_tui_snapshot",
-    "handle_key",
-    "map_key",
     "render_terminal_lines",
     "render_tui_snapshot",
-    "run_tui_app",
-    "selected_session_id",
+    "session_detail_lines",
+    "session_table_rows",
 ]

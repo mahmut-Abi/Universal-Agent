@@ -31,6 +31,7 @@ dependencies = [
   "sqlalchemy>=2.0,<3",
   "starlette>=0.37,<1",
   "tenacity>=9,<10",
+  "textual>=3.0",
   "uvicorn>=0.30,<1",
 ]
 
