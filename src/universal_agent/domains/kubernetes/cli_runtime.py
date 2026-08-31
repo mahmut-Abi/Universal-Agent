@@ -112,8 +112,7 @@ class KubernetesRemediationDecisionAdapter:
         # satisfies every goal criterion and task requirement the sequence is
         # done — continuing would only trigger unnecessary mutations.
         expected = {
-            criterion.key: criterion.expected
-            for criterion in context.goal_success_criteria
+            criterion.key: criterion.expected for criterion in context.goal_success_criteria
         }
         required = set(context.current_task_required_criteria)
         relevant = set(expected) | required
@@ -185,9 +184,7 @@ class KubernetesRemediationDecisionAdapter:
                 "Verify workload health after remediation",
                 capability="inspect_workload",
                 target=f"deployment/{workload}",
-                arguments=immutable_json(
-                    {"name": workload, **ns_args, "wait_seconds": 15}
-                ),
+                arguments=immutable_json({"name": workload, **ns_args, "wait_seconds": 15}),
                 expected_observations=("verification_observed", "healthy"),
             )
         if phase == "finish":
@@ -205,9 +202,7 @@ class KubernetesRemediationDecisionAdapter:
                     "Re-verify workload health after remediation",
                     capability="inspect_workload",
                     target=f"deployment/{workload}",
-                    arguments=immutable_json(
-                        {"name": workload, **ns_args, "wait_seconds": 15}
-                    ),
+                    arguments=immutable_json({"name": workload, **ns_args, "wait_seconds": 15}),
                     expected_observations=("verification_observed", "healthy"),
                 )
             return Decision(
