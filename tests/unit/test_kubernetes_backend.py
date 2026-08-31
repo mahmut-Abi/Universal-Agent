@@ -263,6 +263,172 @@ async def test_kubectl_backend_inspects_workload_health_and_command_scope() -> N
 
 @pytest.mark.asyncio
 @pytest.mark.contract
+async def test_kubectl_backend_treats_zero_replica_deployment_as_unhealthy() -> None:
+    runner = RecordingKubectlRunner(
+        {
+            (
+                "--context",
+                "prod",
+                "--kubeconfig",
+                "/tmp/kubeconfig",
+                "get",
+                "deployment",
+                "api",
+                "--namespace",
+                "default",
+                "-o",
+                "json",
+            ): {
+                "metadata": {"name": "api", "resourceVersion": "rv-9"},
+                "spec": {"replicas": 0},
+                "status": {},
+            }
+        }
+    )
+    backend = KubectlBackend(
+        runner=runner,
+        context="prod",
+        kubeconfig="/tmp/kubeconfig",
+    )
+
+    result = await backend.inspect("inspect_workload", immutable_json({"name": "deployment/api"}))
+
+    assert result["desired_replicas"] == 0
+    assert result["ready_replicas"] == 0
+    # A zero-replica deployment has no capacity: ready (0) >= desired (0) does
+    # not make it healthy, otherwise the remediation loop would never scale it
+    # back up.
+    assert result["healthy"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_kubectl_backend_inspect_waits_for_availability_when_requested() -> None:
+    runner = RecordingKubectlRunner(
+        {
+            (
+                "--context",
+                "prod",
+                "--kubeconfig",
+                "/tmp/kubeconfig",
+                "wait",
+                "deployment/api",
+                "--namespace",
+                "default",
+                "--for=condition=Available",
+                "--timeout=20s",
+            ): {},
+            (
+                "--context",
+                "prod",
+                "--kubeconfig",
+                "/tmp/kubeconfig",
+                "get",
+                "deployment",
+                "api",
+                "--namespace",
+                "default",
+                "-o",
+                "json",
+            ): {
+                "metadata": {"name": "api", "resourceVersion": "rv-2"},
+                "spec": {"replicas": 1},
+                "status": {"readyReplicas": 1, "availableReplicas": 1},
+            },
+        }
+    )
+    backend = KubectlBackend(
+        runner=runner,
+        context="prod",
+        kubeconfig="/tmp/kubeconfig",
+    )
+
+    result = await backend.inspect(
+        "inspect_workload",
+        immutable_json({"name": "deployment/api", "wait_seconds": 20}),
+    )
+
+    assert result["healthy"] is True
+    assert result["desired_replicas"] == 1
+    assert result["ready_replicas"] == 1
+    assert runner.calls[0][-6:] == (
+        "wait",
+        "deployment/api",
+        "--namespace",
+        "default",
+        "--for=condition=Available",
+        "--timeout=20s",
+    )
+    assert runner.calls[1][4:] == (
+        "get",
+        "deployment",
+        "api",
+        "--namespace",
+        "default",
+        "-o",
+        "json",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_kubectl_backend_inspect_survives_availability_wait_timeout() -> None:
+    runner = RecordingKubectlRunner(
+        {
+            (
+                "--context",
+                "prod",
+                "--kubeconfig",
+                "/tmp/kubeconfig",
+                "wait",
+                "deployment/api",
+                "--namespace",
+                "default",
+                "--for=condition=Available",
+                "--timeout=20s",
+            ): KubectlResult(
+                args=("wait",),
+                stdout="",
+                stderr="error: timed out waiting for the condition on deployment/api",
+                returncode=1,
+            ),
+            (
+                "--context",
+                "prod",
+                "--kubeconfig",
+                "/tmp/kubeconfig",
+                "get",
+                "deployment",
+                "api",
+                "--namespace",
+                "default",
+                "-o",
+                "json",
+            ): {
+                "metadata": {"name": "api", "resourceVersion": "rv-3"},
+                "spec": {"replicas": 1},
+                "status": {"readyReplicas": 1, "availableReplicas": 1},
+            },
+        }
+    )
+    backend = KubectlBackend(
+        runner=runner,
+        context="prod",
+        kubeconfig="/tmp/kubeconfig",
+    )
+
+    result = await backend.inspect(
+        "inspect_workload",
+        immutable_json({"name": "deployment/api", "wait_seconds": 20}),
+    )
+
+    # The wait timed out but the follow-up get still reports real state.
+    assert result["healthy"] is True
+    assert [call[-1] for call in runner.calls] == ["--timeout=20s", "json"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
 async def test_kubectl_backend_includes_workload_pod_summaries_from_selector() -> None:
     runner = RecordingKubectlRunner(
         {
@@ -591,6 +757,35 @@ async def test_kubernetes_api_backend_inspects_workload_health() -> None:
         {},
         4.5,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_kubernetes_api_backend_treats_zero_replica_deployment_as_unhealthy() -> None:
+    transport = RecordingKubernetesApiTransport(
+        {
+            (
+                "GET",
+                "/apis/apps/v1/namespaces/prod/deployments/api",
+                (),
+            ): {
+                "metadata": {"name": "api", "resourceVersion": "rv-9"},
+                "spec": {"replicas": 0},
+                "status": {},
+            }
+        }
+    )
+    backend = KubernetesApiBackend(
+        api_server="https://cluster.example.test",
+        transport=transport,
+        default_namespace="prod",
+    )
+
+    result = await backend.inspect("inspect_workload", immutable_json({"name": "deployment/api"}))
+
+    assert result["desired_replicas"] == 0
+    assert result["ready_replicas"] == 0
+    assert result["healthy"] is False
 
 
 @pytest.mark.asyncio

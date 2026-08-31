@@ -135,6 +135,24 @@ class KubectlBackend:
         ref = k8s.resource_ref(
             arguments, default_kind="deployment", default_namespace=self._default_namespace
         )
+        wait_seconds = k8s.optional_int(arguments.get("wait_seconds")) or 0
+        if wait_seconds > 0 and ref.kind in ("deployment", "statefulset"):
+            # Bounded read-only wait so a freshly scaled workload gets a chance
+            # to become available before the health snapshot is taken; a wait
+            # timeout is acceptable, the get below reports the real state.
+            try:
+                await self._run(
+                    "wait",
+                    f"{ref.kind}/{ref.name}",
+                    "--namespace",
+                    ref.namespace,
+                    "--for=condition=Available",
+                    f"--timeout={min(wait_seconds, 60)}s",
+                )
+            except KubectlCommandError:
+                # The workload did not become available within the window; the
+                # get below captures the actual state for the evaluator.
+                pass
         payload = await self._run_json(
             "get", ref.kind, ref.name, "--namespace", ref.namespace, "-o", "json"
         )
@@ -149,7 +167,13 @@ class KubectlBackend:
         ready = k8s.optional_int(status.get("readyReplicas")) or 0
         available = k8s.optional_int(status.get("availableReplicas"))
         updated = k8s.optional_int(status.get("updatedReplicas")) or 0
-        healthy = ready >= desired and (available is None or available >= desired)
+        # A deployment with zero desired replicas has no capacity, so it
+        # is unhealthy even though ready (0) is not below desired (0).
+        healthy = (
+            desired > 0
+            and ready >= desired
+            and (available is None or available >= desired)
+        )
         result: dict[str, JsonValue] = {
             "resource": ref.resource,
             "namespace": ref.namespace,

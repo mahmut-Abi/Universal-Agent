@@ -94,17 +94,48 @@ class KubernetesRemediationDecisionAdapter:
     instead of a fixture default.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, namespace: str | None = None) -> None:
+        self._namespace = namespace
         self._phase = "inspect"
+        self._verifications = 0
         self.contexts: list[DecisionContext] = []
 
     async def decide(self, context: DecisionContext) -> Decision:
         self.contexts.append(context)
         workload, namespace = self._workload_and_namespace(context)
+        namespace = namespace or self._namespace
         ns_args: dict[str, JsonValue] = {}
         if namespace:
             ns_args["namespace"] = namespace
 
+        # Mirror the domain evaluator: when the accumulated evidence already
+        # satisfies every goal criterion and task requirement the sequence is
+        # done — continuing would only trigger unnecessary mutations.
+        expected = {
+            criterion.key: criterion.expected
+            for criterion in context.goal_success_criteria
+        }
+        required = set(context.current_task_required_criteria)
+        relevant = set(expected) | required
+        matched = {
+            key: value
+            for key, value in context.satisfied_criteria.items()
+            if key in relevant and (key not in expected or value == expected[key])
+        }
+        if set(expected).issubset(matched) and required.issubset(matched):
+            return Decision(
+                DecisionType.FINISH,
+                f"Workload {workload} already satisfies all success criteria",
+            )
+
+        # The evaluator may have already completed the goal after the previous
+        # action (e.g. a healthy workload satisfies all criteria on the first
+        # inspect); stop the sequence instead of continuing to mutate.
+        if self._phase not in ("inspect", "remediate", "scale", "verify", "finish"):
+            return Decision(
+                DecisionType.FINISH,
+                f"Remediation sequence completed for {workload}",
+            )
         phase = self._phase
         if phase == "inspect":
             self._phase = "remediate"
@@ -128,7 +159,7 @@ class KubernetesRemediationDecisionAdapter:
                     arguments=immutable_json({"name": pod_name, **ns_args}),
                     expected_observations=("root_cause",),
                 )
-            self._phase = "scale"
+            self._phase = "verify"
             return Decision(
                 DecisionType.EXECUTE,
                 "Scale the under-replicated workload back to capacity",
@@ -154,8 +185,34 @@ class KubernetesRemediationDecisionAdapter:
                 "Verify workload health after remediation",
                 capability="inspect_workload",
                 target=f"deployment/{workload}",
-                arguments=immutable_json({"name": workload, **ns_args}),
+                arguments=immutable_json(
+                    {"name": workload, **ns_args, "wait_seconds": 15}
+                ),
                 expected_observations=("verification_observed", "healthy"),
+            )
+        if phase == "finish":
+            # Freshly scaled pods take time to become ready; re-verify a few
+            # times before finishing so the runtime's finish gate (which
+            # requires the evaluator to have completed the task and goal) is
+            # not tripped by a startup window.
+            if (
+                not (set(expected).issubset(matched) and required.issubset(matched))
+                and self._verifications < 3
+            ):
+                self._verifications += 1
+                return Decision(
+                    DecisionType.EXECUTE,
+                    "Re-verify workload health after remediation",
+                    capability="inspect_workload",
+                    target=f"deployment/{workload}",
+                    arguments=immutable_json(
+                        {"name": workload, **ns_args, "wait_seconds": 15}
+                    ),
+                    expected_observations=("verification_observed", "healthy"),
+                )
+            return Decision(
+                DecisionType.FINISH,
+                f"Remediation sequence completed for {workload}",
             )
         return Decision(
             DecisionType.FINISH,
@@ -268,10 +325,16 @@ def build_configured_service(
         config=profile.runtime,
         secret_provider=secret_provider,
     )
+    namespace = "default"
+    for domain_config in profile.runtime.configured_domains() or (profile.domain,):
+        if domain_config.name == "kubernetes":
+            raw_namespace = (domain_config.settings or {}).get("default_namespace")
+            if isinstance(raw_namespace, str) and raw_namespace:
+                namespace = raw_namespace
     host = RuntimeHost.from_profile(
         profile=profile,
         model=(
-            KubernetesRemediationDecisionAdapter()
+            KubernetesRemediationDecisionAdapter(namespace=namespace)
             if profile.runtime.model.provider == "scripted"
             else model_adapter_builder(
                 profile.runtime,

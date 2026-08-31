@@ -204,7 +204,13 @@ class KubernetesApiBackend:
         ready = k8s.optional_int(status.get("readyReplicas")) or 0
         available = k8s.optional_int(status.get("availableReplicas"))
         updated = k8s.optional_int(status.get("updatedReplicas")) or 0
-        healthy = ready >= desired and (available is None or available >= desired)
+        # A deployment with zero desired replicas has no capacity, so it
+        # is unhealthy even though ready (0) is not below desired (0).
+        healthy = (
+            desired > 0
+            and ready >= desired
+            and (available is None or available >= desired)
+        )
         result: dict[str, JsonValue] = {
             "resource": ref.resource,
             "namespace": ref.namespace,
