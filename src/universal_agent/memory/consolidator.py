@@ -5,10 +5,9 @@ from datetime import datetime
 from typing import Any, NewType
 from uuid import uuid4
 
-try:
-    from rapidfuzz import fuzz, process, utils
-except ImportError:  # pragma: no cover
-    fuzz = process = utils = None  # type: ignore[assignment]
+from rapidfuzz import fuzz
+from rapidfuzz.process import extract
+from rapidfuzz.utils import default_process
 
 from universal_agent.core import utc_now
 from universal_agent.memory.models import MemoryId, MemoryRecord
@@ -150,14 +149,13 @@ class MemoryConsolidator:
 
             if not candidates:
                 continue
-
             # Use fuzzy matching on content
             choices = {i: r.content for i, r in enumerate(candidates)}
-            matches = process.extract(
+            matches = extract(
                 record.content,
                 choices,
                 scorer=fuzz.WRatio,
-                processor=utils.default_process,
+                processor=default_process,
                 score_cutoff=self._similarity_threshold * 100,
                 limit=5,
             )

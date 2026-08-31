@@ -38,7 +38,7 @@ _TEXT_ROUTES = frozenset({"metrics_prometheus", "session_events_stream"})
 
 # Route metadata: name -> (summary, description, tag). Routes missing from this
 # table fall back to a name-derived summary with the generic tag.
-_ROUTE_METADATA: dict[str, tuple[str, str, str]] = {
+_ROUTE_METADATA: dict[tuple[str, str] | str, tuple[str, str, str]] = {
     "health": ("Health check", "Liveness probe reporting process and service identity.", "System"),
     "ready": (
         "Readiness check",
@@ -294,6 +294,23 @@ _REQUEST_SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "memory_create": {
+        "type": "object",
+        "required": ["kind", "subject", "content"],
+        "properties": {
+            "kind": {
+                "type": "string",
+                "enum": ["semantic", "episodic", "procedural", "preference"],
+                "description": (
+                    "Memory kind; operator-managed kinds are semantic/procedural/preference"
+                ),
+            },
+            "subject": {"type": "string", "minLength": 1},
+            "content": {"type": "string", "minLength": 1},
+            "scope": {"type": "string"},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        },
+    },
     "session_pause": {
         "type": "object",
         "properties": {"reason": {"type": "string", "description": "Why the session is paused"}},
@@ -367,8 +384,8 @@ def _schema_endpoint(
 
 def _route_docstring(route: AgentdRouteDefinition, method: str) -> str:
     summary, description, tag = _ROUTE_METADATA.get(
-        route.name, (_route_summary(route.name), "", "System")
-    )
+        (route.name, method.upper())
+    ) or _ROUTE_METADATA.get(route.name, (_route_summary(route.name), "", "System"))
     operation: dict[str, Any] = {
         "operationId": _operation_id(route.name, method),
         "summary": summary,

@@ -6,6 +6,7 @@ from universal_agent.memory.consolidator import (
 from universal_agent.memory.models import (
     MemoryId,
     MemoryKind,
+    MemoryNotFoundError,
     MemoryQuery,
     MemoryRecord,
     new_memory_id,
@@ -29,6 +30,7 @@ __all__ = [
     "MemoryConsolidator",
     "MemoryId",
     "MemoryKind",
+    "MemoryNotFoundError",
     "MemoryQuery",
     "MemoryRecord",
     "MemoryRetriever",

@@ -159,6 +159,14 @@ class _SessionResumePayload(ConfigPayload):
     confirmed: bool | None = None
 
 
+class _MemoryCreatePayload(ConfigPayload):
+    kind: str
+    subject: str
+    content: str
+    scope: str = ""
+    confidence: float = 1.0
+
+
 class _SessionReasonPayload(ConfigPayload):
     reason: str
 
@@ -415,6 +423,20 @@ def _state_event_repair_payload(body: JsonMapping) -> _StateEventRepairPayload:
     )
 
 
+def _memory_create_payload(body: JsonMapping) -> _MemoryCreatePayload:
+    return _request_model_payload(
+        _MemoryCreatePayload,
+        body,
+        {
+            "kind": "memory kind must be a string",
+            "subject": "memory subject must be a string",
+            "content": "memory content must be a string",
+            "scope": "memory scope must be a string",
+            "confidence": "memory confidence must be a number",
+        },
+    )
+
+
 def _session_resume_payload(body: JsonMapping) -> _SessionResumePayload:
     return _request_model_payload(
         _SessionResumePayload,
@@ -447,11 +469,12 @@ def _request_model_payload[T: ConfigPayload](
     try:
         return model_type.model_validate(dict(body))
     except PydanticValidationError as exc:
+        extra_messages = dict(empty_field_messages) if empty_field_messages is not None else {}
         raise ValueError(
             _request_payload_error_message(
                 exc,
                 field_messages,
-                empty_field_messages=empty_field_messages or {},
+                empty_field_messages=extra_messages,
             )
         ) from exc
 

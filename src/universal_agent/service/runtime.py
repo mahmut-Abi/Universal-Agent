@@ -34,6 +34,12 @@ from universal_agent.domain import (
     DomainPackageVerificationReport,
     RuntimeComponents,
 )
+from universal_agent.memory import (
+    MemoryId,
+    MemoryKind,
+    MemoryNotFoundError,
+    MemoryRecord,
+)
 from universal_agent.multi_agent import (
     AgentDelegationState,
     AgentRegistry,
@@ -63,7 +69,7 @@ from universal_agent.service.catalog_service import CatalogService
 from universal_agent.service.distributed import DistributedService
 from universal_agent.service.distributed_runtime import DistributedRuntimeController
 from universal_agent.service.operations import OperationsService
-from universal_agent.service.projections import build_world_snapshot
+from universal_agent.service.projections import build_world_snapshot, memory_view
 from universal_agent.service.views import (
     CapabilityView,
     DistributedPendingActionSchedulingResult,
@@ -179,6 +185,41 @@ class RuntimeService:
 
     def memories(self) -> tuple[MemoryView, ...]:
         return self._catalog.memories()
+
+    def create_memory(
+        self,
+        *,
+        kind: MemoryKind,
+        subject: str,
+        content: str,
+        scope: str = "",
+        confidence: float = 1.0,
+    ) -> MemoryView:
+        """Create an operator-managed memory record in the runtime memory store."""
+
+        record = MemoryRecord(
+            kind=kind,
+            subject=subject,
+            content=content,
+            scope=scope,
+            confidence=confidence,
+            source="user",
+        )
+        self._components.memory_store.add(record)
+        return memory_view(record)
+
+    def get_memory(self, memory_id: str) -> MemoryView | None:
+        record = self._components.memory_store.get(MemoryId(memory_id))
+        return memory_view(record) if record is not None else None
+
+    def delete_memory(self, memory_id: str) -> bool:
+        return self._components.memory_store.delete(MemoryId(memory_id))
+
+    def require_memory(self, memory_id: str) -> MemoryView:
+        view = self.get_memory(memory_id)
+        if view is None:
+            raise MemoryNotFoundError(f"memory record not found: {memory_id}")
+        return view
 
     def profiles(self) -> tuple[ProfileView, ...]:
         return self._catalog.profiles()

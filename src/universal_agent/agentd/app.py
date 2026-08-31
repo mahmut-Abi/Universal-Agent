@@ -50,11 +50,13 @@ from universal_agent.agentd.representations import (
 from universal_agent.agentd.routing import (
     AgentdRouteDefinition,
     AgentdRouteMatcher,
+    _memory_create_payload,
     _normalize_path,
     _optional_query_value,
 )
 from universal_agent.core import JsonMapping, immutable_json
 from universal_agent.domain import AmbiguousDomainPackageError, DomainPackageNotFoundError
+from universal_agent.memory import MemoryKind
 from universal_agent.profile import ProfileNotFoundError
 from universal_agent.service import RuntimeService
 
@@ -95,9 +97,20 @@ _DETAIL_GET_ROUTE_DEFINITIONS = (
 )
 _DETAIL_GET_ROUTES = AgentdRouteMatcher(_DETAIL_GET_ROUTE_DEFINITIONS)
 
+_MEMORY_ROUTE_DEFINITIONS = (
+    AgentdRouteDefinition("memory_create", "/v1/memory", ("POST",)),
+    AgentdRouteDefinition(
+        "memory_record",
+        "/v1/memory/{memory_id}",
+        ("GET", "DELETE"),
+    ),
+)
+_MEMORY_ROUTES = AgentdRouteMatcher(_MEMORY_ROUTE_DEFINITIONS)
+
 _OPENAPI_ROUTE_DEFINITIONS = (
     *_STATIC_GET_ROUTE_DEFINITIONS,
     *_DETAIL_GET_ROUTE_DEFINITIONS,
+    *_MEMORY_ROUTE_DEFINITIONS,
     *_DISTRIBUTED_ROUTE_DEFINITIONS,
     *_SESSION_ROUTE_DEFINITIONS,
 )
@@ -134,6 +147,10 @@ class AgentdApp:
         if auth_response is not None:
             return auth_response
 
+        memory_response = self._memory_route_response(request, method, path)
+        if memory_response is not None:
+            return memory_response
+
         static_response = await self._static_get_route_response(request, method, path)
         if static_response is not None:
             return static_response
@@ -160,6 +177,38 @@ class AgentdApp:
             return session_response
 
         return not_found(f"unknown route: {path}")
+
+    def _memory_route_response(
+        self,
+        request: HttpRequest,
+        method: str,
+        path: str,
+    ) -> HttpResponse | None:
+        route = _MEMORY_ROUTES.match(path, method)
+        if route is None or not route.method_allowed:
+            return None  # fall through (GET /v1/memory list is served by the static routes)
+        memory_id = route.path_params.get("memory_id")
+        if route.name == "memory_create":
+            try:
+                payload = _memory_create_payload(request.body)
+                view = self._service.create_memory(
+                    kind=MemoryKind(payload.kind),
+                    subject=payload.subject,
+                    content=payload.content,
+                    scope=payload.scope,
+                    confidence=payload.confidence,
+                )
+            except ValueError as exc:
+                return bad_request(str(exc))
+            return json_response(memory_body(view), status_code=201)
+        assert memory_id is not None
+        existing = self._service.get_memory(memory_id)
+        if existing is None:
+            return not_found(f"memory record not found: {memory_id}")
+        if method == "DELETE":
+            self._service.delete_memory(memory_id)
+            return json_response({"deleted": True, "memory_id": memory_id})
+        return json_response(memory_body(existing))
 
     async def _static_get_route_response(
         self,

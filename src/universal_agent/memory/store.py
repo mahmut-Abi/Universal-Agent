@@ -8,6 +8,10 @@ from universal_agent.memory.models import MemoryId, MemoryQuery, MemoryRecord
 class MemoryStore(Protocol):
     def add(self, record: MemoryRecord) -> bool: ...
 
+    def get(self, memory_id: MemoryId) -> MemoryRecord | None: ...
+
+    def delete(self, memory_id: MemoryId) -> bool: ...
+
     def query(self, query: MemoryQuery) -> tuple[MemoryRecord, ...]: ...
 
     def export(self) -> tuple[MemoryRecord, ...]: ...
@@ -22,6 +26,12 @@ class InMemoryMemoryStore:
             return False
         self._records[record.id] = record
         return True
+
+    def get(self, memory_id: MemoryId) -> MemoryRecord | None:
+        return self._records.get(memory_id)
+
+    def delete(self, memory_id: MemoryId) -> bool:
+        return self._records.pop(memory_id, None) is not None
 
     def export(self) -> tuple[MemoryRecord, ...]:
         return tuple(

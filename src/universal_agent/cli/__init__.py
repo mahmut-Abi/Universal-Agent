@@ -65,6 +65,7 @@ from universal_agent.ecosystem import (
 )
 from universal_agent.evaluation.dataset import EvaluationDatasetNotFoundError
 from universal_agent.host.runtime import RuntimeHost, build_configured_model_adapter
+from universal_agent.memory import MemoryKind, MemoryNotFoundError
 from universal_agent.profile import ProfileConfig, ProfileConfigNotFoundError
 from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
@@ -127,6 +128,7 @@ async def run_cli(
         runtime_service = service or _service_from_args(args)
         await _dispatch(args, runtime_service, out, server_runner=server_runner)
     except (
+        MemoryNotFoundError,
         StateNotFoundError,
         DomainPackageNotFoundError,
         EvaluationDatasetNotFoundError,
@@ -270,7 +272,29 @@ async def _dispatch(
             {"evaluators": [evaluator_body(item) for item in service.evaluators()]},
         )
         return
+    if command == "chat":
+        await _dispatch_chat(args, service, out)
+        return
     if command == "memory":
+        memory_command = cast(str | None, getattr(args, "memory_command", None))
+        if memory_command == "add":
+            view = service.create_memory(
+                kind=MemoryKind(cast(str, args.kind)),
+                subject=cast(str, args.subject),
+                content=cast(str, args.content),
+                scope=cast(str, args.scope),
+                confidence=cast(float, args.confidence),
+            )
+            _write_json(out, memory_body(view))
+            return
+        if memory_command == "get":
+            _write_json(out, memory_body(service.require_memory(cast(str, args.memory_id))))
+            return
+        if memory_command == "delete":
+            service.require_memory(cast(str, args.memory_id))
+            service.delete_memory(cast(str, args.memory_id))
+            _write_json(out, {"deleted": True, "memory_id": cast(str, args.memory_id)})
+            return
         _write_json(out, {"memories": [memory_body(item) for item in service.memories()]})
         return
     if command == "session":
@@ -297,6 +321,45 @@ async def _dispatch_run(
         task = Task(cast(str | None, args.task) or "Run goal", tuple(item.key for item in criteria))
         run = await service.run_goal(goal, task)
     _write_json(out, runtime_run_body(run))
+
+
+async def _dispatch_chat(
+    args: argparse.Namespace,
+    service: RuntimeService,
+    out: TextIO,
+) -> None:
+    """Interactive conversation: each line becomes a goal run on the runtime."""
+
+    profile = cast(str, args.profile)
+    if not service.accepts_profile(profile):
+        raise ValueError(f"unknown profile: {profile}")
+    show_events = cast(bool, args.show_events)
+    _write_text(
+        out,
+        f"Universal Agent chat — profile {profile}. "
+        "Type a goal per line; /exit quits, /help shows help.\n",
+    )
+    while True:
+        try:
+            line = (await asyncio.to_thread(input, "you> ")).strip()
+        except EOFError:
+            break
+        if not line:
+            continue
+        if line in {"/exit", "/quit", "exit", "quit"}:
+            break
+        if line == "/help":
+            _write_text(out, "Type a goal per line. /exit quits. /help shows this.\n")
+            continue
+        goal = Goal(line, ())
+        run = await service.run_goal(goal, Task("Chat turn", ()))
+        result = run.result
+        _write_text(out, f"[{result.status.value}] {result.reason or ''}\n")
+        if show_events:
+            batch = await service.stream_events(result.session_id, limit=8)
+            for event in batch.events:
+                _write_text(out, f"  · {event.type} {event.occurred_at:%H:%M:%S}\n")
+    _write_text(out, "bye\n")
 
 
 async def _dispatch_tui(

@@ -12,6 +12,10 @@ from universal_agent.core.config_validation import parse_bounded_float, parse_no
 MemoryId = NewType("MemoryId", str)
 
 
+class MemoryNotFoundError(LookupError):
+    """Raised when a memory record id does not exist."""
+
+
 def new_memory_id() -> MemoryId:
     return MemoryId(f"memory-{uuid4()}")
 

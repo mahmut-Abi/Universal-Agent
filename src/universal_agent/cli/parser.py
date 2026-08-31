@@ -451,9 +451,31 @@ def build_parser() -> argparse.ArgumentParser:
     evaluators_commands = evaluators.add_subparsers(dest="evaluators_command", required=True)
     evaluators_commands.add_parser("list")
 
+    chat = commands.add_parser("chat", help="Interactive conversation with the runtime")
+    chat.add_argument("--profile", default=LOCAL_PROFILE_NAME)
+    chat.add_argument(
+        "--show-events",
+        action="store_true",
+        help="Print runtime events after each turn",
+    )
+
     memory = commands.add_parser("memory")
-    memory_commands = memory.add_subparsers(dest="memory_command", required=True)
-    memory_commands.add_parser("list")
+    memory_sub = memory.add_subparsers(dest="memory_command", required=False)
+    memory_add = memory_sub.add_parser("add", help="Create a memory record")
+    memory_add.add_argument(
+        "--kind",
+        default="semantic",
+        choices=("semantic", "episodic", "procedural", "preference"),
+    )
+    memory_add.add_argument("--subject", required=True)
+    memory_add.add_argument("--content", required=True)
+    memory_add.add_argument("--scope", default="")
+    memory_add.add_argument("--confidence", type=float, default=1.0)
+    memory_get = memory_sub.add_parser("get", help="Fetch a memory record by id")
+    memory_get.add_argument("memory_id")
+    memory_delete = memory_sub.add_parser("delete", help="Delete a memory record by id")
+    memory_delete.add_argument("memory_id")
+    memory_sub.add_parser("list", help="List memory records")
 
     session = commands.add_parser("session")
     session_commands = session.add_subparsers(dest="session_command", required=True)
