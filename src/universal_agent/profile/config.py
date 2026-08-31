@@ -65,7 +65,10 @@ class ProfileConfig:
 
     @classmethod
     def from_json_file(cls, path: str | Path) -> ProfileConfig:
-        loaded = read_json_file(path)
+        try:
+            loaded = read_json_file(path)
+        except FileNotFoundError as exc:
+            raise ProfileConfigNotFoundError(f"profile config not found: {path}") from exc
         return cls.from_mapping(parse_json_object(loaded, "profile config file"))
 
     @classmethod

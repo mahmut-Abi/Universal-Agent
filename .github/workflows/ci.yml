@@ -68,7 +68,7 @@ jobs:
           done
           test "$ready" = true
           curl -fsS http://127.0.0.1:8765/health
-          docker exec agentd-smoke test -f /config/agent-profile.json
+          docker exec agentd-smoke test -f /config/profile.json
           docker rm -f agentd-smoke
 
   kubernetes-live-contract:
