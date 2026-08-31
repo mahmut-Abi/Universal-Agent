@@ -12,6 +12,7 @@ from textual.widgets import DataTable, Static
 from universal_agent.core import (
     GoalId,
     GoalStatus,
+    JsonMapping,
     SessionId,
     TaskId,
     TaskStatus,
@@ -35,6 +36,8 @@ from universal_agent.service import (
 from universal_agent.terminal.tui import TuiSnapshot
 from universal_agent.terminal.tui_app import (
     RuntimeTuiApp,
+    TuiActions,
+    TuiChatScreen,
     session_detail_lines,
     session_table_rows,
 )
@@ -278,3 +281,55 @@ async def test_quit_binding_exits_cleanly() -> None:
         await pilot.press("q")
 
     assert app.return_code == 0
+
+
+@pytest.mark.asyncio
+async def test_chat_screen_runs_goals_via_actions() -> None:
+    snapshot = _two_session_snapshot()
+    provider, _calls = fake_provider(snapshot)
+    chat_calls: list[str] = []
+
+    async def fake_chat(goal_text: str) -> JsonMapping:
+        chat_calls.append(goal_text)
+        return {"result": {"status": "completed", "reason": "workload inspected"}}
+
+    async def _pause(session_id: SessionId, reason: str | None) -> object:
+        return {}
+
+    async def _resume(session_id: SessionId, confirmed: bool | None) -> object:
+        return {}
+
+    async def _cancel(session_id: SessionId, reason: str | None) -> object:
+        return {}
+
+    actions = TuiActions(pause=_pause, resume=_resume, cancel=_cancel, chat=fake_chat)
+    app = RuntimeTuiApp(snapshot_provider=provider, actions=actions)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        assert isinstance(app.screen, TuiChatScreen)
+
+        await pilot.press(*"inspect the workload")
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert chat_calls == ["inspect the workload"]
+        log = app.screen.query_one("#chat-log")
+        assert log is not None
+
+
+@pytest.mark.asyncio
+async def test_chat_without_actions_shows_hint() -> None:
+    snapshot = _two_session_snapshot()
+    provider, _ = fake_provider(snapshot)
+    app = RuntimeTuiApp(snapshot_provider=provider)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+
+        assert app._hint == "chat requires an embedded service or --api-url"

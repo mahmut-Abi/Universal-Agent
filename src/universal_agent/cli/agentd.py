@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import TextIO, cast
 
 from universal_agent.agentd.client import AgentdClient, quote_path_segment
-from universal_agent.agentd.tui_remote import agentd_snapshot_provider
+from universal_agent.agentd.tui_remote import agentd_snapshot_provider, agentd_tui_actions
 from universal_agent.cli.io import (
     CliExit,
     _doctor_should_fail,
@@ -64,6 +64,7 @@ async def _dispatch_remote_tui(args: argparse.Namespace, client: AgentdClient) -
             event_limit=cast(int, args.event_limit),
         ),
         session_id=SessionId(session_id) if session_id is not None else None,
+        actions=agentd_tui_actions(client),
     )
     await app.run_async()
 

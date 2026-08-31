@@ -416,7 +416,16 @@ def agentd_tui_actions(client: AgentdClient) -> TuiActions:
             body=body,
         )
 
-    return TuiActions(pause=pause, resume=resume, cancel=cancel)
+    async def chat(goal_text: str) -> JsonMapping:
+        return await client.post_json(
+            "/v1/sessions",
+            body={
+                "goal": {"description": goal_text},
+                "task": {"description": "Chat turn"},
+            },
+        )
+
+    return TuiActions(pause=pause, resume=resume, cancel=cancel, chat=chat)
 
 
 def agentd_snapshot_provider(

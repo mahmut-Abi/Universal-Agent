@@ -21,15 +21,16 @@ from datetime import datetime  # noqa: F401  (re-exported typing aid for tests)
 from types import MappingProxyType  # noqa: F401
 from typing import Any, ClassVar
 
+from markupsafe import escape as escape_html
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label, RichLog, Static
 
-from universal_agent.core import GoalStatus, SessionId
+from universal_agent.core import GoalStatus, JsonMapping, SessionId
 from universal_agent.runtime import SessionSummaryView, SessionView
 from universal_agent.service import RuntimeService
 from universal_agent.terminal.tui import TuiSnapshot, build_tui_snapshot
@@ -44,6 +45,7 @@ class TuiActions:
     pause: Callable[[SessionId, str | None], Awaitable[object]]
     resume: Callable[[SessionId, bool | None], Awaitable[object]]
     cancel: Callable[[SessionId, str | None], Awaitable[object]]
+    chat: Callable[[str], Awaitable[JsonMapping]] | None = None
 
 
 def service_tui_actions(service: RuntimeService) -> TuiActions:
@@ -58,7 +60,14 @@ def service_tui_actions(service: RuntimeService) -> TuiActions:
     async def cancel(session_id: SessionId, reason: str | None) -> object:
         return await service.cancel_session(session_id, reason=reason or "session cancelled")
 
-    return TuiActions(pause=pause, resume=resume, cancel=cancel)
+    async def chat(goal_text: str) -> JsonMapping:
+        from universal_agent.agentd.representations import runtime_run_body
+        from universal_agent.core import Goal, Task
+
+        run = await service.run_goal(Goal(goal_text, ()), Task("Chat turn", ()))
+        return runtime_run_body(run)
+
+    return TuiActions(pause=pause, resume=resume, cancel=cancel, chat=chat)
 
 
 _EVENT_TAIL = 8
@@ -169,6 +178,7 @@ class RuntimeTuiApp(App[None]):
         Binding("p", "pause_session", "Pause", show=False),
         Binding("c", "cancel_session", "Cancel", show=False),
         Binding("enter", "resume_or_confirm", "Resume / confirm", show=False),
+        Binding("w", "chat_screen", "Chat"),
         Binding("q", "quit", "Quit"),
     ]
 
@@ -303,6 +313,12 @@ class RuntimeTuiApp(App[None]):
 
     # ---- Operator actions ----
 
+    def action_chat_screen(self) -> None:
+        if self._actions is None or self._actions.chat is None:
+            self._set_hint("chat requires an embedded service or --api-url")
+            return
+        self.push_screen(TuiChatScreen(self._actions.chat))
+
     def action_pause_session(self) -> None:
         self._push_reason_action("Pause session", "Pause reason", "pause")
 
@@ -391,6 +407,45 @@ class TuiReasonScreen(ModalScreen["str | None"]):
         self.dismiss(event.value)
 
     def action_dismiss_modal(self) -> None:
+        self.dismiss(None)
+
+
+class TuiChatScreen(ModalScreen[None]):
+    """Modal conversation screen: each line becomes a goal run on the runtime."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [("escape", "close_chat", "Close")]
+
+    def __init__(self, chat_runner: Callable[[str], Awaitable[JsonMapping]]) -> None:
+        super().__init__()
+        self._chat_runner = chat_runner
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="chat-grid"):
+            yield Label("Universal Agent chat — type a goal per line · esc closes", id="chat-title")
+            yield RichLog(id="chat-log", markup=True, wrap=True)
+            yield Input(placeholder="Type a goal…", id="chat-input")
+
+    def on_mount(self) -> None:
+        self.query_one("#chat-input", Input).focus()
+
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        line = event.value.strip()
+        if not line:
+            return
+        event.input.value = ""
+        log = self.query_one("#chat-log", RichLog)
+        log.write(f"[b]you>[/b] {escape_html(line)}")
+        try:
+            body = await self._chat_runner(line)
+            raw_result = body.get("result")
+            result = raw_result if isinstance(raw_result, dict) else {}
+            status = str(result.get("status") or "?")
+            reason = str(result.get("reason") or "")
+            log.write(f"[dim][{status}][/dim] {escape_html(reason)}")
+        except Exception as exc:
+            log.write(f"[red]error:[/red] {escape_html(str(exc))}")
+
+    def action_close_chat(self) -> None:
         self.dismiss(None)
 
 
