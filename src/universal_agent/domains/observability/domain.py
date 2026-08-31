@@ -55,6 +55,65 @@ class ObservabilityQueryMetricsTool:
         return await self._backend.query(arguments)
 
 
+class ObservabilityQueryRangeMetricsTool:
+    def __init__(self, backend: MetricsBackend) -> None:
+        self.definition = ToolDefinition(
+            name="observability_query_metric_ranges",
+            description=(
+                "Run a read-only metrics range query with explicit start, end and step "
+                "against the observability backend"
+            ),
+            capabilities=("query_metric_ranges",),
+            required_arguments=("query", "start", "end", "step"),
+            argument_schema=immutable_json(
+                {
+                    "required": ["query", "start", "end", "step"],
+                    "properties": {
+                        "query": {"type": "string", "minLength": 1},
+                        "start": {"type": "string", "minLength": 1},
+                        "end": {"type": "string", "minLength": 1},
+                        "step": {"type": "string", "minLength": 1},
+                        "subject": {"type": "string", "minLength": 1},
+                    },
+                    "additionalProperties": True,
+                }
+            ),
+        )
+        self._backend = backend
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        return await self._backend.query_range(arguments)
+
+
+class ObservabilityInspectAlertRulesTool:
+    def __init__(self, backend: MetricsBackend) -> None:
+        self.definition = ToolDefinition(
+            name="observability_inspect_alert_rules",
+            description=(
+                "Inspect configured alerting/recording rules and current alert states "
+                "from the observability backend"
+            ),
+            capabilities=("inspect_alert_rules",),
+            required_arguments=(),
+            argument_schema=immutable_json(
+                {
+                    "properties": {
+                        "subject": {"type": "string", "minLength": 1},
+                    },
+                    "additionalProperties": True,
+                }
+            ),
+        )
+        self._backend = backend
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        rules_body = await self._backend.rules(arguments)
+        alerts_body = await self._backend.alerts(arguments)
+        merged: dict[str, JsonValue] = dict(rules_body)
+        merged.update(alerts_body)
+        return immutable_json(merged)
+
+
 class ObservabilityContextProvider:
     name = "observability-context"
 
@@ -119,11 +178,15 @@ class ObservabilityDomain:
             kind="Domain",
             metadata=DomainMetadata(
                 "observability",
-                "0.1.0",
-                "Read-only metrics and telemetry domain",
+                "0.2.0",
+                "Read-only metrics, range, alert and rule inspection domain",
             ),
-            ontology=("MetricSeries", "Service", "Workload"),
-            capability_names=("query_metrics",),
+            ontology=("MetricSeries", "Service", "Workload", "AlertRule", "Alert"),
+            capability_names=(
+                "query_metrics",
+                "query_metric_ranges",
+                "inspect_alert_rules",
+            ),
             evaluator_names=(MetricsHealthEvaluator.name,),
         )
 
@@ -135,10 +198,26 @@ class ObservabilityDomain:
                 CapabilityCategory.OBSERVATION,
                 RiskLevel.LOW,
             ),
+            CapabilityDefinition(
+                "query_metric_ranges",
+                "Query metrics over an explicit time range from an observability backend",
+                CapabilityCategory.OBSERVATION,
+                RiskLevel.LOW,
+            ),
+            CapabilityDefinition(
+                "inspect_alert_rules",
+                "Inspect alerting rules and current alert states from an observability backend",
+                CapabilityCategory.OBSERVATION,
+                RiskLevel.LOW,
+            ),
         )
 
     def tools(self) -> tuple[Tool, ...]:
-        return (ObservabilityQueryMetricsTool(self._backend),)
+        return (
+            ObservabilityQueryMetricsTool(self._backend),
+            ObservabilityQueryRangeMetricsTool(self._backend),
+            ObservabilityInspectAlertRulesTool(self._backend),
+        )
 
     def policies(self) -> tuple[Policy, ...]:
         return (
@@ -173,7 +252,11 @@ class ObservabilityDomain:
                 RecoveryStrategy.RETRY_ACTION,
                 max_attempts=2,
                 priority=10,
-                match_capabilities=("query_metrics",),
+                match_capabilities=(
+                    "query_metrics",
+                    "query_metric_ranges",
+                    "inspect_alert_rules",
+                ),
             ),
         )
 
@@ -193,6 +276,14 @@ def _subject(data: JsonMapping) -> str:
     subject = data.get("subject") or data.get("resource") or data.get("service")
     if isinstance(subject, str) and subject.strip():
         return subject.strip()
+    resource_subject = data.get("resource_subject")
+    if isinstance(resource_subject, str) and resource_subject.strip():
+        return resource_subject.strip()
+    resource_subjects = data.get("resource_subjects")
+    if isinstance(resource_subjects, list) and resource_subjects:
+        first = resource_subjects[0]
+        if isinstance(first, str) and first.strip():
+            return first.strip()
     query = data.get("query")
     return query.strip() if isinstance(query, str) and query.strip() else "metrics"
 

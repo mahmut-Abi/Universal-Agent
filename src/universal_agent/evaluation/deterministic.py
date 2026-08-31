@@ -1,3 +1,13 @@
+"""Deterministic runtime primitives for P3.7 evaluation, replay and tests.
+
+Deterministic mode replaces wall-clock time, generated identity and live
+backends with scripted primitives so scenario runs are reproducible:
+``DeterministicClock`` drives time, ``DeterministicIdFactory`` derives stable
+IDs per prefix, and ``MockToolRuntime``/``MockWorldModel`` supply scripted
+observations. ``DeterministicRuntimeMode`` installs the primitives for the
+duration of a context and restores the runtime defaults on exit.
+"""
+
 from __future__ import annotations
 
 from collections import deque

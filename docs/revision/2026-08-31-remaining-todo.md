@@ -108,7 +108,7 @@ real deployment environment, credentials, or production infrastructure.
 - [ ] P3.6/P5 security: add production AuthN/AuthZ, tenant boundaries,
   KMS/Vault secret resolution, credential rotation and tamper-resistant audit
   storage beyond the current integrity projection.
-- [ ] Observability domain depth: extend beyond instant Prometheus queries with
+- [x] Observability domain depth: extend beyond instant Prometheus queries with
   range queries, alert/rule inspection, metric-to-resource relationship mapping
   and live contract tests.
 - [x] Cross-domain world depth: extend conflict resolution strategy and richer

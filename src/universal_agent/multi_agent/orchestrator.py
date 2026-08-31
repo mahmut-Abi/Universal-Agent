@@ -1,3 +1,13 @@
+"""P4 multi-agent delegation orchestration.
+
+The orchestrator fans a parent task out to registered agent executors:
+``delegate`` runs one spec, ``delegate_many`` runs a bounded batch, and
+``delegate_and_merge`` merges child results back into the caller's session
+with conflict reporting. Delegation state transitions are validated against
+the delegation ledger, and eligibility, limits and dependency errors are
+raised as typed failures instead of silently degrading the batch.
+"""
+
 from __future__ import annotations
 
 import asyncio

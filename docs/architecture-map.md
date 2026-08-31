@@ -78,8 +78,9 @@ implementation objects directly.
 
 - The default Kubernetes domain uses injected fake/test backends unless a caller
   explicitly wires `KubectlBackend`.
-- The Observability domain is read-only and currently supports instant metrics
-  query evidence; deeper alert/range-query semantics remain future work.
+- The Observability domain is read-only and supports instant metrics queries,
+  explicit range queries with bounded series summaries, alert/rule inspection
+  and Kubernetes-label-to-resource subject mapping for shared world identity.
 - File and SQLite adapters are local persistence/coordination adapters, not a
   high-availability distributed database layer.
 - Web and TUI are read-only inspection surfaces.

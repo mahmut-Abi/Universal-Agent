@@ -305,7 +305,9 @@ class BasicContextCompiler:
             return 0.0
         frag_tokens = self._tokens(fragment.content) | self._tokens(fragment.key)
         overlap = tokens & frag_tokens
-        return float(len(overlap)) / float(len(tokens))
+        overlap_count = len(overlap)
+        total_count = len(tokens)
+        return overlap_count / total_count
 
     def _token(self, text: str) -> str:
         return text.lower()
