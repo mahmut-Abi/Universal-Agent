@@ -95,29 +95,87 @@ class KubernetesRemediationDecisionAdapter:
     """
 
     def __init__(self) -> None:
-        self._inspect_used = False
+        self._phase = "inspect"
         self.contexts: list[DecisionContext] = []
 
     async def decide(self, context: DecisionContext) -> Decision:
         self.contexts.append(context)
         workload, namespace = self._workload_and_namespace(context)
-        if not self._inspect_used:
-            self._inspect_used = True
-            arguments: dict[str, JsonValue] = {"name": workload}
-            if namespace:
-                arguments["namespace"] = namespace
+        ns_args: dict[str, JsonValue] = {}
+        if namespace:
+            ns_args["namespace"] = namespace
+
+        phase = self._phase
+        if phase == "inspect":
+            self._phase = "remediate"
             return Decision(
                 DecisionType.EXECUTE,
                 f"Inspect Kubernetes workload {workload}",
                 capability="inspect_workload",
                 target=f"deployment/{workload}",
-                arguments=immutable_json(arguments),
+                arguments=immutable_json({"name": workload, **ns_args}),
                 expected_observations=("healthy",),
+            )
+        if phase == "remediate":
+            pod_name = self._first_pod_name(context)
+            if pod_name is not None:
+                self._phase = "scale"
+                return Decision(
+                    DecisionType.EXECUTE,
+                    "Collect pod diagnostics for the unhealthy workload",
+                    capability="inspect_pod",
+                    target=f"pod/{pod_name}",
+                    arguments=immutable_json({"name": pod_name, **ns_args}),
+                    expected_observations=("root_cause",),
+                )
+            self._phase = "scale"
+            return Decision(
+                DecisionType.EXECUTE,
+                "Scale the under-replicated workload back to capacity",
+                capability="scale_workload",
+                target=f"deployment/{workload}",
+                arguments=immutable_json({"name": workload, **ns_args, "replicas": 1}),
+                expected_observations=("mutation_applied",),
+            )
+        if phase == "scale":
+            self._phase = "verify"
+            return Decision(
+                DecisionType.EXECUTE,
+                "Scale the under-replicated workload back to capacity",
+                capability="scale_workload",
+                target=f"deployment/{workload}",
+                arguments=immutable_json({"name": workload, **ns_args, "replicas": 1}),
+                expected_observations=("mutation_applied",),
+            )
+        if phase == "verify":
+            self._phase = "finish"
+            return Decision(
+                DecisionType.EXECUTE,
+                "Verify workload health after remediation",
+                capability="inspect_workload",
+                target=f"deployment/{workload}",
+                arguments=immutable_json({"name": workload, **ns_args}),
+                expected_observations=("verification_observed", "healthy"),
             )
         return Decision(
             DecisionType.FINISH,
-            f"Kubernetes workload {workload} inspected",
+            f"Remediation sequence completed for {workload}",
         )
+
+    @staticmethod
+    def _first_pod_name(context: DecisionContext) -> str | None:
+        observation = context.latest_observation
+        if observation is None:
+            return None
+        pods = observation.data.get("pods")
+        if not isinstance(pods, list):
+            return None
+        for item in pods:
+            if isinstance(item, dict):
+                name = item.get("name")
+                if isinstance(name, str) and name:
+                    return name
+        return None
 
     def model_usage(self) -> ModelUsage | None:
         return None
