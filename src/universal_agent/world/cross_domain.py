@@ -286,62 +286,57 @@ def resolve_cross_domain_conflicts(
 
     - ``selected_fact``: the value chosen by the configured fact merge
       strategy wins and the conflict is marked resolved.
-    - ``prefer_domain``: the highest-priority domain that observed the claim
-      wins; when none of the preferred domains observed the claim, the
-      conflict is escalated for review instead of silently ignoring the
-      configured preference.
-    - ``require_review``: every conflict is escalated for review while the
-      fact-strategy choice is still reported for observability.
+    - ``prefer_domain``: facts from the highest-priority domain that
+      observed the claim win over the fact merge strategy; when no
+      preferred domain observed the claim, the fact merge strategy decides
+      instead.
+    - ``require_review``: the conflict is escalated for review while the
+      deterministic fact-strategy selection is retained for observability.
+
+    The selected domains and evidence cover every domain whose value agrees
+    with the selected value, so multi-domain agreement stays visible.
     """
     resolutions: list[WorldConflictResolution] = []
     for conflict in conflicts:
         entries = tuple(fact_entries.get((conflict.subject, conflict.claim), ()))
         chosen = _choose_fact_entry(entries, policy) if entries else None
-        selected_value = chosen.fact.value if chosen is not None else None
-        selected_domains: tuple[str, ...] = (
-            (chosen.domain,) if chosen is not None else conflict.domains
-        )
-        selected_evidence_ids = chosen.fact.evidence_ids if chosen is not None else ()
         if chosen is None:
-            status = WorldConflictResolutionStatus.REVIEW_REQUIRED
-            reason = "no fact entries available for conflicting claim"
-        elif policy.conflict_strategy is WorldConflictResolutionStrategy.PREFER_DOMAIN:
-            preferred = next(
-                (
-                    entry
-                    for domain in policy.domain_priority
-                    for entry in entries
-                    if entry.domain == domain
-                ),
-                None,
-            )
-            if preferred is None:
-                status = WorldConflictResolutionStatus.REVIEW_REQUIRED
-                reason = (
-                    "no preferred domain "
-                    f"{policy.domain_priority} observed claim '{conflict.claim}'"
+            resolutions.append(
+                WorldConflictResolution(
+                    conflict.subject,
+                    conflict.claim,
+                    WorldConflictResolutionStatus.REVIEW_REQUIRED,
+                    None,
+                    conflict.domains,
+                    (),
+                    "no fact entries available for conflicting claim",
                 )
-            else:
-                status = WorldConflictResolutionStatus.RESOLVED
-                selected_value = preferred.fact.value
-                selected_domains = (preferred.domain,)
-                selected_evidence_ids = preferred.fact.evidence_ids
-                reason = f"preferred domain '{preferred.domain}'"
-        elif policy.conflict_strategy is WorldConflictResolutionStrategy.REQUIRE_REVIEW:
-            status = WorldConflictResolutionStatus.REVIEW_REQUIRED
-            reason = "conflict policy requires review"
-        else:
-            status = WorldConflictResolutionStatus.RESOLVED
-            reason = f"selected fact via {policy.fact_strategy.value} merge strategy"
+            )
+            continue
+        selected_value_key = dumps_json(chosen.fact.value)
+        agreeing_entries = tuple(
+            entry for entry in entries if dumps_json(entry.fact.value) == selected_value_key
+        )
+        status = (
+            WorldConflictResolutionStatus.REVIEW_REQUIRED
+            if policy.conflict_strategy is WorldConflictResolutionStrategy.REQUIRE_REVIEW
+            else WorldConflictResolutionStatus.RESOLVED
+        )
         resolutions.append(
             WorldConflictResolution(
                 conflict.subject,
                 conflict.claim,
                 status,
-                selected_value,
-                selected_domains,
-                selected_evidence_ids,
-                reason,
+                chosen.fact.value,
+                tuple(sorted({entry.domain for entry in agreeing_entries})),
+                tuple(
+                    dict.fromkeys(
+                        evidence_id
+                        for entry in agreeing_entries
+                        for evidence_id in entry.fact.evidence_ids
+                    )
+                ),
+                _conflict_resolution_reason(policy, chosen),
             )
         )
     return tuple(resolutions)
@@ -448,11 +443,60 @@ def _choose_fact_entry(
     """
     if not entries:
         raise ValueError("cannot choose a fact entry from an empty sequence")
+    if (
+        policy.conflict_strategy is WorldConflictResolutionStrategy.PREFER_DOMAIN
+        and policy.domain_priority
+    ):
+        return max(
+            entries,
+            key=lambda entry: (
+                _domain_priority_rank(entry.domain, policy.domain_priority),
+                _fact_rank(entry.fact, policy.fact_strategy),
+            ),
+        )
     chosen = entries[0]
     for entry in entries[1:]:
         if _choose_fact(chosen.fact, entry.fact, policy.fact_strategy) is entry.fact:
             chosen = entry
     return chosen
+
+
+def _domain_priority_rank(domain: str, domain_priority: tuple[str, ...]) -> int:
+    try:
+        return len(domain_priority) - domain_priority.index(domain)
+    except ValueError:
+        return 0
+
+
+def _fact_rank(
+    fact: WorldFact,
+    strategy: WorldFactMergeStrategy,
+) -> tuple[datetime, float] | tuple[float, datetime]:
+    if strategy is WorldFactMergeStrategy.RECENCY_THEN_CONFIDENCE:
+        return (fact.observed_at, fact.confidence)
+    return (fact.confidence, fact.observed_at)
+
+
+def _conflict_resolution_reason(
+    policy: WorldMergePolicy,
+    chosen: _FactEntry,
+) -> str:
+    if policy.conflict_strategy is WorldConflictResolutionStrategy.REQUIRE_REVIEW:
+        return (
+            "conflicting values require review; snapshot retains a deterministic "
+            f"{policy.fact_strategy.value} selection from {chosen.domain}"
+        )
+    if (
+        policy.conflict_strategy is WorldConflictResolutionStrategy.PREFER_DOMAIN
+        and policy.domain_priority
+    ):
+        if chosen.domain in policy.domain_priority:
+            return f"selected by domain priority from {chosen.domain}"
+        return (
+            "no preferred domain observed the claim; selected by fact strategy "
+            f"{policy.fact_strategy.value} from {chosen.domain}"
+        )
+    return f"selected by fact strategy {policy.fact_strategy.value} from {chosen.domain}"
 
 
 def _choose_fact(

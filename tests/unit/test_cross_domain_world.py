@@ -16,6 +16,9 @@ from universal_agent.world.cross_domain import (
     EntityIdentityMapping,
     FactDomainSource,
     MergedWorld,
+    WorldConflictResolution,
+    WorldConflictResolutionStatus,
+    WorldConflictResolutionStrategy,
     WorldFactMergeStrategy,
     WorldMergePolicy,
     build_entity_identity_mappings,
@@ -289,6 +292,80 @@ def test_world_merge_policy_can_prefer_recency_over_confidence() -> None:
     assert recency_merged.snapshot.value_for("status", subject="deployment/dify-api") == "healthy"
 
 
+def test_conflict_resolution_records_default_selected_fact() -> None:
+    merged = merge_world_views((_k8s_view(), _db_view()))
+
+    assert len(merged.conflict_resolutions) == 1
+    resolution = merged.conflict_resolutions[0]
+    assert isinstance(resolution, WorldConflictResolution)
+    assert resolution.status is WorldConflictResolutionStatus.RESOLVED
+    assert resolution.subject == "deployment/dify-api"
+    assert resolution.claim == "status"
+    assert resolution.selected_value == merged.snapshot.value_for(
+        "status",
+        subject="deployment/dify-api",
+    )
+    assert resolution.selected_domains
+    assert resolution.selected_evidence_ids
+
+
+def test_conflict_resolution_can_prefer_domain_priority() -> None:
+    older_high_confidence = WorldFact(
+        "deployment/dify-api",
+        "status",
+        "degraded",
+        0.99,
+        datetime(2026, 1, 1, tzinfo=UTC),
+        (EvidenceId("ev-k8s"),),
+    )
+    newer_low_confidence = WorldFact(
+        "deployment/dify-api",
+        "status",
+        "healthy",
+        0.5,
+        datetime(2026, 1, 2, tzinfo=UTC),
+        (EvidenceId("ev-obs"),),
+    )
+    merged = merge_world_views(
+        (
+            DomainWorldView(
+                "kubernetes", WorldSnapshot(K8S_SESSION, facts=(older_high_confidence,))
+            ),
+            DomainWorldView(
+                "observability",
+                WorldSnapshot(DB_SESSION, facts=(newer_low_confidence,)),
+            ),
+        ),
+        policy=WorldMergePolicy(
+            conflict_strategy=WorldConflictResolutionStrategy.PREFER_DOMAIN,
+            domain_priority=("observability", "kubernetes"),
+        ),
+    )
+
+    resolution = merged.conflict_resolutions[0]
+    assert merged.snapshot.value_for("status", subject="deployment/dify-api") == "healthy"
+    assert resolution.status is WorldConflictResolutionStatus.RESOLVED
+    assert resolution.selected_domains == ("observability",)
+    assert resolution.selected_evidence_ids == (EvidenceId("ev-obs"),)
+
+
+def test_conflict_resolution_can_require_review_without_hiding_snapshot_selection() -> None:
+    merged = merge_world_views(
+        (_k8s_view(), _db_view()),
+        policy=WorldMergePolicy(
+            conflict_strategy=WorldConflictResolutionStrategy.REQUIRE_REVIEW,
+        ),
+    )
+
+    assert merged.conflicts
+    assert merged.snapshot.value_for("status", subject="deployment/dify-api") in {
+        "degraded",
+        "healthy",
+    }
+    assert merged.conflict_resolutions[0].status is WorldConflictResolutionStatus.REVIEW_REQUIRED
+    assert "require review" in merged.conflict_resolutions[0].reason
+
+
 def test_empty_views_merge_cleanly() -> None:
     merged = merge_world_views((_empty_view("a"), _empty_view("b")))
 
@@ -297,6 +374,7 @@ def test_empty_views_merge_cleanly() -> None:
     assert merged.snapshot.facts == ()
     assert merged.fact_domain_sources == ()
     assert merged.identity_mappings == ()
+    assert merged.conflict_resolutions == ()
 
 
 def test_conflict_is_typed() -> None:

@@ -111,14 +111,14 @@ real deployment environment, credentials, or production infrastructure.
 - [ ] Observability domain depth: extend beyond instant Prometheus queries with
   range queries, alert/rule inspection, metric-to-resource relationship mapping
   and live contract tests.
-- [ ] Cross-domain world depth: extend conflict resolution strategy and richer
+- [x] Cross-domain world depth: extend conflict resolution strategy and richer
   graph query semantics beyond the first `relation:same_as` canonicalization,
   bounded relation traversal and configurable fact merge policy.
   - [x] Canonicalize entity aliases during cross-domain merge.
   - [x] Expose identity mappings in merged world results.
   - [x] Add bounded multi-hop relation traversal to `WorldSnapshot`.
   - [x] Add configurable fact merge policy.
-  - [ ] Add explicit conflict resolution strategy and graph query predicates.
+  - [x] Add explicit conflict resolution strategy and graph query predicates.
 - [ ] P5 UI controls: upgrade Web UI from read-only snapshots to controlled
   operator actions with the same policy/confirmation boundaries as CLI and
   agentd.

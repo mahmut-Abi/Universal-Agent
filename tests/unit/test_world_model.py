@@ -25,6 +25,7 @@ from universal_agent.world import (
     WorldFactHistory,
     WorldGraph,
     WorldGraphNode,
+    WorldGraphQuery,
     WorldNeighborhood,
     WorldRelation,
     WorldRelationDirection,
@@ -247,6 +248,62 @@ def test_relation_graph_for_supports_incoming_and_both_directions() -> None:
         EntityId("deployment/api"),
     ]
     assert set(both.relations) == {owns_rs, owns_pod}
+
+
+@pytest.mark.unit
+def test_relation_graph_for_applies_node_predicates() -> None:
+    deployment = WorldEntity(EntityId("deployment/api"), "Deployment")
+    ready_pod = WorldEntity(EntityId("pod/api-ready"), "Pod")
+    failing_pod = WorldEntity(EntityId("pod/api-failing"), "Pod")
+    metric = WorldEntity(EntityId("metric/http_5xx_rate"), "Metric")
+    ready_relation = WorldRelation(EntityId("deployment/api"), "owns", EntityId("pod/api-ready"))
+    failing_relation = WorldRelation(
+        EntityId("deployment/api"), "owns", EntityId("pod/api-failing")
+    )
+    metric_relation = WorldRelation(
+        EntityId("deployment/api"),
+        "emits",
+        EntityId("metric/http_5xx_rate"),
+    )
+    ready_fact = WorldFact(
+        "pod/api-ready",
+        "ready",
+        True,
+        1.0,
+        datetime(2026, 1, 1, tzinfo=UTC),
+        (),
+    )
+    failing_fact = WorldFact(
+        "pod/api-failing",
+        "ready",
+        False,
+        1.0,
+        datetime(2026, 1, 1, tzinfo=UTC),
+        (),
+    )
+    snapshot = WorldSnapshot(
+        SessionId("s"),
+        facts=(ready_fact, failing_fact),
+        entities=(deployment, ready_pod, failing_pod, metric),
+        relations=(ready_relation, failing_relation, metric_relation),
+    )
+
+    graph = snapshot.relation_graph_for(
+        "deployment/api",
+        query=WorldGraphQuery(
+            max_depth=1,
+            relations=("owns", "emits"),
+            entity_kinds=("Pod",),
+            required_facts=immutable_json({"ready": False}),
+        ),
+    )
+
+    assert [node.entity_id for node in graph.nodes] == [
+        EntityId("deployment/api"),
+        EntityId("pod/api-failing"),
+    ]
+    assert graph.relations == (failing_relation,)
+    assert graph.entities == (deployment, failing_pod)
 
 
 @pytest.mark.unit

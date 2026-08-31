@@ -16,6 +16,7 @@ from universal_agent.world.cross_domain import (
     DomainWorldView,
     EntityIdentityMapping,
     FactDomainSource,
+    WorldConflictResolution,
     WorldMergePolicy,
     merge_world_views,
 )
@@ -37,6 +38,7 @@ class MergedWorldResult:
     conflicts: tuple[CrossDomainConflict, ...]
     fact_sources: tuple[FactDomainSource, ...]
     identity_mappings: tuple[EntityIdentityMapping, ...] = ()
+    conflict_resolutions: tuple[WorldConflictResolution, ...] = ()
 
 
 class CrossDomainWorldModel:
@@ -127,6 +129,7 @@ class CrossDomainWorldModel:
             conflicts=merged.conflicts,
             fact_sources=merged.fact_domain_sources,
             identity_mappings=merged.identity_mappings,
+            conflict_resolutions=merged.conflict_resolutions,
         )
 
     def _rebuild_domain_snapshot(
