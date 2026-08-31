@@ -11,11 +11,13 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_container_image_uses_generic_agentd_entrypoint() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
-    assert 'ENTRYPOINT ["agent"]' in dockerfile
-    assert 'CMD ["serve", "--host", "0.0.0.0", "--port", "8765"]' in dockerfile
+    assert 'ENTRYPOINT ["sh", "-c"]' in dockerfile
+    assert "agent init" in dockerfile
+    assert "--profile-config /config/profile.json" in dockerfile
+    assert "--host 0.0.0.0" in dockerfile
+    assert "--port 8765" in dockerfile
     assert "HEALTHCHECK" in dockerfile
     assert "/ready" in dockerfile
-    assert "--profile-config" not in dockerfile
     assert "kubernetes" not in dockerfile.lower()
 
 
