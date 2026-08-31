@@ -59,6 +59,7 @@ from universal_agent.service import (
     WorldRelationView,
 )
 from universal_agent.terminal.tui import TuiSnapshot
+from universal_agent.terminal.tui_app import TuiActions
 
 SnapshotProvider = Callable[[SessionId | None], Awaitable[TuiSnapshot]]
 
@@ -388,6 +389,33 @@ def _remote_config() -> RuntimeConfigView:
     )
 
 
+def agentd_tui_actions(client: AgentdClient) -> TuiActions:
+    """Operator actions backed by agentd Runtime API POST endpoints."""
+
+    async def pause(session_id: SessionId, reason: str | None) -> object:
+        body: dict[str, JsonValue] = {"reason": reason} if reason else {}
+        return await client.post_json(
+            f"/v1/sessions/{quote_path_segment(str(session_id))}/pause",
+            body=body,
+        )
+
+    async def resume(session_id: SessionId, confirmed: bool | None) -> object:
+        body: dict[str, JsonValue] = {"confirmed": confirmed} if confirmed is not None else {}
+        return await client.post_json(
+            f"/v1/sessions/{quote_path_segment(str(session_id))}/resume",
+            body=body,
+        )
+
+    async def cancel(session_id: SessionId, reason: str | None) -> object:
+        body: dict[str, JsonValue] = {"reason": reason} if reason else {}
+        return await client.post_json(
+            f"/v1/sessions/{quote_path_segment(str(session_id))}/cancel",
+            body=body,
+        )
+
+    return TuiActions(pause=pause, resume=resume, cancel=cancel)
+
+
 def agentd_snapshot_provider(
     client: AgentdClient,
     *,
@@ -484,4 +512,4 @@ def agentd_snapshot_provider(
     return provider
 
 
-__all__ = ["agentd_snapshot_provider"]
+__all__ = ["agentd_snapshot_provider", "agentd_tui_actions"]

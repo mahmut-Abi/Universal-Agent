@@ -4,32 +4,69 @@ The dashboard lists runtime sessions in a navigable table and shows the
 selected session's detail (goal, task, termination, evidence/world counts and
 a recent-event tail). All data comes from the same read-only
 ``build_tui_snapshot`` projections the static TUI and web console use, so the
-three surfaces stay consistent. ``snapshot_provider`` is an injection seam for
+three surfaces stay consistent. Operator actions (pause/resume/confirm/cancel)
+dispatch through :class:`TuiActions` — the same RuntimeService methods the CLI
+and agentd use — so policy and confirmation boundaries stay identical across
+surfaces. ``snapshot_provider`` and ``actions`` are injection seams for
 headless pilot tests; the CLI path uses the real RuntimeService-backed
-provider.
+provider (embedded) or the agentd HTTP client (remote).
 """
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import datetime  # noqa: F401  (re-exported typing aid for tests)
+from types import MappingProxyType  # noqa: F401
 from typing import Any, ClassVar
 
 from rich.text import Text
-from textual import on
+from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import Horizontal
-from textual.widgets import DataTable, Footer, Header, Static
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
 
-from universal_agent.core import SessionId
+from universal_agent.core import GoalStatus, SessionId
 from universal_agent.runtime import SessionSummaryView, SessionView
 from universal_agent.service import RuntimeService
 from universal_agent.terminal.tui import TuiSnapshot, build_tui_snapshot
 
 SnapshotProvider = Callable[[SessionId | None], Awaitable[TuiSnapshot]]
 
+
+@dataclass(frozen=True)
+class TuiActions:
+    """Operator action surface: embedded RuntimeService or remote agentd client."""
+
+    pause: Callable[[SessionId, str | None], Awaitable[object]]
+    resume: Callable[[SessionId, bool | None], Awaitable[object]]
+    cancel: Callable[[SessionId, str | None], Awaitable[object]]
+
+
+def service_tui_actions(service: RuntimeService) -> TuiActions:
+    """Operator actions backed by the in-process RuntimeService."""
+
+    async def pause(session_id: SessionId, reason: str | None) -> object:
+        return await service.pause_session(session_id, reason=reason or "session paused")
+
+    async def resume(session_id: SessionId, confirmed: bool | None) -> object:
+        return await service.resume_session(session_id, confirmed=confirmed)
+
+    async def cancel(session_id: SessionId, reason: str | None) -> object:
+        return await service.cancel_session(session_id, reason=reason or "session cancelled")
+
+    return TuiActions(pause=pause, resume=resume, cancel=cancel)
+
+
 _EVENT_TAIL = 8
+_KEY_HINTS = (
+    "j/k or arrows: select · enter: resume/confirm · "
+    "p: pause · c: cancel · r: refresh · q: quit"
+)
+_SELECTED_STYLE = "bold cyan"
 
 
 def _service_provider(
@@ -40,7 +77,9 @@ def _service_provider(
 ) -> SnapshotProvider:
     async def provider(session_id: SessionId | None) -> TuiSnapshot:
         if service is None:
-            raise ValueError("RuntimeTuiApp requires a service when no snapshot_provider is given")
+            raise ValueError(
+                "RuntimeTuiApp requires a service when no snapshot_provider is given"
+            )
         return await build_tui_snapshot(
             service,
             session_id=session_id,
@@ -52,7 +91,7 @@ def _service_provider(
 
 
 def session_table_rows(snapshot: TuiSnapshot) -> list[tuple[str, str, str]]:
-    """Pure projection: one (session, status+goal, task) row per session."""
+    """Pure projection: one (session, status, goal+task) row per session."""
 
     return [
         (
@@ -114,6 +153,14 @@ class RuntimeTuiApp(App[None]):
         height: 100%;
         padding: 0 1;
     }
+    #reason-grid, #choice-grid {
+        padding: 1 2;
+        width: 60;
+        height: auto;
+        margin: 2;
+        border: solid $accent;
+        background: $surface;
+    }
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
@@ -122,6 +169,9 @@ class RuntimeTuiApp(App[None]):
         Binding("g,home", "select_first", "First session", show=False),
         Binding("G,end", "select_last", "Last session", show=False),
         Binding("r", "refresh", "Refresh now"),
+        Binding("p", "pause_session", "Pause", show=False),
+        Binding("c", "cancel_session", "Cancel", show=False),
+        Binding("enter", "resume_or_confirm", "Resume / confirm", show=False),
         Binding("q", "quit", "Quit"),
     ]
 
@@ -134,6 +184,7 @@ class RuntimeTuiApp(App[None]):
         event_limit: int = 12,
         refresh_seconds: float = 2.0,
         snapshot_provider: SnapshotProvider | None = None,
+        actions: TuiActions | None = None,
     ) -> None:
         super().__init__()
         self._service = service
@@ -143,10 +194,12 @@ class RuntimeTuiApp(App[None]):
         self._refresh_seconds = refresh_seconds
         self._snapshot: TuiSnapshot | None = None
         self._selected_index = 0
-        self._table: DataTable[Any] = DataTable(id="sessions-table")
-        self._detail = Static("", id="detail")
+        self._hint: str | None = None
         self._restoring = False
         self._refresh_task: asyncio.Task[None] | None = None
+        self._actions = actions
+        self._table: DataTable[Any] = DataTable(id="sessions-table")
+        self._detail = Static("", id="detail")
         self._provider: SnapshotProvider = snapshot_provider or _service_provider(
             service, session_limit=session_limit, event_limit=event_limit
         )
@@ -233,13 +286,12 @@ class RuntimeTuiApp(App[None]):
     def _update_detail(self) -> None:
         if self._snapshot is None:
             return
-        detail = self._detail
         summary = self._selected_summary()
         if summary is None:
-            detail.update(Text("No session selected.", style="dim"))
+            self._detail.update(Text("No session selected.", style="dim"))
             return
         lines = session_detail_lines(self._snapshot, self._selected_index, summary)
-        detail.update(Text("\n".join(lines)))
+        self._detail.update(Text("\n".join(lines)))
 
     def _selected_summary(self) -> SessionSummaryView | SessionView | None:
         if self._snapshot is None:
@@ -252,9 +304,130 @@ class RuntimeTuiApp(App[None]):
             return summary
         return self._snapshot.selected_session
 
+    # ---- Operator actions ----
+
+    def action_pause_session(self) -> None:
+        self._push_reason_action("Pause session", "Pause reason", "pause")
+
+    def action_cancel_session(self) -> None:
+        self._push_reason_action("Cancel session", "Cancellation reason", "cancel")
+
+    def action_resume_or_confirm(self) -> None:
+        summary = self._selected_summary()
+        if summary is None or self._actions is None:
+            self._set_hint("operator actions require an embedded service or --api-url")
+            return
+        if summary.goal_status is not GoalStatus.WAITING:
+            self._set_hint("resume requires a waiting session")
+            return
+        has_pending = (
+            summary.pending_action is not None
+            if isinstance(summary, SessionView)
+            else bool(summary.pending_action)
+        )
+        if has_pending:
+            session_id = self._current_session_id()
+
+            def _choice(confirmed: bool | None) -> None:
+                if confirmed is not None and session_id is not None:
+                    self._run_operator("resume", confirmed)
+
+            self.push_screen(
+                TuiChoiceScreen(
+                    "Confirm pending action",
+                    "Confirm the pending action and resume the session?",
+                ),
+                _choice,
+            )
+            return
+        self._run_operator("resume", None)
+
+    def _push_reason_action(self, title: str, label: str, kind: str) -> None:
+        def _submit(reason: str | None) -> None:
+            if reason is None:
+                return
+            self._run_operator(kind, reason)
+
+        self.push_screen(TuiReasonScreen(title, label), _submit)
+
+    def _set_hint(self, message: str) -> None:
+        self._hint = message
+        self.sub_title = message
+
+    @work(exclusive=True, exit_on_error=False)
+    async def _run_operator(self, kind: str, payload: str | bool | None) -> None:
+        if self._actions is None:
+            self._set_hint("operator actions require an embedded service or --api-url")
+            return
+        session_id = self._current_session_id()
+        if session_id is None:
+            self._set_hint("no session selected")
+            return
+        if kind == "pause":
+            await self._actions.pause(session_id, str(payload) if payload else None)
+        elif kind == "resume":
+            await self._actions.resume(
+                session_id, payload if isinstance(payload, bool) else None
+            )
+        else:
+            await self._actions.cancel(session_id, str(payload) if payload else None)
+        self._set_hint(f"{kind} completed")
+        self.action_refresh()
+
+
+class TuiReasonScreen(ModalScreen["str | None"]):
+    """Modal text-input screen collecting an optional operator reason."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [("escape", "dismiss_modal", "Cancel")]
+
+    def __init__(self, title: str, label: str) -> None:
+        super().__init__()
+        self._screen_title = title
+        self._label = label
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="reason-grid"):
+            yield Label(self._screen_title, id="reason-title")
+            yield Label(self._label, id="reason-label")
+            yield Input(placeholder="optional", id="reason-input")
+            yield Label("enter submits · esc cancels", id="reason-hint")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value)
+
+    def action_dismiss_modal(self) -> None:
+        self.dismiss(None)
+
+
+class TuiChoiceScreen(ModalScreen["bool | None"]):
+    """Modal confirm/reject choice for a pending action."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [("escape", "dismiss_modal", "Cancel")]
+
+    def __init__(self, title: str, message: str) -> None:
+        super().__init__()
+        self._screen_title = title
+        self._message = message
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="choice-grid"):
+            yield Label(self._screen_title, id="choice-title")
+            yield Label(self._message, id="choice-message")
+            with Horizontal():
+                yield Button("Confirm & resume", id="confirm", variant="success")
+                yield Button("Reject", id="reject", variant="error")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "confirm")
+
+    def action_dismiss_modal(self) -> None:
+        self.dismiss(None)
+
 
 __all__ = [
     "RuntimeTuiApp",
+    "TuiActions",
+    "service_tui_actions",
     "session_detail_lines",
     "session_table_rows",
 ]
