@@ -2332,7 +2332,7 @@ async def test_cli_tui_renders_runtime_service_snapshot() -> None:
     assert isinstance(session_id, str)
 
     tui_status = await run_cli(
-        ["tui", "--session-id", session_id, "--event-limit", "20"],
+        ["tui", "--static", "--session-id", session_id, "--event-limit", "20"],
         service=service,
         stdout=tui_output,
     )

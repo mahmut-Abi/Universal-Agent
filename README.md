@@ -11,7 +11,8 @@ in-process Runtime API, immutable Session read models, cursor-readable Events, e
 pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter, a standard-library
 HTTP bridge, a local CLI adapter, local file-backed session/event persistence, the first P3.6
 operations surface with cost tracking and OpenTelemetry-shaped trace span projections, a P3.7
-Evaluation Harness / Replay foundation, the first read-only TUI and Web Console snapshot
+Evaluation Harness / Replay foundation, an interactive live TUI dashboard (with a
+`--static` one-shot snapshot mode) and Web Console snapshots
 foundations, the first P6 local scheduler, queue, worker registry, worker, lock, snapshot, health,
 and coordinator primitives, and the first P7 Domain Package registry metadata plus SDK scaffold,
 Evaluation Dataset catalog, Profile Catalog and unified Ecosystem Catalog foundations, plus the first
@@ -189,7 +190,8 @@ deterministic golden replay recordings through the same suite selector. `agent e
 all eval gate commands support `--fail-on-fail` to preserve JSON output while returning a non-zero
 process status. `agent eval console` renders a deterministic read-only HTML Evaluation Console from
 persisted reports, and `agent eval console --format text` renders the same persisted report
-projection for terminal/CI logs. `agent tui` renders a read-only RuntimeService snapshot covering health,
+projection for terminal/CI logs. `agent tui --static` renders a deterministic
+RuntimeService snapshot covering health,
 readiness, metrics, catalogs, sessions, selected session details, recent events and audit
 records. The CLI does not access Kernel internals directly.
 

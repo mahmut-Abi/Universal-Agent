@@ -251,6 +251,11 @@ def build_parser() -> argparse.ArgumentParser:
     tui.add_argument("--session-id")
     tui.add_argument("--session-limit", type=int, default=5)
     tui.add_argument("--event-limit", type=int, default=12)
+    tui.add_argument(
+        "--static",
+        action="store_true",
+        help="Render a deterministic one-shot snapshot instead of the interactive dashboard",
+    )
 
     ecosystem = commands.add_parser("ecosystem")
     ecosystem_commands = ecosystem.add_subparsers(dest="ecosystem_command", required=True)

@@ -1,0 +1,25 @@
+# Project override of the built-in no-boolean-in-except rule (same id).
+# The built-in uses stopBy: end, which searches the ENTIRE except_clause
+# subtree — including the handler body — so a legitimate `x or default`
+# inside the body (e.g. exc.code or "fallback") triggers a false positive.
+# The Sonar rule (S5714) this ports only inspects the except CONDITION:
+# `except (ValueError or KeyError):` catches nothing useful.
+# Restricting the match to direct children of the except_clause keeps the
+# real detection and drops the body false positives.
+id: no-boolean-in-except
+language: Python
+message: "Boolean expressions should not be used in except statements"
+severity: error
+note: |
+  Port of SonarCloud python:S5714 (tightened project override).
+
+  Matches an `except_clause` whose CONDITION (direct child) is a
+  boolean_operator (and/or). Body expressions are not inspected.
+metadata:
+  sonar: S5714
+rule:
+  all:
+    - kind: except_clause
+    - has:
+        kind: boolean_operator
+        stopBy: neighbor

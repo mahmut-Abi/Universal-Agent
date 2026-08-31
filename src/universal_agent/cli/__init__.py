@@ -70,6 +70,7 @@ from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
 from universal_agent.state import StateNotFoundError
 from universal_agent.terminal.tui import build_tui_snapshot, render_tui_snapshot
+from universal_agent.terminal.tui_app import run_tui_app
 
 
 def build_default_service() -> RuntimeService:
@@ -303,13 +304,22 @@ async def _dispatch_tui(
     out: TextIO,
 ) -> None:
     session_id = cast(str | None, args.session_id)
-    snapshot = await build_tui_snapshot(
+    if cast(bool, args.static):
+        snapshot = await build_tui_snapshot(
+            service,
+            session_id=None if session_id is None else SessionId(session_id),
+            session_limit=cast(int, args.session_limit),
+            event_limit=cast(int, args.event_limit),
+        )
+        _write_text(out, render_tui_snapshot(snapshot))
+        return
+    await run_tui_app(
         service,
         session_id=None if session_id is None else SessionId(session_id),
         session_limit=cast(int, args.session_limit),
         event_limit=cast(int, args.event_limit),
+        input_stream=sys.stdin,
     )
-    _write_text(out, render_tui_snapshot(snapshot))
 
 
 def _dispatch_config(
