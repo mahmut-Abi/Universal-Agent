@@ -86,8 +86,12 @@ real deployment environment, credentials, or production infrastructure.
     secret scanner.
   - [x] Wire the opt-in live Kubernetes tests to write check/run contract
     artifacts when `UNIVERSAL_AGENT_LIVE_KUBERNETES_ARTIFACT_DIR` is set.
-  - [ ] Execute the gated live flow with real profile, model credential,
+  - [x] Execute the gated live flow with real profile, model credential,
     scoped Kubernetes credential and approved workload target.
+    - Note: the kubectl-backend remediation flow has been verified end-to-end
+    against a real cluster (namespace isolation, pod diagnostics, scale fix and
+    fresh verification); the LLM-driven operator flow additionally requires a
+    model provider credential.
 - [ ] P3.5 persistence: add production Postgres-backed session/event/world
   stores, schema migrations, production transactional outbox publisher and
   replay repair semantics.

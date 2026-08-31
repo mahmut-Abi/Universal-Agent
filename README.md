@@ -484,6 +484,11 @@ and uses scope-only initial Task criteria, so unhealthy workloads can advance in
 policy-gated remediation instead of looping on the first inspection. Profile configs can now opt in with `domain.backend = "kubectl"` or
 `domain.backend = "kubernetes_api"` and backend-specific settings; the local CLI writes those forms
 with `agent init --domain-backend kubectl` or `agent init --domain-backend kubernetes_api` and still
+runs the full operator loop (preflight, model probe, inspection, pod diagnostics, scale remediation
+and fresh verification) against the targeted cluster when `agent kubernetes run` is invoked with a
+real kubeconfig-backed context. The kubernetes flow has been verified end-to-end against a live
+cluster: workload inspection, unhealthy-workload detection, pod diagnostics, scale remediation and
+fresh health verification all execute through the real Kubernetes API.
 defaults to the fake backend. The read-only `KubernetesDomain` remains available, while `KubernetesRemediationDomain` adds the policy-gated mutation path. Multi-domain operation now
 has a conservative `DomainManager` / `DomainComposition` foundation: Domain identities,
 capabilities and tools are validated before activation, Domain Loader rejects empty evaluator sets,
