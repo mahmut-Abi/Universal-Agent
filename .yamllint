@@ -1,0 +1,11 @@
+# yamllint configuration for this repository.
+# GitHub Actions workflows legitimately use long single-line `if:` expressions,
+# `${{ }}` env values and `on:` triggers, so the corresponding default rules
+# are relaxed. The line-length limit matches the repository's Python standard.
+extends: default
+
+rules:
+  line-length:
+    max: 120
+  truthy: disable
+  document-start: disable

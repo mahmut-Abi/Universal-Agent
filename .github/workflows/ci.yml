@@ -54,6 +54,23 @@ jobs:
       - name: Build runtime image
         run: docker build -t universal-agent-runtime:ci .
 
+      - name: Smoke test agentd container runtime
+        run: |
+          docker run -d --name agentd-smoke -p 8765:8765 \
+            universal-agent-runtime:ci
+          ready=false
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8765/ready > /dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = true
+          curl -fsS http://127.0.0.1:8765/health
+          docker exec agentd-smoke test -f /config/agent-profile.json
+          docker rm -f agentd-smoke
+
   kubernetes-live-contract:
     name: Kubernetes live contract
     runs-on: ubuntu-latest

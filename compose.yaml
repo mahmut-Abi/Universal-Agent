@@ -1,0 +1,15 @@
+---
+services:
+  agentd:
+    build: .
+    container_name: universal-agent-agentd
+    ports:
+      - "8765:8765"
+    volumes:
+      - agent-data:/data
+      - agent-config:/config
+    restart: unless-stopped
+
+volumes:
+  agent-data:
+  agent-config:
