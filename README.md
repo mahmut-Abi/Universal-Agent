@@ -65,6 +65,13 @@ return through Capability Resolution and Policy; Recovery never calls a Tool dir
 exhausted failures stop deterministically. The loop is bounded iteration rather than recursion, so a
 misconfigured Domain can exhaust the step budget but can never grow the Python stack.
 
+## Container deployment
+
+`docker compose up --build` starts `agentd` with persistent volumes for `/data` (runtime state)
+and `/config` (profile). The container bootstraps a file-backed profile on first start via
+`agent init` and serves it on port 8765; the CLI and `agent tui --api-url http://localhost:8765`
+then act as thin clients of the containerized runtime.
+
 ## Session recovery
 
 `resume(session_id, confirmed=...)` is a rebuild, not a continuation: load the snapshot, verify the
@@ -174,7 +181,8 @@ can also load an
 It also exposes operations commands for metrics, cost, logs, traces, doctor, audit and
 `agent repair state-events --dry-run` / `--confirmed true` projections;
 `--api-url` thin-client mode forwards supported Runtime, session, catalog, repair and distributed
-commands to a running `agentd` instance instead of assembling a local service.
+commands — plus the interactive TUI dashboard — to a running `agentd` instance instead of
+assembling a local service.
 `agent metrics --format prometheus` emits Prometheus text exposition, while
 `agent traces --format otlp` and `agent session traces <id> --format otlp` emit OTLP
 JSON-compatible trace payloads from the same event-derived span projection. `agent serve` starts the
@@ -190,10 +198,14 @@ deterministic golden replay recordings through the same suite selector. `agent e
 all eval gate commands support `--fail-on-fail` to preserve JSON output while returning a non-zero
 process status. `agent eval console` renders a deterministic read-only HTML Evaluation Console from
 persisted reports, and `agent eval console --format text` renders the same persisted report
-projection for terminal/CI logs. `agent tui --static` renders a deterministic
-RuntimeService snapshot covering health,
-readiness, metrics, catalogs, sessions, selected session details, recent events and audit
-records. The CLI does not access Kernel internals directly.
+projection for terminal/CI logs. `agent tui` opens an interactive Textual dashboard: session navigation, a selected-session detail
+pane with recent event tailing, operator actions (pause, cancel, resume and confirm-or-reject for
+policy-held pending actions) and automatic snapshot refresh. `agent tui --static` renders a
+deterministic RuntimeService snapshot covering health, readiness, metrics, catalogs, sessions,
+selected session details, recent events and audit records, and `agent tui --api-url` runs the same
+dashboard against a remote `agentd` instance as a thin client. `agent chat` opens an interactive
+conversation where each line becomes a goal run on the runtime. The CLI does not access Kernel
+internals directly.
 
 `EvaluationHarness` is the first P3.7 behavior evaluation foundation. It runs explicit
 `EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
