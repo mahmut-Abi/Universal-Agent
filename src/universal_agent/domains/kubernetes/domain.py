@@ -85,7 +85,7 @@ class KubernetesDiagnosticExpander:
         healthy = context.world.value_for("healthy")
         resource = context.world.value_for("resource")
         diagnosed = context.world.value_for("root_cause")
-        if healthy is False and resource is not None and diagnosed is None:
+        if healthy is not None and not healthy and resource is not None and diagnosed is None:
             return (
                 TaskSpec(
                     "diagnose-unhealthy-workload",
@@ -110,6 +110,14 @@ class WorkloadHealthEvaluator:
             for key, value in context.satisfied_criteria.items()
             if key in relevant and (key not in expected or value == expected[key])
         }
+        # The workload identity comes from the latest observation's resource
+        # field (the evidence extractor uses it as the evidence subject), so
+        # the resource criterion is matched against the observation directly.
+        observation = context.observation
+        if observation is not None and "resource" in expected:
+            resource = observation.data.get("resource")
+            if resource is not None and resource == expected["resource"]:
+                matched["resource"] = resource
         task_complete = set(context.task.required_criteria).issubset(matched)
         goal_complete = set(expected).issubset(matched)
         complete = task_complete and goal_complete

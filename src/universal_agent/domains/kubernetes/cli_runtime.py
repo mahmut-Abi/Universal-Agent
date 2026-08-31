@@ -6,7 +6,14 @@ from typing import cast
 
 from pydantic import PositiveFloat
 
-from universal_agent.core import Decision, DecisionType, JsonMapping, immutable_json
+from universal_agent.core import (
+    Decision,
+    DecisionContext,
+    DecisionType,
+    JsonMapping,
+    JsonValue,
+    immutable_json,
+)
 from universal_agent.core.config_validation import (
     ConfigPayload,
     PydanticNonEmptyString,
@@ -24,7 +31,7 @@ from universal_agent.host import (
     RuntimeHost,
     build_configured_model_adapter,
 )
-from universal_agent.model import ModelAdapter, ScriptedModelAdapter
+from universal_agent.model import ModelAdapter, ModelUsage, ScriptedModelAdapter
 from universal_agent.profile import AgentProfile, ProfileConfig
 from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI
 from universal_agent.security import EnvSecretProvider, SecretProvider, resolve_secret_value
@@ -79,6 +86,60 @@ def default_decisions() -> tuple[Decision, ...]:
     )
 
 
+class KubernetesRemediationDecisionAdapter:
+    """Workload-aware scripted decision adapter for the kubernetes run flow.
+
+    Derives the inspection target from the goal/task description, so
+    ``agent kubernetes run --workload X`` inspects the requested workload
+    instead of a fixture default.
+    """
+
+    def __init__(self) -> None:
+        self._inspect_used = False
+        self.contexts: list[DecisionContext] = []
+
+    async def decide(self, context: DecisionContext) -> Decision:
+        self.contexts.append(context)
+        workload, namespace = self._workload_and_namespace(context)
+        if not self._inspect_used:
+            self._inspect_used = True
+            arguments: dict[str, JsonValue] = {"name": workload}
+            if namespace:
+                arguments["namespace"] = namespace
+            return Decision(
+                DecisionType.EXECUTE,
+                f"Inspect Kubernetes workload {workload}",
+                capability="inspect_workload",
+                target=f"deployment/{workload}",
+                arguments=immutable_json(arguments),
+                expected_observations=("healthy",),
+            )
+        return Decision(
+            DecisionType.FINISH,
+            f"Kubernetes workload {workload} inspected",
+        )
+
+    def model_usage(self) -> ModelUsage | None:
+        return None
+
+    @staticmethod
+    def _workload_and_namespace(
+        context: DecisionContext,
+    ) -> tuple[str, str | None]:
+        import re
+
+        for text in (context.task_description, context.goal_description):
+            workload = re.search(r"deployment/([A-Za-z0-9._-]+)", text)
+            if not workload:
+                continue
+            namespace = re.search(r"namespace ([A-Za-z0-9._-]+)", text)
+            return (
+                workload.group(1),
+                namespace.group(1) if namespace else None,
+            )
+        return "example", None
+
+
 def default_profile() -> AgentProfile:
     domain = local_domain()
     return AgentProfile(
@@ -122,7 +183,7 @@ def build_default_service() -> RuntimeService:
     store = InMemoryStateStore()
     events = InMemoryEventSink()
     runtime = AgentRuntime(
-        model=ScriptedModelAdapter(default_decisions()),
+        model=KubernetesRemediationDecisionAdapter(),
         state_store=store,
         components=components,
         event_sink=events,
@@ -151,10 +212,14 @@ def build_configured_service(
     )
     host = RuntimeHost.from_profile(
         profile=profile,
-        model=model_adapter_builder(
-            profile.runtime,
-            scripted_decisions=default_decisions(),
-            secret_provider=secret_provider,
+        model=(
+            KubernetesRemediationDecisionAdapter()
+            if profile.runtime.model.provider == "scripted"
+            else model_adapter_builder(
+                profile.runtime,
+                scripted_decisions=default_decisions(),
+                secret_provider=secret_provider,
+            )
         ),
         domain=KubernetesRemediationDomain(
             cast(KubernetesBackend, backend),
@@ -205,7 +270,7 @@ def configured_kubernetes_backend(
             default_namespace=settings.default_namespace,
             context=settings.context,
             kubeconfig=settings.kubeconfig,
-            timeout_seconds=float(settings.timeout_seconds),
+            timeout_seconds=settings.timeout_seconds,
         )
     if backend == "kubernetes_api":
         if settings.api_server is None:
@@ -218,7 +283,7 @@ def configured_kubernetes_backend(
                 secret_provider=secret_provider,
             ),
             default_namespace=settings.default_namespace,
-            timeout_seconds=float(settings.timeout_seconds),
+            timeout_seconds=settings.timeout_seconds,
         )
     raise ValueError(f"unsupported Kubernetes domain backend: {backend}")
 

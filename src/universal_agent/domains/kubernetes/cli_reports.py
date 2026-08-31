@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from universal_agent.agentd.representations import runtime_run_body
+from universal_agent.agentd.session_representations import evidence_body
 from universal_agent.core import (
     CapabilityCategory,
     CapabilitySummary,
@@ -76,6 +77,16 @@ async def dispatch_kubernetes(
             model_adapter_builder=model_adapter_builder,
         )
         return KubernetesCliResult(model_probe, 1 if model_probe["status"] == "failed" else 0)
+    if command == "evidence":
+        run = await run_kubernetes_remediation(args, service)
+        explorer = await service.session_explorer(run.result.session_id)
+        body = immutable_json(
+            {
+                "session_id": str(run.result.session_id),
+                "evidence": [evidence_body(item) for item in explorer.evidence],
+            }
+        )
+        return KubernetesCliResult(body, 0)
     if command == "check":
         check = await kubernetes_check_report(
             args,
@@ -532,7 +543,7 @@ def kubernetes_model_config_body(model: object) -> dict[str, JsonValue]:
         "endpoint": None if endpoint is None else str(endpoint),
         "api_key_secret": None if api_key_secret is None else str(api_key_secret),
         "timeout_seconds": (
-            float(timeout_seconds) if isinstance(timeout_seconds, int | float) else 30.0
+            timeout_seconds + 0.0 if isinstance(timeout_seconds, int | float) else 30.0
         ),
     }
     if response_format is not None:
@@ -588,7 +599,7 @@ def append_model_secret_preflight_check(
             {"secret": secret_name},
         )
         return
-    if secret.available is False or secret.status in {"missing_required", "missing_optional"}:
+    if not secret.available or secret.status in {"missing_required", "missing_optional"}:
         append_preflight_check(
             checks,
             "model_secret",
