@@ -1,0 +1,58 @@
+{
+  "name": "k8s-tool-failure-recovery",
+  "description": "Verify agent recovers from tool failures gracefully",
+  "scenarios": [
+    {
+      "name": "recover-from-tool-timeout",
+      "goal": {
+        "description": "Check deployment health when kubectl times out, retry and recover",
+        "success_criteria": [
+          {"key": "healthy", "expected": true}
+        ]
+      },
+      "task": {
+        "description": "Inspect deployment health, handle tool timeout, retry with alternative approach",
+        "required_criteria": ["healthy"]
+      },
+      "expectations": {
+        "expected_status": "completed",
+        "max_iterations": 10,
+        "required_capabilities": [
+          "inspect_workload",
+          "inspect_pod"
+        ],
+        "required_recovery_actions": ["retry", "alternative_capability"]
+      },
+      "kind": "recovery",
+      "tags": ["kubernetes", "recovery", "tool-failure", "timeout"]
+    },
+    {
+      "name": "recover-from-permission-denied",
+      "goal": {
+        "description": "Check pod logs when initial access is denied, find alternative path",
+        "success_criteria": [
+          {"key": "logs_retrieved", "expected": true}
+        ]
+      },
+      "task": {
+        "description": "Attempt to get pod logs, handle permission denied, try alternative approach",
+        "required_criteria": ["logs_retrieved"]
+      },
+      "expectations": {
+        "expected_status": "completed",
+        "max_iterations": 8,
+        "required_capabilities": [
+          "get_pod_logs",
+          "list_events"
+        ],
+        "required_recovery_actions": ["alternative_capability"]
+      },
+      "kind": "recovery",
+      "tags": ["kubernetes", "recovery", "permission", "access"]
+    }
+  ],
+  "quality_gate": {
+    "min_pass_rate": 0.85,
+    "min_goal_completion_rate": 0.9
+  }
+}

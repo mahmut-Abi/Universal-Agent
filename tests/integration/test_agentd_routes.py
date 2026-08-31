@@ -426,6 +426,7 @@ def find_named(items: JsonValue, name: str) -> dict[str, JsonValue]:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_config_route_redacts_sensitive_environment_values() -> None:
     service, _ = build_service(
         [],
@@ -454,6 +455,7 @@ async def test_agentd_config_route_redacts_sensitive_environment_values() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agentd_config_route_exposes_secret_references_without_values() -> None:
     service, _ = build_service(
         [],
@@ -475,6 +477,7 @@ async def test_agentd_config_route_exposes_secret_references_without_values() ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agentd_config_route_exposes_secret_status_without_values() -> None:
     secrets = (SecretRef.env("openai_api_key", "OPENAI_API_KEY"),)
     service, _ = build_service(
@@ -504,6 +507,7 @@ async def test_agentd_config_route_exposes_secret_status_without_values() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agentd_config_route_exposes_model_config_without_secret_values() -> None:
     service, _ = build_service(
         [],
@@ -537,6 +541,7 @@ async def test_agentd_config_route_exposes_model_config_without_secret_values() 
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_auth_policy_protects_non_public_routes() -> None:
     service, _ = build_service([])
     app = AgentdApp(
@@ -595,6 +600,7 @@ async def test_agentd_auth_policy_protects_non_public_routes() -> None:
     }
 
 
+@pytest.mark.behavior
 def test_agentd_auth_policy_rejects_ambiguous_token_scopes() -> None:
     with pytest.raises(ValueError, match="must differ"):
         AgentdAuthPolicy(
@@ -604,6 +610,7 @@ def test_agentd_auth_policy_rejects_ambiguous_token_scopes() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_openapi_route_exposes_generated_runtime_api_schema() -> None:
     service, _ = build_service([])
     app = AgentdApp(service)
@@ -622,6 +629,7 @@ async def test_agentd_openapi_route_exposes_generated_runtime_api_schema() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     service, _ = build_service([])
     app = AgentdApp(service)
@@ -721,6 +729,7 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_domain_package_routes_expose_read_only_catalog() -> None:
     service, _ = build_service([], domain_packages=package_registry())
     app = AgentdApp(service)
@@ -760,6 +769,7 @@ async def test_agentd_domain_package_routes_expose_read_only_catalog() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agentd_state_event_repair_route_requires_confirmation_and_reports_clean() -> None:
     service, _ = build_service([])
     app = AgentdApp(service)
@@ -823,6 +833,7 @@ async def test_agentd_state_event_repair_route_requires_confirmation_and_reports
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_profile_route_exposes_profile_catalog() -> None:
     service, _ = build_profile_service([])
     app = AgentdApp(service)
@@ -843,6 +854,7 @@ async def test_agentd_profile_route_exposes_profile_catalog() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_multi_agent_route_exposes_optional_registry_projection() -> None:
     registry = AgentRegistry(
         profiles=(
@@ -889,6 +901,7 @@ async def test_agentd_multi_agent_route_exposes_optional_registry_projection() -
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_profile_show_route_exposes_one_profile() -> None:
     service, _ = build_profile_service([])
     app = AgentdApp(service)
@@ -907,6 +920,7 @@ async def test_agentd_profile_show_route_exposes_one_profile() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_profile_show_route_returns_404_for_unknown_profile() -> None:
     service, _ = build_profile_service([])
     app = AgentdApp(service)
@@ -921,6 +935,7 @@ async def test_agentd_profile_show_route_returns_404_for_unknown_profile() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_create_session_route_accepts_configured_profile() -> None:
     service, backend = build_profile_service([inspect_workload(), finish()])
     app = AgentdApp(service)
@@ -941,6 +956,7 @@ async def test_agentd_create_session_route_accepts_configured_profile() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_create_session_route_rejects_unknown_profile() -> None:
     service, _ = build_profile_service([])
     app = AgentdApp(service)
@@ -961,6 +977,7 @@ async def test_agentd_create_session_route_rejects_unknown_profile() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_create_session_route_rejects_unbound_profile() -> None:
     service, backend = build_profile_service(
         [inspect_workload(), finish()],
@@ -990,6 +1007,7 @@ async def test_agentd_create_session_route_rejects_unbound_profile() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_create_session_route_runs_goal_and_exposes_session_events() -> None:
     service, backend = build_service([inspect_workload(), finish()])
     app = AgentdApp(service)
@@ -1098,6 +1116,32 @@ async def test_agentd_create_session_route_runs_goal_and_exposes_session_events(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
+async def test_agentd_create_session_route_accepts_compiled_goal() -> None:
+    service, backend = build_service([inspect_workload(), inspect_workload(), finish()])
+    app = AgentdApp(service)
+    body = immutable_json(
+        {
+            "compile_goal": True,
+            "goal": {
+                "description": "Verify workload health",
+                "success_criteria": [{"key": "healthy", "expected": True}],
+            },
+        }
+    )
+
+    created = await app.handle(HttpRequest("POST", "/v1/sessions", body))
+
+    assert created.status_code == 201
+    session = created.body["session"]
+    assert isinstance(session, dict)
+    assert session["goal_status"] == "completed"
+    assert len(cast(list[JsonValue], session["tasks"])) == 2
+    assert backend.inspect_calls == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     service, backend = build_service(
         [inspect_workload(), finish()],
@@ -1304,6 +1348,7 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agentd_evaluation_console_route_renders_persisted_reports(tmp_path: Path) -> None:
     report_dir = tmp_path / "reports"
     FileEvaluationReportStore(report_dir).save(evaluation_report("nightly behavior suite"))
@@ -1330,6 +1375,7 @@ async def test_agentd_evaluation_console_route_renders_persisted_reports(tmp_pat
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_session_list_route_supports_cursor_and_limit() -> None:
     service, _ = build_service(
         [
@@ -1378,6 +1424,7 @@ async def test_agentd_session_list_route_supports_cursor_and_limit() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -1524,6 +1571,7 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_distributed_lock_lifecycle_routes() -> None:
     service, _ = build_service([], distributed_coordinator=DistributedRuntimeCoordinator())
     app = AgentdApp(service)
@@ -1651,6 +1699,7 @@ async def test_agentd_distributed_lock_lifecycle_routes() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_distributed_worker_lifecycle_routes() -> None:
     service, _ = build_service([], distributed_coordinator=DistributedRuntimeCoordinator())
     app = AgentdApp(service)
@@ -1768,6 +1817,7 @@ async def test_agentd_distributed_worker_lifecycle_routes() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_distributed_worker_run_once_route() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_service(
@@ -1802,6 +1852,7 @@ async def test_agentd_distributed_worker_run_once_route() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_distributed_worker_run_route_resumes_backlog() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_service(
@@ -1850,6 +1901,7 @@ async def test_agentd_distributed_worker_run_route_resumes_backlog() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_distributed_schedule_route_schedules_session_work() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -1916,6 +1968,7 @@ async def test_agentd_distributed_schedule_route_schedules_session_work() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_distributed_schedule_task_route_runs_from_worker() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_service(
@@ -1950,6 +2003,7 @@ async def test_agentd_distributed_schedule_task_route_runs_from_worker() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_distributed_schedule_action_route_confirms_pending_action() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, backend = build_remediation_service(
@@ -1995,6 +2049,7 @@ async def test_agentd_distributed_schedule_action_route_confirms_pending_action(
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_distributed_schedule_pending_actions_route_confirms_pending_actions() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, backend = build_remediation_service(
@@ -2037,6 +2092,7 @@ async def test_agentd_distributed_schedule_pending_actions_route_confirms_pendin
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_distributed_schedule_action_route_validates_confirmation() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_remediation_service(
@@ -2073,6 +2129,7 @@ async def test_agentd_distributed_schedule_action_route_validates_confirmation()
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agentd_distributed_schedule_pending_actions_route_validates_confirmation() -> None:
     service, _ = build_remediation_service(
         [], distributed_coordinator=DistributedRuntimeCoordinator()
@@ -2101,6 +2158,7 @@ async def test_agentd_distributed_schedule_pending_actions_route_validates_confi
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_distributed_schedule_goal_route_runs_from_worker() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_service(
@@ -2132,6 +2190,7 @@ async def test_agentd_distributed_schedule_goal_route_runs_from_worker() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_distributed_cancel_route_cancels_work_item() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -2213,6 +2272,7 @@ async def test_agentd_distributed_cancel_route_cancels_work_item() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> None:
     service, backend = build_service(
         [scale_workload(), inspect_workload(), finish()],
@@ -2247,7 +2307,11 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
     cost = await app.handle(HttpRequest("GET", "/v1/cost"))
     doctor = await app.handle(HttpRequest("GET", "/v1/doctor"))
     audit = await app.handle(HttpRequest("GET", "/v1/audit"))
+    audit_integrity = await app.handle(HttpRequest("GET", "/v1/audit/integrity"))
     session_audit = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/audit"))
+    session_audit_integrity = await app.handle(
+        HttpRequest("GET", f"/v1/sessions/{session_id}/audit/integrity")
+    )
     session_cost = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/cost"))
     logs = await app.handle(HttpRequest("GET", "/v1/logs"))
     session_logs = await app.handle(HttpRequest("GET", f"/v1/sessions/{session_id}/logs"))
@@ -2345,6 +2409,10 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
     assert exported_action["kind"] == "SPAN_KIND_CLIENT"
     assert exported_action["parentSpanId"] == exported_root["spanId"]
     assert audit.status_code == 200
+    assert audit_integrity.status_code == 200
+    assert audit_integrity.body == session_audit_integrity.body
+    assert audit_integrity.body["record_count"] == 1
+    assert len(str(audit_integrity.body["root_hash"])) == 64
     audit_items = audit.body["audit_records"]
     session_audit_items = session_audit.body["audit_records"]
     assert isinstance(audit_items, list)
@@ -2361,6 +2429,7 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_events_route_supports_cursor_and_limit() -> None:
     service, _ = build_service([inspect_workload(), finish()])
     app = AgentdApp(service)
@@ -2393,6 +2462,7 @@ async def test_agentd_events_route_supports_cursor_and_limit() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_events_stream_route_projects_cursor_batch_as_sse() -> None:
     service, _ = build_service([inspect_workload(), finish()])
     app = AgentdApp(service)
@@ -2459,6 +2529,7 @@ async def test_agentd_events_stream_route_projects_cursor_batch_as_sse() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_events_stream_waits_for_new_session_events() -> None:
     service, _ = build_service([wait(), inspect_workload(), finish()])
     app = AgentdApp(service)
@@ -2502,6 +2573,7 @@ async def test_agentd_events_stream_waits_for_new_session_events() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_pause_and_resume_routes_continue_waiting_session_without_pending_action() -> (
     None
 ):
@@ -2540,6 +2612,7 @@ async def test_agentd_pause_and_resume_routes_continue_waiting_session_without_p
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_session_and_events_routes_are_json_safe() -> None:
     service, backend = build_service([inspect_workload(), finish()])
     app = AgentdApp(service)
@@ -2573,6 +2646,7 @@ async def test_agentd_session_and_events_routes_are_json_safe() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_resume_route_confirms_pending_action() -> None:
     service, backend = build_remediation_service(
         [
@@ -2607,6 +2681,7 @@ async def test_agentd_resume_route_confirms_pending_action() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_resume_route_rejects_pending_action() -> None:
     service, backend = build_remediation_service(
         [inspect_workload("healthy"), inspect_pod(), scale_workload()]
@@ -2635,6 +2710,7 @@ async def test_agentd_resume_route_rejects_pending_action() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_cancel_route_cancels_pending_action() -> None:
     service, backend = build_remediation_service(
         [inspect_workload("healthy"), inspect_pod(), scale_workload()]
@@ -2665,6 +2741,7 @@ async def test_agentd_cancel_route_cancels_pending_action() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_create_session_route_validates_request_body() -> None:
     service, _ = build_service([])
     app = AgentdApp(service)
@@ -2777,6 +2854,7 @@ async def test_agentd_create_session_route_validates_request_body() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_resume_route_validates_request_body() -> None:
     service, _ = build_service([])
     app = AgentdApp(service)
@@ -2838,6 +2916,7 @@ async def test_agentd_resume_route_validates_request_body() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_agentd_resume_route_requires_confirmed_for_pending_action() -> None:
     service, _ = build_remediation_service(
         [inspect_workload("healthy"), inspect_pod(), scale_workload()]
@@ -2865,6 +2944,7 @@ async def test_agentd_resume_route_requires_confirmed_for_pending_action() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agentd_routes_return_404_and_405_errors() -> None:
     service, _ = build_service([])
     app = AgentdApp(service)

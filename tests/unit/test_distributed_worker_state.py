@@ -21,6 +21,7 @@ from universal_agent.distributed import (
 )
 
 
+@pytest.mark.unit
 def test_worker_registry_registers_and_re_registers_worker() -> None:
     registry = InMemoryWorkerRegistry()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -53,6 +54,7 @@ def test_worker_registry_registers_and_re_registers_worker() -> None:
     assert registry.active() == (second,)
 
 
+@pytest.mark.unit
 def test_file_worker_registry_persists_and_reloads_worker_state(tmp_path: Path) -> None:
     path = tmp_path / "workers.json"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -80,6 +82,7 @@ def test_file_worker_registry_persists_and_reloads_worker_state(tmp_path: Path) 
     assert renewed.lease_expires_at == now + timedelta(seconds=25)
 
 
+@pytest.mark.unit
 def test_file_worker_registry_reloads_before_stale_writer_mutates(tmp_path: Path) -> None:
     path = tmp_path / "workers.json"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -97,6 +100,7 @@ def test_file_worker_registry_reloads_before_stale_writer_mutates(tmp_path: Path
     )
 
 
+@pytest.mark.unit
 def test_sqlite_worker_registry_persists_and_reloads_worker_state(tmp_path: Path) -> None:
     path = tmp_path / "workers.sqlite3"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -125,6 +129,7 @@ def test_sqlite_worker_registry_persists_and_reloads_worker_state(tmp_path: Path
     assert renewed.lease_expires_at == now + timedelta(seconds=25)
 
 
+@pytest.mark.unit
 def test_sqlite_worker_registry_reloads_before_stale_writer_mutates(tmp_path: Path) -> None:
     path = tmp_path / "workers.sqlite3"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -142,6 +147,7 @@ def test_sqlite_worker_registry_reloads_before_stale_writer_mutates(tmp_path: Pa
     )
 
 
+@pytest.mark.unit
 def test_sqlite_worker_registry_persists_expiry_on_heartbeat_failure(
     tmp_path: Path,
 ) -> None:
@@ -159,6 +165,7 @@ def test_sqlite_worker_registry_persists_expiry_on_heartbeat_failure(
     assert record.last_error == "worker heartbeat expired: worker-a"
 
 
+@pytest.mark.contract
 def test_file_worker_registry_serializes_cross_process_operations(tmp_path: Path) -> None:
     path = tmp_path / "workers.json"
     lock_path = path.with_suffix(path.suffix + ".lock")
@@ -194,6 +201,7 @@ def test_file_worker_registry_serializes_cross_process_operations(tmp_path: Path
     assert probe.stdout.strip() == "blocked"
 
 
+@pytest.mark.unit
 def test_file_worker_registry_rejects_unsupported_file_version(tmp_path: Path) -> None:
     path = tmp_path / "workers.json"
     path.write_text(json.dumps({"version": 2, "workers": []}), encoding="utf-8")
@@ -202,6 +210,7 @@ def test_file_worker_registry_rejects_unsupported_file_version(tmp_path: Path) -
         FileWorkerRegistry(path)
 
 
+@pytest.mark.unit
 def test_file_worker_registry_rejects_non_list_workers(tmp_path: Path) -> None:
     path = tmp_path / "workers.json"
     path.write_text(json.dumps({"version": 1, "workers": "bad"}), encoding="utf-8")
@@ -210,6 +219,7 @@ def test_file_worker_registry_rejects_non_list_workers(tmp_path: Path) -> None:
         FileWorkerRegistry(path)
 
 
+@pytest.mark.contract
 def test_file_worker_registry_rejects_non_object_worker_payload(tmp_path: Path) -> None:
     path = tmp_path / "workers.json"
     path.write_text(json.dumps({"version": 1, "workers": ["bad"]}), encoding="utf-8")
@@ -218,6 +228,7 @@ def test_file_worker_registry_rejects_non_object_worker_payload(tmp_path: Path) 
         FileWorkerRegistry(path)
 
 
+@pytest.mark.unit
 def test_file_worker_registry_rejects_invalid_worker_datetime(tmp_path: Path) -> None:
     path = tmp_path / "workers.json"
     FileWorkerRegistry(path).register(WorkerId("worker-a"))
@@ -234,6 +245,7 @@ def test_file_worker_registry_rejects_invalid_worker_datetime(tmp_path: Path) ->
         FileWorkerRegistry(path)
 
 
+@pytest.mark.unit
 def test_file_worker_registry_rejects_non_object_worker_metadata(tmp_path: Path) -> None:
     path = tmp_path / "workers.json"
     FileWorkerRegistry(path).register(WorkerId("worker-a"))
@@ -250,6 +262,7 @@ def test_file_worker_registry_rejects_non_object_worker_metadata(tmp_path: Path)
         FileWorkerRegistry(path)
 
 
+@pytest.mark.unit
 def test_worker_registry_heartbeat_extends_worker_lease() -> None:
     registry = InMemoryWorkerRegistry()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -267,6 +280,7 @@ def test_worker_registry_heartbeat_extends_worker_lease() -> None:
     assert registry.get(WorkerId("worker-a")) == renewed
 
 
+@pytest.mark.unit
 def test_worker_registry_drains_and_marks_worker_offline() -> None:
     registry = InMemoryWorkerRegistry()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -291,6 +305,7 @@ def test_worker_registry_drains_and_marks_worker_offline() -> None:
     assert registry.list(status=WorkerStatus.OFFLINE) == (offline,)
 
 
+@pytest.mark.unit
 def test_worker_registry_expires_online_and_draining_workers() -> None:
     registry = InMemoryWorkerRegistry()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -312,6 +327,7 @@ def test_worker_registry_expires_online_and_draining_workers() -> None:
     assert registry.active() == ()
 
 
+@pytest.mark.unit
 def test_worker_registry_rejects_heartbeat_after_expiry() -> None:
     registry = InMemoryWorkerRegistry()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -323,6 +339,7 @@ def test_worker_registry_rejects_heartbeat_after_expiry() -> None:
     assert registry.get(WorkerId("worker-a")).status is WorkerStatus.LOST
 
 
+@pytest.mark.unit
 def test_worker_registry_validates_inputs() -> None:
     registry = InMemoryWorkerRegistry()
 

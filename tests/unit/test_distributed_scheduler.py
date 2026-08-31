@@ -15,6 +15,7 @@ from universal_agent.distributed import (
 )
 
 
+@pytest.mark.unit
 def test_work_scheduler_schedules_session_work_idempotently() -> None:
     queue = InMemoryWorkQueue()
     scheduler = WorkScheduler(queue)
@@ -41,6 +42,7 @@ def test_work_scheduler_schedules_session_work_idempotently() -> None:
     assert len(queue.queued()) == 1
 
 
+@pytest.mark.behavior
 def test_work_scheduler_schedules_goal_work_idempotently() -> None:
     queue = InMemoryWorkQueue()
     scheduler = WorkScheduler(queue)
@@ -68,6 +70,7 @@ def test_work_scheduler_schedules_goal_work_idempotently() -> None:
     assert len(queue.queued()) == 1
 
 
+@pytest.mark.behavior
 def test_work_scheduler_preserves_task_and_action_identity() -> None:
     queue = InMemoryWorkQueue()
     scheduler = WorkScheduler(queue)
@@ -99,6 +102,7 @@ def test_work_scheduler_preserves_task_and_action_identity() -> None:
     assert action.idempotency_key == "action:session-1:task-1:action-1"
 
 
+@pytest.mark.unit
 def test_work_scheduler_cancels_session_scope_without_touching_terminal_items() -> None:
     queue = InMemoryWorkQueue()
     scheduler = WorkScheduler(queue)
@@ -136,6 +140,7 @@ def test_work_scheduler_cancels_session_scope_without_touching_terminal_items() 
     assert len([item for item in queue.queued() if item.session_id == other_session_id]) == 1
 
 
+@pytest.mark.unit
 def test_work_scheduler_cancels_task_scope_only() -> None:
     queue = InMemoryWorkQueue()
     scheduler = WorkScheduler(queue)
@@ -153,6 +158,7 @@ def test_work_scheduler_cancels_task_scope_only() -> None:
     assert queue.get(other.work_item_id).status is WorkItemStatus.QUEUED
 
 
+@pytest.mark.unit
 def test_work_scheduler_rejects_empty_runtime_ids() -> None:
     scheduler = WorkScheduler(InMemoryWorkQueue())
 
@@ -164,6 +170,7 @@ def test_work_scheduler_rejects_empty_runtime_ids() -> None:
         scheduler.schedule_action(SessionId("session-1"), TaskId("task-1"), ActionId(""))
 
 
+@pytest.mark.unit
 def test_work_scheduler_rejects_invalid_goal_idempotency_key() -> None:
     scheduler = WorkScheduler(InMemoryWorkQueue())
 

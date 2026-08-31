@@ -4,6 +4,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from types import MappingProxyType
 
+import pytest
+
 from universal_agent.core import (
     ActionId,
     CapabilityCategory,
@@ -55,9 +57,10 @@ from universal_agent.service import (
     WorldFactView,
     WorldRelationView,
 )
-from universal_agent.tui import TuiSnapshot, render_tui_snapshot
+from universal_agent.terminal.tui import TuiSnapshot, render_tui_snapshot
 
 
+@pytest.mark.behavior
 def test_tui_renderer_projects_runtime_snapshot() -> None:
     timestamp = datetime(2026, 1, 1, tzinfo=UTC)
     session_id = SessionId("session-1")

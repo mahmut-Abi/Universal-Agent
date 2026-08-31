@@ -103,6 +103,13 @@ class KeywordRelevanceFilter:
         return tuple(kept)
 
 
+def similarity_score(query: str, text: str) -> float:
+    """Return a 0.0-1.0 WRatio similarity score between two strings."""
+    if not query.strip() or not text.strip():
+        return 0.0
+    return fuzz.WRatio(query, text) / 100.0
+
+
 def _query_text(request: RetrievalRequest) -> str:
     # Runtime subjects are soft signal: they influence relevance ranking without
     # gating the store recall step.

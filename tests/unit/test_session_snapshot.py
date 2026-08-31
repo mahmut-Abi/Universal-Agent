@@ -55,6 +55,7 @@ def make_state() -> AgentState:
     return state
 
 
+@pytest.mark.behavior
 async def test_session_store_isolates_saved_state() -> None:
     store = InMemorySessionStore()
     state = make_state()
@@ -75,6 +76,7 @@ async def test_session_store_isolates_saved_state() -> None:
     assert reloaded.current_task is not state.current_task
 
 
+@pytest.mark.behavior
 async def test_session_store_rejects_stale_snapshot_version() -> None:
     store = InMemorySessionStore()
     state = make_state()
@@ -94,6 +96,7 @@ async def test_session_store_rejects_stale_snapshot_version() -> None:
     assert latest.state.iteration == 1
 
 
+@pytest.mark.contract
 async def test_session_snapshot_round_trip_preserves_graph_and_evidence() -> None:
     store = InMemorySessionStore()
     state = make_state()
@@ -136,6 +139,7 @@ async def test_session_snapshot_round_trip_preserves_graph_and_evidence() -> Non
     assert len(rebuilt.all()) == 2
 
 
+@pytest.mark.behavior
 def test_task_graph_snapshot_rejects_invalid_structures() -> None:
     root = Task("Inspect", ())
     other = Task("Diagnose", ())
@@ -172,6 +176,7 @@ def test_task_graph_snapshot_rejects_invalid_structures() -> None:
         TaskManager.from_snapshot(cycle)
 
 
+@pytest.mark.behavior
 def test_task_graph_snapshot_preserves_status_and_progress() -> None:
     root = Task("Inspect", ())
     manager = TaskManager(root)
@@ -187,6 +192,7 @@ def test_task_graph_snapshot_preserves_status_and_progress() -> None:
     assert rebuilt.has_unfinished()
 
 
+@pytest.mark.unit
 def test_world_rebuild_from_evidence_matches_original_snapshot() -> None:
     updaters = (FactWorldUpdater(),)
     store = InMemoryEvidenceStore()
@@ -215,6 +221,7 @@ def test_world_rebuild_from_evidence_matches_original_snapshot() -> None:
     assert actual.facts[0].evidence_ids == (older_high.id, newer_low.id)
 
 
+@pytest.mark.unit
 def test_world_rebuild_discards_previous_session_facts() -> None:
     updaters = (FactWorldUpdater(),)
     model = InMemoryWorldModel()
@@ -228,6 +235,7 @@ def test_world_rebuild_discards_previous_session_facts() -> None:
     assert tuple(fact.claim for fact in snapshot.facts) == ("root_cause",)
 
 
+@pytest.mark.unit
 def test_session_from_state_builds_single_node_graph() -> None:
     state = make_state()
     snapshot = session_from_state(state, domain_name="kubernetes", domain_version="0.1.0")
@@ -239,6 +247,7 @@ def test_session_from_state_builds_single_node_graph() -> None:
     assert snapshot.domains == (DomainIdentity("kubernetes", "0.1.0"),)
 
 
+@pytest.mark.unit
 def test_observation_status_enum_is_unchanged() -> None:
     assert ObservationStatus.SUCCEEDED.value == "succeeded"
     assert immutable_json({"healthy": True})["healthy"] is True

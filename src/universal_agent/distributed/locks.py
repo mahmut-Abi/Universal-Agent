@@ -30,12 +30,14 @@ from universal_agent.core.config_validation import (
     json_mapping,
     parse_json_object,
     parse_non_empty_string,
+    parse_non_negative_int,
     parse_positive_float,
     pydantic_error_details,
 )
 
 DistributedLockLeaseId = NewType("DistributedLockLeaseId", str)
 DistributedLockOwnerId = NewType("DistributedLockOwnerId", str)
+DistributedLockFencingToken = NewType("DistributedLockFencingToken", int)
 
 
 class DistributedLockConflictError(RuntimeError):
@@ -54,7 +56,15 @@ class DistributedLockLease:
     acquired_at: datetime
     lease_expires_at: datetime
     heartbeat_at: datetime
+    fencing_token: DistributedLockFencingToken = DistributedLockFencingToken(0)
     metadata: JsonMapping = field(default_factory=immutable_json)
+
+    def __post_init__(self) -> None:
+        parse_non_negative_int(
+            self.fencing_token,
+            "fencing_token",
+            range_template="{path} must be non-negative",
+        )
 
 
 class _DistributedLockRegistryPayload(BaseModel):
@@ -74,6 +84,7 @@ class _DistributedLockLeasePayload(BaseModel):
     acquired_at: datetime
     lease_expires_at: datetime
     heartbeat_at: datetime
+    fencing_token: StrictInt = 0
     metadata: dict[str, PydanticJsonValue] | None = None
 
 
@@ -125,13 +136,15 @@ class InMemoryDistributedLockRegistry:
             if existing.owner_id == owner_id:
                 return existing
             raise DistributedLockConflictError(f"lock is owned by {existing.owner_id}: {lock_key}")
+        lease_id = self._next_lease_id()
         lease = DistributedLockLease(
             lock_key=lock_key,
             owner_id=owner_id,
-            lease_id=self._next_lease_id(),
+            lease_id=lease_id,
             acquired_at=timestamp,
             lease_expires_at=_lease_deadline(timestamp, ttl_seconds),
             heartbeat_at=timestamp,
+            fencing_token=DistributedLockFencingToken(self._sequence),
             metadata=immutable_json(metadata),
         )
         self._leases[lock_key] = lease
@@ -381,13 +394,15 @@ class SQLiteDistributedLockRegistry(InMemoryDistributedLockRegistry):
                 raise DistributedLockConflictError(
                     f"lock is owned by {existing.owner_id}: {lock_key}"
                 )
+            lease_id = self._next_lease_id()
             lease = DistributedLockLease(
                 lock_key=lock_key,
                 owner_id=owner_id,
-                lease_id=self._next_lease_id(),
+                lease_id=lease_id,
                 acquired_at=timestamp,
                 lease_expires_at=_lease_deadline(timestamp, ttl_seconds),
                 heartbeat_at=timestamp,
+                fencing_token=DistributedLockFencingToken(self._sequence),
                 metadata=immutable_json(metadata),
             )
             self._leases[lock_key] = lease
@@ -533,6 +548,7 @@ def _encode_distributed_lock_lease(lease: DistributedLockLease) -> dict[str, obj
         "acquired_at": lease.acquired_at.isoformat(),
         "lease_expires_at": lease.lease_expires_at.isoformat(),
         "heartbeat_at": lease.heartbeat_at.isoformat(),
+        "fencing_token": int(lease.fencing_token),
         "metadata": dict(lease.metadata),
     }
 
@@ -546,6 +562,7 @@ def _decode_distributed_lock_lease(payload: dict[str, object]) -> DistributedLoc
         acquired_at=lease.acquired_at,
         lease_expires_at=lease.lease_expires_at,
         heartbeat_at=lease.heartbeat_at,
+        fencing_token=DistributedLockFencingToken(lease.fencing_token),
         metadata=immutable_json(json_mapping(lease.metadata or {})),
     )
 

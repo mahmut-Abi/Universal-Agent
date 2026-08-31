@@ -60,6 +60,7 @@ Important invariants:
 | Multi-Agent optional layer | `src/universal_agent/multi_agent/` | structured task/result contracts, registry, delegation, merge/evaluation |
 | Ecosystem | `src/universal_agent/ecosystem/`, `src/universal_agent/profile/` | package/dataset/profile catalogs and registry metadata |
 | Kubernetes domain | `src/universal_agent/domains/kubernetes/` | first serious Domain Runtime and optional kubectl backend |
+| Observability domain | `src/universal_agent/domains/observability/` | read-only metrics Domain with fixture and Prometheus backends |
 
 ## Application Boundaries
 
@@ -77,6 +78,8 @@ implementation objects directly.
 
 - The default Kubernetes domain uses injected fake/test backends unless a caller
   explicitly wires `KubectlBackend`.
+- The Observability domain is read-only and currently supports instant metrics
+  query evidence; deeper alert/range-query semantics remain future work.
 - File and SQLite adapters are local persistence/coordination adapters, not a
   high-availability distributed database layer.
 - Web and TUI are read-only inspection surfaces.

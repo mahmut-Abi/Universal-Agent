@@ -1,0 +1,38 @@
+{
+  "name": "k8s-under-replicated-remediation",
+  "description": "Diagnose and remediate an under-replicated Kubernetes deployment",
+  "scenarios": [
+    {
+      "name": "find-and-fix-under-replicated-deployment",
+      "goal": {
+        "description": "Find out why deployment/dify-api is unhealthy and fix it if it is safe",
+        "success_criteria": [
+          {"key": "healthy", "expected": true}
+        ]
+      },
+      "task": {
+        "description": "Inspect deployment health, diagnose under-replicated state, apply safe remediation",
+        "required_criteria": ["healthy"]
+      },
+      "expectations": {
+        "expected_status": "completed",
+        "max_iterations": 10,
+        "required_capabilities": [
+          "inspect_workload",
+          "apply_manifest",
+          "inspect_pod"
+        ],
+        "required_evidence_claims": [
+          "deployment.status",
+          "pod.status"
+        ]
+      },
+      "kind": "recovery",
+      "tags": ["kubernetes", "deployment", "remediation", "canary"]
+    }
+  ],
+  "quality_gate": {
+    "min_pass_rate": 0.9,
+    "min_goal_completion_rate": 0.95
+  }
+}

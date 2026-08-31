@@ -20,6 +20,7 @@ from universal_agent.distributed import (
 )
 
 
+@pytest.mark.unit
 def test_distributed_lock_registry_acquires_reenters_and_releases() -> None:
     registry = InMemoryDistributedLockRegistry()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -50,6 +51,7 @@ def test_distributed_lock_registry_acquires_reenters_and_releases() -> None:
     assert registry.active() == ()
 
 
+@pytest.mark.unit
 def test_file_distributed_lock_registry_persists_and_reloads_leases(tmp_path: Path) -> None:
     path = tmp_path / "distributed-locks.json"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -77,6 +79,7 @@ def test_file_distributed_lock_registry_persists_and_reloads_leases(tmp_path: Pa
     assert renewed.lease_expires_at == now + timedelta(seconds=25)
 
 
+@pytest.mark.unit
 def test_file_distributed_lock_registry_restores_sequence(tmp_path: Path) -> None:
     path = tmp_path / "distributed-locks.json"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -101,6 +104,41 @@ def test_file_distributed_lock_registry_restores_sequence(tmp_path: Path) -> Non
     assert str(second.lease_id) == "lock-lease-2"
 
 
+@pytest.mark.unit
+def test_distributed_lock_fencing_token_increments_after_release() -> None:
+    registry = InMemoryDistributedLockRegistry()
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+
+    first = registry.acquire(
+        lock_key="session/session-1",
+        owner_id=DistributedLockOwnerId("worker-a"),
+        now=now,
+    )
+    registry.release(
+        first.lease_id,
+        owner_id=DistributedLockOwnerId("worker-a"),
+        now=now + timedelta(seconds=1),
+    )
+    second = registry.acquire(
+        lock_key="session/session-1",
+        owner_id=DistributedLockOwnerId("worker-b"),
+        now=now + timedelta(seconds=2),
+    )
+
+    assert first.fencing_token == 1
+    assert second.fencing_token == 2
+    assert first.lease_id != second.lease_id
+    with pytest.raises(
+        DistributedLockLeaseLostError, match=f"lock lease not found: {first.lease_id}"
+    ):
+        registry.release(
+            first.lease_id,
+            owner_id=DistributedLockOwnerId("worker-a"),
+            now=now + timedelta(seconds=3),
+        )
+
+
+@pytest.mark.unit
 def test_file_distributed_lock_registry_reloads_before_stale_writer_mutates(
     tmp_path: Path,
 ) -> None:
@@ -132,6 +170,7 @@ def test_file_distributed_lock_registry_reloads_before_stale_writer_mutates(
     )
 
 
+@pytest.mark.unit
 def test_sqlite_distributed_lock_registry_persists_and_reloads_leases(tmp_path: Path) -> None:
     path = tmp_path / "distributed-locks.sqlite3"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -160,6 +199,7 @@ def test_sqlite_distributed_lock_registry_persists_and_reloads_leases(tmp_path: 
     assert renewed.lease_expires_at == now + timedelta(seconds=25)
 
 
+@pytest.mark.unit
 def test_sqlite_distributed_lock_registry_restores_sequence(tmp_path: Path) -> None:
     path = tmp_path / "distributed-locks.sqlite3"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -184,6 +224,7 @@ def test_sqlite_distributed_lock_registry_restores_sequence(tmp_path: Path) -> N
     assert str(second.lease_id) == "lock-lease-2"
 
 
+@pytest.mark.unit
 def test_sqlite_distributed_lock_registry_reloads_before_stale_writer_mutates(
     tmp_path: Path,
 ) -> None:
@@ -215,6 +256,7 @@ def test_sqlite_distributed_lock_registry_reloads_before_stale_writer_mutates(
     )
 
 
+@pytest.mark.unit
 def test_sqlite_distributed_lock_registry_persists_expiry_on_lost_release(
     tmp_path: Path,
 ) -> None:
@@ -237,6 +279,7 @@ def test_sqlite_distributed_lock_registry_persists_expiry_on_lost_release(
     assert SQLiteDistributedLockRegistry(path).active() == ()
 
 
+@pytest.mark.contract
 def test_file_distributed_lock_registry_serializes_cross_process_operations(
     tmp_path: Path,
 ) -> None:
@@ -278,6 +321,7 @@ def test_file_distributed_lock_registry_serializes_cross_process_operations(
     assert probe.stdout.strip() == "blocked"
 
 
+@pytest.mark.unit
 def test_file_distributed_lock_registry_rejects_unsupported_file_version(
     tmp_path: Path,
 ) -> None:
@@ -288,6 +332,7 @@ def test_file_distributed_lock_registry_rejects_unsupported_file_version(
         FileDistributedLockRegistry(path)
 
 
+@pytest.mark.unit
 def test_file_distributed_lock_registry_rejects_non_list_locks(tmp_path: Path) -> None:
     path = tmp_path / "distributed-locks.json"
     path.write_text(json.dumps({"version": 1, "locks": "bad"}), encoding="utf-8")
@@ -296,6 +341,7 @@ def test_file_distributed_lock_registry_rejects_non_list_locks(tmp_path: Path) -
         FileDistributedLockRegistry(path)
 
 
+@pytest.mark.contract
 def test_file_distributed_lock_registry_rejects_non_object_lock_payload(
     tmp_path: Path,
 ) -> None:
@@ -306,6 +352,7 @@ def test_file_distributed_lock_registry_rejects_non_object_lock_payload(
         FileDistributedLockRegistry(path)
 
 
+@pytest.mark.unit
 def test_file_distributed_lock_registry_rejects_invalid_lease_datetime(
     tmp_path: Path,
 ) -> None:
@@ -327,6 +374,7 @@ def test_file_distributed_lock_registry_rejects_invalid_lease_datetime(
         FileDistributedLockRegistry(path)
 
 
+@pytest.mark.unit
 def test_file_distributed_lock_registry_rejects_non_object_lease_metadata(
     tmp_path: Path,
 ) -> None:
@@ -348,6 +396,7 @@ def test_file_distributed_lock_registry_rejects_non_object_lease_metadata(
         FileDistributedLockRegistry(path)
 
 
+@pytest.mark.unit
 def test_distributed_lock_registry_rejects_conflicting_owner() -> None:
     registry = InMemoryDistributedLockRegistry()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -365,6 +414,7 @@ def test_distributed_lock_registry_rejects_conflicting_owner() -> None:
         )
 
 
+@pytest.mark.unit
 def test_distributed_lock_registry_heartbeat_extends_lease() -> None:
     registry = InMemoryDistributedLockRegistry()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -388,6 +438,7 @@ def test_distributed_lock_registry_heartbeat_extends_lease() -> None:
     assert registry.active() == (renewed,)
 
 
+@pytest.mark.unit
 def test_distributed_lock_registry_expires_and_allows_new_owner() -> None:
     registry = InMemoryDistributedLockRegistry()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -411,6 +462,7 @@ def test_distributed_lock_registry_expires_and_allows_new_owner() -> None:
     assert second.lease_id != first.lease_id
 
 
+@pytest.mark.unit
 def test_distributed_lock_registry_rejects_lost_or_expired_lease_operations() -> None:
     registry = InMemoryDistributedLockRegistry()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -437,6 +489,7 @@ def test_distributed_lock_registry_rejects_lost_or_expired_lease_operations() ->
     assert registry.active() == ()
 
 
+@pytest.mark.unit
 def test_distributed_lock_registry_validates_inputs() -> None:
     registry = InMemoryDistributedLockRegistry()
     now = datetime(2026, 1, 1, tzinfo=UTC)

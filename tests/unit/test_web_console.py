@@ -4,6 +4,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from types import MappingProxyType
 
+import pytest
+
 from universal_agent.core import (
     ActionId,
     CapabilityCategory,
@@ -80,6 +82,7 @@ from universal_agent.web import (
 )
 
 
+@pytest.mark.behavior
 def test_web_console_renderer_projects_and_escapes_runtime_snapshot() -> None:
     timestamp = datetime(2026, 1, 1, tzinfo=UTC)
     session_id = SessionId("session-1")

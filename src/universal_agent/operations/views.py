@@ -113,6 +113,20 @@ class AuditRecordView:
 
 
 @dataclass(frozen=True, slots=True)
+class AuditIntegrityRecordView:
+    record_id: str
+    previous_hash: str
+    record_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class AuditIntegrityReportView:
+    record_count: int
+    root_hash: str
+    records: tuple[AuditIntegrityRecordView, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeLogRecordView:
     log_id: str
     level: str

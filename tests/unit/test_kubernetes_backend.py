@@ -102,6 +102,7 @@ class RecordingKubernetesApiTransport:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_httpx_kubernetes_api_transport_builds_request_and_decodes_response() -> None:
     requests: list[httpx.Request] = []
 
@@ -149,6 +150,7 @@ async def test_httpx_kubernetes_api_transport_builds_request_and_decodes_respons
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_httpx_kubernetes_api_transport_maps_request_errors() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)
@@ -163,6 +165,7 @@ async def test_httpx_kubernetes_api_transport_maps_request_errors() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_httpx_kubernetes_api_transport_preserves_api_server_base_path() -> None:
     requests: list[httpx.Request] = []
 
@@ -184,6 +187,7 @@ async def test_httpx_kubernetes_api_transport_preserves_api_server_base_path() -
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_kubectl_backend_rejects_non_object_json_output() -> None:
     runner = RecordingKubectlRunner({("get", "nodes", "-o", "json"): []})
     backend = KubectlBackend(runner=runner)
@@ -202,6 +206,7 @@ class RecordingScaleBackend:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_kubectl_backend_inspects_workload_health_and_command_scope() -> None:
     runner = RecordingKubectlRunner(
         {
@@ -257,6 +262,7 @@ async def test_kubectl_backend_inspects_workload_health_and_command_scope() -> N
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_kubectl_backend_includes_workload_pod_summaries_from_selector() -> None:
     runner = RecordingKubectlRunner(
         {
@@ -308,6 +314,7 @@ async def test_kubectl_backend_includes_workload_pod_summaries_from_selector() -
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_kubectl_backend_inspects_pod_container_diagnostics() -> None:
     runner = RecordingKubectlRunner(
         {
@@ -365,6 +372,7 @@ async def test_kubectl_backend_inspects_pod_container_diagnostics() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_kubectl_backend_reads_logs_and_events() -> None:
     logs = "first line\nsecond line\n"
     runner = RecordingKubectlRunner(
@@ -423,6 +431,7 @@ async def test_kubectl_backend_reads_logs_and_events() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_kubectl_backend_scales_workload_with_current_replicas_guard() -> None:
     runner = RecordingKubectlRunner(
         {
@@ -473,6 +482,7 @@ async def test_kubectl_backend_scales_workload_with_current_replicas_guard() -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_scale_tool_schema_accepts_concurrency_guards() -> None:
     backend = RecordingScaleBackend()
     registry = ToolRegistry()
@@ -502,6 +512,7 @@ async def test_scale_tool_schema_accepts_concurrency_guards() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_kubectl_backend_inspects_cluster_summary() -> None:
     runner = RecordingKubectlRunner(
         {
@@ -528,6 +539,7 @@ async def test_kubectl_backend_inspects_cluster_summary() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_kubernetes_api_backend_inspects_workload_health() -> None:
     transport = RecordingKubernetesApiTransport(
         {
@@ -582,6 +594,7 @@ async def test_kubernetes_api_backend_inspects_workload_health() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_kubernetes_api_backend_rejects_non_object_json_response() -> None:
     transport = RecordingKubernetesApiTransport(
         {
@@ -606,6 +619,7 @@ async def test_kubernetes_api_backend_rejects_non_object_json_response() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_kubernetes_api_backend_includes_workload_pod_summaries_from_selector() -> None:
     transport = RecordingKubernetesApiTransport(
         {
@@ -654,6 +668,7 @@ async def test_kubernetes_api_backend_includes_workload_pod_summaries_from_selec
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_kubernetes_api_backend_reads_logs_and_events() -> None:
     logs = "first line\nsecond line\n"
     transport = RecordingKubernetesApiTransport(
@@ -705,6 +720,7 @@ async def test_kubernetes_api_backend_reads_logs_and_events() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_kubernetes_api_backend_scales_workload_with_concurrency_guards() -> None:
     transport = RecordingKubernetesApiTransport(
         {
@@ -758,6 +774,7 @@ async def test_kubernetes_api_backend_scales_workload_with_concurrency_guards() 
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_kubernetes_api_backend_rejects_stale_scale_guard() -> None:
     transport = RecordingKubernetesApiTransport(
         {
@@ -825,6 +842,7 @@ def _crash_loop_pod() -> dict[str, JsonValue]:
     }
 
 
+@pytest.mark.unit
 def test_kubernetes_backends_validate_constructor_inputs() -> None:
     with pytest.raises(ValueError, match="kubectl binary must not be empty"):
         SubprocessKubectlRunner(" ")

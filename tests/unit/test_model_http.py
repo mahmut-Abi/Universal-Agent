@@ -139,6 +139,7 @@ class FakeOpenAIClientFactory:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_httpx_json_http_transport_posts_json_and_decodes_response() -> None:
     requests: list[httpx.Request] = []
 
@@ -173,6 +174,7 @@ async def test_httpx_json_http_transport_posts_json_and_decodes_response() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_httpx_json_http_transport_maps_http_errors() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(429, text="rate limited", request=request)
@@ -223,6 +225,7 @@ def context() -> DecisionContext:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_json_http_model_adapter_posts_context_and_decodes_decision_usage() -> None:
     transport = RecordingTransport(
         immutable_json(
@@ -292,6 +295,7 @@ async def test_json_http_model_adapter_posts_context_and_decodes_decision_usage(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_json_http_model_adapter_accepts_top_level_decision_without_usage() -> None:
     adapter = JsonHttpModelAdapter(
         "https://models.example.test/decide",
@@ -309,6 +313,7 @@ async def test_json_http_model_adapter_accepts_top_level_decision_without_usage(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_json_http_model_adapter_rejects_non_object_decision_payload() -> None:
     adapter = JsonHttpModelAdapter(
         "https://models.example.test/decide",
@@ -321,6 +326,7 @@ async def test_json_http_model_adapter_rejects_non_object_decision_payload() -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_json_http_model_adapter_rejects_non_object_usage_payload() -> None:
     adapter = JsonHttpModelAdapter(
         "https://models.example.test/decide",
@@ -340,6 +346,7 @@ async def test_json_http_model_adapter_rejects_non_object_usage_payload() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_json_http_model_adapter_rejects_invalid_decision_contract() -> None:
     adapter = JsonHttpModelAdapter(
         "https://models.example.test/decide",
@@ -362,6 +369,7 @@ async def test_json_http_model_adapter_rejects_invalid_decision_contract() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_json_http_model_adapter_rejects_decision_outside_context_capabilities() -> None:
     adapter = JsonHttpModelAdapter(
         "https://models.example.test/decide",
@@ -386,6 +394,7 @@ async def test_json_http_model_adapter_rejects_decision_outside_context_capabili
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_json_http_model_adapter_rejects_context_argument_contract_violation() -> None:
     adapter = JsonHttpModelAdapter(
         "https://models.example.test/decide",
@@ -409,6 +418,7 @@ async def test_json_http_model_adapter_rejects_context_argument_contract_violati
         await adapter.decide(context())
 
 
+@pytest.mark.contract
 def test_json_http_model_adapter_validates_configuration() -> None:
     with pytest.raises(ValueError, match="endpoint"):
         JsonHttpModelAdapter("", "runtime-model")
@@ -425,6 +435,7 @@ def test_json_http_model_adapter_validates_configuration() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_openai_sdk_transport_drives_chat_completions_adapter() -> None:
     factory = FakeOpenAIClientFactory(
         immutable_json(
@@ -479,6 +490,7 @@ async def test_openai_sdk_transport_drives_chat_completions_adapter() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_openai_sdk_transport_drives_responses_adapter() -> None:
     factory = FakeOpenAIClientFactory(
         immutable_json(
@@ -524,6 +536,7 @@ async def test_openai_sdk_transport_drives_responses_adapter() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_openai_sdk_transport_normalizes_endpoint_urls_with_httpx() -> None:
     chat_factory = FakeOpenAIClientFactory(
         immutable_json(
@@ -590,6 +603,7 @@ async def test_openai_sdk_transport_normalizes_endpoint_urls_with_httpx() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_openai_chat_completions_model_adapter_posts_structured_request() -> None:
     transport = RecordingTransport(
         immutable_json(
@@ -662,6 +676,7 @@ async def test_openai_chat_completions_model_adapter_posts_structured_request() 
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_openai_chat_completions_model_adapter_can_request_json_object_format() -> None:
     transport = RecordingTransport(
         immutable_json(
@@ -702,6 +717,7 @@ async def test_openai_chat_completions_model_adapter_can_request_json_object_for
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_openai_chat_completions_model_adapter_can_use_prompt_json_format() -> None:
     transport = RecordingTransport(
         immutable_json(
@@ -746,6 +762,7 @@ async def test_openai_chat_completions_model_adapter_can_use_prompt_json_format(
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_openai_chat_completions_model_adapter_reads_content_parts() -> None:
     adapter = OpenAIChatCompletionsModelAdapter(
         "gpt-runtime",
@@ -788,6 +805,7 @@ async def test_openai_chat_completions_model_adapter_reads_content_parts() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_openai_chat_completions_model_adapter_rejects_tool_call_finish() -> None:
     adapter = OpenAIChatCompletionsModelAdapter(
         "gpt-runtime",
@@ -811,6 +829,7 @@ async def test_openai_chat_completions_model_adapter_rejects_tool_call_finish() 
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_openai_chat_completions_model_adapter_rejects_refusal() -> None:
     adapter = OpenAIChatCompletionsModelAdapter(
         "gpt-runtime",
@@ -834,6 +853,7 @@ async def test_openai_chat_completions_model_adapter_rejects_refusal() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_openai_chat_completions_model_adapter_rejects_context_argument_violation() -> None:
     adapter = OpenAIChatCompletionsModelAdapter(
         "gpt-runtime",
@@ -869,6 +889,7 @@ async def test_openai_chat_completions_model_adapter_rejects_context_argument_vi
         await adapter.decide(context())
 
 
+@pytest.mark.unit
 def test_openai_chat_completions_model_adapter_validates_configuration() -> None:
     with pytest.raises(ValueError, match="model name"):
         OpenAIChatCompletionsModelAdapter("", api_key="secret")
@@ -891,6 +912,7 @@ def test_openai_chat_completions_model_adapter_validates_configuration() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_openai_responses_model_adapter_posts_structured_output_request() -> None:
     transport = RecordingTransport(
         immutable_json(
@@ -959,6 +981,7 @@ async def test_openai_responses_model_adapter_posts_structured_output_request() 
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_openai_responses_model_adapter_reads_output_array_text() -> None:
     adapter = OpenAIResponsesModelAdapter(
         "gpt-runtime",
@@ -1000,6 +1023,53 @@ async def test_openai_responses_model_adapter_reads_output_array_text() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_openai_responses_model_adapter_strips_markdown_code_fence() -> None:
+    """OpenAI-compatible providers may wrap strict-schema output in a code fence."""
+
+    fenced = (
+        "```json\n"
+        + json_text(
+            {
+                "type": "finish",
+                "reason": "All criteria satisfied.",
+                "capability": None,
+                "target": None,
+                "arguments": {},
+                "expected_observations": [],
+                "message": None,
+            }
+        )
+        + "\n```"
+    )
+    adapter = OpenAIResponsesModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        transport=RecordingTransport(
+            immutable_json(
+                {
+                    "status": "completed",
+                    "output": [
+                        {
+                            "type": "message",
+                            "content": [
+                                {"type": "output_text", "text": fenced},
+                            ],
+                        }
+                    ],
+                }
+            )
+        ),
+    )
+
+    decision = await adapter.decide(context())
+
+    assert decision.type is DecisionType.FINISH
+    assert decision.reason == "All criteria satisfied."
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_openai_responses_model_adapter_rejects_incomplete_response() -> None:
     adapter = OpenAIResponsesModelAdapter(
         "gpt-runtime",
@@ -1019,6 +1089,7 @@ async def test_openai_responses_model_adapter_rejects_incomplete_response() -> N
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_openai_responses_model_adapter_rejects_context_argument_contract_violation() -> None:
     adapter = OpenAIResponsesModelAdapter(
         "gpt-runtime",
@@ -1047,6 +1118,7 @@ async def test_openai_responses_model_adapter_rejects_context_argument_contract_
         await adapter.decide(context())
 
 
+@pytest.mark.unit
 def test_openai_responses_model_adapter_validates_configuration() -> None:
     with pytest.raises(ValueError, match="model name"):
         OpenAIResponsesModelAdapter("", api_key="secret")

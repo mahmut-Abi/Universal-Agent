@@ -27,12 +27,25 @@ from universal_agent.runtime.api import (
     session_summary_view,
     session_view,
 )
+from universal_agent.runtime.capabilities import CapabilityAdvisor
+from universal_agent.runtime.emission import EventEmitter
+from universal_agent.runtime.event_stream import (
+    BrokerBackedEventStream,
+    EventSignalSource,
+    EventSignalSubscription,
+    EventStreamSignal,
+    InMemoryEventSignalBroker,
+)
 from universal_agent.runtime.events import (
     EventCursorError,
     EventReader,
     EventSink,
+    EventWatcher,
     InMemoryEventSink,
+    heartbeat_event,
+    poll_event_reader,
 )
+from universal_agent.runtime.memory import MemoryConsultant
 from universal_agent.runtime.session import (
     DomainMismatchError,
     SessionHydrationError,
@@ -48,14 +61,23 @@ __all__ = [
     "ActionOutcome",
     "ActionRejected",
     "AgentRuntime",
+    "BrokerBackedEventStream",
+    "CapabilityAdvisor",
     "ConfirmationRequired",
     "DomainMismatchError",
     "EvaluationView",
     "EventCursorError",
+    "EventEmitter",
     "EventReader",
+    "EventSignalSource",
+    "EventSignalSubscription",
     "EventSink",
+    "EventStreamSignal",
+    "EventWatcher",
     "EvidenceView",
+    "InMemoryEventSignalBroker",
     "InMemoryEventSink",
+    "MemoryConsultant",
     "PendingActionView",
     "RuntimeAPI",
     "RuntimeEventBatch",
@@ -73,7 +95,9 @@ __all__ = [
     "Transition",
     "event_view",
     "evidence_view",
+    "heartbeat_event",
     "hydrate_session",
+    "poll_event_reader",
     "session_diagnostics_view",
     "session_summary_view",
     "session_view",

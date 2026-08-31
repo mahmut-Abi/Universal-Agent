@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from universal_agent.core import (
     AgentState,
@@ -11,6 +12,8 @@ from universal_agent.core import (
     JsonValue,
     Observation,
     PendingAction,
+    RuntimeEvent,
+    SessionId,
     SuccessCriterion,
     Task,
     TaskId,
@@ -19,6 +22,10 @@ from universal_agent.core import (
 )
 from universal_agent.evidence import Evidence
 from universal_agent.tasks import TaskGraphSnapshot, TaskNodeSnapshot
+
+if TYPE_CHECKING:
+    from universal_agent.state.event_store import EventStore
+    from universal_agent.state.store import SessionStore
 
 
 @dataclass(slots=True)
@@ -228,3 +235,60 @@ def _copy_mapping(values: JsonMapping) -> JsonMapping:
 
 def _copy_json(value: JsonValue) -> JsonValue:
     return to_json_value(value)
+
+
+class EventSourcedSessionStore:
+    """Session store that rebuilds snapshots from the event journal on a miss.
+
+    The runtime already records a ``SessionStateCommitted`` event (carrying the
+    full serialized snapshot) on every committed state change. When the
+    snapshot store has no record for a session, this store reconstructs the
+    snapshot by replaying those events instead of failing. This is what makes
+    resume/pause/cancel event-sourced: the snapshot store is authoritative, but
+    the event journal is the recovery source of truth.
+    """
+
+    def __init__(self, store: SessionStore, event_store: EventStore) -> None:
+        self._store = store
+        self._event_store = event_store
+
+    async def create_session(self, snapshot: SessionSnapshot) -> None:
+        await self._store.create_session(snapshot)
+
+    async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
+        return await self._store.list_sessions()
+
+    async def load_session(self, session_id: SessionId) -> SessionSnapshot:
+        from universal_agent.state.store import StateNotFoundError
+
+        try:
+            return await self._store.load_session(session_id)
+        except StateNotFoundError:
+            from universal_agent.state.event_store import rebuild_session_snapshot
+
+            snapshot = rebuild_session_snapshot(self._event_store, session_id)
+            await self._store.create_session(snapshot)
+            return snapshot
+
+    async def save_session(self, snapshot: SessionSnapshot) -> None:
+        await self._store.save_session(snapshot)
+
+    async def create(self, state: AgentState) -> None:
+        await self._store.create(state)
+
+    async def load(self, session_id: SessionId) -> AgentState:
+        return await self._store.load(session_id)
+
+    async def save(self, state: AgentState) -> None:
+        await self._store.save(state)
+
+    async def commit_session_event(self, snapshot: SessionSnapshot, event: RuntimeEvent) -> None:
+        from typing import cast
+
+        from universal_agent.state.store import StateEventCommitter
+
+        committer = self._store
+        if hasattr(committer, "commit_session_event"):
+            await cast(StateEventCommitter, committer).commit_session_event(snapshot, event)
+            return
+        await self._store.save_session(snapshot)

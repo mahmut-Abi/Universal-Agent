@@ -242,6 +242,7 @@ def remediation_goal_task() -> tuple[Goal, Task]:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_runtime_host_builds_json_http_model_from_config_secret_ref() -> None:
     transport = HostModelTransport()
     config = RuntimeConfig(
@@ -270,6 +271,7 @@ async def test_runtime_host_builds_json_http_model_from_config_secret_ref() -> N
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_runtime_host_builds_json_http_model_from_file_secret_ref(
     tmp_path: Path,
 ) -> None:
@@ -298,6 +300,7 @@ async def test_runtime_host_builds_json_http_model_from_file_secret_ref(
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_runtime_host_builds_openai_chat_completions_model_from_config_secret_ref() -> None:
     transport = OpenAIChatHostModelTransport()
     config = RuntimeConfig(
@@ -329,6 +332,7 @@ async def test_runtime_host_builds_openai_chat_completions_model_from_config_sec
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_runtime_host_builds_openai_chat_prompt_json_model_from_config_secret_ref() -> None:
     transport = OpenAIChatHostModelTransport()
     config = RuntimeConfig(
@@ -356,6 +360,7 @@ async def test_runtime_host_builds_openai_chat_prompt_json_model_from_config_sec
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_runtime_host_builds_openai_responses_model_from_config_secret_ref() -> None:
     transport = OpenAIHostModelTransport()
     config = RuntimeConfig(
@@ -383,6 +388,7 @@ async def test_runtime_host_builds_openai_responses_model_from_config_secret_ref
     assert "secret-value" not in str(config)
 
 
+@pytest.mark.unit
 def test_runtime_host_builds_scripted_model_from_default_config() -> None:
     adapter = build_configured_model_adapter(
         RuntimeConfig(),
@@ -411,6 +417,7 @@ def configured_host(
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_host_assembles_configured_sqlite_backed_service(tmp_path: Path) -> None:
     db_path = tmp_path / "runtime.sqlite3"
     backend = HostRemediationBackend()
@@ -457,6 +464,7 @@ def production_profile(path: Path) -> ProfileConfig:
     )
 
 
+@pytest.mark.unit
 def test_runtime_host_secret_resolution_drives_readiness_without_values() -> None:
     backend = HostRemediationBackend()
     config = RuntimeConfig(
@@ -497,6 +505,7 @@ def test_runtime_host_secret_resolution_drives_readiness_without_values() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_host_assembles_configured_file_backed_service(tmp_path: Path) -> None:
     backend = HostRemediationBackend()
     first = configured_host(
@@ -540,6 +549,7 @@ async def test_runtime_host_assembles_configured_file_backed_service(tmp_path: P
     assert [event.type for event in events][-1] == "GoalCompleted"
 
 
+@pytest.mark.unit
 def test_runtime_host_rejects_configured_domain_mismatch(tmp_path: Path) -> None:
     backend = HostRemediationBackend()
 
@@ -554,6 +564,7 @@ def test_runtime_host_rejects_configured_domain_mismatch(tmp_path: Path) -> None
         )
 
 
+@pytest.mark.behavior
 def test_runtime_host_uses_configured_file_backed_distributed_queue(tmp_path: Path) -> None:
     backend = HostRemediationBackend()
     queue_path = tmp_path / "coordination" / "work-queue.json"
@@ -584,6 +595,7 @@ def test_runtime_host_uses_configured_file_backed_distributed_queue(tmp_path: Pa
     assert snapshot.work_queue.items[0].priority == 7
 
 
+@pytest.mark.behavior
 def test_runtime_host_uses_configured_sqlite_backed_distributed_queue(tmp_path: Path) -> None:
     backend = HostRemediationBackend()
     queue_path = tmp_path / "coordination" / "runtime.sqlite3"
@@ -614,6 +626,7 @@ def test_runtime_host_uses_configured_sqlite_backed_distributed_queue(tmp_path: 
     assert snapshot.work_queue.items[0].priority == 7
 
 
+@pytest.mark.behavior
 def test_runtime_host_uses_configured_file_backed_distributed_locks(tmp_path: Path) -> None:
     backend = HostRemediationBackend()
     locks_path = tmp_path / "coordination" / "distributed-locks.json"
@@ -646,6 +659,7 @@ def test_runtime_host_uses_configured_file_backed_distributed_locks(tmp_path: Pa
     assert snapshot.locks[0].owner_id == DistributedLockOwnerId("worker-a")
 
 
+@pytest.mark.behavior
 def test_runtime_host_uses_configured_sqlite_backed_distributed_locks(tmp_path: Path) -> None:
     backend = HostRemediationBackend()
     locks_path = tmp_path / "coordination" / "distributed-locks.sqlite3"
@@ -678,6 +692,7 @@ def test_runtime_host_uses_configured_sqlite_backed_distributed_locks(tmp_path: 
     assert snapshot.locks[0].owner_id == DistributedLockOwnerId("worker-a")
 
 
+@pytest.mark.behavior
 def test_runtime_host_uses_configured_file_backed_worker_registry(tmp_path: Path) -> None:
     backend = HostRemediationBackend()
     workers_path = tmp_path / "coordination" / "workers.json"
@@ -710,6 +725,7 @@ def test_runtime_host_uses_configured_file_backed_worker_registry(tmp_path: Path
     assert snapshot.workers.workers[0].capabilities == ("agent_session",)
 
 
+@pytest.mark.behavior
 def test_runtime_host_uses_configured_sqlite_backed_worker_registry(tmp_path: Path) -> None:
     backend = HostRemediationBackend()
     workers_path = tmp_path / "coordination" / "workers.sqlite3"
@@ -743,6 +759,7 @@ def test_runtime_host_uses_configured_sqlite_backed_worker_registry(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_host_file_backed_coordination_resumes_scheduled_session(
     tmp_path: Path,
 ) -> None:
@@ -801,6 +818,7 @@ async def test_runtime_host_file_backed_coordination_resumes_scheduled_session(
     assert workers_path.exists()
 
 
+@pytest.mark.unit
 def test_runtime_host_from_profile_exposes_profile_catalog(tmp_path: Path) -> None:
     backend = HostRemediationBackend()
     profile = production_profile(tmp_path).to_profile()
@@ -819,6 +837,7 @@ def test_runtime_host_from_profile_exposes_profile_catalog(tmp_path: Path) -> No
     assert profiles[0].domain_name == "kubernetes"
 
 
+@pytest.mark.unit
 def test_runtime_host_loads_domains_from_configured_domain_package_paths(
     tmp_path: Path,
 ) -> None:
@@ -854,6 +873,7 @@ def test_runtime_host_loads_domains_from_configured_domain_package_paths(
     assert packages[0].root_path == str(package_root)
 
 
+@pytest.mark.unit
 def test_runtime_host_rejects_profile_domain_mismatch(tmp_path: Path) -> None:
     backend = HostRemediationBackend()
     profile = AgentProfile(

@@ -10,6 +10,7 @@ from universal_agent.core import JsonValue, immutable_json
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_client_gets_json_with_bearer_token_and_query() -> None:
     requests: list[httpx.Request] = []
 
@@ -38,6 +39,7 @@ async def test_agentd_client_gets_json_with_bearer_token_and_query() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agentd_client_uses_httpx_query_params_for_encoding() -> None:
     requests: list[httpx.Request] = []
 
@@ -64,6 +66,7 @@ async def test_agentd_client_uses_httpx_query_params_for_encoding() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_client_posts_json() -> None:
     requests: list[httpx.Request] = []
 
@@ -85,6 +88,7 @@ async def test_agentd_client_posts_json() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agentd_client_maps_structured_http_errors() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -108,6 +112,7 @@ async def test_agentd_client_maps_structured_http_errors() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agentd_client_rejects_invalid_json_response() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="not-json", request=request)

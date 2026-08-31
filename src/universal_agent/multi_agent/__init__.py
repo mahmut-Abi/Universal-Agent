@@ -21,6 +21,7 @@ from universal_agent.multi_agent.contracts import (
     decode_agent_task_request,
     decode_agent_task_result,
 )
+from universal_agent.multi_agent.delegation import DelegationManager
 from universal_agent.multi_agent.evaluation import (
     MultiAgentEvaluationCheck,
     MultiAgentEvaluationExpectations,
@@ -30,6 +31,15 @@ from universal_agent.multi_agent.evaluation import (
     decode_multi_agent_evaluation_report,
     multi_agent_evaluation_expectations_payload,
     multi_agent_evaluation_report_payload,
+)
+from universal_agent.multi_agent.ledger import (
+    DelegationEvent,
+    DelegationEventId,
+    DelegationLedger,
+    FileDelegationLedger,
+    InMemoryDelegationLedger,
+    decode_delegation_event,
+    delegation_event_payload,
 )
 from universal_agent.multi_agent.merge import (
     AgentResultMerge,
@@ -118,6 +128,12 @@ __all__ = [
     "AgentTaskUsage",
     "ConflictResolution",
     "ConflictResolutionStatus",
+    "DelegationEvent",
+    "DelegationEventId",
+    "DelegationLedger",
+    "DelegationManager",
+    "FileDelegationLedger",
+    "InMemoryDelegationLedger",
     "MultiAgentEvaluationCheck",
     "MultiAgentEvaluationExpectations",
     "MultiAgentEvaluationReport",
@@ -145,8 +161,10 @@ __all__ = [
     "decode_agent_task_request",
     "decode_agent_task_result",
     "decode_conflict_resolution",
+    "decode_delegation_event",
     "decode_multi_agent_evaluation_expectations",
     "decode_multi_agent_evaluation_report",
+    "delegation_event_payload",
     "multi_agent_evaluation_expectations_payload",
     "multi_agent_evaluation_report_payload",
     "rejected_agent_task_result",

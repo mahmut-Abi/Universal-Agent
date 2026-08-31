@@ -13,6 +13,7 @@ from universal_agent.evaluation.scenario_config import (
 )
 
 
+@pytest.mark.unit
 def test_evaluation_suite_config_parses_typed_scenarios() -> None:
     suite = evaluation_suite_from_mapping(
         {
@@ -94,6 +95,7 @@ def test_evaluation_suite_config_parses_typed_scenarios() -> None:
     assert policy.expectations.policy_denial_count == 1
 
 
+@pytest.mark.unit
 def test_evaluation_suite_config_parses_quality_gate() -> None:
     config = evaluation_suite_config_from_mapping(
         {
@@ -128,6 +130,7 @@ def test_evaluation_suite_config_parses_quality_gate() -> None:
     assert config.quality_gate.max_total_model_estimated_cost_micros == 100
 
 
+@pytest.mark.contract
 def test_load_evaluation_suite_reads_json_file(tmp_path: Path) -> None:
     path = tmp_path / "suite.json"
     path.write_text(
@@ -158,6 +161,7 @@ def test_load_evaluation_suite_reads_json_file(tmp_path: Path) -> None:
     assert suite.scenarios[0].expectations.expected_status is ExecutionStatus.COMPLETED
 
 
+@pytest.mark.unit
 def test_evaluation_suite_config_rejects_invalid_shapes() -> None:
     with pytest.raises(ValueError, match="scenarios is required"):
         evaluation_suite_from_mapping({"name": "broken"})

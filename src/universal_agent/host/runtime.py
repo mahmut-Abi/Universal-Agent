@@ -5,7 +5,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from universal_agent.core import Decision, DomainIdentity, JsonMapping, immutable_json
+from universal_agent.core import (
+    Decision,
+    DomainIdentity,
+    JsonMapping,
+    immutable_json,
+)
 from universal_agent.distributed import (
     DistributedRuntimeCoordinator,
     FileDistributedLockRegistry,
@@ -59,9 +64,10 @@ from universal_agent.security import (
 )
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore, SessionStore
+from universal_agent.state.event_store import EventStore
 
 
-class _EventStore(EventSink, EventReader, Protocol):
+class _EventStore(EventSink, EventReader, EventStore, Protocol):
     pass
 
 
@@ -216,8 +222,11 @@ class RuntimeHost:
             state_store=session_store,
             components=components,
             event_sink=event_store,
+            event_store=event_store,
             max_iterations=config.limits.max_iterations,
             max_recovery_steps=config.limits.max_recovery_steps,
+            max_total_cost_micros=config.limits.max_total_cost_micros,
+            max_total_tokens=config.limits.max_total_tokens,
             environment=config.environment,
             secret_provider=secret_provider,
             secret_resolution=secret_resolution,

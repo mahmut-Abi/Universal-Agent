@@ -19,6 +19,18 @@ class TaskManager:
         self._current_id = root.id
 
     @classmethod
+    def from_specs(cls, specs: tuple[TaskSpec, ...]) -> TaskManager:
+        if not specs:
+            raise ValueError("task specs must contain at least one task")
+        root_spec = specs[0]
+        root = _task_from_spec(root_spec)
+        manager = cls(root)
+        if root_spec.key != "root":
+            manager._keys = {root_spec.key: root.id}
+        manager.expand(specs[1:])
+        return manager
+
+    @classmethod
     def from_snapshot(cls, snapshot: TaskGraphSnapshot) -> TaskManager:
         if not snapshot.nodes:
             raise ValueError("task graph must contain at least one task")
@@ -76,7 +88,13 @@ class TaskManager:
             unknown = set(spec.depends_on) - self._tasks.keys()
             if unknown:
                 raise ValueError("task dependencies must reference existing tasks")
-            task = Task(spec.description, spec.required_criteria)
+            task = Task(
+                spec.description,
+                spec.required_criteria,
+                id=spec.task_id if spec.task_id is not None else TaskId(f"task:{spec.key}"),
+            )
+            if task.id in self._tasks:
+                raise ValueError(f"duplicate task id: {task.id}")
             self._tasks[task.id] = task
             self._keys[spec.key] = task.id
             self._dependencies[task.id] = spec.depends_on
@@ -102,7 +120,7 @@ class TaskManager:
 
     def has_unfinished(self) -> bool:
         return any(
-            task.status not in {TaskStatus.COMPLETED, TaskStatus.CANCELLED}
+            task.status not in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
             for task in self._tasks.values()
         )
 
@@ -111,3 +129,13 @@ class TaskManager:
             TopologicalSorter(self._dependencies).prepare()
         except CycleError as exc:
             raise ValueError("task graph contains a dependency cycle") from exc
+
+
+def _task_from_spec(spec: TaskSpec) -> Task:
+    if not spec.key or not spec.description:
+        raise ValueError("task key and description are required")
+    return Task(
+        spec.description,
+        spec.required_criteria,
+        id=spec.task_id if spec.task_id is not None else TaskId(f"task:{spec.key}"),
+    )

@@ -56,6 +56,7 @@ def inspect_capability() -> CapabilityDefinition:
     )
 
 
+@pytest.mark.unit
 def test_domain_runtime_spec_builds_loader_compatible_runtime() -> None:
     spec = DomainRuntimeSpec(
         name="widget",
@@ -80,6 +81,7 @@ def test_domain_runtime_spec_builds_loader_compatible_runtime() -> None:
     assert active.tools[0].definition.required_arguments == ("name",)
 
 
+@pytest.mark.unit
 def test_domain_runtime_spec_rejects_duplicate_declarations() -> None:
     with pytest.raises(DomainValidationError, match="duplicate capabilities"):
         DomainRuntimeSpec(
@@ -92,6 +94,7 @@ def test_domain_runtime_spec_rejects_duplicate_declarations() -> None:
         )
 
 
+@pytest.mark.unit
 def test_domain_runtime_spec_still_uses_loader_for_cross_reference_validation() -> None:
     runtime = build_domain_runtime(
         DomainRuntimeSpec(
@@ -108,6 +111,7 @@ def test_domain_runtime_spec_still_uses_loader_for_cross_reference_validation() 
         DomainLoader().load(runtime)
 
 
+@pytest.mark.unit
 def test_domain_runtime_spec_projects_to_domain_package_scaffold_metadata(
     tmp_path: Path,
 ) -> None:
@@ -145,6 +149,7 @@ def test_domain_runtime_spec_projects_to_domain_package_scaffold_metadata(
     assert (package_root / "resources" / "runbook.md").is_file()
 
 
+@pytest.mark.contract
 def test_domain_loader_reads_manifest_json_through_pydantic_payload(
     tmp_path: Path,
 ) -> None:
@@ -175,6 +180,7 @@ def test_domain_loader_reads_manifest_json_through_pydantic_payload(
     assert manifest.evaluator_names == ("criteria",)
 
 
+@pytest.mark.contract
 def test_domain_loader_manifest_json_rejects_non_string_references(
     tmp_path: Path,
 ) -> None:
@@ -199,6 +205,7 @@ def test_domain_loader_manifest_json_rejects_non_string_references(
         DomainLoader().manifest_from_json(manifest_path)
 
 
+@pytest.mark.contract
 def test_domain_loader_manifest_json_rejects_empty_references_with_pydantic_path(
     tmp_path: Path,
 ) -> None:

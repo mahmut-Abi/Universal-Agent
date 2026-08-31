@@ -157,6 +157,7 @@ def build_service_with_components(
     )
 
 
+@pytest.mark.unit
 def test_evaluation_suite_contract_rejects_unstable_recording_keys() -> None:
     goal, task = goal_task()
     scenario = EvaluationScenario("healthy smoke", goal, task, tags=("smoke", "kubernetes"))
@@ -180,6 +181,7 @@ def test_evaluation_suite_contract_rejects_unstable_recording_keys() -> None:
         EvaluationSuite("duplicate scenario suite", (scenario, scenario))
 
 
+@pytest.mark.unit
 def test_evaluation_scenario_selector_filters_by_kind_and_tags() -> None:
     goal, task = goal_task()
     smoke = EvaluationScenario(
@@ -217,6 +219,7 @@ def test_evaluation_scenario_selector_filters_by_kind_and_tags() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_evaluation_harness_rejects_empty_runs() -> None:
     service = build_service(HarnessBackend(), [])
 
@@ -228,6 +231,7 @@ async def test_evaluation_harness_rejects_empty_runs() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_evaluation_harness_runs_selected_named_suite() -> None:
     backend = HarnessBackend()
     service = build_service(backend, [scale_workload(replicas=0)])
@@ -294,6 +298,7 @@ async def test_evaluation_harness_runs_selected_named_suite() -> None:
     assert strict_gate_report.failed_checks[0].name == "policy_denial_rate"
 
 
+@pytest.mark.unit
 def test_evaluation_quality_gate_validates_thresholds() -> None:
     with pytest.raises(ValueError, match=r"min_pass_rate must be between 0\.0 and 1\.0"):
         EvaluationQualityGate(min_pass_rate=1.1)
@@ -345,6 +350,7 @@ def test_evaluation_quality_gate_validates_thresholds() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_evaluation_harness_passes_a_normal_scenario() -> None:
     backend = HarnessBackend()
     service = build_service(
@@ -400,6 +406,7 @@ async def test_evaluation_harness_passes_a_normal_scenario() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_evaluation_harness_reports_missing_expected_evidence_claims() -> None:
     backend = HarnessBackend()
     service = build_service(backend, [inspect_workload(), finish()])
@@ -427,6 +434,7 @@ async def test_evaluation_harness_reports_missing_expected_evidence_claims() -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_evaluation_harness_summarizes_model_usage_across_scenarios() -> None:
     first = build_service(
         HarnessBackend(),
@@ -469,6 +477,7 @@ async def test_evaluation_harness_summarizes_model_usage_across_scenarios() -> N
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_evaluation_harness_records_stable_suite_report() -> None:
     healthy = build_service(HarnessBackend(), [inspect_workload(), finish()])
     policy = build_service(HarnessBackend(), [scale_workload(replicas=0)])
@@ -514,6 +523,7 @@ async def test_evaluation_harness_records_stable_suite_report() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_evaluation_harness_reports_policy_regression_checks() -> None:
     backend = HarnessBackend()
     service = build_service(backend, [scale_workload(replicas=0)])
@@ -541,6 +551,7 @@ async def test_evaluation_harness_reports_policy_regression_checks() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_evaluation_harness_reports_decision_rejection_regression_checks() -> None:
     backend = HarnessBackend()
     service = build_service(backend, [inspect_without_required_name()])
@@ -569,6 +580,7 @@ async def test_evaluation_harness_reports_decision_rejection_regression_checks()
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_evaluation_harness_reports_resource_lock_regression_checks() -> None:
     backend = HarnessBackend()
     service, components = build_service_with_components(backend, [scale_workload(replicas=3)])
@@ -613,6 +625,7 @@ async def test_evaluation_harness_reports_resource_lock_regression_checks() -> N
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_evaluation_harness_reports_active_resource_lock_regression_checks() -> None:
     backend = HarnessBackend()
     service = build_service(
@@ -656,6 +669,7 @@ async def test_evaluation_harness_reports_active_resource_lock_regression_checks
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_evaluation_harness_reports_recovery_regression_checks() -> None:
     backend = HarnessBackend(initial_timeout=True)
     service = build_service(backend, [inspect_workload(), finish()])
@@ -681,6 +695,7 @@ async def test_evaluation_harness_reports_recovery_regression_checks() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_evaluation_quality_gate_reports_reliability_thresholds() -> None:
     backend = HarnessBackend(always_timeout=True)
     service = build_service(

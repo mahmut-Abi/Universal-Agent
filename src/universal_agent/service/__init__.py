@@ -1,4 +1,5 @@
 from universal_agent.operations import (
+    AuditIntegrityReportView,
     AuditRecordView,
     DoctorReportView,
     RuntimeCostView,
@@ -6,6 +7,9 @@ from universal_agent.operations import (
     RuntimeMetricsView,
     RuntimeTraceSpanView,
 )
+from universal_agent.service.catalog_service import CatalogService
+from universal_agent.service.distributed import DistributedService
+from universal_agent.service.operations import OperationsService
 from universal_agent.service.runtime import RuntimeService
 from universal_agent.service.views import (
     CapabilityView,
@@ -41,9 +45,12 @@ from universal_agent.service.views import (
 )
 
 __all__ = [
+    "AuditIntegrityReportView",
     "AuditRecordView",
     "CapabilityView",
+    "CatalogService",
     "DistributedPendingActionSchedulingResult",
+    "DistributedService",
     "DoctorReportView",
     "DomainPackageView",
     "DomainView",
@@ -54,6 +61,7 @@ __all__ = [
     "MultiAgentInstanceView",
     "MultiAgentProfileView",
     "MultiAgentView",
+    "OperationsService",
     "PolicyView",
     "ProfileView",
     "ReadyView",

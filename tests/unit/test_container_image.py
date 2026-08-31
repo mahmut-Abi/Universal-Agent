@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.unit
 def test_container_image_uses_generic_agentd_entrypoint() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
@@ -16,6 +19,7 @@ def test_container_image_uses_generic_agentd_entrypoint() -> None:
     assert "kubernetes" not in dockerfile.lower()
 
 
+@pytest.mark.unit
 def test_container_image_installs_from_locked_runtime_dependencies() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
@@ -28,6 +32,7 @@ def test_container_image_installs_from_locked_runtime_dependencies() -> None:
     assert "pip install" not in dockerfile
 
 
+@pytest.mark.unit
 def test_container_image_declares_production_runtime_metadata() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
@@ -43,6 +48,7 @@ def test_container_image_declares_production_runtime_metadata() -> None:
     assert "USER agent" in dockerfile
 
 
+@pytest.mark.unit
 def test_container_build_context_excludes_local_state_and_caches() -> None:
     ignored = set((ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines())
 

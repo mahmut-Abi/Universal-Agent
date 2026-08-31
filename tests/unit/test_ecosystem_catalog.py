@@ -155,6 +155,7 @@ def write_profile(path: Path) -> None:
     )
 
 
+@pytest.mark.unit
 def test_ecosystem_catalog_discovers_all_local_ecosystem_artifacts(tmp_path: Path) -> None:
     domain_root = tmp_path / "domains"
     dataset_root = tmp_path / "datasets"
@@ -179,6 +180,7 @@ def test_ecosystem_catalog_discovers_all_local_ecosystem_artifacts(tmp_path: Pat
     assert catalog.verify().passed is True
 
 
+@pytest.mark.unit
 def test_ecosystem_catalog_can_be_empty_or_partial(tmp_path: Path) -> None:
     profile_root = tmp_path / "profiles"
     write_profile(profile_root / "profile.json")
@@ -192,6 +194,7 @@ def test_ecosystem_catalog_can_be_empty_or_partial(tmp_path: Path) -> None:
     assert partial.evaluation_datasets == ()
 
 
+@pytest.mark.unit
 def test_ecosystem_catalog_verification_reports_missing_domain_references(
     tmp_path: Path,
 ) -> None:
@@ -213,6 +216,7 @@ def test_ecosystem_catalog_verification_reports_missing_domain_references(
     assert "kubernetes@1.0.0" in failed["profile_domains_registered"]
 
 
+@pytest.mark.contract
 def test_ecosystem_registry_manifest_round_trips_catalog_metadata(tmp_path: Path) -> None:
     domain_root = tmp_path / "domains"
     dataset_root = tmp_path / "datasets"
@@ -290,6 +294,7 @@ def test_ecosystem_registry_manifest_round_trips_catalog_metadata(tmp_path: Path
     assert overwritten.overwritten is True
 
 
+@pytest.mark.unit
 def test_load_ecosystem_registry_manifest_rejects_non_object_manifest(tmp_path: Path) -> None:
     manifest_path = tmp_path / "ecosystem.json"
     manifest_path.write_text("[]", encoding="utf-8")
@@ -301,6 +306,7 @@ def test_load_ecosystem_registry_manifest_rejects_non_object_manifest(tmp_path: 
         load_ecosystem_registry_manifest(manifest_path)
 
 
+@pytest.mark.contract
 def test_ecosystem_registry_manifest_accepts_legacy_package_refs_without_optional_metadata() -> (
     None
 ):
@@ -331,6 +337,7 @@ def test_ecosystem_registry_manifest_accepts_legacy_package_refs_without_optiona
     assert decoded.domain_packages[0].manifest_sha256 == ""
 
 
+@pytest.mark.contract
 def test_ecosystem_registry_manifest_rejects_invalid_runtime_api_specifier() -> None:
     payload: dict[str, object] = {
         "apiVersion": "agent.nantian.dev/v1alpha1",
@@ -354,6 +361,7 @@ def test_ecosystem_registry_manifest_rejects_invalid_runtime_api_specifier() -> 
         decode_ecosystem_registry_manifest(cast(JsonMapping, payload))
 
 
+@pytest.mark.contract
 def test_ecosystem_registry_manifest_rejects_invalid_sha256_digest() -> None:
     payload: dict[str, object] = {
         "apiVersion": "agent.nantian.dev/v1alpha1",
@@ -380,6 +388,7 @@ def test_ecosystem_registry_manifest_rejects_invalid_sha256_digest() -> None:
         decode_ecosystem_registry_manifest(cast(JsonMapping, payload))
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_index_queries_exported_manifest(tmp_path: Path) -> None:
     domain_root = tmp_path / "domains"
     dataset_root = tmp_path / "datasets"
@@ -430,6 +439,7 @@ def test_ecosystem_registry_index_queries_exported_manifest(tmp_path: Path) -> N
         ambiguous.domain_package("kubernetes")
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_index_verification_reports_missing_references() -> None:
     index = EcosystemRegistryIndex(
         EcosystemRegistryManifest(
@@ -468,6 +478,7 @@ def test_ecosystem_registry_index_verification_reports_missing_references() -> N
     assert "observability@1.0.0" in failed["package_dependencies_registered"]
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_index_verification_reports_dependency_cycles() -> None:
     index = EcosystemRegistryIndex(
         EcosystemRegistryManifest(
@@ -502,6 +513,7 @@ def test_ecosystem_registry_index_verification_reports_dependency_cycles() -> No
     assert "beta@1.0.0" in failed["package_dependencies_acyclic"]
 
 
+@pytest.mark.unit
 def test_file_ecosystem_registry_store_persists_and_lists_manifests(tmp_path: Path) -> None:
     first = EcosystemRegistryManifest(
         api_version="agent.nantian.dev/v1alpha1",
@@ -542,6 +554,7 @@ def test_file_ecosystem_registry_store_persists_and_lists_manifests(tmp_path: Pa
         store.save(first, overwrite=False)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_plans_and_installs_domain_packages(
     tmp_path: Path,
 ) -> None:
@@ -559,6 +572,7 @@ def test_ecosystem_registry_plans_and_installs_domain_packages(
     assert result.registry.get_by_name("kubernetes").manifest.capabilities == ("inspect_workload",)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_domain_package_install_plan_sorts_dependencies_first(
     tmp_path: Path,
 ) -> None:
@@ -583,6 +597,7 @@ def test_ecosystem_registry_domain_package_install_plan_sorts_dependencies_first
     )
 
 
+@pytest.mark.behavior
 def test_ecosystem_registry_domain_package_install_plan_reports_cycles_without_preverify(
     tmp_path: Path,
 ) -> None:
@@ -603,6 +618,7 @@ def test_ecosystem_registry_domain_package_install_plan_reports_cycles_without_p
         plan_ecosystem_domain_package_install(manifest, verify=False)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_domain_package_install_checks_loaded_manifest_dependencies(
     tmp_path: Path,
 ) -> None:
@@ -631,6 +647,7 @@ def test_ecosystem_registry_domain_package_install_checks_loaded_manifest_depend
         plan_ecosystem_domain_package_install(manifest)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_plans_and_installs_full_ecosystem_artifacts(
     tmp_path: Path,
 ) -> None:
@@ -675,6 +692,7 @@ def test_ecosystem_registry_plans_and_installs_full_ecosystem_artifacts(
         )
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_installs_domain_packages_from_relative_paths(
     tmp_path: Path,
 ) -> None:
@@ -701,6 +719,7 @@ def test_ecosystem_registry_installs_domain_packages_from_relative_paths(
     assert result.registry.identities() == (DomainIdentity("kubernetes", "1.0.0"),)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_refuses_unverified_signature_metadata_by_default(
     tmp_path: Path,
 ) -> None:
@@ -736,6 +755,7 @@ def test_ecosystem_registry_install_refuses_unverified_signature_metadata_by_def
     assert allowed.domain_packages.identities == (DomainIdentity("kubernetes", "1.0.0"),)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_accepts_verified_signature_metadata(
     tmp_path: Path,
 ) -> None:
@@ -766,6 +786,7 @@ def test_ecosystem_registry_install_accepts_verified_signature_metadata(
     assert plan.domain_packages.identities == (DomainIdentity("kubernetes", "1.0.0"),)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_rejects_failed_signature_verification(
     tmp_path: Path,
 ) -> None:
@@ -789,6 +810,7 @@ def test_ecosystem_registry_install_rejects_failed_signature_verification(
         )
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_can_require_signed_registry(
     tmp_path: Path,
 ) -> None:
@@ -803,6 +825,7 @@ def test_ecosystem_registry_install_can_require_signed_registry(
         )
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_refuses_paths_outside_registry_base(
     tmp_path: Path,
 ) -> None:
@@ -829,6 +852,7 @@ def test_ecosystem_registry_install_refuses_paths_outside_registry_base(
         install_ecosystem_domain_packages(manifest, base_path=base_root)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_refuses_missing_domain_package_resources(
     tmp_path: Path,
 ) -> None:
@@ -842,6 +866,7 @@ def test_ecosystem_registry_install_refuses_missing_domain_package_resources(
         install_ecosystem_domain_packages(manifest)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_refuses_tampered_domain_manifest(
     tmp_path: Path,
 ) -> None:
@@ -877,6 +902,7 @@ def test_ecosystem_registry_install_refuses_tampered_domain_manifest(
         install_ecosystem_domain_packages(manifest)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_refuses_tampered_dataset_manifest(
     tmp_path: Path,
 ) -> None:
@@ -908,6 +934,7 @@ def test_ecosystem_registry_install_refuses_tampered_dataset_manifest(
         plan_ecosystem_install(manifest)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_refuses_tampered_profile_config(
     tmp_path: Path,
 ) -> None:
@@ -930,6 +957,7 @@ def test_ecosystem_registry_install_refuses_tampered_profile_config(
         plan_ecosystem_install(manifest)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_refuses_identity_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -954,6 +982,7 @@ def test_ecosystem_registry_install_refuses_identity_mismatch(
         install_ecosystem_domain_packages(manifest)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_refuses_domain_package_metadata_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -984,6 +1013,7 @@ def test_ecosystem_registry_install_refuses_domain_package_metadata_mismatch(
         install_ecosystem_domain_packages(manifest)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_refuses_evaluation_dataset_metadata_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -1026,6 +1056,7 @@ def test_ecosystem_registry_install_refuses_evaluation_dataset_metadata_mismatch
         plan_ecosystem_install(manifest)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_refuses_profile_metadata_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -1069,6 +1100,7 @@ def test_ecosystem_registry_install_refuses_profile_metadata_mismatch(
         plan_ecosystem_install(manifest)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_refuses_missing_paths_and_duplicates(
     tmp_path: Path,
 ) -> None:
@@ -1094,6 +1126,7 @@ def test_ecosystem_registry_install_refuses_missing_paths_and_duplicates(
     assert registry.identities() == (DomainIdentity("kubernetes", "1.0.0"),)
 
 
+@pytest.mark.unit
 def test_ecosystem_registry_install_requires_verified_references_by_default() -> None:
     manifest = EcosystemRegistryManifest(
         api_version="agent.nantian.dev/v1alpha1",

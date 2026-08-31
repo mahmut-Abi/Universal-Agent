@@ -80,6 +80,7 @@ def write_dataset(root: Path, payload: JsonMapping) -> Path:
     return manifest_path
 
 
+@pytest.mark.contract
 def test_decode_evaluation_dataset_manifest_round_trips_catalog_metadata() -> None:
     payload = dataset_payload()
     metadata = payload["metadata"]
@@ -98,6 +99,7 @@ def test_decode_evaluation_dataset_manifest_round_trips_catalog_metadata() -> No
     assert decoded.suites[0].path == "suites/healthy.json"
 
 
+@pytest.mark.unit
 def test_load_evaluation_dataset_validates_referenced_suite_file(tmp_path: Path) -> None:
     manifest_path = write_dataset(tmp_path / "kubernetes-dataset", dataset_payload())
 
@@ -108,6 +110,7 @@ def test_load_evaluation_dataset_validates_referenced_suite_file(tmp_path: Path)
     assert dataset.suite_path(dataset.manifest.suites[0]).name == "healthy.json"
 
 
+@pytest.mark.unit
 def test_evaluation_dataset_registry_discovers_and_filters_datasets(tmp_path: Path) -> None:
     write_dataset(tmp_path / "beta-dataset", dataset_payload("beta", tags=("database",)))
     write_dataset(tmp_path / "alpha-dataset", dataset_payload("alpha", tags=("kubernetes",)))
@@ -127,6 +130,7 @@ def test_evaluation_dataset_registry_discovers_and_filters_datasets(tmp_path: Pa
     ] == ["alpha", "beta"]
 
 
+@pytest.mark.unit
 def test_evaluation_dataset_registry_reports_duplicate_missing_and_ambiguous_datasets(
     tmp_path: Path,
 ) -> None:
@@ -145,6 +149,7 @@ def test_evaluation_dataset_registry_reports_duplicate_missing_and_ambiguous_dat
         registry.get_by_name("alpha")
 
 
+@pytest.mark.contract
 def test_load_evaluation_dataset_rejects_missing_suite_and_unsafe_paths(tmp_path: Path) -> None:
     root = tmp_path / "broken-dataset"
     root.mkdir()
@@ -157,6 +162,7 @@ def test_load_evaluation_dataset_rejects_missing_suite_and_unsafe_paths(tmp_path
         decode_evaluation_dataset_manifest(dataset_payload(suite_path="../suite.json"))
 
 
+@pytest.mark.unit
 def test_load_evaluation_dataset_rejects_non_object_manifest(tmp_path: Path) -> None:
     root = tmp_path / "broken-dataset"
     root.mkdir()
@@ -169,6 +175,7 @@ def test_load_evaluation_dataset_rejects_non_object_manifest(tmp_path: Path) -> 
         load_evaluation_dataset(root)
 
 
+@pytest.mark.contract
 def test_decode_evaluation_dataset_manifest_reports_indexed_empty_tag_errors() -> None:
     metadata_payload = dataset_payload(tags=("kubernetes", " "))
 
@@ -192,6 +199,7 @@ def test_decode_evaluation_dataset_manifest_reports_indexed_empty_tag_errors() -
         decode_evaluation_dataset_manifest(suite_payload)
 
 
+@pytest.mark.unit
 def test_evaluation_dataset_verification_checks_local_manifest_and_suites(
     tmp_path: Path,
 ) -> None:
@@ -216,6 +224,7 @@ def test_evaluation_dataset_verification_checks_local_manifest_and_suites(
     assert "suite file not found" in failed_checks["dataset_suites_load"]
 
 
+@pytest.mark.unit
 def test_evaluation_dataset_registry_verification_checks_all_registered_datasets(
     tmp_path: Path,
 ) -> None:

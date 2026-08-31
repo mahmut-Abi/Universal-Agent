@@ -11,6 +11,7 @@ from universal_agent.coordination import (
 from universal_agent.core import ActionId, SessionId, TaskId
 
 
+@pytest.mark.unit
 def test_resource_lock_registry_acquires_reenters_and_releases() -> None:
     registry = ResourceLockRegistry()
 
@@ -34,6 +35,7 @@ def test_resource_lock_registry_acquires_reenters_and_releases() -> None:
     assert registry.active() == ()
 
 
+@pytest.mark.unit
 def test_resource_lock_registry_rejects_conflicting_action() -> None:
     registry = ResourceLockRegistry()
     registry.acquire(
@@ -52,6 +54,7 @@ def test_resource_lock_registry_rejects_conflicting_action() -> None:
         )
 
 
+@pytest.mark.unit
 def test_resource_lock_registry_rejects_same_action_from_different_session() -> None:
     registry = ResourceLockRegistry()
     registry.acquire(
@@ -70,6 +73,7 @@ def test_resource_lock_registry_rejects_same_action_from_different_session() -> 
         )
 
 
+@pytest.mark.unit
 def test_resource_lock_registry_rejects_empty_resource_key() -> None:
     registry = ResourceLockRegistry()
 
@@ -82,6 +86,7 @@ def test_resource_lock_registry_rejects_empty_resource_key() -> None:
         )
 
 
+@pytest.mark.unit
 def test_resource_version_registry_allows_unknown_current_version() -> None:
     registry = ResourceVersionRegistry()
 
@@ -95,6 +100,7 @@ def test_resource_version_registry_allows_unknown_current_version() -> None:
     assert check.reason == "current resource version is unknown"
 
 
+@pytest.mark.unit
 def test_resource_version_registry_detects_matching_current_version() -> None:
     registry = ResourceVersionRegistry({"deployment/example": "rv-1"})
 
@@ -108,6 +114,7 @@ def test_resource_version_registry_detects_matching_current_version() -> None:
     assert check.reason == "resource version matched"
 
 
+@pytest.mark.unit
 def test_resource_version_registry_rejects_stale_expected_version() -> None:
     registry = ResourceVersionRegistry({"deployment/example": "rv-2"})
 

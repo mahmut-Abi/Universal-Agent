@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
@@ -29,7 +30,7 @@ from universal_agent.core import (
 )
 from universal_agent.evidence import Evidence, EvidenceId
 from universal_agent.runtime.agent import AgentRuntime
-from universal_agent.runtime.events import EventReader, EventSink
+from universal_agent.runtime.events import EventReader, EventSink, EventWatcher, poll_event_reader
 from universal_agent.state import SessionSnapshot, SessionStore
 
 
@@ -132,6 +133,8 @@ class EvidenceView:
     source: str
     confidence: float
     observed_at: datetime
+    domain_name: str = ""
+    domain_version: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,8 +198,23 @@ class RuntimeAPI:
         if self._event_sink is None and hasattr(event_reader, "emit"):
             self._event_sink = cast(EventSink, event_reader)
 
-    async def run_goal(self, goal: Goal, task: Task) -> RuntimeRun:
-        result = await self._runtime.run(goal, task)
+    async def run_goal(
+        self,
+        goal: Goal,
+        task: Task,
+        *,
+        initial_state: JsonMapping | None = None,
+    ) -> RuntimeRun:
+        result = await self._runtime.run(goal, task, initial_state=initial_state)
+        return RuntimeRun(result, await self.get_session(result.session_id))
+
+    async def run_compiled_goal(
+        self,
+        goal: Goal,
+        *,
+        initial_state: JsonMapping | None = None,
+    ) -> RuntimeRun:
+        result = await self._runtime.run_compiled(goal, initial_state=initial_state)
         return RuntimeRun(result, await self.get_session(result.session_id))
 
     async def resume_session(
@@ -284,6 +302,31 @@ class RuntimeAPI:
             views,
             views[-1].event_id if views else _cursor_value(after_event_id),
         )
+
+    async def watch_events(
+        self,
+        session_id: SessionId,
+        *,
+        after_event_id: EventId | None = None,
+        heartbeat_interval: float = 15.0,
+    ) -> AsyncIterator[RuntimeEventView]:
+        """Yield events as they arrive for real-time SSE streaming."""
+        reader = self._event_reader
+        if isinstance(reader, EventWatcher):
+            stream = reader.watch_events(
+                session_id,
+                after_event_id=after_event_id,
+                heartbeat_interval=heartbeat_interval,
+            )
+        else:
+            stream = poll_event_reader(
+                reader,
+                session_id,
+                after_event_id=after_event_id,
+                heartbeat_interval=heartbeat_interval,
+            )
+        async for event in stream:
+            yield event_view(event)
 
     async def record_repair_events(
         self,
@@ -466,6 +509,8 @@ def evidence_view(evidence: Evidence) -> EvidenceView:
         evidence.source,
         evidence.confidence,
         evidence.observed_at,
+        evidence.domain_name,
+        evidence.domain_version,
     )
 
 

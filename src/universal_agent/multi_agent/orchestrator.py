@@ -39,6 +39,8 @@ from universal_agent.multi_agent.contracts import (
     decode_agent_task_request,
     decode_agent_task_result,
 )
+from universal_agent.multi_agent.delegation import DelegationManager
+from universal_agent.multi_agent.merge import AgentResultMerge, AgentResultMerger
 from universal_agent.multi_agent.registry import (
     AgentId,
     AgentInstanceRecord,
@@ -242,13 +244,32 @@ class AgentOrchestrator:
         registry: AgentRegistry,
         executors: Mapping[AgentId, AgentExecutor] | None = None,
         delegation_state: AgentDelegationState | None = None,
+        *,
+        max_concurrency: int | None = None,
+        delegation_manager: DelegationManager | None = None,
     ) -> None:
         self._registry = registry
         self._executors: dict[AgentId, AgentExecutor] = dict(executors or {})
         self._child_counts: defaultdict[AgentTaskId, int] = defaultdict(int)
         self._task_depths: dict[AgentTaskId, int] = {}
+        self._max_concurrency = max_concurrency
+        self._delegation_manager = delegation_manager or DelegationManager()
         if delegation_state is not None:
             self._restore_delegation_state(delegation_state)
+
+    @classmethod
+    def from_runtime_service(
+        cls,
+        service: RuntimeAPI,
+        registry: AgentRegistry,
+        *,
+        max_concurrency: int | None = None,
+    ) -> AgentOrchestrator:
+        """Create an orchestrator from a RuntimeService."""
+        return cls(
+            registry=registry,
+            max_concurrency=max_concurrency,
+        )
 
     def register_executor(self, agent_id: AgentId, executor: AgentExecutor) -> None:
         self._registry.instance(agent_id)
@@ -287,7 +308,22 @@ class AgentOrchestrator:
                 f"agent executor not registered: {instance.agent_id}"
             )
         self._reserve_delegation(request)
-        return await self._execute_on_instance(instance, executor, request)
+        delegation = self._delegation_manager.create_delegation(
+            from_agent=AgentId("orchestrator"),
+            to_agent=instance.agent_id,
+            contract=request,
+        )
+        self._delegation_manager.start(delegation.delegation_id)
+        try:
+            result = await self._execute_on_instance(instance, executor, request)
+            if result.status is AgentTaskResultStatus.COMPLETED:
+                self._delegation_manager.complete(delegation.delegation_id, result)
+            else:
+                self._delegation_manager.fail(delegation.delegation_id, result.reason)
+            return result
+        except Exception as exc:
+            self._delegation_manager.fail(delegation.delegation_id, str(exc))
+            raise
 
     async def delegate_many(
         self,
@@ -320,8 +356,12 @@ class AgentOrchestrator:
                     "dependency did not complete: " + _failed_dependency_reason(spec, results),
                     error_code=ErrorCode.INVALID_STATE,
                 )
-            delegated = await asyncio.gather(
-                *(self._delegate_spec(spec) for spec in delegated_specs)
+            delegated = (
+                await asyncio.gather(
+                    *(self._delegate_spec_with_tracking(spec) for spec in delegated_specs)
+                )
+                if delegated_specs
+                else []
             )
             for spec, result in zip(delegated_specs, delegated, strict=True):
                 results[spec.request.task_id] = result
@@ -352,6 +392,27 @@ class AgentOrchestrator:
                 reason=f"agent executor failed: {type(exc).__name__}: {exc}",
                 error_code=ErrorCode.UNKNOWN_EXECUTION,
             )
+
+    async def _delegate_spec_with_tracking(self, spec: AgentDelegationSpec) -> AgentTaskResult:
+        """Delegate spec; delegation lifecycle is tracked by delegate()."""
+        try:
+            return await self._delegate_spec(spec)
+        except Exception as exc:
+            return AgentTaskResult(
+                spec.request.task_id,
+                AgentTaskResultStatus.FAILED,
+                reason=f"agent executor failed: {type(exc).__name__}: {exc}",
+                error_code=ErrorCode.UNKNOWN_EXECUTION,
+            )
+
+    async def delegate_and_merge(
+        self,
+        specs: tuple[AgentDelegationSpec, ...],
+    ) -> AgentResultMerge:
+        """Delegate multiple tasks and merge results into a single AgentResultMerge."""
+        batch = await self.delegate_many(specs)
+        merger = AgentResultMerger()
+        return merger.merge(batch.results)
 
     async def _execute_on_instance(
         self,
@@ -617,16 +678,6 @@ def _has_failed_dependency(
 ) -> bool:
     return any(
         task_id in results and results[task_id].status is not AgentTaskResultStatus.COMPLETED
-        for task_id in spec.depends_on
-    )
-
-
-def _dependencies_completed(
-    spec: AgentDelegationSpec,
-    results: Mapping[AgentTaskId, AgentTaskResult],
-) -> bool:
-    return all(
-        task_id in results and results[task_id].status is AgentTaskResultStatus.COMPLETED
         for task_id in spec.depends_on
     )
 

@@ -36,9 +36,15 @@ from universal_agent.core import (
 )
 from universal_agent.domain import ActionArgumentContext, RuntimeComponents
 from universal_agent.observation import ObservationFactory
+from universal_agent.runtime.idempotency import (
+    IdempotencyKey,
+    IdempotencyStore,
+    InMemoryIdempotencyStore,
+)
 from universal_agent.runtime.session import SessionRuntimeState
 from universal_agent.security import SecretProvider, SecretResolutionReport
-from universal_agent.tools import ToolRuntime
+from universal_agent.security.sandbox import Sandbox, SandboxActionContext, SandboxViolation
+from universal_agent.tools import Tool, ToolRuntime
 
 EmitFn = Callable[[str, ActionId | None, dict[str, object]], Awaitable[None]]
 
@@ -79,6 +85,8 @@ class ActionExecutor:
     environment: JsonMapping
     secret_provider: SecretProvider | None = None
     secret_resolution: SecretResolutionReport | None = None
+    sandbox: Sandbox | None = None
+    idempotency_store: IdempotencyStore = field(default_factory=InMemoryIdempotencyStore)
     _tool_runtime: ToolRuntime = field(init=False)
     _observations: ObservationFactory = field(init=False)
 
@@ -273,6 +281,9 @@ class ActionExecutor:
         )
         if policy_result.effect is PolicyEffect.DENY:
             return ActionRejected(ErrorCode.POLICY_DENIED, policy_result.reason)
+        sandbox_result = await self._check_sandbox(capability, tool, pending, emit)
+        if sandbox_result is not None:
+            return sandbox_result
         version_check = await self._check_resource_version(pending, emit)
         if isinstance(version_check, ActionRejected):
             return version_check
@@ -282,12 +293,33 @@ class ActionExecutor:
                 return lock
             state.pending_action = pending
             return ConfirmationRequired(pending, policy_result.reason)
+        # Only record idempotency key when we're actually going to execute (no confirmation needed)
+        idempotency_key = IdempotencyKey(pending.idempotency_key)
+        idempotency_recorded = False
+        if tool.definition.side_effect is not SideEffect.NONE:
+            idempotency_recorded = self.idempotency_store.record(idempotency_key)
+            await emit(
+                "IdempotencyChecked",
+                pending.action_id,
+                {
+                    "matched": not idempotency_recorded,
+                    "parameters_hash": pending.parameters_hash,
+                },
+            )
+            if not idempotency_recorded:
+                return ActionRejected(
+                    ErrorCode.INVALID_STATE,
+                    "side-effecting action already has an execution record; reconcile before retry",
+                )
         state.pending_action = None
         lock = await self._acquire_resource_lock(session, pending, emit)
         if isinstance(lock, ActionRejected):
             return lock
         try:
-            return await self._invoke(session, pending, emit)
+            observed = await self._invoke(session, pending, emit)
+            if idempotency_recorded and observed.observation.status is ObservationStatus.FAILED:
+                self.idempotency_store.forget(idempotency_key)
+            return observed
         finally:
             await self._release_resource_lock(lock, emit)
 
@@ -355,6 +387,51 @@ class ActionExecutor:
             {"observation_id": observation.id, "status": observation.status.value},
         )
         return ActionObserved(pending, observation)
+
+    async def _check_sandbox(
+        self,
+        capability: CapabilityDefinition,
+        tool: Tool,
+        pending: PendingAction,
+        emit: EmitFn,
+    ) -> ActionRejected | None:
+        if self.sandbox is None:
+            return None
+        try:
+            result = self.sandbox.guard(
+                SandboxActionContext(
+                    risk=tool.definition.risk,
+                    side_effect=tool.definition.side_effect,
+                    path=pending.resource_key or pending.target,
+                    tool=tool,
+                    arguments=pending.arguments,
+                )
+            )
+        except SandboxViolation as exc:
+            await emit(
+                "SandboxDenied",
+                pending.action_id,
+                {
+                    "capability": capability.name,
+                    "tool_name": tool.definition.name,
+                    "reason": str(exc),
+                },
+            )
+            return ActionRejected(ErrorCode.POLICY_DENIED, str(exc))
+        await emit(
+            "SandboxChecked",
+            pending.action_id,
+            {
+                "capability": capability.name,
+                "tool_name": tool.definition.name,
+                "permitted": result.permitted,
+                "executed": result.executed,
+                "reason": result.reason,
+            },
+        )
+        if not result.permitted:
+            return ActionRejected(ErrorCode.POLICY_DENIED, result.reason)
+        return None
 
     async def _check_resource_version(
         self,

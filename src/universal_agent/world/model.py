@@ -34,11 +34,13 @@ class FactWorldUpdater:
 class InMemoryWorldModel:
     def __init__(self) -> None:
         self._facts: dict[tuple[SessionId, str, str], list[Evidence]] = {}
+        self._subject_claims: dict[tuple[SessionId, str], set[str]] = {}
         self._entities: dict[tuple[SessionId, EntityId], WorldEntity] = {}
         self._relations: dict[
             tuple[SessionId, EntityId, str, EntityId],
             WorldRelation,
         ] = {}
+        self._snapshot_cache: dict[SessionId, WorldSnapshot] = {}
 
     def apply_fact(self, evidence: Evidence) -> bool:
         key = (evidence.session_id, evidence.subject, evidence.claim)
@@ -46,7 +48,11 @@ class InMemoryWorldModel:
         if any(item.id == evidence.id for item in values):
             return False
         values.append(evidence)
+        subject_key = (evidence.session_id, evidence.subject)
+        self._subject_claims.setdefault(subject_key, set()).add(evidence.claim)
         self._refresh_entity_attributes(evidence.session_id, EntityId(evidence.subject))
+        # Invalidate snapshot cache for this session.
+        self._snapshot_cache.pop(evidence.session_id, None)
         return True
 
     def apply_entity(self, session_id: SessionId, entity: WorldEntity) -> bool:
@@ -67,6 +73,8 @@ class InMemoryWorldModel:
         if existing == merged:
             return False
         self._entities[key] = merged
+        # Invalidate snapshot cache for this session.
+        self._snapshot_cache.pop(session_id, None)
         return True
 
     def apply_relation(self, session_id: SessionId, relation: WorldRelation) -> bool:
@@ -75,6 +83,8 @@ class InMemoryWorldModel:
         existing = self._relations.get(key)
         if existing is None:
             self._relations[key] = relation
+            # Invalidate snapshot cache for this session.
+            self._snapshot_cache.pop(session_id, None)
             return True
         merged = WorldRelation(
             relation.source,
@@ -85,6 +95,8 @@ class InMemoryWorldModel:
         if existing == merged:
             return False
         self._relations[key] = merged
+        # Invalidate snapshot cache for this session.
+        self._snapshot_cache.pop(session_id, None)
         return True
 
     def forget(self, session_id: SessionId) -> None:
@@ -95,6 +107,7 @@ class InMemoryWorldModel:
         self._relations = {
             key: value for key, value in self._relations.items() if key[0] != session_id
         }
+        self._snapshot_cache.pop(session_id, None)
 
     def rebuild(
         self,
@@ -120,6 +133,10 @@ class InMemoryWorldModel:
         subjects: tuple[str, ...] = (),
         claims: tuple[str, ...] = (),
     ) -> WorldSnapshot:
+        # Return cached snapshot if available and no filters applied (optimization).
+        if not subjects and not claims and session_id in self._snapshot_cache:
+            return self._snapshot_cache[session_id]
+
         facts: list[WorldFact] = []
         histories: list[WorldFactHistory] = []
         for (stored_session, subject, claim), evidence in self._facts.items():
@@ -189,13 +206,17 @@ class InMemoryWorldModel:
                 key=lambda item: (str(item.source), item.relation, str(item.target)),
             )
         )
-        return WorldSnapshot(
+        result = WorldSnapshot(
             session_id,
             facts=tuple(facts),
             fact_histories=tuple(histories),
             entities=entities,
             relations=relations,
         )
+        # Cache the snapshot if no filters were applied (optimization).
+        if not subjects and not claims:
+            self._snapshot_cache[session_id] = result
+        return result
 
     def _refresh_entity_attributes(self, session_id: SessionId, entity_id: EntityId) -> None:
         key = (session_id, entity_id)
@@ -213,16 +234,17 @@ class InMemoryWorldModel:
     def _fact_attributes(self, session_id: SessionId, entity_id: EntityId) -> JsonMapping:
         attributes: dict[str, JsonValue] = {}
         subject = str(entity_id)
-        for (stored_session, stored_subject, claim), evidence in self._facts.items():
-            if (
-                stored_session != session_id
-                or stored_subject != subject
-                or claim == "kind"
-                or claim.startswith("relation:")
-            ):
+        subject_key = (session_id, subject)
+        claims = self._subject_claims.get(subject_key)
+        if not claims:
+            return immutable_json(attributes)
+        for claim in claims:
+            if claim == "kind" or claim.startswith("relation:"):
                 continue
-            current = _current_fact(evidence)
-            attributes[claim] = current.value
+            evidence = self._facts.get((session_id, subject, claim))
+            if evidence:
+                current = _current_fact(evidence)
+                attributes[claim] = current.value
         return immutable_json(attributes)
 
     def _kind_for_subject(self, session_id: SessionId, entity_id: EntityId) -> str | None:

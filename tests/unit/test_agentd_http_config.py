@@ -7,6 +7,7 @@ import pytest
 from universal_agent.agentd import AgentdAuthPolicy, AgentdServerConfig
 
 
+@pytest.mark.unit
 def test_agentd_server_config_validates_boundary_inputs() -> None:
     assert AgentdServerConfig(port=0).port == 0
 
@@ -24,6 +25,7 @@ def test_agentd_server_config_validates_boundary_inputs() -> None:
         AgentdServerConfig(max_body_bytes=cast(int, "1000"))
 
 
+@pytest.mark.behavior
 def test_agentd_auth_policy_validates_tokens_and_public_paths() -> None:
     assert AgentdAuthPolicy(public_paths=("/health",)).public_paths == ("/health",)
 

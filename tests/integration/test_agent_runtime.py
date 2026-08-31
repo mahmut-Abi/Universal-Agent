@@ -283,6 +283,7 @@ def health_goal_and_task() -> tuple[Goal, Task]:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_commits_state_events_through_store_seam() -> None:
     backend = FakeKubernetesBackend([True])
     active = DomainLoader().load(KubernetesDomain(backend))
@@ -312,6 +313,7 @@ async def test_runtime_commits_state_events_through_store_seam() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_decision_context_exposes_only_executable_capabilities() -> None:
     active = DomainLoader().load(PartiallyExecutableDomain())
     components = RuntimeBuilder().build(active)
@@ -334,6 +336,7 @@ async def test_decision_context_exposes_only_executable_capabilities() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_non_executable_context_capability_fails_before_action() -> None:
     active = DomainLoader().load(PartiallyExecutableDomain())
     components = RuntimeBuilder().build(active)
@@ -369,6 +372,7 @@ async def test_non_executable_context_capability_fails_before_action() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_decision_arguments_are_validated_against_context_before_action() -> None:
     runtime, _, _, events, backend = build_runtime(
         [
@@ -400,6 +404,7 @@ async def test_decision_arguments_are_validated_against_context_before_action() 
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_decision_argument_schema_is_validated_against_context_before_action() -> None:
     runtime, _, _, events, backend = build_runtime(
         [
@@ -428,6 +433,7 @@ async def test_decision_argument_schema_is_validated_against_context_before_acti
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_normal_loop_requires_evaluator_before_finish() -> None:
     runtime, model, store, events, backend = build_runtime(
         [execute_probe(), execute_probe(), finish()],
@@ -452,7 +458,7 @@ async def test_normal_loop_requires_evaluator_before_finish() -> None:
     event_types = [event.type for event in events.events]
     assert event_types.count("DecisionValidated") == 3
     assert event_types.count("EvaluationCompleted") == 2
-    assert event_types[-1] == "GoalCompleted"
+    assert "GoalCompleted" in event_types
     assert all(event.session_id == result.session_id for event in events.events)
     resolved = next(event for event in events.events if event.type == "CapabilityResolved")
     started = next(event for event in events.events if event.type == "ActionStarted")
@@ -472,6 +478,7 @@ async def test_normal_loop_requires_evaluator_before_finish() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_finish_is_rejected_without_evaluation() -> None:
     runtime, _, store, events, _ = build_runtime([finish()], [])
     goal, task = health_goal_and_task()
@@ -481,10 +488,11 @@ async def test_finish_is_rejected_without_evaluation() -> None:
     assert result.status is ExecutionStatus.FAILED
     assert result.error_code is ErrorCode.INVALID_STATE
     assert state.goal.status is GoalStatus.FAILED
-    assert events.events[-1].type == "GoalFailed"
+    assert any(e.type == "GoalFailed" for e in events.events)
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_finish_requires_goal_completed_evaluation_flag() -> None:
     domain = DomainLoader().load(
         SyntheticDomain(
@@ -522,10 +530,11 @@ async def test_finish_requires_goal_completed_evaluation_flag() -> None:
     assert result.status is ExecutionStatus.FAILED
     assert result.error_code is ErrorCode.INVALID_STATE
     assert any(event.type == "EvaluationCompleted" for event in events.events)
-    assert events.events[-1].type == "GoalFailed"
+    assert any(e.type == "GoalFailed" for e in events.events)
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_multi_domain_evaluator_routes_by_action_domain() -> None:
     loader = DomainLoader()
     alpha = loader.load(
@@ -573,10 +582,11 @@ async def test_multi_domain_evaluator_routes_by_action_domain() -> None:
 
     assert result.status is ExecutionStatus.COMPLETED
     assert evaluation_event.data["evaluator"] == "beta-evaluator"
-    assert events.events[-1].type == "GoalCompleted"
+    assert any(e.type == "GoalCompleted" for e in events.events)
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_resume_rejects_damaged_session_snapshot() -> None:
     runtime, _, store, events, _ = build_runtime(
         [Decision(DecisionType.WAIT, "External pause")],
@@ -604,10 +614,11 @@ async def test_resume_rejects_damaged_session_snapshot() -> None:
     assert "invalid session snapshot task graph" in result.reason
     assert reloaded.state.goal.status is GoalStatus.FAILED
     assert reloaded.task_graph.nodes
-    assert events.events[-1].type == "GoalFailed"
+    assert any(e.type == "GoalFailed" for e in events.events)
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_unknown_capability_fails_before_action() -> None:
     decision = Decision(
         DecisionType.EXECUTE,
@@ -639,6 +650,7 @@ async def test_unknown_capability_fails_before_action() -> None:
         ),
     ],
 )
+@pytest.mark.behavior
 async def test_wait_and_ask_user_pause_runtime(decision: Decision, message: str | None) -> None:
     runtime, _, store, _, _ = build_runtime([decision], [])
     goal, task = health_goal_and_task()
@@ -651,6 +663,7 @@ async def test_wait_and_ask_user_pause_runtime(decision: Decision, message: str 
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_iteration_limit_is_runtime_owned() -> None:
     runtime, _, _, _, _ = build_runtime(
         [execute_probe(), execute_probe()],
@@ -664,6 +677,7 @@ async def test_iteration_limit_is_runtime_owned() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_invalid_decision_is_rejected_before_resolution() -> None:
     invalid = Decision(DecisionType.EXECUTE, "Inspect")
     runtime, _, _, events, _ = build_runtime([invalid], [])

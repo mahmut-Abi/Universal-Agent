@@ -18,6 +18,7 @@ from universal_agent.distributed import (
 )
 
 
+@pytest.mark.behavior
 def test_distributed_health_report_is_ok_when_work_has_capable_workers() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     queue = InMemoryWorkQueue()
@@ -43,6 +44,7 @@ def test_distributed_health_report_is_ok_when_work_has_capable_workers() -> None
     assert checks["capacity"] is DistributedHealthStatus.OK
 
 
+@pytest.mark.behavior
 def test_distributed_health_report_detects_missing_worker_capacity() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     queue = InMemoryWorkQueue()
@@ -77,6 +79,7 @@ def test_distributed_health_report_detects_missing_worker_capacity() -> None:
     assert checks["capacity"] is DistributedHealthStatus.ERROR
 
 
+@pytest.mark.behavior
 def test_distributed_health_report_warns_on_backlog_and_expiring_leases() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     queue = InMemoryWorkQueue()
@@ -127,6 +130,7 @@ def test_distributed_health_report_warns_on_backlog_and_expiring_leases() -> Non
     ]
 
 
+@pytest.mark.behavior
 def test_distributed_health_report_detects_stale_leases_and_lost_workers() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     queue = InMemoryWorkQueue()
@@ -161,6 +165,7 @@ def test_distributed_health_report_detects_stale_leases_and_lost_workers() -> No
     ]
 
 
+@pytest.mark.unit
 def test_distributed_health_report_validates_thresholds() -> None:
     snapshot = build_distributed_runtime_snapshot(queue=InMemoryWorkQueue())
     now = datetime(2026, 1, 1, tzinfo=UTC)

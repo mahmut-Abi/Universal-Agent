@@ -281,6 +281,7 @@ def mutation_goal_task() -> tuple[Goal, Task]:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_confirmation_resumes_on_a_rebuilt_runtime() -> None:
     store = InMemoryStateStore()
     tool = MutationTool()
@@ -311,6 +312,7 @@ async def test_confirmation_resumes_on_a_rebuilt_runtime() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_resume_rejects_a_different_domain_name() -> None:
     store = InMemoryStateStore()
     tool = MutationTool()
@@ -331,6 +333,7 @@ async def test_resume_rejects_a_different_domain_name() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_resume_rejects_a_different_domain_version() -> None:
     store = InMemoryStateStore()
     tool = MutationTool()
@@ -350,6 +353,7 @@ async def test_resume_rejects_a_different_domain_version() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_resume_rejects_missing_secondary_domain_in_composition() -> None:
     store = InMemoryStateStore()
     tool = MutationTool()
@@ -373,6 +377,7 @@ async def test_resume_rejects_missing_secondary_domain_in_composition() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_resume_rejects_drifted_tool_resolution() -> None:
     """Same domain identity, but the capability now resolves to another tool."""
     store = InMemoryStateStore()
@@ -478,6 +483,7 @@ def diagnosis_goal_task() -> tuple[Goal, Task]:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_dynamic_task_graph_survives_a_rebuilt_runtime() -> None:
     """The expander must not re-create a task it already created before the break."""
     store = InMemoryStateStore()
@@ -521,6 +527,7 @@ async def test_dynamic_task_graph_survives_a_rebuilt_runtime() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_recovery_budget_is_not_reset_by_a_rebuilt_runtime() -> None:
     """A restart must not hand the session a fresh set of retry attempts.
 
@@ -581,6 +588,7 @@ async def test_recovery_budget_is_not_reset_by_a_rebuilt_runtime() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_context_fragments_are_equivalent_across_a_rebuilt_runtime() -> None:
     """What the model sees must be reconstructed from evidence, not carried over."""
     store = InMemoryStateStore()

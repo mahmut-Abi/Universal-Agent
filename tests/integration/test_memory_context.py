@@ -110,6 +110,7 @@ def diagnosis_goal_task() -> tuple[Goal, Task]:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_long_context_stays_within_memory_budget() -> None:
     """A store flooded with memory still compiles to <=4 fragments / <=1200 chars.
 
@@ -148,6 +149,7 @@ async def test_long_context_stays_within_memory_budget() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_episodic_memory_carries_across_sessions() -> None:
     """A terminal transition writes an episodic record the next session recalls."""
     shared_store = InMemoryMemoryStore()
@@ -176,6 +178,7 @@ async def test_episodic_memory_carries_across_sessions() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_memory_does_not_become_evidence() -> None:
     """Injecting semantic memory leaves session evidence untouched.
 
@@ -203,6 +206,7 @@ async def test_memory_does_not_become_evidence() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_memory_does_not_update_world_model() -> None:
     """A semantic 'workload is healthy' memory must not appear as a world fact."""
     store = InMemoryMemoryStore()
@@ -229,6 +233,7 @@ async def test_memory_does_not_update_world_model() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_memory_alone_cannot_complete_task_or_goal() -> None:
     """A 'workload is healthy' memory without matching evidence cannot finish.
 
@@ -255,6 +260,7 @@ async def test_memory_alone_cannot_complete_task_or_goal() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_memory_is_not_persisted_in_snapshot() -> None:
     """A snapshot round-trip carries no memory; world rebuilds from evidence."""
     store = InMemoryMemoryStore()

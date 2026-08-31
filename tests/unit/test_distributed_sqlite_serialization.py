@@ -6,6 +6,8 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from universal_agent.distributed import (
     DistributedLockOwnerId,
     SQLiteDistributedLockRegistry,
@@ -16,6 +18,7 @@ from universal_agent.distributed import (
 )
 
 
+@pytest.mark.contract
 def test_sqlite_work_queue_serializes_cross_process_writers(tmp_path: Path) -> None:
     path = tmp_path / "runtime.sqlite3"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -31,6 +34,7 @@ def test_sqlite_work_queue_serializes_cross_process_writers(tmp_path: Path) -> N
     assert SQLiteWorkQueue(path).get(queued.work_item_id).status is WorkItemStatus.LEASED
 
 
+@pytest.mark.contract
 def test_sqlite_distributed_lock_serializes_cross_process_writers(tmp_path: Path) -> None:
     path = tmp_path / "runtime.sqlite3"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -55,6 +59,7 @@ def test_sqlite_distributed_lock_serializes_cross_process_writers(tmp_path: Path
     assert renewed.heartbeat_at == now + timedelta(seconds=5)
 
 
+@pytest.mark.contract
 def test_sqlite_worker_registry_serializes_cross_process_writers(tmp_path: Path) -> None:
     path = tmp_path / "runtime.sqlite3"
     now = datetime(2026, 1, 1, tzinfo=UTC)

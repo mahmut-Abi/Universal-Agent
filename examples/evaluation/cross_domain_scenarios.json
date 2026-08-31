@@ -1,0 +1,74 @@
+{
+  "name": "cross-domain-k8s-observability",
+  "scenarios": [
+    {
+      "name": "k8s-deployment-health-check-with-observability",
+      "goal": {
+        "description": "Check the health of a Kubernetes deployment and verify its metrics are within normal ranges",
+        "success_criteria": [
+          {"key": "deployment_healthy", "expected": true},
+          {"key": "metrics_normal", "expected": true}
+        ]
+      },
+      "task": {
+        "description": "Inspect deployment status, check pod health, and verify Prometheus metrics",
+        "required_criteria": [
+          "deployment_status",
+          "pod_health",
+          "metrics_availability"
+        ]
+      },
+      "expectations": {
+        "expected_status": "completed",
+        "required_capabilities": [
+          "inspect_deployment",
+          "query_metrics"
+        ],
+        "required_evidence_claims": [
+          "deployment.status",
+          "pod.status",
+          "metrics.cpu_usage"
+        ]
+      },
+      "kind": "cross_domain",
+      "tags": ["kubernetes", "observability", "cross-domain"]
+    },
+    {
+      "name": "k8s-pod-restart-with-logs-analysis",
+      "goal": {
+        "description": "Diagnose why a pod is restarting by analyzing logs and events",
+        "success_criteria": [
+          {"key": "root_cause_identified", "expected": true},
+          {"key": "logs_analyzed", "expected": true}
+        ]
+      },
+      "task": {
+        "description": "Get pod logs, analyze restart events, and identify the root cause",
+        "required_criteria": [
+          "logs_retrieved",
+          "events_analyzed",
+          "root_cause_found"
+        ]
+      },
+      "expectations": {
+        "expected_status": "completed",
+        "required_capabilities": [
+          "get_pod_logs",
+          "list_events"
+        ],
+        "required_evidence_claims": [
+          "pod.logs",
+          "pod.events",
+          "pod.restart_reason"
+        ]
+      },
+      "kind": "cross_domain",
+      "tags": ["kubernetes", "logs", "cross-domain"]
+    }
+  ],
+  "tags": ["cross-domain", "kubernetes", "observability"],
+  "quality_gate": {
+    "min_pass_rate": 0.8,
+    "min_goal_completion_rate": 0.9
+  }
+}

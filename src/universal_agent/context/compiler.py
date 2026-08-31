@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from typing import Protocol
 
@@ -48,11 +49,20 @@ class BasicContextCompiler:
         max_characters: int = 4_000,
         max_memory_fragments: int = 4,
         max_memory_characters: int = 1_200,
+        max_fragment_characters: int = 2_000,
+        enable_relevance_ranking: bool = True,
+        enable_compression: bool = True,
+        enable_dedup: bool = False,
     ) -> None:
         self._max_fragments = max_fragments
         self._max_characters = max_characters
         self._max_memory_fragments = max_memory_fragments
         self._max_memory_characters = max_memory_characters
+        self._max_fragment_characters = max_fragment_characters
+        self._enable_relevance_ranking = enable_relevance_ranking
+        self._enable_compression = enable_compression
+        self._enable_dedup = enable_dedup
+        self._precomputed_tokens: set[str] | None = None
 
     def compile(
         self,
@@ -66,6 +76,11 @@ class BasicContextCompiler:
         memories: tuple[MemoryRecord, ...] = (),
         capability_input_contracts: tuple[CapabilityInputContract, ...] = (),
     ) -> DecisionContext:
+        # Pre-compute tokens once for all fragments (optimization).
+        if self._enable_relevance_ranking:
+            self._precomputed_tokens = self._compute_state_tokens(state)
+        else:
+            self._precomputed_tokens = None
         fragments = self._select_fragments(state, providers)
         contracts = {item.capability: item for item in capability_input_contracts}
         return DecisionContext(
@@ -83,12 +98,20 @@ class BasicContextCompiler:
             goal_success_criteria=state.goal.success_criteria,
             current_task_required_criteria=state.current_task.required_criteria,
             domain_context=fragments,
-            world_context=self._world_fragments(world),
-            evidence_context=self._evidence_fragments(evidence),
-            task_context=self._task_fragments(tasks),
-            memory_context=self._memory_fragments(memories),
+            world_context=self._world_fragments(world, state),
+            evidence_context=self._evidence_fragments(evidence, state),
+            task_context=self._task_fragments(tasks, state),
+            memory_context=self._memory_fragments(memories, state),
             policy_summary=policy_summary,
         )
+
+    def _compute_state_tokens(self, state: AgentState) -> set[str]:
+        """Pre-compute tokens from goal, task, and criteria for relevance ranking."""
+        tokens = self._tokens(state.goal.description)
+        tokens |= self._tokens(state.current_task.description)
+        tokens |= {self._token(c) for c in state.current_task.required_criteria}
+        tokens |= {self._token(c) for c in state.satisfied_criteria}
+        return tokens
 
     def _capability_summary(
         self,
@@ -115,20 +138,11 @@ class BasicContextCompiler:
                 current = unique.get(fragment.key)
                 if current is None or fragment.priority < current.priority:
                     unique[fragment.key] = fragment
-        selected: list[ContextFragment] = []
-        used = 0
-        for fragment in sorted(unique.values(), key=lambda item: (item.priority, item.key)):
-            if len(selected) >= self._max_fragments:
-                break
-            remaining = self._max_characters - used
-            if remaining <= 0:
-                break
-            content = fragment.content[:remaining]
-            selected.append(ContextFragment(fragment.key, content, fragment.priority))
-            used += len(content)
-        return tuple(selected)
+        return self._budget_fragments(tuple(unique.values()), state=state)
 
-    def _world_fragments(self, world: WorldSnapshot | None) -> tuple[ContextFragment, ...]:
+    def _world_fragments(
+        self, world: WorldSnapshot | None, state: AgentState | None = None
+    ) -> tuple[ContextFragment, ...]:
         if world is None:
             return ()
         fragments = [
@@ -160,11 +174,12 @@ class BasicContextCompiler:
                 for relation in world.relations
             ),
         ]
-        return self._budget_fragments(fragments)
+        return self._budget_fragments(fragments, state=state)
 
     def _evidence_fragments(
         self,
         evidence: tuple[Evidence, ...],
+        state: AgentState | None = None,
     ) -> tuple[ContextFragment, ...]:
         fragments = (
             ContextFragment(
@@ -178,23 +193,29 @@ class BasicContextCompiler:
                 reverse=True,
             )
         )
-        return self._budget_fragments(fragments)
+        return self._budget_fragments(fragments, state=state, pre_sorted=True)
 
-    def _task_fragments(self, tasks: TaskManager | None) -> tuple[ContextFragment, ...]:
+    def _task_fragments(
+        self, tasks: TaskManager | None, state: AgentState | None = None
+    ) -> tuple[ContextFragment, ...]:
         if tasks is None:
             return ()
         return self._budget_fragments(
-            ContextFragment(
-                f"task.{task.id}",
-                f"{task.description} status={task.status.value}",
-                10,
-            )
-            for task in tasks.all()
+            (
+                ContextFragment(
+                    f"task.{task.id}",
+                    f"{task.description} status={task.status.value}",
+                    10,
+                )
+                for task in tasks.all()
+            ),
+            state=state,
         )
 
     def _memory_fragments(
         self,
         memories: tuple[MemoryRecord, ...],
+        state: AgentState | None = None,
     ) -> tuple[ContextFragment, ...]:
         # Priority 40 sits below evidence (30), world (20) and task (10):
         # memory is advisory, so it is the first to be dropped under pressure.
@@ -212,6 +233,7 @@ class BasicContextCompiler:
         )
         return self._budget_fragments(
             fragments,
+            state=state,
             max_fragments=self._max_memory_fragments,
             max_characters=self._max_memory_characters,
         )
@@ -220,20 +242,84 @@ class BasicContextCompiler:
         self,
         fragments: Iterable[ContextFragment],
         *,
+        state: AgentState | None = None,
         max_fragments: int | None = None,
         max_characters: int | None = None,
+        pre_sorted: bool = False,
     ) -> tuple[ContextFragment, ...]:
         limit_count = max_fragments if max_fragments is not None else self._max_fragments
         limit_chars = max_characters if max_characters is not None else self._max_characters
+
+        fragments_list = list(fragments)
+
+        if not pre_sorted:
+            if self._enable_relevance_ranking and state is not None:
+                fragments_list.sort(
+                    key=lambda f: (
+                        f.priority,
+                        -self._relevance(f, state),
+                        f.key,
+                    )
+                )
+            else:
+                fragments_list.sort(key=lambda f: (f.priority, f.key))
+
+        seen_content: set[str] = set()
         selected: list[ContextFragment] = []
         used = 0
-        for fragment in fragments:
+
+        for fragment in fragments_list:
             if len(selected) >= limit_count:
                 break
+
+            norm = self._normalize(fragment.content)
+            if self._enable_dedup and norm in seen_content:
+                continue
+            seen_content.add(norm)
+
             remaining = limit_chars - used
             if remaining <= 0:
                 break
-            content = fragment.content[:remaining]
+
+            content = fragment.content
+            if self._enable_compression and len(content) > self._max_fragment_characters:
+                content = self._compress(content, self._max_fragment_characters)
+            content = content[:remaining]
+
             selected.append(ContextFragment(fragment.key, content, fragment.priority))
             used += len(content)
+
         return tuple(selected)
+
+    def _tokens(self, text: str) -> set[str]:
+        return {w for w in re.findall(r"[a-z0-9_]+", text.lower()) if w}
+
+    def _relevance(self, fragment: ContextFragment, state: AgentState) -> float:
+        if not self._enable_relevance_ranking:
+            return 0.0
+        # Use pre-computed tokens if available (optimization).
+        tokens = getattr(self, "_precomputed_tokens", None)
+        if tokens is None:
+            tokens = self._compute_state_tokens(state)
+        if not tokens:
+            return 0.0
+        frag_tokens = self._tokens(fragment.content) | self._tokens(fragment.key)
+        overlap = tokens & frag_tokens
+        return float(len(overlap)) / float(len(tokens))
+
+    def _token(self, text: str) -> str:
+        return text.lower()
+
+    def _normalize(self, content: str) -> str:
+        return content.strip().lower()
+
+    def _compress(self, content: str, limit: int) -> str:
+        if len(content) <= limit:
+            return content
+        if limit <= 3:
+            return content[:limit]
+        head = limit // 2
+        tail = limit - head - 1
+        if tail <= 0:
+            return content[:limit]
+        return content[:head] + "\u2026" + content[-tail:]

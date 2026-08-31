@@ -45,7 +45,7 @@ from universal_agent.web import (
     render_web_settings,
     render_web_world_model_explorer,
 )
-from universal_agent.web_types import WebCatalogPage, WebConsoleSnapshot
+from universal_agent.web.types import WebCatalogPage, WebConsoleSnapshot
 
 _CONSOLE_ROUTES = AgentdRouteMatcher(
     (

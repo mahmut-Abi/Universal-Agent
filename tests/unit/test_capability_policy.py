@@ -65,6 +65,7 @@ def policy_context(
     )
 
 
+@pytest.mark.unit
 def test_capability_registry_rejects_empty_capability_name() -> None:
     capability = CapabilityDefinition(
         " ",
@@ -76,6 +77,7 @@ def test_capability_registry_rejects_empty_capability_name() -> None:
         CapabilityRegistry().register(capability)
 
 
+@pytest.mark.unit
 def test_capability_resolver_selects_lowest_priority_tool() -> None:
     capabilities = CapabilityRegistry()
     capability = CapabilityDefinition(
@@ -93,6 +95,7 @@ def test_capability_resolver_selects_lowest_priority_tool() -> None:
     assert tool.definition.name == "preferred"
 
 
+@pytest.mark.unit
 def test_capability_resolver_preserves_domain_ownership() -> None:
     identity = DomainIdentity("test", "1.0.0")
     capabilities = CapabilityRegistry()
@@ -113,6 +116,7 @@ def test_capability_resolver_preserves_domain_ownership() -> None:
     assert resolution.tool_domain == identity
 
 
+@pytest.mark.unit
 def test_capability_resolver_rejects_cross_domain_tool_match() -> None:
     capabilities = CapabilityRegistry()
     capabilities.register(
@@ -126,6 +130,7 @@ def test_capability_resolver_rejects_cross_domain_tool_match() -> None:
         CapabilityResolver(capabilities, tools).resolve_registration("inspect")
 
 
+@pytest.mark.unit
 def test_capability_without_tool_is_unavailable() -> None:
     capabilities = CapabilityRegistry()
     capabilities.register(
@@ -135,6 +140,7 @@ def test_capability_without_tool_is_unavailable() -> None:
         CapabilityResolver(capabilities, ToolRegistry()).resolve("inspect")
 
 
+@pytest.mark.behavior
 def test_policy_deny_precedes_confirmation_and_allow() -> None:
     capability = CapabilityDefinition(
         "inspect",
@@ -165,6 +171,7 @@ def test_policy_deny_precedes_confirmation_and_allow() -> None:
     assert engine.check(policy_context(capability, tool)).effect is PolicyEffect.DENY
 
 
+@pytest.mark.unit
 def test_confirmation_becomes_allow_after_user_confirms() -> None:
     capability = CapabilityDefinition(
         "inspect",
@@ -190,6 +197,7 @@ def test_confirmation_becomes_allow_after_user_confirms() -> None:
     )
 
 
+@pytest.mark.unit
 def test_mutation_without_explicit_allow_is_denied() -> None:
     capability = CapabilityDefinition("change", "Change", CapabilityCategory.MUTATION)
     tool = NoopTool("tool", 1, SideEffect.REVERSIBLE)

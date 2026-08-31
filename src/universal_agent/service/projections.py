@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from universal_agent.core import JsonValue, immutable_json, to_json_value
-from universal_agent.domain import ActiveDomain, DomainPackage
+from universal_agent.core import JsonValue, SessionId, immutable_json, to_json_value
+from universal_agent.domain import ActiveDomain, DomainPackage, RuntimeComponents
 from universal_agent.evidence import Evidence
 from universal_agent.memory import MemoryRecord
 from universal_agent.multi_agent import AgentInstanceRecord, AgentProfileRecord
@@ -25,6 +25,7 @@ from universal_agent.service.views import (
     WorldRelationView,
 )
 from universal_agent.world import (
+    InMemoryWorldModel,
     WorldEntity,
     WorldFact,
     WorldFactEvidence,
@@ -239,6 +240,30 @@ def world_projection_views_from_snapshot(
     )
 
 
+def build_world_snapshot(
+    components: RuntimeComponents,
+    session_id: SessionId,
+    evidence: tuple[EvidenceView, ...],
+) -> WorldSnapshot:
+    """Rebuild a read-only world snapshot from persisted evidence views.
+
+    Shared so session explorers and operations views replay the world through the
+    same domain world updaters instead of each owning a copy of the logic.
+    """
+    if not components.world_updaters:
+        return WorldSnapshot(session_id)
+    world_model = InMemoryWorldModel()
+    world_model.forget(session_id)
+    ordered = sorted(
+        (evidence_from_view(item) for item in evidence if item.session_id == session_id),
+        key=lambda item: (item.observed_at, str(item.id)),
+    )
+    for item in ordered:
+        for updater in components.world_updaters_for_evidence(item):
+            updater.apply(world_model, item)
+    return world_model.snapshot(session_id)
+
+
 def evidence_from_view(view: EvidenceView) -> Evidence:
     return Evidence(
         view.session_id,
@@ -252,6 +277,8 @@ def evidence_from_view(view: EvidenceView) -> Evidence:
         view.confidence,
         view.evidence_id,
         view.observed_at,
+        view.domain_name,
+        view.domain_version,
     )
 
 

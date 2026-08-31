@@ -177,6 +177,7 @@ class ErrorCode(StrEnum):
     EVALUATION_FAILED = "evaluation_failed"
     DOMAIN_VALIDATION_FAILED = "domain_validation_failed"
     RESOURCE_CONFLICT = "resource_conflict"
+    COST_LIMIT_EXCEEDED = "cost_limit_exceeded"
 
 
 @dataclass(frozen=True, slots=True)
@@ -433,6 +434,8 @@ class AgentState:
     recovery_attempts: dict[str, int] = field(default_factory=dict)
     termination_reason: str | None = None
     error_code: ErrorCode | None = None
+    cumulative_cost_micros: int = 0
+    cumulative_tokens: int = 0
 
     @property
     def latest_observation(self) -> Observation | None:

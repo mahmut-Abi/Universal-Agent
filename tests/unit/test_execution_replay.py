@@ -38,6 +38,7 @@ def event(
     )
 
 
+@pytest.mark.behavior
 def test_execution_replay_reconstructs_successful_history_from_events() -> None:
     replay = replay_execution(
         (
@@ -128,6 +129,7 @@ def test_execution_replay_reconstructs_successful_history_from_events() -> None:
     assert action.evaluation_status == "completed"
 
 
+@pytest.mark.unit
 def test_execution_replay_reconstructs_resource_conflict_failure() -> None:
     replay = replay_execution(
         (
@@ -164,11 +166,13 @@ def test_execution_replay_reconstructs_resource_conflict_failure() -> None:
     assert replay.actions[0].error_code == "resource_conflict"
 
 
+@pytest.mark.unit
 def test_execution_replay_requires_events() -> None:
     with pytest.raises(ValueError, match="at least one event"):
         replay_execution(())
 
 
+@pytest.mark.unit
 def test_execution_replay_rejects_mixed_sessions() -> None:
     with pytest.raises(ValueError, match="exactly one session"):
         replay_execution(

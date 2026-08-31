@@ -159,6 +159,7 @@ def header_value(headers: dict[str, str], name: str) -> str:
     raise AssertionError(f"missing response header: {name}")
 
 
+@pytest.mark.contract
 def test_agentd_http_server_serves_health_goal_and_event_routes() -> None:
     app, backend = build_app([inspect_workload(), finish()])
 
@@ -190,6 +191,7 @@ def test_agentd_http_server_serves_health_goal_and_event_routes() -> None:
     assert backend.inspect_calls == 1
 
 
+@pytest.mark.contract
 def test_agentd_asgi_app_serves_health_without_socket_server() -> None:
     app, _ = build_app([])
 
@@ -200,6 +202,7 @@ def test_agentd_asgi_app_serves_health_without_socket_server() -> None:
     assert response.json() == {"status": "ok", "service": "universal-agent-runtime"}
 
 
+@pytest.mark.contract
 def test_agentd_asgi_app_enforces_configured_body_limit() -> None:
     app, _ = build_app([])
 
@@ -215,6 +218,7 @@ def test_agentd_asgi_app_enforces_configured_body_limit() -> None:
     }
 
 
+@pytest.mark.contract
 def test_agentd_http_server_enforces_optional_bearer_auth() -> None:
     app, _ = build_app([], auth=AgentdAuthPolicy("server-token"))
 
@@ -246,6 +250,7 @@ def test_agentd_http_server_enforces_optional_bearer_auth() -> None:
     assert isinstance(allowed["domains"], list)
 
 
+@pytest.mark.contract
 def test_agentd_http_server_returns_json_errors_before_runtime_routing() -> None:
     app, _ = build_app([])
 
@@ -265,6 +270,7 @@ def test_agentd_http_server_returns_json_errors_before_runtime_routing() -> None
     }
 
 
+@pytest.mark.contract
 def test_agentd_http_server_serves_sse_event_stream_batches() -> None:
     app, _ = build_app([inspect_workload(), finish()])
 
@@ -287,6 +293,7 @@ def test_agentd_http_server_serves_sse_event_stream_batches() -> None:
     assert ": next_cursor=" in text
 
 
+@pytest.mark.contract
 def test_agentd_http_server_serves_web_console() -> None:
     app, backend = build_app([inspect_workload(), finish()])
 

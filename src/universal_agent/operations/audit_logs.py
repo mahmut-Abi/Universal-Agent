@@ -1,13 +1,20 @@
 from __future__ import annotations
 
-from universal_agent.core import ErrorCode, SessionId
+import hashlib
+
+from universal_agent.core import ErrorCode, JsonValue, SessionId, dumps_json
 from universal_agent.operations.helpers import (
     error_code,
     event_words,
     redacted_mapping,
     string,
 )
-from universal_agent.operations.views import AuditRecordView, RuntimeLogRecordView
+from universal_agent.operations.views import (
+    AuditIntegrityRecordView,
+    AuditIntegrityReportView,
+    AuditRecordView,
+    RuntimeLogRecordView,
+)
 from universal_agent.runtime import RuntimeEventView
 
 
@@ -41,6 +48,21 @@ def build_audit_records(
     return tuple(sorted(records, key=lambda record: record.occurred_at, reverse=True))
 
 
+def build_audit_integrity(records: tuple[AuditRecordView, ...]) -> AuditIntegrityReportView:
+    previous_hash = _hash_text("audit-chain-v1")
+    links: list[AuditIntegrityRecordView] = []
+    for record in sorted(records, key=lambda item: (item.occurred_at, item.record_id)):
+        record_hash = _hash_mapping(
+            {
+                "previous_hash": previous_hash,
+                "record": _audit_record_hash_payload(record),
+            }
+        )
+        links.append(AuditIntegrityRecordView(record.record_id, previous_hash, record_hash))
+        previous_hash = record_hash
+    return AuditIntegrityReportView(len(records), previous_hash, tuple(links))
+
+
 def build_runtime_logs(
     events: tuple[RuntimeEventView, ...],
     *,
@@ -64,6 +86,34 @@ def build_runtime_logs(
         )
         for event in sorted(scoped, key=lambda item: item.occurred_at)
     )
+
+
+def _audit_record_hash_payload(record: AuditRecordView) -> dict[str, JsonValue]:
+    return {
+        "record_id": record.record_id,
+        "session_id": str(record.session_id),
+        "goal_id": str(record.goal_id),
+        "task_id": str(record.task_id),
+        "action_id": None if record.action_id is None else str(record.action_id),
+        "capability": record.capability,
+        "tool_name": record.tool_name,
+        "side_effect": record.side_effect,
+        "risk": record.risk,
+        "policy_effect": record.policy_effect,
+        "policy_name": record.policy_name,
+        "status": record.status,
+        "occurred_at": record.occurred_at.isoformat(),
+        "completed_at": None if record.completed_at is None else record.completed_at.isoformat(),
+        "error_code": None if record.error_code is None else record.error_code.value,
+    }
+
+
+def _hash_mapping(value: dict[str, JsonValue]) -> str:
+    return _hash_text(dumps_json(value))
+
+
+def _hash_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _audit_record(

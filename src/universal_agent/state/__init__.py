@@ -1,4 +1,9 @@
-from universal_agent.state.session import SessionSnapshot, copy_session, session_from_state
+from universal_agent.state.session import (
+    EventSourcedSessionStore,
+    SessionSnapshot,
+    copy_session,
+    session_from_state,
+)
 from universal_agent.state.store import (
     InMemorySessionStore,
     InMemoryStateStore,
@@ -10,6 +15,7 @@ from universal_agent.state.store import (
 )
 
 __all__ = [
+    "EventSourcedSessionStore",
     "InMemorySessionStore",
     "InMemoryStateStore",
     "SessionSnapshot",

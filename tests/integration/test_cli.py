@@ -45,6 +45,7 @@ from universal_agent import (
 )
 from universal_agent.agentd import AgentdHttpServer
 from universal_agent.cli import run_cli
+from universal_agent.cli import serve as cli_serve
 from universal_agent.core import DomainIdentity, JsonMapping, JsonValue, SessionId
 from universal_agent.domain import (
     DomainPackage,
@@ -491,6 +492,7 @@ def write_profile_config_file(path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_init_writes_parseable_profile_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "profile.json"
@@ -526,6 +528,7 @@ async def test_cli_init_writes_parseable_profile_config(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_can_write_sqlite_profile_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "sqlite-profile.json"
@@ -550,6 +553,7 @@ async def test_cli_init_can_write_sqlite_profile_config(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_init_uses_container_runtime_dirs_from_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -588,6 +592,7 @@ async def test_cli_init_uses_container_runtime_dirs_from_environment(
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_can_write_file_backed_distributed_queue_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "profile.json"
@@ -631,6 +636,7 @@ async def test_cli_init_can_write_file_backed_distributed_queue_config(tmp_path:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_can_write_sqlite_backed_distributed_locks_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "profile.json"
@@ -655,6 +661,7 @@ async def test_cli_init_can_write_sqlite_backed_distributed_locks_config(tmp_pat
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_can_write_sqlite_backed_distributed_queue_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "profile.json"
@@ -679,6 +686,7 @@ async def test_cli_init_can_write_sqlite_backed_distributed_queue_config(tmp_pat
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_can_write_sqlite_backed_distributed_workers_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "profile.json"
@@ -703,6 +711,7 @@ async def test_cli_init_can_write_sqlite_backed_distributed_workers_config(tmp_p
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_can_write_memory_profile_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "memory-profile.json"
@@ -724,6 +733,7 @@ async def test_cli_init_can_write_memory_profile_config(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_can_write_kubectl_domain_backend_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "kubectl-profile.json"
@@ -760,6 +770,7 @@ async def test_cli_init_can_write_kubectl_domain_backend_config(tmp_path: Path) 
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_can_write_kubernetes_api_domain_backend_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "kubernetes-api-profile.json"
@@ -801,6 +812,7 @@ async def test_cli_init_can_write_kubernetes_api_domain_backend_config(tmp_path:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_can_write_kubernetes_api_file_secret_config(tmp_path: Path) -> None:
     output = StringIO()
     token_path = tmp_path / "kubernetes-token"
@@ -832,6 +844,7 @@ async def test_cli_init_can_write_kubernetes_api_file_secret_config(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_rejects_kubernetes_api_backend_without_server(
     tmp_path: Path,
 ) -> None:
@@ -858,6 +871,7 @@ async def test_cli_init_rejects_kubernetes_api_backend_without_server(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_init_can_write_json_http_model_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "json-http-profile.json"
@@ -900,6 +914,7 @@ async def test_cli_init_can_write_json_http_model_config(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_init_can_write_json_http_model_file_secret_config(tmp_path: Path) -> None:
     output = StringIO()
     secret_path = tmp_path / "model-api-key"
@@ -931,6 +946,7 @@ async def test_cli_init_can_write_json_http_model_file_secret_config(tmp_path: P
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_config_validate_reports_profile_and_available_secrets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -979,6 +995,7 @@ async def test_cli_config_validate_reports_profile_and_available_secrets(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_config_validate_fails_on_missing_required_secret(tmp_path: Path) -> None:
     profile_path = tmp_path / "profile.json"
     output = StringIO()
@@ -1015,6 +1032,7 @@ async def test_cli_config_validate_fails_on_missing_required_secret(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_config_validate_can_skip_secret_resolution(tmp_path: Path) -> None:
     profile_path = tmp_path / "profile.json"
     output = StringIO()
@@ -1053,6 +1071,7 @@ async def test_cli_config_validate_can_skip_secret_resolution(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_config_validate_requires_profile_config() -> None:
     output = StringIO()
     error = StringIO()
@@ -1065,6 +1084,7 @@ async def test_cli_config_validate_requires_profile_config() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_can_write_openai_chat_completions_kubectl_profile(
     tmp_path: Path,
 ) -> None:
@@ -1128,6 +1148,7 @@ async def test_cli_init_can_write_openai_chat_completions_kubectl_profile(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_init_can_write_openai_chat_prompt_json_model_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "openai-chat-prompt-profile.json"
@@ -1159,6 +1180,7 @@ async def test_cli_init_can_write_openai_chat_prompt_json_model_config(tmp_path:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_can_write_openai_responses_model_config(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "openai-profile.json"
@@ -1196,6 +1218,7 @@ async def test_cli_init_can_write_openai_responses_model_config(tmp_path: Path) 
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_openai_responses_requires_model_name(tmp_path: Path) -> None:
     output = StringIO()
     error = StringIO()
@@ -1222,6 +1245,7 @@ async def test_cli_init_openai_responses_requires_model_name(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_openai_responses_requires_api_key_secret(tmp_path: Path) -> None:
     output = StringIO()
     error = StringIO()
@@ -1248,6 +1272,7 @@ async def test_cli_init_openai_responses_requires_api_key_secret(tmp_path: Path)
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_rejects_secret_env_and_file_together(tmp_path: Path) -> None:
     output = StringIO()
     error = StringIO()
@@ -1280,6 +1305,7 @@ async def test_cli_init_rejects_secret_env_and_file_together(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_rejects_invalid_model_header(tmp_path: Path) -> None:
     output = StringIO()
     error = StringIO()
@@ -1310,6 +1336,7 @@ async def test_cli_init_rejects_invalid_model_header(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_rejects_existing_profile_without_force(tmp_path: Path) -> None:
     output = StringIO()
     error = StringIO()
@@ -1328,6 +1355,7 @@ async def test_cli_init_rejects_existing_profile_without_force(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_force_overwrites_existing_profile(tmp_path: Path) -> None:
     output = StringIO()
     profile_path = tmp_path / "profile.json"
@@ -1354,6 +1382,7 @@ async def test_cli_init_force_overwrites_existing_profile(tmp_path: Path) -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_profile_config_drives_run_and_persisted_session_reads(tmp_path: Path) -> None:
     profile_path = tmp_path / "profile.json"
     store_path = tmp_path / "runtime-store"
@@ -1423,6 +1452,7 @@ async def test_cli_profile_config_drives_run_and_persisted_session_reads(tmp_pat
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_config_show_exposes_kubectl_domain_backend_config(tmp_path: Path) -> None:
     profile_path = tmp_path / "kubectl-profile.json"
     init_output = StringIO()
@@ -1465,6 +1495,7 @@ async def test_cli_config_show_exposes_kubectl_domain_backend_config(tmp_path: P
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_config_show_exposes_kubernetes_api_backend_without_secret_values(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1525,6 +1556,7 @@ async def test_cli_config_show_exposes_kubernetes_api_backend_without_secret_val
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_config_show_resolves_kubernetes_api_file_secret_without_values(
     tmp_path: Path,
 ) -> None:
@@ -1586,6 +1618,7 @@ async def test_cli_config_show_resolves_kubernetes_api_file_secret_without_value
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_run_submits_goal_through_service() -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     output = StringIO()
@@ -1604,6 +1637,7 @@ async def test_cli_run_submits_goal_through_service() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_run_accepts_custom_success_criteria() -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     output = StringIO()
@@ -1630,6 +1664,31 @@ async def test_cli_run_accepts_custom_success_criteria() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
+async def test_cli_run_can_compile_goal_into_task_graph() -> None:
+    service, backend = build_cli_service([inspect_workload(), inspect_workload(), finish()])
+    output = StringIO()
+
+    status = await run_cli(
+        [
+            "run",
+            "production-operator",
+            "Verify workload health",
+            "--compile-goal",
+        ],
+        service=service,
+        stdout=output,
+    )
+    payload = read_json(output)
+
+    assert status == 0
+    assert payload["result"]["status"] == "completed"
+    assert len(payload["session"]["tasks"]) == 2
+    assert backend.inspect_calls == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_kubernetes_preflight_runs_read_only_checks() -> None:
     output = StringIO()
 
@@ -1654,6 +1713,7 @@ async def test_cli_kubernetes_preflight_runs_read_only_checks() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_kubernetes_preflight_can_skip_cluster_inspection() -> None:
     output = StringIO()
 
@@ -1668,6 +1728,7 @@ async def test_cli_kubernetes_preflight_can_skip_cluster_inspection() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_kubernetes_model_probe_validates_decision_without_cluster_actions() -> None:
     service, backend = build_cli_service([])
     output = StringIO()
@@ -1711,6 +1772,7 @@ async def test_cli_kubernetes_model_probe_validates_decision_without_cluster_act
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_kubernetes_model_probe_rejects_out_of_scope_workload(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1775,6 +1837,7 @@ async def test_cli_kubernetes_model_probe_rejects_out_of_scope_workload(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_kubernetes_model_probe_reports_missing_model_secret(
     tmp_path: Path,
 ) -> None:
@@ -1830,6 +1893,7 @@ async def test_cli_kubernetes_model_probe_reports_missing_model_secret(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_kubernetes_check_runs_model_probe_then_preflight() -> None:
     output = StringIO()
 
@@ -1866,6 +1930,7 @@ async def test_cli_kubernetes_check_runs_model_probe_then_preflight() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_kubernetes_check_stops_before_preflight_when_model_probe_fails(
     tmp_path: Path,
 ) -> None:
@@ -1916,6 +1981,7 @@ async def test_cli_kubernetes_check_stops_before_preflight_when_model_probe_fail
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_kubernetes_run_submits_production_workload_goal() -> None:
     service, backend = build_cli_service(
         [
@@ -1978,6 +2044,7 @@ async def test_cli_kubernetes_run_submits_production_workload_goal() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_kubernetes_run_unhealthy_workload_reaches_confirmation() -> None:
     service, backend = build_cli_service(
         [
@@ -2042,6 +2109,7 @@ async def test_cli_kubernetes_run_unhealthy_workload_reaches_confirmation() -> N
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_kubernetes_run_reports_confirmation_next_step() -> None:
     service, backend = build_cli_service(
         [scale_workload(namespace="prod")],
@@ -2088,6 +2156,7 @@ async def test_cli_kubernetes_run_reports_confirmation_next_step() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_kubernetes_run_can_skip_model_probe_but_still_run_preflight() -> None:
     service, backend = build_cli_service(
         [
@@ -2134,6 +2203,7 @@ async def test_cli_kubernetes_run_can_skip_model_probe_but_still_run_preflight()
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_kubernetes_run_stops_before_runtime_when_preflight_fails() -> None:
     config = RuntimeConfig(
         environment=immutable_json({"environment": "staging"}),
@@ -2183,6 +2253,7 @@ async def test_cli_kubernetes_run_stops_before_runtime_when_preflight_fails() ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_kubernetes_run_stops_before_preflight_when_model_probe_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2245,6 +2316,7 @@ async def test_cli_kubernetes_run_stops_before_preflight_when_model_probe_fails(
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_tui_renders_runtime_service_snapshot() -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     run_output = StringIO()
@@ -2281,6 +2353,7 @@ async def test_cli_tui_renders_runtime_service_snapshot() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_ecosystem_catalog_indexes_local_artifacts(tmp_path: Path) -> None:
     service, _ = build_cli_service([])
     domain_root = tmp_path / "domains"
@@ -2339,6 +2412,7 @@ async def test_cli_ecosystem_catalog_indexes_local_artifacts(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_ecosystem_verify_reports_reference_integrity(tmp_path: Path) -> None:
     service, _ = build_cli_service([])
     domain_root = tmp_path / "domains"
@@ -2391,6 +2465,7 @@ async def test_cli_ecosystem_verify_reports_reference_integrity(tmp_path: Path) 
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> None:
     service, _ = build_cli_service([])
     domain_root = tmp_path / "domains"
@@ -2548,6 +2623,7 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_ecosystem_install_requires_explicit_unverified_signature_trust(
     tmp_path: Path,
 ) -> None:
@@ -2624,6 +2700,7 @@ async def test_cli_ecosystem_install_requires_explicit_unverified_signature_trus
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_ecosystem_store_manages_file_backed_registry_manifests(
     tmp_path: Path,
 ) -> None:
@@ -2739,6 +2816,7 @@ async def test_cli_ecosystem_store_manages_file_backed_registry_manifests(
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_session_diagnostics_renders_evidence_and_world_facts() -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     run_output = StringIO()
@@ -2823,6 +2901,7 @@ async def test_cli_session_diagnostics_renders_evidence_and_world_facts() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_run_rejects_unknown_profile() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -2841,6 +2920,7 @@ async def test_cli_run_rejects_unknown_profile() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_run_rejects_invalid_success_criterion_json() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -2865,6 +2945,7 @@ async def test_cli_run_rejects_invalid_success_criterion_json() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_profile_show_exposes_one_profile() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -2888,6 +2969,7 @@ async def test_cli_profile_show_exposes_one_profile() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_profile_verify_checks_profile_config_catalog(tmp_path: Path) -> None:
     service, _ = build_cli_service([])
     profile_dir = tmp_path / "profiles"
@@ -2911,6 +2993,7 @@ async def test_cli_profile_verify_checks_profile_config_catalog(tmp_path: Path) 
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_profile_show_rejects_unknown_profile() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -2929,6 +3012,7 @@ async def test_cli_profile_show_rejects_unknown_profile() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_repair_state_events_requires_confirmation_and_reports_clean() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -2964,6 +3048,7 @@ async def test_cli_repair_state_events_requires_confirmation_and_reports_clean()
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_exposes_service_catalog_commands() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -3018,6 +3103,7 @@ async def test_cli_exposes_service_catalog_commands() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_exposes_domain_package_catalog_commands() -> None:
     service, _ = build_cli_service([], domain_packages=package_registry())
     list_output = StringIO()
@@ -3103,6 +3189,7 @@ async def test_cli_exposes_domain_package_catalog_commands() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_loads_domain_package_runtime_entrypoint(tmp_path: Path) -> None:
     service, _ = build_cli_service([])
     package_root = tmp_path / "widget-domain"
@@ -3156,6 +3243,7 @@ async def test_cli_loads_domain_package_runtime_entrypoint(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_scaffolds_domain_package(tmp_path: Path) -> None:
     service, _ = build_cli_service([])
     package_root = tmp_path / "ai-ops-domain"
@@ -3275,6 +3363,7 @@ async def test_cli_scaffolds_domain_package(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_scaffolds_loadable_domain_runtime_stub(tmp_path: Path) -> None:
     service, _ = build_cli_service([])
     package_root = tmp_path / "widget-domain"
@@ -3332,6 +3421,7 @@ async def test_cli_scaffolds_loadable_domain_runtime_stub(tmp_path: Path) -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -3426,6 +3516,7 @@ async def test_cli_exposes_distributed_snapshot_and_health_commands() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_distributed_schedule_session_command() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -3461,6 +3552,7 @@ async def test_cli_distributed_schedule_session_command() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_distributed_worker_run_once_resumes_scheduled_session() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_cli_service(
@@ -3495,6 +3587,7 @@ async def test_cli_distributed_worker_run_once_resumes_scheduled_session() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_distributed_worker_run_until_idle_resumes_backlog() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_cli_service(
@@ -3544,6 +3637,7 @@ async def test_cli_distributed_worker_run_until_idle_resumes_backlog() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_distributed_schedule_task_command_runs_from_worker() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_cli_service(
@@ -3585,6 +3679,7 @@ async def test_cli_distributed_schedule_task_command_runs_from_worker() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_distributed_schedule_action_command_confirms_pending_action() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, backend = build_cli_service(
@@ -3636,6 +3731,7 @@ async def test_cli_distributed_schedule_action_command_confirms_pending_action()
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_distributed_schedule_pending_actions_command_confirms_pending_actions() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, backend = build_cli_service(
@@ -3684,6 +3780,7 @@ async def test_cli_distributed_schedule_pending_actions_command_confirms_pending
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_distributed_schedule_goal_command_runs_from_worker() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_cli_service(
@@ -3733,6 +3830,7 @@ async def test_cli_distributed_schedule_goal_command_runs_from_worker() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_distributed_lock_lifecycle_commands() -> None:
     service, _ = build_cli_service([], distributed_coordinator=DistributedRuntimeCoordinator())
     acquire_output = StringIO()
@@ -3791,6 +3889,7 @@ async def test_cli_distributed_lock_lifecycle_commands() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_distributed_worker_lifecycle_commands() -> None:
     service, _ = build_cli_service([], distributed_coordinator=DistributedRuntimeCoordinator())
     register_output = StringIO()
@@ -3863,6 +3962,7 @@ async def test_cli_distributed_worker_lifecycle_commands() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_config_show_exposes_runtime_configuration() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -3892,6 +3992,7 @@ async def test_cli_config_show_exposes_runtime_configuration() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_profile_config_loads_domain_package_runtime(tmp_path: Path) -> None:
     package_root = tmp_path / "widget-domain"
     profile_path = tmp_path / "widget.profile.json"
@@ -3945,6 +4046,7 @@ async def test_cli_profile_config_loads_domain_package_runtime(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
     service, backend = build_cli_service([wait(), inspect_workload(), finish()])
     waiting = await service.run_goal(*goal_task())
@@ -4034,6 +4136,7 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_session_events_can_wait_for_new_events() -> None:
     service, _ = build_cli_service([wait(), inspect_workload(), finish()])
     waiting = await service.run_goal(*goal_task())
@@ -4080,6 +4183,7 @@ async def test_cli_session_events_can_wait_for_new_events() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_session_events_rejects_invalid_wait_timeout() -> None:
     service, _ = build_cli_service([wait()])
     waiting = await service.run_goal(*goal_task())
@@ -4112,6 +4216,7 @@ async def test_cli_session_events_rejects_invalid_wait_timeout() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_session_events_rejects_invalid_wait_poll_interval() -> None:
     service, _ = build_cli_service([wait()])
     waiting = await service.run_goal(*goal_task())
@@ -4144,6 +4249,7 @@ async def test_cli_session_events_rejects_invalid_wait_poll_interval() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_session_list_supports_cursor_and_limit() -> None:
     service, _ = build_cli_service(
         [
@@ -4191,6 +4297,7 @@ async def test_cli_session_list_supports_cursor_and_limit() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_exposes_operations_commands_through_service() -> None:
     service, backend = build_cli_service(
         [scale_workload(), inspect_workload(), finish()],
@@ -4219,7 +4326,9 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     cost_output = StringIO()
     doctor_output = StringIO()
     audit_output = StringIO()
+    audit_integrity_output = StringIO()
     session_audit_output = StringIO()
+    session_audit_integrity_output = StringIO()
     session_cost_output = StringIO()
     logs_output = StringIO()
     session_logs_output = StringIO()
@@ -4244,10 +4353,20 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     )
     doctor_status = await run_cli(["doctor"], service=service, stdout=doctor_output)
     audit_status = await run_cli(["audit"], service=service, stdout=audit_output)
+    audit_integrity_status = await run_cli(
+        ["audit", "--integrity"],
+        service=service,
+        stdout=audit_integrity_output,
+    )
     session_audit_status = await run_cli(
         ["session", "audit", session_id],
         service=service,
         stdout=session_audit_output,
+    )
+    session_audit_integrity_status = await run_cli(
+        ["session", "audit", session_id, "--integrity"],
+        service=service,
+        stdout=session_audit_integrity_output,
     )
     session_cost_status = await run_cli(
         ["session", "cost", session_id],
@@ -4277,7 +4396,9 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     otlp_traces = read_json(otlp_traces_output)
     doctor = read_json(doctor_output)
     audit = read_json(audit_output)
+    audit_integrity = read_json(audit_integrity_output)
     session_audit = read_json(session_audit_output)
+    session_audit_integrity = read_json(session_audit_integrity_output)
     session_cost = read_json(session_cost_output)
     session_logs = read_json(session_logs_output)
     session_traces = read_json(session_traces_output)
@@ -4290,7 +4411,9 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     assert otlp_traces_status == 0
     assert doctor_status == 0
     assert audit_status == 0
+    assert audit_integrity_status == 0
     assert session_audit_status == 0
+    assert session_audit_integrity_status == 0
     assert session_cost_status == 0
     assert session_logs_status == 0
     assert session_traces_status == 0
@@ -4354,6 +4477,9 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
     assert len(exported_spans) > 3
     assert doctor["status"] == "ok"
     assert audit == session_audit
+    assert audit_integrity == session_audit_integrity
+    assert audit_integrity["record_count"] == 1
+    assert len(str(audit_integrity["root_hash"])) == 64
     audit_items = audit["audit_records"]
     assert isinstance(audit_items, list)
     assert len(audit_items) == 1
@@ -4366,6 +4492,7 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_doctor_can_fail_on_warning_status() -> None:
     output = StringIO()
     service = DoctorOnlyService(
@@ -4387,6 +4514,7 @@ async def test_cli_doctor_can_fail_on_warning_status() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_doctor_fail_on_error_keeps_warning_status_successful() -> None:
     output = StringIO()
     service = DoctorOnlyService(
@@ -4404,6 +4532,7 @@ async def test_cli_doctor_fail_on_error_keeps_warning_status_successful() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_doctor_can_fail_on_error_status() -> None:
     output = StringIO()
     service = DoctorOnlyService(
@@ -4420,6 +4549,7 @@ async def test_cli_doctor_can_fail_on_error_status() -> None:
     assert read_json(output)["status"] == "error"
 
 
+@pytest.mark.unit
 def test_cli_main_returns_130_without_traceback_on_interrupt(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -4437,6 +4567,7 @@ def test_cli_main_returns_130_without_traceback_on_interrupt(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_serve_starts_agentd_http_server_with_injected_runner() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -4466,6 +4597,7 @@ async def test_cli_serve_starts_agentd_http_server_with_injected_runner() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_serve_reports_socket_bind_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4477,7 +4609,7 @@ async def test_cli_serve_reports_socket_bind_errors(
         def __init__(self, *_args: object, **_kwargs: object) -> None:
             raise OSError("Address already in use")
 
-    monkeypatch.setattr(cli_module, "AgentdHttpServer", BindFailingServer)
+    monkeypatch.setattr(cli_serve, "AgentdHttpServer", BindFailingServer)
 
     status = await run_cli(
         ["serve", "--host", "127.0.0.1", "--port", "8765"],
@@ -4494,6 +4626,7 @@ async def test_cli_serve_reports_socket_bind_errors(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_serve_default_runner_runs_inside_existing_event_loop() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -4534,6 +4667,7 @@ async def test_cli_serve_default_runner_runs_inside_existing_event_loop() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_serve_exposes_evaluation_report_dir(tmp_path: Path) -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -4561,6 +4695,7 @@ async def test_cli_serve_exposes_evaluation_report_dir(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_serve_can_enable_agentd_bearer_auth() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -4588,6 +4723,7 @@ async def test_cli_serve_can_enable_agentd_bearer_auth() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_serve_can_enable_read_only_agentd_bearer_auth() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -4615,6 +4751,7 @@ async def test_cli_serve_can_enable_read_only_agentd_bearer_auth() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_serve_can_enable_agentd_bearer_auth_from_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4646,6 +4783,7 @@ async def test_cli_serve_can_enable_agentd_bearer_auth_from_env(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_serve_rejects_missing_agentd_bearer_auth_env() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -4670,6 +4808,7 @@ async def test_cli_serve_rejects_missing_agentd_bearer_auth_env() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_serve_rejects_ambiguous_agentd_bearer_auth_sources(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4702,6 +4841,7 @@ async def test_cli_serve_rejects_ambiguous_agentd_bearer_auth_sources(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_eval_list_applies_kind_and_tag_filters() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -4743,6 +4883,7 @@ async def test_cli_eval_list_applies_kind_and_tag_filters() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_eval_list_loads_suite_file(tmp_path: Path) -> None:
     service, _ = build_cli_service([])
     suite_path = tmp_path / "suite.json"
@@ -4775,6 +4916,7 @@ async def test_cli_eval_list_loads_suite_file(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_eval_exposes_dataset_catalog(tmp_path: Path) -> None:
     service, _ = build_cli_service([])
     dataset_root = tmp_path / "datasets" / "kubernetes"
@@ -4869,6 +5011,7 @@ async def test_cli_eval_exposes_dataset_catalog(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_eval_run_rejects_empty_scenario_selection() -> None:
     service, _ = build_cli_service([])
     output = StringIO()
@@ -4887,6 +5030,7 @@ async def test_cli_eval_run_rejects_empty_scenario_selection() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_eval_run_executes_suite_and_persists_report(tmp_path: Path) -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     output = StringIO()
@@ -4938,6 +5082,7 @@ async def test_cli_eval_run_executes_suite_and_persists_report(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_eval_run_can_emit_junit_xml() -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     output = StringIO()
@@ -4972,6 +5117,7 @@ async def test_cli_eval_run_can_emit_junit_xml() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_eval_reports_lists_persisted_reports(tmp_path: Path) -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     report_dir = tmp_path / "reports"
@@ -5045,6 +5191,7 @@ async def test_cli_eval_reports_lists_persisted_reports(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_eval_run_executes_suite_file_and_persists_report(tmp_path: Path) -> None:
     service, backend = build_cli_service([inspect_workload(), finish()])
     suite_path = tmp_path / "suite.json"
@@ -5081,6 +5228,7 @@ async def test_cli_eval_run_executes_suite_file_and_persists_report(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_eval_run_uses_suite_file_quality_gate_and_cli_overrides(
     tmp_path: Path,
 ) -> None:
@@ -5136,6 +5284,7 @@ async def test_cli_eval_run_uses_suite_file_quality_gate_and_cli_overrides(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_eval_run_can_fail_process_on_gate_failure() -> None:
     service, _ = build_cli_service([inspect_workload(), finish(), invalid_scale_workload()])
     output = StringIO()
@@ -5163,6 +5312,7 @@ async def test_cli_eval_run_can_fail_process_on_gate_failure() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_eval_run_exposes_quality_gate_thresholds() -> None:
     service, _ = build_cli_service(
         [inspect_workload(), finish(), invalid_scale_workload()],
@@ -5234,6 +5384,7 @@ async def test_cli_eval_run_exposes_quality_gate_thresholds() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_eval_compare_detects_report_drift(tmp_path: Path) -> None:
     service, _ = build_cli_service([inspect_workload(), finish(), invalid_scale_workload()])
     report_output = StringIO()
@@ -5265,6 +5416,7 @@ async def test_cli_eval_compare_detects_report_drift(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_eval_replay_records_and_replays_golden_recording(tmp_path: Path) -> None:
     recording_dir = tmp_path / "replay-recordings"
     record_output = StringIO()
@@ -5337,6 +5489,7 @@ async def test_cli_eval_replay_records_and_replays_golden_recording(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_eval_replay_can_fail_process_on_drift(tmp_path: Path) -> None:
     recording_dir = tmp_path / "replay-recordings"
     await run_cli(

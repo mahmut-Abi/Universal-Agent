@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from universal_agent.core import ActionId, SessionId, TaskId, immutable_json
 from universal_agent.distributed import (
     DistributedLockOwnerId,
@@ -16,6 +18,7 @@ from universal_agent.distributed import (
 )
 
 
+@pytest.mark.behavior
 def test_distributed_runtime_snapshot_projects_queue_locks_and_workers() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     queue = InMemoryWorkQueue()
@@ -72,9 +75,11 @@ def test_distributed_runtime_snapshot_projects_queue_locks_and_workers() -> None
     assert leased_item.status is WorkItemStatus.LEASED
     assert leased_item.worker_id == WorkerId("worker-a")
     assert leased_item.lease_expires_at == now + timedelta(seconds=30)
+    assert leased_item.fencing_token == 1
     assert leased.work_item_id == action_work.work_item_id
     assert snapshot.locks[0].lock_key == "session/session-1"
     assert snapshot.locks[0].owner_id == DistributedLockOwnerId("worker-a")
+    assert snapshot.locks[0].fencing_token == 1
     assert snapshot.locks[0].metadata["purpose"] == "session execution"
     assert snapshot.workers.total_count == 4
     assert snapshot.workers.online_count == 1
@@ -89,6 +94,7 @@ def test_distributed_runtime_snapshot_projects_queue_locks_and_workers() -> None
     ]
 
 
+@pytest.mark.unit
 def test_distributed_runtime_snapshot_is_read_only() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     queue = InMemoryWorkQueue()
@@ -112,6 +118,7 @@ def test_distributed_runtime_snapshot_is_read_only() -> None:
     assert workers.get(WorkerId("worker-a")).status is WorkerStatus.ONLINE
 
 
+@pytest.mark.unit
 def test_distributed_runtime_snapshot_allows_missing_optional_registries() -> None:
     queue = InMemoryWorkQueue()
     queue.enqueue(kind="agent_session")

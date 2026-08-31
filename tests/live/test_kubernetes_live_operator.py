@@ -4,17 +4,21 @@ import json
 import os
 from dataclasses import dataclass
 from io import StringIO
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
 from universal_agent.cli import run_cli
+from universal_agent.core import JsonMapping
+from universal_agent.domains.kubernetes import write_kubernetes_live_contract_artifact
 
 PROFILE_CONFIG_ENV = "UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE"
 PROFILE_NAME_ENV = "UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE_NAME"
 WORKLOAD_ENV = "UNIVERSAL_AGENT_LIVE_KUBERNETES_WORKLOAD"
 NAMESPACE_ENV = "UNIVERSAL_AGENT_LIVE_KUBERNETES_NAMESPACE"
 RUN_ENV = "UNIVERSAL_AGENT_LIVE_KUBERNETES_RUN"
+ARTIFACT_DIR_ENV = "UNIVERSAL_AGENT_LIVE_KUBERNETES_ARTIFACT_DIR"
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,12 +33,14 @@ pytestmark = pytest.mark.live
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_live_kubernetes_check_contract_is_production_ready() -> None:
     config = _live_config()
     output = StringIO()
 
     status = await run_cli(_kubernetes_args(config, "check"), stdout=output)
     payload = _read_json(output.getvalue())
+    _write_live_artifact("check", status, payload, config)
 
     assert status == 0
     assert payload["status"] == "ok"
@@ -46,6 +52,7 @@ async def test_live_kubernetes_check_contract_is_production_ready() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_live_kubernetes_run_reaches_completion_or_confirmation_boundary() -> None:
     if os.environ.get(RUN_ENV) != "true":
         pytest.skip(f"set {RUN_ENV}=true to execute the live Kubernetes remediation run")
@@ -54,6 +61,7 @@ async def test_live_kubernetes_run_reaches_completion_or_confirmation_boundary()
 
     status = await run_cli(_kubernetes_args(config, "run"), stdout=output)
     payload = _read_json(output.getvalue())
+    _write_live_artifact("run", status, payload, config)
     run = _object(payload["run"])
     run_result = _object(run["result"])
     run_session = _object(run["session"])
@@ -104,6 +112,32 @@ def _live_config() -> LiveKubernetesConfig:
         profile=os.environ.get(PROFILE_NAME_ENV, "production-operator"),
         workload=workload,
         namespace=os.environ.get(NAMESPACE_ENV),
+    )
+
+
+def _write_live_artifact(
+    name: str,
+    status: int,
+    payload: dict[str, Any],
+    config: LiveKubernetesConfig,
+) -> None:
+    artifact_dir = os.environ.get(ARTIFACT_DIR_ENV)
+    if not artifact_dir:
+        return
+    write_kubernetes_live_contract_artifact(
+        Path(artifact_dir),
+        name=name,
+        status=status,
+        payload=cast(JsonMapping, payload),
+        environment=cast(
+            JsonMapping,
+            {
+                "profile": config.profile,
+                "workload": config.workload,
+                "namespace": config.namespace or "",
+                "run_enabled": os.environ.get(RUN_ENV) == "true",
+            },
+        ),
     )
 
 

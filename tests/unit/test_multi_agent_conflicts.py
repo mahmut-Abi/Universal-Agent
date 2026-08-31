@@ -46,6 +46,7 @@ def proposal(
     )
 
 
+@pytest.mark.unit
 def test_conflict_resolver_reports_no_conflict_when_actions_match() -> None:
     resolver = AgentConflictResolver()
 
@@ -64,6 +65,7 @@ def test_conflict_resolver_reports_no_conflict_when_actions_match() -> None:
     )
 
 
+@pytest.mark.contract
 def test_conflict_resolution_payload_round_trips() -> None:
     result = AgentConflictResolver().resolve(
         (
@@ -83,6 +85,7 @@ def test_conflict_resolution_payload_round_trips() -> None:
     )
 
 
+@pytest.mark.contract
 def test_conflict_resolution_decoder_rejects_invalid_pydantic_payload_shape() -> None:
     with pytest.raises(ValueError, match=r"rejected_proposal_ids\[0\] must be a string"):
         decode_conflict_resolution(
@@ -96,6 +99,7 @@ def test_conflict_resolution_decoder_rejects_invalid_pydantic_payload_shape() ->
         )
 
 
+@pytest.mark.unit
 def test_conflict_resolver_denies_read_only_mutation() -> None:
     resolver = AgentConflictResolver()
 
@@ -113,6 +117,7 @@ def test_conflict_resolver_denies_read_only_mutation() -> None:
     assert result.rejected_proposal_ids == (AgentProposalId("a"),)
 
 
+@pytest.mark.unit
 def test_conflict_resolver_selects_safer_conflicting_action() -> None:
     resolver = AgentConflictResolver()
 
@@ -128,6 +133,7 @@ def test_conflict_resolver_selects_safer_conflicting_action() -> None:
     assert result.rejected_proposal_ids == (AgentProposalId("restart"),)
 
 
+@pytest.mark.unit
 def test_conflict_resolver_uses_priority_after_safety_rank() -> None:
     resolver = AgentConflictResolver()
 
@@ -142,6 +148,7 @@ def test_conflict_resolver_uses_priority_after_safety_rank() -> None:
     assert result.selected_proposal_id == AgentProposalId("b")
 
 
+@pytest.mark.contract
 def test_conflict_resolver_requires_review_for_equal_rank_conflicts() -> None:
     resolver = AgentConflictResolver()
 
@@ -151,6 +158,7 @@ def test_conflict_resolver_requires_review_for_equal_rank_conflicts() -> None:
     assert result.review_proposal_ids == (AgentProposalId("a"), AgentProposalId("b"))
 
 
+@pytest.mark.contract
 def test_conflict_resolver_requires_review_for_confirmation_policy() -> None:
     resolver = AgentConflictResolver()
 
@@ -170,6 +178,7 @@ def test_conflict_resolver_requires_review_for_confirmation_policy() -> None:
     assert result.supporting_evidence_ids == (EvidenceId("evidence-1"),)
 
 
+@pytest.mark.unit
 def test_conflict_resolver_resolves_each_resource_group_in_stable_order() -> None:
     resolver = AgentConflictResolver()
     first = proposal("a")
@@ -187,6 +196,7 @@ def test_conflict_resolver_resolves_each_resource_group_in_stable_order() -> Non
     assert [result.resource_key for result in results] == ["deployment/alpha", "deployment/example"]
 
 
+@pytest.mark.unit
 def test_conflict_resolver_rejects_mixed_resource_group() -> None:
     resolver = AgentConflictResolver()
     other = AgentActionProposal(

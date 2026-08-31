@@ -9,6 +9,7 @@ from universal_agent.host import DomainConfig, RuntimeConfig, SecretRef
 from universal_agent.security import EnvSecretProvider
 
 
+@pytest.mark.unit
 def test_configured_kubernetes_backend_parses_kubectl_settings_with_pydantic() -> None:
     backend = configured_kubernetes_backend(
         (
@@ -35,6 +36,7 @@ def test_configured_kubernetes_backend_parses_kubectl_settings_with_pydantic() -
     assert backend._timeout_seconds == 4.0
 
 
+@pytest.mark.unit
 def test_configured_kubernetes_backend_parses_api_settings_and_secret_with_pydantic() -> None:
     backend = configured_kubernetes_backend(
         (
@@ -63,6 +65,7 @@ def test_configured_kubernetes_backend_parses_api_settings_and_secret_with_pydan
     assert backend._timeout_seconds == 4.5
 
 
+@pytest.mark.unit
 def test_configured_kubernetes_backend_rejects_invalid_settings_through_pydantic() -> None:
     with pytest.raises(ValueError, match="invalid Kubernetes domain settings"):
         configured_kubernetes_backend(
@@ -77,6 +80,7 @@ def test_configured_kubernetes_backend_rejects_invalid_settings_through_pydantic
         )
 
 
+@pytest.mark.unit
 def test_configured_kubernetes_api_backend_requires_api_server_after_settings_parse() -> None:
     with pytest.raises(ValueError, match="domain setting api_server must be a non-empty string"):
         configured_kubernetes_backend(

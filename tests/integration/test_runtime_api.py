@@ -186,6 +186,7 @@ def build_remediation_api(
     return RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
 
 
+@pytest.mark.contract
 def test_runtime_event_view_deep_copies_nested_json_data() -> None:
     nested_items = [1]
     nested = {"items": nested_items}
@@ -206,6 +207,7 @@ def test_runtime_event_view_deep_copies_nested_json_data() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_runtime_agent_executor_reports_usage_from_runtime_events() -> None:
     api, _, _, _ = build_health_api(
         [inspect_workload("healthy"), finish()],
@@ -247,6 +249,7 @@ async def test_runtime_agent_executor_reports_usage_from_runtime_events() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_api_runs_goal_and_returns_immutable_session_projection() -> None:
     api, store, _, backend = build_health_api([inspect_workload("healthy"), finish()])
 
@@ -278,6 +281,31 @@ async def test_runtime_api_runs_goal_and_returns_immutable_session_projection() 
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_runtime_api_runs_compiled_goal_task_graph() -> None:
+    api, _, _, backend = build_health_api(
+        [
+            inspect_workload("healthy"),
+            inspect_workload("healthy"),
+            finish(),
+        ]
+    )
+    goal = Goal("Verify workload health", (SuccessCriterion("healthy", True),))
+
+    run = await api.run_compiled_goal(goal)
+
+    assert run.result.status is ExecutionStatus.COMPLETED
+    assert len(run.session.tasks) == 2
+    assert run.session.tasks[0].task_id == TaskId(f"goal:{goal.id}:root")
+    assert [task.description for task in run.session.tasks] == [
+        "Verify workload health",
+        "Verify workload health",
+    ]
+    assert backend.calls == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_api_returns_session_diagnostics_with_evidence() -> None:
     api, _, _, backend = build_health_api([inspect_workload("healthy"), finish()])
 
@@ -295,6 +323,7 @@ async def test_runtime_api_returns_session_diagnostics_with_evidence() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_api_lists_sessions_as_recent_summaries() -> None:
     api, store, _, backend = build_health_api(
         [
@@ -344,6 +373,7 @@ async def test_runtime_api_lists_sessions_as_recent_summaries() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_api_streams_session_summaries_with_cursor_and_limit() -> None:
     api, _, _, _ = build_health_api(
         [
@@ -403,6 +433,7 @@ async def test_runtime_api_streams_session_summaries_with_cursor_and_limit() -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_api_resumes_confirmation_and_reads_combined_events() -> None:
     backend = RemediationBackend()
     store = InMemoryStateStore()
@@ -445,6 +476,7 @@ async def test_runtime_api_resumes_confirmation_and_reads_combined_events() -> N
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_api_pauses_and_resumes_waiting_session_without_pending_action() -> None:
     api, _, _, backend = build_health_api([wait(), inspect_workload("healthy"), finish()])
 
@@ -474,6 +506,7 @@ async def test_runtime_api_pauses_and_resumes_waiting_session_without_pending_ac
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_api_cancels_waiting_confirmation_without_executing_action() -> None:
     backend = RemediationBackend()
     store = InMemoryStateStore()
@@ -504,6 +537,7 @@ async def test_runtime_api_cancels_waiting_confirmation_without_executing_action
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_api_rejects_cancel_for_terminal_session_without_mutating_it() -> None:
     api, _, _, _ = build_health_api([inspect_workload("healthy"), finish()])
     completed = await api.run_goal(*health_goal_task())

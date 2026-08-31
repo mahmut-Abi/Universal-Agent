@@ -85,6 +85,7 @@ class _EnumPayload(ConfigPayload):
     optional_color: _OptionalRuntimeColorPayload = None
 
 
+@pytest.mark.contract
 def test_parse_json_value_accepts_nested_json_values() -> None:
     assert parse_json_value(
         {
@@ -102,15 +103,18 @@ def test_parse_json_value_accepts_nested_json_values() -> None:
     }
 
 
+@pytest.mark.contract
 def test_parse_json_value_rejects_non_json_values() -> None:
     with pytest.raises(ValueError, match="payload must be JSON-compatible"):
         parse_json_value(object(), "payload")
 
 
+@pytest.mark.contract
 def test_parse_json_object_accepts_immutable_mappings() -> None:
     assert parse_json_object(MappingProxyType({"replicas": 3}), "payload") == {"replicas": 3}
 
 
+@pytest.mark.contract
 def test_parse_json_object_sequence_accepts_lists_of_immutable_mappings() -> None:
     assert parse_json_object_sequence(
         [MappingProxyType({"name": "agent-a"}), {"name": "agent-b"}],
@@ -118,6 +122,7 @@ def test_parse_json_object_sequence_accepts_lists_of_immutable_mappings() -> Non
     ) == ({"name": "agent-a"}, {"name": "agent-b"})
 
 
+@pytest.mark.unit
 def test_parse_string_sequence_reports_indexed_errors() -> None:
     assert parse_string_sequence(("ok", "done"), "items") == ("ok", "done")
 
@@ -125,6 +130,7 @@ def test_parse_string_sequence_reports_indexed_errors() -> None:
         parse_string_sequence(["ok", 1], "items")
 
 
+@pytest.mark.unit
 def test_parse_non_empty_string_sequence_reports_indexed_empty_values() -> None:
     assert parse_non_empty_string_sequence(["ready"], "checks") == ("ready",)
     assert parse_non_empty_string_sequence(("ready", "healthy"), "checks") == (
@@ -143,6 +149,7 @@ def test_parse_non_empty_string_sequence_reports_indexed_empty_values() -> None:
         )
 
 
+@pytest.mark.unit
 def test_parse_unique_non_empty_string_sequence_reports_duplicates() -> None:
     assert parse_unique_non_empty_string_sequence(("smoke", "kubernetes"), "tags") == (
         "smoke",
@@ -160,6 +167,7 @@ def test_parse_unique_non_empty_string_sequence_reports_duplicates() -> None:
         )
 
 
+@pytest.mark.unit
 def test_parse_lower_sha256_hex_digest_uses_pydantic_pattern_validation() -> None:
     digest = "a" * 64
 
@@ -176,6 +184,7 @@ def test_parse_lower_sha256_hex_digest_uses_pydantic_pattern_validation() -> Non
         parse_lower_sha256_hex_digest(123, "manifest_sha256")
 
 
+@pytest.mark.unit
 def test_parse_numeric_helpers_use_pydantic_range_validation() -> None:
     assert parse_non_negative_int(0, "count") == 0
     assert parse_non_negative_float(1, "cost") == 1.0
@@ -218,6 +227,7 @@ def test_parse_numeric_helpers_use_pydantic_range_validation() -> None:
         parse_rate(True, "pass_rate")
 
 
+@pytest.mark.unit
 def test_parse_text_numeric_helpers_use_pydantic_string_validation() -> None:
     assert parse_bool_text("yes", "wait") is True
     assert parse_bool_text("0", "wait") is False
@@ -257,6 +267,7 @@ def test_parse_text_numeric_helpers_use_pydantic_string_validation() -> None:
         )
 
 
+@pytest.mark.unit
 def test_parse_scalar_helpers_use_strict_pydantic_validation() -> None:
     assert parse_string("ok", "name") == "ok"
     assert parse_string(None, "reason", default="default reason") == "default reason"
@@ -292,21 +303,25 @@ def test_parse_scalar_helpers_use_strict_pydantic_validation() -> None:
         parse_optional_int(True, "attempts")
 
 
+@pytest.mark.contract
 def test_parse_payload_uses_custom_missing_template() -> None:
     with pytest.raises(ValueError, match="missing required field: name"):
         parse_payload(_ExamplePayload, {}, missing_template="missing required field: {path}")
 
 
+@pytest.mark.contract
 def test_parse_payload_formats_common_pydantic_type_errors() -> None:
     with pytest.raises(ValueError, match="items must be a list"):
         parse_payload(_ExamplePayload, {"name": "ok", "items": "bad"})
 
 
+@pytest.mark.contract
 def test_parse_payload_prefixes_generic_value_error_paths() -> None:
     with pytest.raises(ValueError, match="item\\.name must not be empty"):
         parse_payload(_NestedPayload, {"item": {"name": " "}})
 
 
+@pytest.mark.contract
 def test_parse_payload_prefixes_error_paths_and_accepts_expected_type_overrides() -> None:
     with pytest.raises(ValueError, match="provider\\.items must be custom list"):
         parse_payload(
@@ -317,6 +332,7 @@ def test_parse_payload_prefixes_error_paths_and_accepts_expected_type_overrides(
         )
 
 
+@pytest.mark.contract
 def test_enum_before_validators_parse_strict_pydantic_payload_fields() -> None:
     parsed = parse_payload(
         _EnumPayload,
@@ -333,6 +349,7 @@ def test_enum_before_validators_parse_strict_pydantic_payload_fields() -> None:
         parse_payload(_EnumPayload, {"color": "blue", "optional_color": "red"})
 
 
+@pytest.mark.unit
 def test_pydantic_error_details_exposes_first_error_path_type_and_message() -> None:
     with pytest.raises(ValidationError) as exc_info:
         _ExamplePayload.model_validate({"name": "ok", "items": ["good", 1]})

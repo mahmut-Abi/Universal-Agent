@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -30,6 +31,8 @@ from universal_agent.multi_agent import (
     AgentTaskResult,
     AgentTaskResultStatus,
     AgentTaskUsage,
+    DelegationManager,
+    FileDelegationLedger,
     NoEligibleAgentError,
     agent_delegation_batch_result_payload,
     agent_delegation_spec_payload,
@@ -46,6 +49,8 @@ from universal_agent.multi_agent import (
     decode_agent_registry_snapshot,
     decode_agent_task_request,
     decode_agent_task_result,
+    decode_delegation_event,
+    delegation_event_payload,
     rejected_agent_task_result,
 )
 
@@ -190,6 +195,7 @@ def request(
     )
 
 
+@pytest.mark.contract
 def test_agent_task_contract_is_structured_and_json_safe() -> None:
     task = request(
         constraints=AgentTaskConstraints(
@@ -225,6 +231,7 @@ def test_agent_task_contract_is_structured_and_json_safe() -> None:
         cast(dict[str, object], task.input)["resource"] = "deployment/other"
 
 
+@pytest.mark.unit
 def test_agent_task_contract_rejects_invalid_requests_and_results() -> None:
     with pytest.raises(ValueError, match="goal must not be empty"):
         AgentTaskRequest(goal=" ", expected_output=output())
@@ -243,6 +250,7 @@ def test_agent_task_contract_rejects_invalid_requests_and_results() -> None:
         AgentTaskResult(AgentTaskId("agent-task-1"), AgentTaskResultStatus.FAILED)
 
 
+@pytest.mark.contract
 def test_agent_task_result_payload_preserves_evidence_contract() -> None:
     result = AgentTaskResult(
         task_id=AgentTaskId("agent-task-1"),
@@ -273,6 +281,44 @@ def test_agent_task_result_payload_preserves_evidence_contract() -> None:
     assert decoded.usage.estimated_cost == 0.000015
 
 
+@pytest.mark.contract
+def test_file_delegation_ledger_records_lifecycle_events(tmp_path: Path) -> None:
+    ledger = FileDelegationLedger(tmp_path / "delegations.jsonl")
+    manager = DelegationManager(
+        id_factory=lambda prefix: f"{prefix}-stable",
+        ledger=ledger,
+    )
+    delegated = manager.create_delegation(
+        AgentId("parent-agent"),
+        AgentId("agent-1"),
+        request(),
+    )
+
+    manager.start(delegated.delegation_id)
+    manager.complete(
+        delegated.delegation_id,
+        AgentTaskResult(
+            AgentTaskId("agent-task-1"),
+            AgentTaskResultStatus.COMPLETED,
+            result=immutable_json({"ok": True}),
+            reason="delegation completed",
+            session_id=SessionId("session-child"),
+        ),
+    )
+
+    events = ledger.list_events(delegation_id="delegation-stable")
+    assert [event.event_type for event in events] == [
+        "DelegationCreated",
+        "DelegationStarted",
+        "DelegationCompleted",
+    ]
+    assert events[-1].data["result_status"] == "completed"
+    assert events[-1].data["session_id"] == "session-child"
+    assert ledger.list_events(task_id=AgentTaskId("agent-task-1")) == events
+    assert decode_delegation_event(delegation_event_payload(events[-1])) == events[-1]
+
+
+@pytest.mark.unit
 def test_agent_task_usage_rejects_invalid_values() -> None:
     with pytest.raises(ValueError, match="model_call_count must not be negative"):
         AgentTaskUsage(model_call_count=-1)
@@ -287,6 +333,7 @@ def test_agent_task_usage_rejects_invalid_values() -> None:
         AgentTaskUsage(currency=" ")
 
 
+@pytest.mark.unit
 def test_agent_task_constraints_use_strict_pydantic_numeric_validation() -> None:
     with pytest.raises(ValueError, match="max_depth must be an integer"):
         AgentTaskConstraints(max_depth=cast(int, True))
@@ -298,6 +345,7 @@ def test_agent_task_constraints_use_strict_pydantic_numeric_validation() -> None
         AgentTaskConstraints(allowed_profiles=("",))
 
 
+@pytest.mark.contract
 def test_agent_task_decoders_reject_invalid_payload_values() -> None:
     with pytest.raises(ValueError, match="unsupported agent task result status"):
         decode_agent_task_result(
@@ -347,6 +395,7 @@ def test_agent_task_decoders_reject_invalid_payload_values() -> None:
         )
 
 
+@pytest.mark.unit
 def test_agent_registry_distinguishes_profiles_from_instances() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
 
@@ -359,6 +408,7 @@ def test_agent_registry_distinguishes_profiles_from_instances() -> None:
     assert registry.snapshot().instances[0].agent_id == AgentId("agent-1")
 
 
+@pytest.mark.contract
 def test_agent_registry_snapshot_payload_round_trips_profiles_and_instances() -> None:
     registry = AgentRegistry(
         (
@@ -395,6 +445,7 @@ def test_agent_registry_snapshot_payload_round_trips_profiles_and_instances() ->
     assert restored.instance(AgentId("agent-1")).endpoint == "http://localhost:9000"
 
 
+@pytest.mark.contract
 def test_agent_registry_decoders_reject_invalid_payload_shapes() -> None:
     with pytest.raises(ValueError, match=r"profile\.domains must be a list"):
         decode_agent_profile_record(
@@ -462,6 +513,7 @@ def test_agent_registry_decoders_reject_invalid_payload_shapes() -> None:
         )
 
 
+@pytest.mark.contract
 def test_agent_registry_snapshot_decoder_rejects_invalid_status() -> None:
     with pytest.raises(ValueError, match="unsupported agent instance status"):
         decode_agent_registry_snapshot(
@@ -487,6 +539,7 @@ def test_agent_registry_snapshot_decoder_rejects_invalid_status() -> None:
         )
 
 
+@pytest.mark.unit
 def test_agent_registry_rejects_unknown_profile_and_duplicate_instances() -> None:
     registry = AgentRegistry((profile(),))
 
@@ -498,6 +551,7 @@ def test_agent_registry_rejects_unknown_profile_and_duplicate_instances() -> Non
         registry.register_instance(instance())
 
 
+@pytest.mark.unit
 def test_agent_registry_filters_eligible_instances_by_constraints() -> None:
     registry = AgentRegistry(
         (
@@ -529,6 +583,7 @@ def test_agent_registry_filters_eligible_instances_by_constraints() -> None:
     assert [item.agent_id for item in eligible] == [AgentId("agent-1")]
 
 
+@pytest.mark.unit
 def test_agent_registry_updates_instance_status() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
 
@@ -540,6 +595,7 @@ def test_agent_registry_updates_instance_status() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agent_orchestrator_delegates_to_eligible_executor() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
     executor = RecordingExecutor()
@@ -554,6 +610,7 @@ async def test_agent_orchestrator_delegates_to_eligible_executor() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agent_orchestrator_marks_instance_busy_during_execution() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
     statuses: list[AgentInstanceStatus] = []
@@ -570,6 +627,7 @@ async def test_agent_orchestrator_marks_instance_busy_during_execution() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agent_orchestrator_rejects_ineligible_explicit_instance() -> None:
     registry = AgentRegistry(
         (profile("operator", permissions=("mutation",)),), (instance(name="operator"),)
@@ -581,6 +639,7 @@ async def test_agent_orchestrator_rejects_ineligible_explicit_instance() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agent_orchestrator_rejects_offline_explicit_instance() -> None:
     registry = AgentRegistry(
         (profile(),),
@@ -600,6 +659,7 @@ async def test_agent_orchestrator_rejects_offline_explicit_instance() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agent_orchestrator_enforces_parent_child_limit() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
     orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): RecordingExecutor()})
@@ -613,6 +673,7 @@ async def test_agent_orchestrator_enforces_parent_child_limit() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agent_orchestrator_missing_executor_does_not_consume_child_limit() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
     parent = AgentTaskId("agent-task-parent")
@@ -629,6 +690,7 @@ async def test_agent_orchestrator_missing_executor_does_not_consume_child_limit(
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agent_orchestrator_tracks_delegation_depth_from_known_parent() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
     orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): RecordingExecutor()})
@@ -661,6 +723,7 @@ async def test_agent_orchestrator_tracks_delegation_depth_from_known_parent() ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agent_orchestrator_rejects_forged_child_delegation_depth() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
     orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): RecordingExecutor()})
@@ -692,6 +755,7 @@ async def test_agent_orchestrator_rejects_forged_child_delegation_depth() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agent_orchestrator_snapshot_restores_delegation_limits() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
     executor = RecordingExecutor()
@@ -756,6 +820,7 @@ async def test_agent_orchestrator_snapshot_restores_delegation_limits() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agent_orchestrator_enforces_duration_limit() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
     orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): SlowExecutor()})
@@ -776,6 +841,7 @@ async def test_agent_orchestrator_enforces_duration_limit() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agent_orchestrator_enforces_cost_limit() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
     orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): CostReportingExecutor(0.25)})
@@ -798,6 +864,7 @@ async def test_agent_orchestrator_enforces_cost_limit() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agent_orchestrator_restores_instance_after_executor_failure() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
     orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): RaisingExecutor()})
@@ -808,6 +875,7 @@ async def test_agent_orchestrator_restores_instance_after_executor_failure() -> 
     assert registry.instance(AgentId("agent-1")).status is AgentInstanceStatus.READY
 
 
+@pytest.mark.behavior
 def test_rejected_agent_task_result_uses_policy_denied_by_default() -> None:
     result = rejected_agent_task_result(request(), "delegation policy denied")
 
@@ -826,6 +894,7 @@ def batch_request(task_id: str, *, parent_task_id: AgentTaskId | None = None) ->
     )
 
 
+@pytest.mark.contract
 def test_agent_delegation_spec_payload_round_trips_dependencies() -> None:
     spec = AgentDelegationSpec(
         batch_request("child"),
@@ -840,6 +909,7 @@ def test_agent_delegation_spec_payload_round_trips_dependencies() -> None:
     assert decoded.depends_on == (AgentTaskId("parent"),)
 
 
+@pytest.mark.contract
 def test_agent_delegation_batch_result_payload_round_trips_result_collector_state() -> None:
     batch = AgentDelegationBatchResult(
         status=AgentDelegationBatchStatus.PARTIAL,
@@ -873,6 +943,7 @@ def test_agent_delegation_batch_result_payload_round_trips_result_collector_stat
     assert decoded.results[1].error_code is ErrorCode.INVALID_STATE
 
 
+@pytest.mark.contract
 def test_agent_delegation_batch_result_decoder_rejects_invalid_status() -> None:
     with pytest.raises(ValueError, match="unsupported agent delegation batch status"):
         decode_agent_delegation_batch_result(
@@ -880,6 +951,7 @@ def test_agent_delegation_batch_result_decoder_rejects_invalid_status() -> None:
         )
 
 
+@pytest.mark.contract
 def test_agent_delegation_decoders_reject_invalid_pydantic_payload_shape() -> None:
     with pytest.raises(ValueError, match="request must be an object"):
         decode_agent_delegation_spec(immutable_json({"request": []}))
@@ -891,6 +963,7 @@ def test_agent_delegation_decoders_reject_invalid_pydantic_payload_shape() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agent_orchestrator_delegates_many_ready_tasks_in_parallel() -> None:
     events: list[str] = []
     registry = AgentRegistry(
@@ -924,6 +997,7 @@ async def test_agent_orchestrator_delegates_many_ready_tasks_in_parallel() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agent_orchestrator_delegates_many_rejects_busy_instance_reuse() -> None:
     events: list[str] = []
     registry = AgentRegistry((profile(),), (instance(),))
@@ -955,6 +1029,7 @@ async def test_agent_orchestrator_delegates_many_rejects_busy_instance_reuse() -
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agent_orchestrator_delegates_many_respects_dependencies() -> None:
     events: list[str] = []
     registry = AgentRegistry((profile(),), (instance("agent-1"), instance("agent-2")))
@@ -982,6 +1057,7 @@ async def test_agent_orchestrator_delegates_many_respects_dependencies() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_agent_orchestrator_delegates_many_skips_failed_dependencies() -> None:
     registry = AgentRegistry(
         (profile(),), (instance("agent-1"), instance("agent-2"), instance("agent-3"))
@@ -1021,6 +1097,7 @@ async def test_agent_orchestrator_delegates_many_skips_failed_dependencies() -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agent_orchestrator_delegates_many_collects_executor_failures() -> None:
     registry = AgentRegistry(
         (profile(),),
@@ -1058,6 +1135,7 @@ async def test_agent_orchestrator_delegates_many_collects_executor_failures() ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agent_orchestrator_delegates_many_collects_cost_limit_failures() -> None:
     registry = AgentRegistry((profile(),), (instance("agent-1"), instance("agent-2")))
     orchestrator = AgentOrchestrator(
@@ -1094,6 +1172,7 @@ async def test_agent_orchestrator_delegates_many_collects_cost_limit_failures() 
     assert result.results[1].usage.estimated_cost == 0.20
 
 
+@pytest.mark.unit
 def test_agent_orchestrator_delegates_many_rejects_invalid_dependencies() -> None:
     with pytest.raises(ValueError, match="cannot depend on itself"):
         AgentDelegationSpec(
@@ -1128,6 +1207,7 @@ def test_agent_orchestrator_delegates_many_rejects_invalid_dependencies() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_agent_orchestrator_delegates_many_detects_cycles() -> None:
     registry = AgentRegistry((profile(),), (instance("agent-1"), instance("agent-2")))
     orchestrator = AgentOrchestrator(

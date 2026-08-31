@@ -5,7 +5,8 @@ A typed Universal Agent Kernel and Runtime with pluggable Domain Runtimes.
 The long-term architecture is defined in
 `universal-agent-runtime-domain-runtime-design.md`. The current implementation is a typed runtime
 with fixture-backed Kubernetes remediation plus opt-in `kubectl` and Kubernetes HTTP API backends,
-a P3 Multi-Domain composition foundation, and the first P3.5 productization foundation: a stable
+a P3 Multi-Domain composition foundation with a read-only Observability/Prometheus metrics domain,
+and the first P3.5 productization foundation: a stable
 in-process Runtime API, immutable Session read models, cursor-readable Events, explicit
 pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter, a standard-library
 HTTP bridge, a local CLI adapter, local file-backed session/event persistence, the first P3.6
@@ -240,8 +241,9 @@ detect accidental split state/event wiring. These adapters are local persistence
 - P1: Domain Manifest/Runtime, capability-first resolution, policy allow/confirm/deny, evaluator
   boundaries, context compilation, and a read-only Kubernetes Domain skeleton.
 - P2: session-local World Model, Evidence provenance, Fact/Entity/Relation projection from
-  Evidence, deterministic dynamic Task expansion, relevant World/Evidence context, and bounded
-  Recovery.
+  Evidence, deterministic dynamic Task expansion, relevant World/Evidence context, bounded
+  Recovery, cross-domain `relation:same_as` identity canonicalization, configurable fact merge
+  policy, and bounded relation graph traversal.
 - P2.1: a rebuildable session aggregate — `SessionSnapshot`, a serializable task graph, Evidence
   export/replace, World replay, non-recursive Recovery, and a Runtime split into action, transition,
   session, and processing collaborators.
@@ -497,6 +499,8 @@ The design roadmap now separates semantic runtime maturity from productization:
   execution, scheduled Goal execution, current Task resume, leased lock, Runtime Snapshot, Health Report, Coordinator, Heartbeat, retry, cancellation and lease expiry primitives.
 - P7: Ecosystem packaging and registry work.
 
+For the latest remaining TODO snapshot, see
+[`docs/revision/2026-08-31-remaining-todo.md`](docs/revision/2026-08-31-remaining-todo.md).
 For the latest dated implementation assessment, current limitations, verification snapshot, and
 recommended next steps, see [`docs/revision/2026-08-26-project-status.md`](docs/revision/2026-08-26-project-status.md).
 The current Kubernetes-first production slice spec is

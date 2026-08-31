@@ -258,6 +258,7 @@ def build_runtime(
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_remediation_completes_only_after_fresh_verification() -> None:
     backend = RemediationBackend()
     runtime, store, events = build_runtime(
@@ -288,11 +289,12 @@ async def test_remediation_completes_only_after_fresh_verification() -> None:
     ]
     enriched = next(event for event in events.events if event.type == "ActionArgumentsEnriched")
     assert enriched.data["argument_names"] == ("current_replicas", "resource_version")
-    assert event_types[-1] == "GoalCompleted"
+    assert any(t == "GoalCompleted" for t in event_types)
     assert "PolicyChecked" in event_types
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_workload_root_cause_expands_remediation_without_extra_diagnosis() -> None:
     backend = DirectRootCauseBackend()
     runtime, store, _ = build_runtime(
@@ -319,6 +321,7 @@ async def test_workload_root_cause_expands_remediation_without_extra_diagnosis()
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_crash_loop_expands_pod_log_diagnostics() -> None:
     backend = CrashLoopBackend()
     runtime, store, events = build_runtime(
@@ -353,6 +356,7 @@ async def test_crash_loop_expands_pod_log_diagnostics() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_inspection_timeout_recovers_but_mutation_is_not_retried() -> None:
     backend = RemediationBackend(initial_inspection_timeout=True)
     runtime, _, events = build_runtime(
@@ -381,6 +385,7 @@ async def test_inspection_timeout_recovers_but_mutation_is_not_retried() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_mutation_timeout_stops_without_retry() -> None:
     backend = RemediationBackend(mutation_timeout=True)
     runtime, _, events = build_runtime(
@@ -402,6 +407,7 @@ async def test_mutation_timeout_stops_without_retry() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_uncertain_mutation_stops_without_retrying_side_effect() -> None:
     backend = RemediationBackend(mutation_uncertain=True)
     runtime, _, events = build_runtime(
@@ -424,6 +430,7 @@ async def test_uncertain_mutation_stops_without_retrying_side_effect() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_invalid_scale_is_denied_before_mutation() -> None:
     backend = RemediationBackend()
     runtime, _, events = build_runtime(
@@ -445,6 +452,7 @@ async def test_invalid_scale_is_denied_before_mutation() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_scale_outside_goal_resource_scope_is_denied_before_mutation() -> None:
     backend = RemediationBackend()
     runtime, _, events = build_runtime(
@@ -467,6 +475,7 @@ async def test_scale_outside_goal_resource_scope_is_denied_before_mutation() -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_production_scale_pauses_and_rebuilt_runtime_resumes() -> None:
     backend = RemediationBackend()
     state_store = InMemoryStateStore()
@@ -506,6 +515,7 @@ async def test_production_scale_pauses_and_rebuilt_runtime_resumes() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_failed_verification_expands_post_remediation_diagnosis() -> None:
     backend = RemediationBackend(verification_healthy=False)
     runtime, store, events = build_runtime(

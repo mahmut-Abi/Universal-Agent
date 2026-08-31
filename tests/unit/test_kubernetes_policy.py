@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from universal_agent.core import (
     ActionId,
     CapabilityCategory,
@@ -55,6 +57,7 @@ def scale_policy_context(
     )
 
 
+@pytest.mark.behavior
 def test_kubernetes_scale_policy_allows_bounded_non_production_scaling() -> None:
     result = KubernetesScalePolicy().evaluate(scale_policy_context())
 
@@ -63,6 +66,7 @@ def test_kubernetes_scale_policy_allows_bounded_non_production_scaling() -> None
     assert result.reason == "bounded Kubernetes workload scaling allowed"
 
 
+@pytest.mark.behavior
 def test_kubernetes_scale_policy_requires_confirmation_in_production() -> None:
     result = KubernetesScalePolicy().evaluate(scale_policy_context(environment="production"))
 
@@ -71,6 +75,7 @@ def test_kubernetes_scale_policy_requires_confirmation_in_production() -> None:
     assert result.reason == "production workload scaling requires confirmation"
 
 
+@pytest.mark.behavior
 def test_kubernetes_scale_policy_uses_pydantic_strict_argument_types() -> None:
     result = KubernetesScalePolicy().evaluate(scale_policy_context(arguments={"replicas": True}))
 
@@ -79,6 +84,7 @@ def test_kubernetes_scale_policy_uses_pydantic_strict_argument_types() -> None:
     assert result.reason == "scale_workload replicas must be an integer"
 
 
+@pytest.mark.behavior
 def test_kubernetes_scale_policy_uses_pydantic_non_empty_arguments() -> None:
     empty_namespace = KubernetesScalePolicy().evaluate(
         scale_policy_context(arguments={"namespace": " "})
@@ -93,6 +99,7 @@ def test_kubernetes_scale_policy_uses_pydantic_non_empty_arguments() -> None:
     assert empty_name.reason == "scale_workload target does not match the workload name"
 
 
+@pytest.mark.behavior
 def test_kubernetes_scale_policy_rejects_unbounded_replicas() -> None:
     low = KubernetesScalePolicy().evaluate(scale_policy_context(arguments={"replicas": 0}))
     high = KubernetesScalePolicy().evaluate(scale_policy_context(arguments={"replicas": 11}))
@@ -105,6 +112,7 @@ def test_kubernetes_scale_policy_rejects_unbounded_replicas() -> None:
     assert high.reason == "scale_workload replicas must be between 1 and 10"
 
 
+@pytest.mark.behavior
 def test_kubernetes_scale_policy_rejects_invalid_scope() -> None:
     result = KubernetesScalePolicy().evaluate(
         scale_policy_context(

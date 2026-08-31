@@ -1,0 +1,40 @@
+{
+  "name": "k8s-crashloopbackoff-diagnosis",
+  "description": "Diagnose and recover from CrashLoopBackOff state",
+  "scenarios": [
+    {
+      "name": "diagnose-crashloopbackoff-pod",
+      "goal": {
+        "description": "Identify why pod/api-server is in CrashLoopBackOff and determine recovery action",
+        "success_criteria": [
+          {"key": "root_cause_identified", "expected": true},
+          {"key": "recovery_action_determined", "expected": true}
+        ]
+      },
+      "task": {
+        "description": "Inspect pod status, analyze logs, check events, and determine recovery action",
+        "required_criteria": ["root_cause_identified"]
+      },
+      "expectations": {
+        "expected_status": "completed",
+        "max_iterations": 8,
+        "required_capabilities": [
+          "inspect_pod",
+          "get_pod_logs",
+          "list_events"
+        ],
+        "required_evidence_claims": [
+          "pod.status",
+          "pod.logs",
+          "pod.events"
+        ]
+      },
+      "kind": "scenario",
+      "tags": ["kubernetes", "pod", "crashloop", "diagnosis"]
+    }
+  ],
+  "quality_gate": {
+    "min_pass_rate": 0.85,
+    "min_goal_completion_rate": 0.9
+  }
+}

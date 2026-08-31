@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import AsyncGenerator, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn
 
@@ -32,6 +33,7 @@ from universal_agent.core import (
     SessionId,
     dumps_json,
     loads_json,
+    utc_now,
 )
 from universal_agent.core.config_validation import parse_json_object
 from universal_agent.persistence.codec import (
@@ -40,13 +42,14 @@ from universal_agent.persistence.codec import (
     encode_runtime_event,
     encode_session_snapshot,
 )
-from universal_agent.runtime.events import filter_events
+from universal_agent.runtime.events import filter_events, poll_event_reader
 from universal_agent.state import (
     SessionSnapshot,
     SessionVersionConflictError,
     StateNotFoundError,
     session_from_state,
 )
+from universal_agent.state.event_store import SESSION_STATE_EVENT
 from universal_agent.state.session import with_state
 
 _METADATA = MetaData()
@@ -70,11 +73,33 @@ _RUNTIME_EVENTS = Table(
     Column("occurred_at", String, nullable=False),
     Column("payload", Text, nullable=False),
 )
+_RUNTIME_EVENT_OUTBOX = Table(
+    "runtime_event_outbox",
+    _METADATA,
+    Column("sequence", Integer, primary_key=True, autoincrement=True),
+    Column("event_id", String, nullable=False, unique=True),
+    Column("session_id", String, nullable=False),
+    Column("payload", Text, nullable=False),
+    Column("published_at", String, nullable=True),
+)
 Index(
     "idx_runtime_events_session_sequence",
     _RUNTIME_EVENTS.c.session_id,
     _RUNTIME_EVENTS.c.sequence,
 )
+Index(
+    "idx_runtime_event_outbox_pending_sequence",
+    _RUNTIME_EVENT_OUTBOX.c.published_at,
+    _RUNTIME_EVENT_OUTBOX.c.sequence,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SQLiteOutboxEvent:
+    sequence: int
+    event_id: EventId
+    session_id: SessionId
+    event: RuntimeEvent
 
 
 class SQLiteSessionStore:
@@ -163,8 +188,26 @@ class SQLiteEventStore:
         self._engine: Engine | None = None
 
     async def emit(self, event: RuntimeEvent) -> None:
+        self.append(event)
+
+    def append(self, event: RuntimeEvent) -> None:
         with self._connect() as connection:
-            _insert_runtime_event(connection, event)
+            try:
+                _insert_runtime_event(connection, event)
+            except sqlite3.IntegrityError:
+                # Event journals are idempotent by event id.
+                return
+            _insert_runtime_event_outbox(connection, event)
+
+    def events_for(self, session_id: SessionId) -> tuple[RuntimeEvent, ...]:
+        return tuple(event for event in self.all() if event.session_id == session_id)
+
+    def all(self) -> tuple[RuntimeEvent, ...]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                sql_select(_RUNTIME_EVENTS.c.payload).order_by(_RUNTIME_EVENTS.c.sequence.asc())
+            ).all()
+        return tuple(decode_runtime_event(_loads_json_object(row[0])) for row in rows)
 
     async def list_events(
         self,
@@ -173,21 +216,71 @@ class SQLiteEventStore:
         after_event_id: EventId | None = None,
         limit: int | None = None,
     ) -> tuple[RuntimeEvent, ...]:
-        with self._connect() as connection:
-            query = sql_select(_RUNTIME_EVENTS.c.payload).order_by(_RUNTIME_EVENTS.c.sequence.asc())
-            if session_id is None:
-                rows = connection.execute(query).all()
-            else:
-                rows = connection.execute(
-                    query.where(_RUNTIME_EVENTS.c.session_id == str(session_id))
-                ).all()
-        events = tuple(decode_runtime_event(_loads_json_object(row[0])) for row in rows)
+        events = tuple(
+            event
+            for event in (self.all() if session_id is None else self.events_for(session_id))
+            if event.type != SESSION_STATE_EVENT
+        )
         return filter_events(
             events,
             session_id=session_id,
             after_event_id=after_event_id,
             limit=limit,
         )
+
+    async def watch_events(
+        self,
+        session_id: SessionId | None = None,
+        *,
+        after_event_id: EventId | None = None,
+        heartbeat_interval: float = 15.0,
+    ) -> AsyncGenerator[RuntimeEvent, None]:
+        async for event in poll_event_reader(
+            self,
+            session_id,
+            after_event_id=after_event_id,
+            heartbeat_interval=heartbeat_interval,
+        ):
+            yield event
+
+    def pending_outbox_events(self, *, limit: int | None = None) -> tuple[SQLiteOutboxEvent, ...]:
+        if limit is not None and limit < 1:
+            raise ValueError("outbox limit must be positive")
+        statement = (
+            sql_select(
+                _RUNTIME_EVENT_OUTBOX.c.sequence,
+                _RUNTIME_EVENT_OUTBOX.c.event_id,
+                _RUNTIME_EVENT_OUTBOX.c.session_id,
+                _RUNTIME_EVENT_OUTBOX.c.payload,
+            )
+            .where(_RUNTIME_EVENT_OUTBOX.c.published_at.is_(None))
+            .order_by(_RUNTIME_EVENT_OUTBOX.c.sequence.asc())
+        )
+        if limit is not None:
+            statement = statement.limit(limit)
+        with self._connect() as connection:
+            rows = connection.execute(statement).all()
+        return tuple(
+            SQLiteOutboxEvent(
+                int(row[0]),
+                EventId(str(row[1])),
+                SessionId(str(row[2])),
+                decode_runtime_event(_loads_json_object(str(row[3]))),
+            )
+            for row in rows
+        )
+
+    def mark_outbox_published(self, event_ids: tuple[EventId, ...]) -> int:
+        if not event_ids:
+            return 0
+        with self._connect() as connection:
+            result = connection.execute(
+                sql_update(_RUNTIME_EVENT_OUTBOX)
+                .where(_RUNTIME_EVENT_OUTBOX.c.event_id.in_(tuple(str(item) for item in event_ids)))
+                .where(_RUNTIME_EVENT_OUTBOX.c.published_at.is_(None))
+                .values(published_at=utc_now().isoformat())
+            )
+        return int(result.rowcount or 0)
 
     @contextmanager
     def _connect(self) -> Iterator[Connection]:
@@ -231,6 +324,7 @@ class SQLiteRuntimeStore(SQLiteSessionStore, SQLiteEventStore):
                     ),
                 )
                 _insert_runtime_event(connection, event)
+                _insert_runtime_event_outbox(connection, event)
             except SQLAlchemyIntegrityError as exc:
                 snapshot.version = original_version
                 _raise_sqlite_integrity_error(exc)
@@ -270,6 +364,21 @@ def _insert_runtime_event(connection: Connection, event: RuntimeEvent) -> None:
                 occurred_at=event.occurred_at.isoformat(),
                 payload=payload,
             ),
+        )
+    except SQLAlchemyIntegrityError as exc:
+        _raise_sqlite_integrity_error(exc)
+
+
+def _insert_runtime_event_outbox(connection: Connection, event: RuntimeEvent) -> None:
+    payload = _encode_json(encode_runtime_event(event))
+    try:
+        connection.execute(
+            sql_insert(_RUNTIME_EVENT_OUTBOX).values(
+                event_id=str(event.id),
+                session_id=str(event.session_id),
+                payload=payload,
+                published_at=None,
+            )
         )
     except SQLAlchemyIntegrityError as exc:
         _raise_sqlite_integrity_error(exc)

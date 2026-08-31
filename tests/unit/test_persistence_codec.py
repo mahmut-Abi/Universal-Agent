@@ -39,6 +39,7 @@ from universal_agent.state import SessionSnapshot
 from universal_agent.tasks import TaskGraphSnapshot, TaskNodeSnapshot
 
 
+@pytest.mark.behavior
 def test_session_snapshot_codec_preserves_rebuildable_runtime_state() -> None:
     observed_at = datetime(2026, 8, 22, 10, 30, tzinfo=UTC)
     session_id = SessionId("session-persist")
@@ -171,6 +172,7 @@ def test_session_snapshot_codec_preserves_rebuildable_runtime_state() -> None:
     assert restored.evidence[0].domain_version == "0.2.0"
 
 
+@pytest.mark.behavior
 def test_session_snapshot_codec_defaults_legacy_pending_action_metadata() -> None:
     observed_at = datetime(2026, 8, 22, 10, 30, tzinfo=UTC)
     task = Task("Inspect", (), TaskId("task-legacy"), TaskStatus.WAITING, observed_at)
@@ -216,6 +218,7 @@ def test_session_snapshot_codec_defaults_legacy_pending_action_metadata() -> Non
     assert restored.state.pending_action.attempt == 1
 
 
+@pytest.mark.behavior
 def test_session_snapshot_codec_defaults_legacy_evidence_domain_metadata() -> None:
     observed_at = datetime(2026, 8, 22, 10, 30, tzinfo=UTC)
     task = Task("Inspect", (), TaskId("task-legacy"), TaskStatus.WAITING, observed_at)
@@ -260,6 +263,7 @@ def test_session_snapshot_codec_defaults_legacy_evidence_domain_metadata() -> No
     assert restored.evidence[0].domain_version == ""
 
 
+@pytest.mark.contract
 def test_session_snapshot_codec_accepts_legacy_single_domain_payload() -> None:
     snapshot = SessionSnapshot(
         AgentState(
@@ -283,6 +287,7 @@ def test_session_snapshot_codec_accepts_legacy_single_domain_payload() -> None:
     assert restored.domains == (DomainIdentity("kubernetes", "0.2.0"),)
 
 
+@pytest.mark.contract
 def test_runtime_event_codec_preserves_json_safe_event_data() -> None:
     event = RuntimeEvent(
         type="DomainActivated",
@@ -308,6 +313,7 @@ def test_runtime_event_codec_preserves_json_safe_event_data() -> None:
     assert restored.occurred_at == event.occurred_at
 
 
+@pytest.mark.behavior
 def test_persistence_codec_accepts_z_suffix_datetime_payloads() -> None:
     observed_at = datetime(2026, 8, 22, 10, 30, tzinfo=UTC)
     session_id = SessionId("session-z")
@@ -390,6 +396,7 @@ def test_persistence_codec_accepts_z_suffix_datetime_payloads() -> None:
     )
 
 
+@pytest.mark.behavior
 def test_persistence_codec_rejects_invalid_persisted_types_without_coercion() -> None:
     observed_at = datetime(2026, 8, 22, 10, 30, tzinfo=UTC)
     task = Task("Inspect", (), TaskId("task-invalid"), TaskStatus.WAITING, observed_at)

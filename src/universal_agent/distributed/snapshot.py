@@ -37,6 +37,7 @@ class WorkItemSnapshot:
     available_at: datetime
     worker_id: WorkerId | None
     lease_expires_at: datetime | None
+    fencing_token: int | None
     last_error: str | None
 
 
@@ -59,6 +60,7 @@ class DistributedLockSnapshot:
     acquired_at: datetime
     heartbeat_at: datetime
     lease_expires_at: datetime
+    fencing_token: int
     metadata: JsonMapping
 
 
@@ -120,6 +122,7 @@ def build_distributed_runtime_snapshot(
                 acquired_at=lease.acquired_at,
                 heartbeat_at=lease.heartbeat_at,
                 lease_expires_at=lease.lease_expires_at,
+                fencing_token=int(lease.fencing_token),
                 metadata=lease.metadata,
             )
             for lease in (() if locks is None else locks.active())
@@ -150,6 +153,7 @@ def _work_item_snapshot(item: WorkItem) -> WorkItemSnapshot:
         available_at=item.available_at,
         worker_id=None if lease is None else lease.worker_id,
         lease_expires_at=None if lease is None else lease.lease_expires_at,
+        fencing_token=None if lease is None else int(lease.fencing_token),
         last_error=item.last_error,
     )
 

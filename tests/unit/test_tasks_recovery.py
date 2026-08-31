@@ -1,3 +1,5 @@
+import pytest
+
 from universal_agent.core import ErrorCode, Task, TaskStatus, immutable_json
 from universal_agent.recovery import (
     Failure,
@@ -10,6 +12,7 @@ from universal_agent.recovery import (
 from universal_agent.tasks import TaskManager, TaskSpec
 
 
+@pytest.mark.behavior
 def test_task_manager_expands_idempotently_and_honors_dependencies() -> None:
     root = Task("Inspect", ("inspected",))
     root.status = TaskStatus.RUNNING
@@ -26,6 +29,7 @@ def test_task_manager_expands_idempotently_and_honors_dependencies() -> None:
     assert next_task.status is TaskStatus.RUNNING
 
 
+@pytest.mark.unit
 def test_task_manager_rejects_unknown_dependency() -> None:
     manager = TaskManager(Task("Inspect", ()))
     try:
@@ -36,6 +40,7 @@ def test_task_manager_rejects_unknown_dependency() -> None:
         raise AssertionError("unknown dependency was accepted")
 
 
+@pytest.mark.behavior
 def test_recovery_manager_enforces_attempt_budget() -> None:
     task = Task("Inspect", ())
     failure = Failure(
@@ -66,10 +71,12 @@ def test_recovery_manager_enforces_attempt_budget() -> None:
     assert second.exhausted
 
 
+@pytest.mark.unit
 def test_unknown_execution_classifies_as_unknown_failure() -> None:
     assert classify_failure(ErrorCode.UNKNOWN_EXECUTION) is FailureCategory.UNKNOWN
 
 
+@pytest.mark.behavior
 def test_recovery_rules_can_match_specific_capabilities() -> None:
     task = Task("Execute", ())
     manager = RecoveryManager(

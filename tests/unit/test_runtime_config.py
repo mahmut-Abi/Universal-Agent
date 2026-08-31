@@ -17,6 +17,7 @@ from universal_agent import (
 )
 
 
+@pytest.mark.unit
 def test_runtime_config_from_mapping_parses_typed_values() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -55,6 +56,7 @@ def test_runtime_config_from_mapping_parses_typed_values() -> None:
     assert config.configured_domains() == (DomainConfig("kubernetes", "0.2.0"),)
 
 
+@pytest.mark.unit
 def test_runtime_config_from_mapping_parses_secret_refs() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -79,6 +81,7 @@ def test_runtime_config_from_mapping_parses_secret_refs() -> None:
     )
 
 
+@pytest.mark.unit
 def test_runtime_config_from_mapping_parses_file_secret_refs() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -101,6 +104,7 @@ def test_runtime_config_from_mapping_parses_file_secret_refs() -> None:
     )
 
 
+@pytest.mark.unit
 def test_runtime_config_rejects_invalid_secret_refs() -> None:
     with pytest.raises(ValueError, match="secrets must be an object"):
         RuntimeConfig.from_mapping({"secrets": []})
@@ -122,6 +126,7 @@ def test_runtime_config_rejects_invalid_secret_refs() -> None:
         ).validate()
 
 
+@pytest.mark.contract
 def test_runtime_config_from_mapping_parses_json_http_model_config() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -153,6 +158,7 @@ def test_runtime_config_from_mapping_parses_json_http_model_config() -> None:
     assert config.model.provider is ModelProvider.JSON_HTTP
 
 
+@pytest.mark.unit
 def test_runtime_config_from_mapping_parses_openai_chat_completions_model_config() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -184,6 +190,7 @@ def test_runtime_config_from_mapping_parses_openai_chat_completions_model_config
     assert config.model.provider is ModelProvider.OPENAI_CHAT_COMPLETIONS
 
 
+@pytest.mark.contract
 def test_runtime_config_from_mapping_parses_openai_chat_prompt_json_model_config() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -210,6 +217,7 @@ def test_runtime_config_from_mapping_parses_openai_chat_prompt_json_model_config
     )
 
 
+@pytest.mark.unit
 def test_runtime_config_from_mapping_parses_openai_responses_model_config() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -239,6 +247,7 @@ def test_runtime_config_from_mapping_parses_openai_responses_model_config() -> N
     assert config.model.provider is ModelProvider.OPENAI_RESPONSES
 
 
+@pytest.mark.unit
 def test_runtime_config_rejects_invalid_model_config() -> None:
     with pytest.raises(ValueError, match="json_http model requires endpoint"):
         RuntimeConfig.from_mapping({"model": {"provider": "json_http", "name": "runtime"}})
@@ -304,6 +313,7 @@ def test_runtime_config_rejects_invalid_model_config() -> None:
         )
 
 
+@pytest.mark.unit
 def test_runtime_config_from_mapping_parses_multi_domain_values() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -321,6 +331,7 @@ def test_runtime_config_from_mapping_parses_multi_domain_values() -> None:
     )
 
 
+@pytest.mark.unit
 def test_runtime_config_from_mapping_parses_domain_package_paths() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -338,6 +349,7 @@ def test_runtime_config_from_mapping_parses_domain_package_paths() -> None:
     )
 
 
+@pytest.mark.unit
 def test_runtime_config_from_mapping_parses_domain_backend_settings() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -365,6 +377,7 @@ def test_runtime_config_from_mapping_parses_domain_backend_settings() -> None:
     assert config.domain.identity().name == "kubernetes"
 
 
+@pytest.mark.contract
 def test_runtime_config_from_json_file_parses_typed_values(tmp_path: Path) -> None:
     path = tmp_path / "runtime-config.json"
     path.write_text(
@@ -388,6 +401,7 @@ def test_runtime_config_from_json_file_parses_typed_values(tmp_path: Path) -> No
     assert config.domain == DomainConfig("kubernetes", "0.2.0")
 
 
+@pytest.mark.unit
 def test_runtime_config_parses_sqlite_store() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -399,6 +413,7 @@ def test_runtime_config_parses_sqlite_store() -> None:
     assert config.store.backend is StoreBackend.SQLITE
 
 
+@pytest.mark.unit
 def test_runtime_config_parses_sqlite_distributed_locks() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -415,6 +430,7 @@ def test_runtime_config_parses_sqlite_distributed_locks() -> None:
     assert config.distributed_locks.backend is StoreBackend.SQLITE
 
 
+@pytest.mark.unit
 def test_runtime_config_parses_sqlite_distributed_queue() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -429,6 +445,7 @@ def test_runtime_config_parses_sqlite_distributed_queue() -> None:
     assert config.distributed_queue.backend is StoreBackend.SQLITE
 
 
+@pytest.mark.unit
 def test_runtime_config_parses_sqlite_distributed_workers() -> None:
     config = RuntimeConfig.from_mapping(
         {
@@ -443,6 +460,7 @@ def test_runtime_config_parses_sqlite_distributed_workers() -> None:
     assert config.distributed_workers.backend is StoreBackend.SQLITE
 
 
+@pytest.mark.unit
 def test_runtime_config_rejects_invalid_store_and_limits() -> None:
     with pytest.raises(ValueError, match="file store requires path"):
         StoreConfig.from_mapping({"backend": "file"})
@@ -479,6 +497,7 @@ def test_runtime_config_rejects_invalid_store_and_limits() -> None:
         RuntimeConfig.from_mapping({"domain_package_paths": ["/domains/widget", "/domains/widget"]})
 
 
+@pytest.mark.contract
 def test_runtime_config_rejects_non_object_json_file(tmp_path: Path) -> None:
     path = tmp_path / "runtime-config.json"
     path.write_text("[1, 2, 3]", encoding="utf-8")

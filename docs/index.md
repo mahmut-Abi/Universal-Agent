@@ -7,7 +7,7 @@ does not replace:
 - [`universal-agent-runtime-domain-runtime-design.md`](../universal-agent-runtime-domain-runtime-design.md)
   for the normative architecture target.
 - [`README.md`](../README.md) for the current implementation summary and command list.
-- [`docs/revision/`](revision/) for dated implementation audits.
+- [`docs/revision/`](revision/) for dated implementation audits and TODO snapshots.
 
 ## Current Implementation Scope
 
@@ -40,6 +40,8 @@ or automatic external package installation.
 - [Kubernetes Production Slice Spec](kubernetes-production-slice-spec.md): Chat Completions and preflight slice history.
 - [Dependency Adoption Plan](dependency-adoption-plan.md): third-party library introduction plan, tiers, and roadmap.
 - [Revision Notes](revision/): dated status snapshots and implementation audits.
+- [Remaining TODO](revision/2026-08-31-remaining-todo.md): current incomplete
+  architecture items, blockers and completed local foundation work.
 
 ## Primary Commands
 

@@ -6,6 +6,7 @@ from universal_agent.core.polling import poll_async_result
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_poll_async_result_returns_ready_result_without_retry() -> None:
     calls = 0
 
@@ -26,6 +27,7 @@ async def test_poll_async_result_returns_ready_result_without_retry() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_poll_async_result_retries_until_result_matches() -> None:
     calls = 0
 
@@ -46,6 +48,7 @@ async def test_poll_async_result_retries_until_result_matches() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_poll_async_result_returns_last_result_after_timeout() -> None:
     calls = 0
 

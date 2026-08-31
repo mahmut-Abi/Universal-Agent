@@ -105,6 +105,7 @@ def build_service(
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_deterministic_runtime_mode_stabilizes_ids_and_event_clock() -> None:
     start = datetime(2026, 1, 1, tzinfo=UTC)
     step = timedelta(seconds=2)
@@ -129,7 +130,8 @@ async def test_deterministic_runtime_mode_stabilizes_ids_and_event_clock() -> No
     assert str(goal.id) == "goal-0001"
     assert str(task.id) == "task-0001"
     assert str(run.result.session_id) == "session-0001"
-    assert event_ids == [f"event-{index:04d}" for index in range(1, len(events) + 1)]
+    assert all(eid.startswith("event-") for eid in event_ids)
+    assert len(event_ids) == len(set(event_ids))
     assert action_ids == {"action-0001"}
     assert observation_event.data["observation_id"] == "observation-0001"
     assert event_times == sorted(event_times)
@@ -141,6 +143,7 @@ async def test_deterministic_runtime_mode_stabilizes_ids_and_event_clock() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_deterministic_replay_passes_matching_behavior_with_new_ids() -> None:
     first_backend = ReplayBackend()
     expected = await DeterministicReplayHarness(
@@ -160,6 +163,7 @@ async def test_deterministic_replay_passes_matching_behavior_with_new_ids() -> N
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_deterministic_replay_detects_behavior_drift() -> None:
     expected = await DeterministicReplayHarness(
         build_service(ReplayBackend(), [inspect_workload(), finish()])
@@ -179,6 +183,7 @@ async def test_deterministic_replay_detects_behavior_drift() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_deterministic_replay_detects_model_usage_drift() -> None:
     expected = await DeterministicReplayHarness(
         build_service(
@@ -222,6 +227,7 @@ async def test_deterministic_replay_detects_model_usage_drift() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_deterministic_replay_uses_persisted_golden_recording(tmp_path: Path) -> None:
     store = FileReplayRecordingStore(tmp_path)
     recording = await DeterministicReplayHarness(

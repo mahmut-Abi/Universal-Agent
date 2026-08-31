@@ -170,6 +170,7 @@ def build_service(
     ), backend
 
 
+@pytest.mark.contract
 def test_runtime_service_exposes_optional_multi_agent_projection() -> None:
     service, _ = build_service([])
     registry = AgentRegistry(
@@ -219,6 +220,7 @@ def test_runtime_service_exposes_optional_multi_agent_projection() -> None:
     assert multi_agent.delegation_tasks[0].task_id == "parent-task"
 
 
+@pytest.mark.unit
 def test_runtime_service_config_redacts_sensitive_environment_values() -> None:
     backend = ServiceBackend()
     active = DomainLoader().load(KubernetesRemediationDomain(backend, backend))
@@ -248,6 +250,7 @@ def test_runtime_service_config_redacts_sensitive_environment_values() -> None:
     }
 
 
+@pytest.mark.unit
 def test_runtime_service_config_exposes_secret_references_without_values() -> None:
     backend = ServiceBackend()
     active = DomainLoader().load(KubernetesRemediationDomain(backend, backend))
@@ -274,6 +277,7 @@ def test_runtime_service_config_exposes_secret_references_without_values() -> No
     assert projected.secrets[0].status is None
 
 
+@pytest.mark.unit
 def test_runtime_service_config_exposes_secret_status_without_values() -> None:
     backend = ServiceBackend()
     active = DomainLoader().load(KubernetesRemediationDomain(backend, backend))
@@ -308,6 +312,7 @@ def test_runtime_service_config_exposes_secret_status_without_values() -> None:
     assert "secret-value" not in str(projected)
 
 
+@pytest.mark.unit
 def test_runtime_service_config_exposes_domain_backend_settings() -> None:
     backend = ServiceBackend()
     active = DomainLoader().load(KubernetesRemediationDomain(backend, backend))
@@ -340,6 +345,7 @@ def test_runtime_service_config_exposes_domain_backend_settings() -> None:
     }
 
 
+@pytest.mark.contract
 def test_runtime_service_config_exposes_state_event_commit_projection() -> None:
     backend = ServiceBackend()
     active = DomainLoader().load(KubernetesRemediationDomain(backend, backend))
@@ -428,6 +434,7 @@ def build_api_with_stores(
     return RuntimeAPI(runtime=runtime, session_store=store, event_reader=events), store, events
 
 
+@pytest.mark.behavior
 def test_runtime_service_exposes_optional_distributed_runtime_views() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     service, _ = build_service([])
@@ -458,6 +465,7 @@ def test_runtime_service_exposes_optional_distributed_runtime_views() -> None:
     assert health.status.value == "ok"
 
 
+@pytest.mark.behavior
 def test_runtime_service_exposes_distributed_session_scheduling() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     service, _ = build_service([])
@@ -492,6 +500,7 @@ def test_runtime_service_exposes_distributed_session_scheduling() -> None:
     assert result.snapshot.work_queue.queued_count == 1
 
 
+@pytest.mark.behavior
 def test_runtime_service_exposes_distributed_worker_lifecycle() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     service, _ = build_service([])
@@ -539,6 +548,7 @@ def test_runtime_service_exposes_distributed_worker_lifecycle() -> None:
     assert offline.snapshot.workers.offline_count == 1
 
 
+@pytest.mark.behavior
 def test_runtime_service_exposes_distributed_lock_lifecycle() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     service, _ = build_service([])
@@ -585,6 +595,7 @@ def test_runtime_service_exposes_distributed_lock_lifecycle() -> None:
     assert released.snapshot.locks == ()
 
 
+@pytest.mark.contract
 def test_runtime_service_exposes_distributed_expiry_sweep() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -608,6 +619,7 @@ def test_runtime_service_exposes_distributed_expiry_sweep() -> None:
     assert second.expired_work_items == ()
 
 
+@pytest.mark.behavior
 def test_runtime_service_exposes_distributed_work_item_cancellation() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     service, _ = build_service([])
@@ -641,6 +653,7 @@ def test_runtime_service_exposes_distributed_work_item_cancellation() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_distributed_worker_resumes_scheduled_session() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_service(
@@ -675,6 +688,7 @@ async def test_runtime_service_distributed_worker_resumes_scheduled_session() ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_distributed_worker_retries_when_session_lock_is_held() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_service(
@@ -704,6 +718,7 @@ async def test_runtime_service_distributed_worker_retries_when_session_lock_is_h
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_distributed_worker_runs_until_idle() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_service(
@@ -739,6 +754,7 @@ async def test_runtime_service_distributed_worker_runs_until_idle() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_distributed_worker_runs_scheduled_goal() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_service(
@@ -763,6 +779,7 @@ async def test_runtime_service_distributed_worker_runs_scheduled_goal() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_distributed_worker_resumes_scheduled_task() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_service(
@@ -793,6 +810,7 @@ async def test_runtime_service_distributed_worker_resumes_scheduled_task() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_distributed_worker_confirms_scheduled_action() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, backend = build_service(
@@ -834,6 +852,7 @@ async def test_runtime_service_distributed_worker_confirms_scheduled_action() ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_distributed_schedules_pending_actions_from_sessions() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, backend = build_service(
@@ -895,6 +914,7 @@ async def test_runtime_service_distributed_schedules_pending_actions_from_sessio
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_runtime_service_distributed_pending_action_sweep_requires_confirmation() -> None:
     service, _ = build_service([], distributed_coordinator=DistributedRuntimeCoordinator())
 
@@ -906,6 +926,7 @@ async def test_runtime_service_distributed_pending_action_sweep_requires_confirm
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_distributed_worker_rejects_mismatched_action_work() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, backend = build_service(
@@ -938,6 +959,7 @@ async def test_runtime_service_distributed_worker_rejects_mismatched_action_work
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_doctor_detects_mismatched_distributed_action_work() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -974,6 +996,7 @@ async def test_runtime_service_doctor_detects_mismatched_distributed_action_work
     assert distributed_queue.message == "invalid_session_work_items=1"
 
 
+@pytest.mark.behavior
 def test_runtime_service_rejects_unconfirmed_distributed_action_schedule() -> None:
     service, _ = build_service([], distributed_coordinator=DistributedRuntimeCoordinator())
 
@@ -987,6 +1010,7 @@ def test_runtime_service_rejects_unconfirmed_distributed_action_schedule() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_distributed_worker_rejects_non_current_task_work() -> None:
     coordinator = DistributedRuntimeCoordinator()
     service, _ = build_service(
@@ -1012,6 +1036,7 @@ async def test_runtime_service_distributed_worker_rejects_non_current_task_work(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_runtime_service_distributed_worker_rejects_invalid_scheduled_goal_payload() -> None:
     coordinator = DistributedRuntimeCoordinator()
     coordinator.queue.enqueue(
@@ -1032,6 +1057,7 @@ async def test_runtime_service_distributed_worker_rejects_invalid_scheduled_goal
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_doctor_includes_distributed_health() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -1054,6 +1080,7 @@ async def test_runtime_service_doctor_includes_distributed_health() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_doctor_detects_orphan_events_from_full_event_stream() -> None:
     active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
     components = RuntimeBuilder().build(active)
@@ -1079,6 +1106,7 @@ async def test_runtime_service_doctor_detects_orphan_events_from_full_event_stre
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_doctor_detects_unredacted_secret_events() -> None:
     active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
     components = RuntimeBuilder().build(active)
@@ -1103,6 +1131,7 @@ async def test_runtime_service_doctor_detects_unredacted_secret_events() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_repairs_missing_terminal_event_history() -> None:
     active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
     components = RuntimeBuilder().build(active)
@@ -1133,6 +1162,7 @@ async def test_runtime_service_repairs_missing_terminal_event_history() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_repairs_missing_failed_terminal_event_history() -> None:
     active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
     components = RuntimeBuilder().build(active)
@@ -1152,6 +1182,7 @@ async def test_runtime_service_repairs_missing_failed_terminal_event_history() -
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_repairs_missing_cancelled_terminal_event_history() -> None:
     active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
     components = RuntimeBuilder().build(active)
@@ -1172,6 +1203,7 @@ async def test_runtime_service_repairs_missing_cancelled_terminal_event_history(
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_blocks_state_event_repair_when_orphan_events_exist() -> None:
     active = DomainLoader().load(KubernetesRemediationDomain(ServiceBackend(), ServiceBackend()))
     components = RuntimeBuilder().build(active)
@@ -1197,6 +1229,7 @@ async def test_runtime_service_blocks_state_event_repair_when_orphan_events_exis
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_doctor_detects_distributed_session_work_without_session() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -1237,6 +1270,7 @@ async def test_runtime_service_doctor_detects_distributed_session_work_without_s
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_doctor_recommends_distributed_terminal_pruning() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -1274,6 +1308,7 @@ async def test_runtime_service_doctor_recommends_distributed_terminal_pruning() 
     assert distributed_queue.message == "terminal_work_items=1 prune recommended"
 
 
+@pytest.mark.behavior
 def test_runtime_service_uses_configured_terminal_retention_for_pruning() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -1316,6 +1351,7 @@ def test_runtime_service_uses_configured_terminal_retention_for_pruning() -> Non
     assert [item.work_item_id for item in pruned.snapshot.work_queue.items] == [fresh.work_item_id]
 
 
+@pytest.mark.behavior
 def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     service, _ = build_service([])
 
@@ -1385,6 +1421,7 @@ def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     assert "unhealthy workload triage" in memory_subjects
 
 
+@pytest.mark.unit
 def test_runtime_service_exposes_domain_package_catalog_without_activation() -> None:
     service, _ = build_service([], domain_packages=package_registry())
 
@@ -1413,6 +1450,7 @@ def test_runtime_service_exposes_domain_package_catalog_without_activation() -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_delegates_execution_to_runtime_api() -> None:
     service, backend = build_service([inspect_workload(), finish()])
 
@@ -1434,6 +1472,7 @@ async def test_runtime_service_delegates_execution_to_runtime_api() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_builds_session_explorer_projection() -> None:
     service, backend = build_service([inspect_workload(), finish()])
 
@@ -1474,6 +1513,7 @@ async def test_runtime_service_builds_session_explorer_projection() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_service_derives_metrics_doctor_and_audit_from_events() -> None:
     service, backend = build_service(
         [scale_workload(), inspect_workload(), finish()],

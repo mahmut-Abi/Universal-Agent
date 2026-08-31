@@ -29,6 +29,7 @@ from universal_agent.distributed import (
 )
 
 
+@pytest.mark.behavior
 def test_work_queue_leases_highest_priority_available_item_and_completes_it() -> None:
     queue = InMemoryWorkQueue()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -66,6 +67,31 @@ def test_work_queue_leases_highest_priority_available_item_and_completes_it() ->
     assert queue.get(low.work_item_id).status is WorkItemStatus.QUEUED
 
 
+@pytest.mark.unit
+def test_work_queue_lease_fencing_token_increments_on_requeue() -> None:
+    queue = InMemoryWorkQueue()
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    queue.enqueue(kind="agent_session", max_attempts=2, available_at=now)
+
+    first = queue.lease(worker_id=WorkerId("worker-a"), ttl_seconds=1, now=now)
+    assert first.lease is not None
+    queue.expire(now=now + timedelta(seconds=2))
+    second = queue.lease(
+        worker_id=WorkerId("worker-b"), ttl_seconds=10, now=now + timedelta(seconds=3)
+    )
+
+    assert second.lease is not None
+    assert first.lease.fencing_token == 1
+    assert second.lease.fencing_token == 2
+    with pytest.raises(LeaseLostError, match=f"lease not found: {first.lease.lease_id}"):
+        queue.complete(
+            first.lease.lease_id,
+            worker_id=WorkerId("worker-a"),
+            now=now + timedelta(seconds=4),
+        )
+
+
+@pytest.mark.unit
 def test_work_queue_idempotent_enqueue_returns_existing_item() -> None:
     queue = InMemoryWorkQueue()
 
@@ -84,6 +110,7 @@ def test_work_queue_idempotent_enqueue_returns_existing_item() -> None:
         WorkItemStatus.CANCELLED,
     ),
 )
+@pytest.mark.unit
 def test_work_queue_idempotency_ignores_terminal_items(
     terminal_status: WorkItemStatus,
 ) -> None:
@@ -122,6 +149,7 @@ def test_work_queue_idempotency_ignores_terminal_items(
     assert second.status is WorkItemStatus.QUEUED
 
 
+@pytest.mark.behavior
 def test_file_work_queue_persists_items_and_lease_state(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -157,6 +185,7 @@ def test_file_work_queue_persists_items_and_lease_state(tmp_path: Path) -> None:
     assert persisted.lease.lease_expires_at == now + timedelta(seconds=25)
 
 
+@pytest.mark.unit
 def test_file_work_queue_restores_sequence_and_idempotency(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     queue = FileWorkQueue(path)
@@ -172,6 +201,7 @@ def test_file_work_queue_restores_sequence_and_idempotency(tmp_path: Path) -> No
     assert len(FileWorkQueue(path).queued()) == 2
 
 
+@pytest.mark.unit
 def test_file_work_queue_reloads_before_reading_external_changes(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     writer = FileWorkQueue(path)
@@ -183,6 +213,7 @@ def test_file_work_queue_reloads_before_reading_external_changes(tmp_path: Path)
     assert [item.work_item_id for item in stale_reader.queued()] == [enqueued.work_item_id]
 
 
+@pytest.mark.unit
 def test_file_work_queue_reloads_before_stale_writer_mutates(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -200,6 +231,7 @@ def test_file_work_queue_reloads_before_stale_writer_mutates(tmp_path: Path) -> 
     assert reloaded.get(enqueued.work_item_id).kind == "task"
 
 
+@pytest.mark.contract
 def test_file_work_queue_serializes_cross_process_operations(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     lock_path = path.with_suffix(path.suffix + ".lock")
@@ -237,6 +269,7 @@ def test_file_work_queue_serializes_cross_process_operations(tmp_path: Path) -> 
     assert FileWorkQueue(path).get(leased.work_item_id).lease is not None
 
 
+@pytest.mark.unit
 def test_file_work_queue_rejects_unsupported_file_version(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     path.write_text(json.dumps({"version": 2, "items": []}), encoding="utf-8")
@@ -245,6 +278,7 @@ def test_file_work_queue_rejects_unsupported_file_version(tmp_path: Path) -> Non
         FileWorkQueue(path)
 
 
+@pytest.mark.unit
 def test_file_work_queue_rejects_non_list_items(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     path.write_text(json.dumps({"version": 1, "items": "bad"}), encoding="utf-8")
@@ -253,6 +287,7 @@ def test_file_work_queue_rejects_non_list_items(tmp_path: Path) -> None:
         FileWorkQueue(path)
 
 
+@pytest.mark.contract
 def test_file_work_queue_rejects_non_object_item_payload(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     path.write_text(json.dumps({"version": 1, "items": ["bad"]}), encoding="utf-8")
@@ -261,6 +296,7 @@ def test_file_work_queue_rejects_non_object_item_payload(tmp_path: Path) -> None
         FileWorkQueue(path)
 
 
+@pytest.mark.unit
 def test_file_work_queue_rejects_duplicate_persisted_work_item_ids(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     FileWorkQueue(path).enqueue(kind="agent_session")
@@ -275,6 +311,7 @@ def test_file_work_queue_rejects_duplicate_persisted_work_item_ids(tmp_path: Pat
         FileWorkQueue(path)
 
 
+@pytest.mark.unit
 def test_file_work_queue_rejects_attempts_above_max_attempts(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     FileWorkQueue(path).enqueue(kind="agent_session", max_attempts=1)
@@ -291,6 +328,7 @@ def test_file_work_queue_rejects_attempts_above_max_attempts(tmp_path: Path) -> 
         FileWorkQueue(path)
 
 
+@pytest.mark.contract
 def test_file_work_queue_rejects_non_object_persisted_payload(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     FileWorkQueue(path).enqueue(kind="agent_session")
@@ -307,6 +345,7 @@ def test_file_work_queue_rejects_non_object_persisted_payload(tmp_path: Path) ->
         FileWorkQueue(path)
 
 
+@pytest.mark.contract
 def test_file_work_queue_accepts_legacy_null_payload_as_empty_object(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     enqueued = FileWorkQueue(path).enqueue(kind="agent_session")
@@ -322,6 +361,7 @@ def test_file_work_queue_accepts_legacy_null_payload_as_empty_object(tmp_path: P
     assert FileWorkQueue(path).get(enqueued.work_item_id).payload == {}
 
 
+@pytest.mark.unit
 def test_file_work_queue_rejects_invalid_persisted_datetime(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     FileWorkQueue(path).enqueue(kind="agent_session")
@@ -338,6 +378,7 @@ def test_file_work_queue_rejects_invalid_persisted_datetime(tmp_path: Path) -> N
         FileWorkQueue(path)
 
 
+@pytest.mark.unit
 def test_file_work_queue_rejects_leased_item_without_lease_metadata(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     FileWorkQueue(path).enqueue(kind="agent_session")
@@ -355,6 +396,7 @@ def test_file_work_queue_rejects_leased_item_without_lease_metadata(tmp_path: Pa
         FileWorkQueue(path)
 
 
+@pytest.mark.unit
 def test_file_work_queue_persists_completion_and_expiry(tmp_path: Path) -> None:
     path = tmp_path / "work-queue.json"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -380,6 +422,7 @@ def test_file_work_queue_persists_completion_and_expiry(tmp_path: Path) -> None:
     assert reloaded.get(expired_lease.work_item_id).status is WorkItemStatus.FAILED
 
 
+@pytest.mark.behavior
 def test_sqlite_work_queue_persists_items_and_lease_state(tmp_path: Path) -> None:
     path = tmp_path / "runtime.sqlite3"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -416,6 +459,7 @@ def test_sqlite_work_queue_persists_items_and_lease_state(tmp_path: Path) -> Non
     assert persisted.lease.lease_expires_at == now + timedelta(seconds=25)
 
 
+@pytest.mark.unit
 def test_sqlite_work_queue_restores_sequence_and_idempotency(tmp_path: Path) -> None:
     path = tmp_path / "runtime.sqlite3"
     queue = SQLiteWorkQueue(path)
@@ -431,6 +475,7 @@ def test_sqlite_work_queue_restores_sequence_and_idempotency(tmp_path: Path) -> 
     assert len(SQLiteWorkQueue(path).queued()) == 2
 
 
+@pytest.mark.unit
 def test_sqlite_work_queue_reloads_before_stale_writer_mutates(tmp_path: Path) -> None:
     path = tmp_path / "runtime.sqlite3"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -448,6 +493,7 @@ def test_sqlite_work_queue_reloads_before_stale_writer_mutates(tmp_path: Path) -
     assert reloaded.get(enqueued.work_item_id).kind == "task"
 
 
+@pytest.mark.unit
 def test_sqlite_work_queue_persists_completion_and_expiry(tmp_path: Path) -> None:
     path = tmp_path / "runtime.sqlite3"
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -473,6 +519,7 @@ def test_sqlite_work_queue_persists_completion_and_expiry(tmp_path: Path) -> Non
     assert reloaded.get(expired_lease.work_item_id).status is WorkItemStatus.FAILED
 
 
+@pytest.mark.unit
 def test_sqlite_work_queue_lease_persists_expiry_when_no_work_is_available(
     tmp_path: Path,
 ) -> None:
@@ -493,6 +540,7 @@ def test_sqlite_work_queue_lease_persists_expiry_when_no_work_is_available(
 
 
 @pytest.mark.parametrize("operation", ("heartbeat", "complete", "fail"))
+@pytest.mark.unit
 def test_sqlite_work_queue_persists_expiry_when_worker_loses_lease(
     tmp_path: Path,
     operation: str,
@@ -533,6 +581,7 @@ def test_sqlite_work_queue_persists_expiry_when_worker_loses_lease(
     assert reloaded.lease(worker_id=WorkerId("worker-b"), now=now + timedelta(seconds=7))
 
 
+@pytest.mark.unit
 def test_work_queue_heartbeat_extends_active_lease_and_rejects_wrong_worker() -> None:
     queue = InMemoryWorkQueue()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -558,6 +607,7 @@ def test_work_queue_heartbeat_extends_active_lease_and_rejects_wrong_worker() ->
         )
 
 
+@pytest.mark.unit
 def test_work_queue_leases_only_accepted_kinds_when_filter_is_provided() -> None:
     queue = InMemoryWorkQueue()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -580,6 +630,7 @@ def test_work_queue_leases_only_accepted_kinds_when_filter_is_provided() -> None
         )
 
 
+@pytest.mark.unit
 def test_work_queue_fail_requeues_until_max_attempts_then_fails() -> None:
     queue = InMemoryWorkQueue()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -612,6 +663,7 @@ def test_work_queue_fail_requeues_until_max_attempts_then_fails() -> None:
     assert terminal.last_error == "still failing"
 
 
+@pytest.mark.unit
 def test_work_queue_expire_requeues_or_fails_expired_leases() -> None:
     queue = InMemoryWorkQueue()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -632,6 +684,7 @@ def test_work_queue_expire_requeues_or_fails_expired_leases() -> None:
     assert len(queue.leased()) == 0
 
 
+@pytest.mark.unit
 def test_work_queue_cancel_removes_pending_or_leased_work_from_execution() -> None:
     queue = InMemoryWorkQueue()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -649,6 +702,7 @@ def test_work_queue_cancel_removes_pending_or_leased_work_from_execution() -> No
 
 
 @pytest.mark.parametrize("queue_kind", ("memory", "file", "sqlite"))
+@pytest.mark.unit
 def test_work_queue_prunes_terminal_items_with_optional_retention_window(
     queue_kind: str,
     tmp_path: Path,
@@ -701,6 +755,7 @@ def test_work_queue_prunes_terminal_items_with_optional_retention_window(
     ]
 
 
+@pytest.mark.unit
 def test_work_queue_rejects_completion_after_lease_expiry() -> None:
     queue = InMemoryWorkQueue()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -722,6 +777,7 @@ def test_work_queue_rejects_completion_after_lease_expiry() -> None:
     assert "lease expired" in item.last_error
 
 
+@pytest.mark.unit
 def test_work_queue_validates_inputs() -> None:
     queue = InMemoryWorkQueue()
 
@@ -737,6 +793,7 @@ def test_work_queue_validates_inputs() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_work_queue_worker_completes_handled_work() -> None:
     queue = InMemoryWorkQueue()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -762,6 +819,7 @@ async def test_work_queue_worker_completes_handled_work() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_work_queue_worker_leases_only_declared_capabilities() -> None:
     queue = InMemoryWorkQueue()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -782,6 +840,7 @@ async def test_work_queue_worker_leases_only_declared_capabilities() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_work_queue_worker_heartbeats_long_running_async_handler() -> None:
     queue = InMemoryWorkQueue()
     registry = InMemoryWorkerRegistry()
@@ -811,6 +870,7 @@ async def test_work_queue_worker_heartbeats_long_running_async_handler() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_work_queue_worker_rejects_completion_after_lease_expiry() -> None:
     queue = InMemoryWorkQueue()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -843,6 +903,7 @@ async def test_work_queue_worker_rejects_completion_after_lease_expiry() -> None
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("queue_kind", ("memory", "file", "sqlite"))
+@pytest.mark.unit
 async def test_work_queue_worker_reports_lease_lost_when_work_is_cancelled_in_flight(
     tmp_path: Path,
     queue_kind: str,
@@ -878,6 +939,7 @@ async def test_work_queue_worker_reports_lease_lost_when_work_is_cancelled_in_fl
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_work_queue_worker_retries_handler_failures_until_terminal() -> None:
     queue = InMemoryWorkQueue()
     queue.enqueue(kind="agent_session", max_attempts=2)
@@ -900,6 +962,7 @@ async def test_work_queue_worker_retries_handler_failures_until_terminal() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_work_queue_worker_fails_unhandled_work_without_retry_loop() -> None:
     queue = InMemoryWorkQueue()
     queue.enqueue(kind="missing_handler")
@@ -920,6 +983,7 @@ async def test_work_queue_worker_fails_unhandled_work_without_retry_loop() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_work_queue_worker_can_cancel_work() -> None:
     queue = InMemoryWorkQueue()
     queue.enqueue(kind="agent_session")
@@ -948,6 +1012,7 @@ def _queue_for_kind(queue_kind: str, tmp_path: Path) -> InMemoryWorkQueue:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_work_queue_worker_runs_until_idle() -> None:
     queue = InMemoryWorkQueue()
     queue.enqueue(kind="agent_session")
@@ -968,6 +1033,7 @@ async def test_work_queue_worker_runs_until_idle() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_work_queue_worker_registers_and_heartbeats_with_worker_registry() -> None:
     queue = InMemoryWorkQueue()
     registry = InMemoryWorkerRegistry()
@@ -1001,6 +1067,7 @@ async def test_work_queue_worker_registers_and_heartbeats_with_worker_registry()
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_work_queue_worker_does_not_lease_when_worker_is_draining_or_offline() -> None:
     queue = InMemoryWorkQueue()
     registry = InMemoryWorkerRegistry()
@@ -1027,6 +1094,7 @@ async def test_work_queue_worker_does_not_lease_when_worker_is_draining_or_offli
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_work_queue_worker_does_not_lease_after_worker_registry_expiry() -> None:
     queue = InMemoryWorkQueue()
     registry = InMemoryWorkerRegistry()

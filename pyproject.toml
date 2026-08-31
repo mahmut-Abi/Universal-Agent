@@ -22,6 +22,7 @@ dependencies = [
   "orjson>=3.10,<4",
   "packaging>=24,<27",
   "prometheus-client>=0.22,<1",
+  "psycopg[binary]>=3.2,<4",
   "pydantic>=2.5,<3",
   "python-dateutil>=2.9,<3",
   "pyyaml>=6,<7",
@@ -56,6 +57,9 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
   "live: tests that contact external model providers or Kubernetes clusters",
+  "behavior: tests that assert on real agent runtime outcomes (goal/task completion, world model, policy, recovery, evaluation)",
+  "contract: tests that assert on payload/serialization/view round-trip shape rather than agent behavior",
+  "unit: internal unit tests of helpers, parsers, config, and pure logic that are neither behavior nor contract",
 ]
 
 [tool.ruff]

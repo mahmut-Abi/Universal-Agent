@@ -22,12 +22,30 @@ from universal_agent.core.config_validation import (
     parse_rate,
     parse_unique_non_empty_string_sequence,
 )
+from universal_agent.evaluation.initial_state import (
+    EvaluationInitialState as EvaluationInitialState,
+)
+from universal_agent.evaluation.initial_state import (
+    WorldEntitySeed as WorldEntitySeed,
+)
+from universal_agent.evaluation.initial_state import (
+    WorldStateSeed as WorldStateSeed,
+)
+from universal_agent.evaluation.initial_state import (
+    _build_initial_state_payload as _build_initial_state_payload,
+)
 from universal_agent.operations import AuditRecordView, RuntimeMetricsView, build_runtime_metrics
 from universal_agent.runtime import RuntimeEventView, RuntimeRun, SessionSummaryView, SessionView
 
 
 class EvaluationRuntime(Protocol):
-    async def run_goal(self, goal: Goal, task: Task) -> RuntimeRun: ...
+    async def run_goal(
+        self,
+        goal: Goal,
+        task: Task,
+        *,
+        initial_state: JsonMapping | None = None,
+    ) -> RuntimeRun: ...
 
     async def list_sessions(self) -> tuple[SessionSummaryView, ...]: ...
 
@@ -80,6 +98,7 @@ class EvaluationScenario:
     expectations: ScenarioExpectations = field(default_factory=ScenarioExpectations)
     kind: EvaluationScenarioKind = EvaluationScenarioKind.SCENARIO
     tags: tuple[str, ...] = ()
+    initial_state: EvaluationInitialState | None = None
 
     def __post_init__(self) -> None:
         parse_non_empty_string(self.name, "evaluation scenario name")
@@ -347,7 +366,12 @@ class EvaluationHarness:
         self._runtime = runtime
 
     async def run(self, scenario: EvaluationScenario) -> ScenarioReport:
-        run = await self._runtime.run_goal(scenario.goal, scenario.task)
+        initial_state = _build_initial_state_payload(scenario.initial_state)
+        run = await self._runtime.run_goal(
+            scenario.goal,
+            scenario.task,
+            initial_state=initial_state,
+        )
         session = run.session
         events = await self._runtime.list_events(run.result.session_id)
         audit_records = await self._runtime.audit_records(run.result.session_id)

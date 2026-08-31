@@ -136,6 +136,7 @@ def policy_scenario(name: str = "invalid scale policy") -> EvaluationScenario:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_evaluation_runner_applies_gate_and_persists_report(tmp_path: Path) -> None:
     store = FileEvaluationReportStore(tmp_path)
     suite = EvaluationSuite("runner smoke suite", (healthy_scenario(),))
@@ -159,6 +160,7 @@ async def test_evaluation_runner_applies_gate_and_persists_report(tmp_path: Path
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_evaluation_runner_keeps_gate_failure_separate_from_scenario_failure() -> None:
     suite = EvaluationSuite("runner strict gate suite", (healthy_scenario(),))
 
@@ -178,6 +180,7 @@ async def test_evaluation_runner_keeps_gate_failure_separate_from_scenario_failu
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_evaluation_runner_filters_suite_and_can_skip_persistence(tmp_path: Path) -> None:
     store = FileEvaluationReportStore(tmp_path)
     suite = EvaluationSuite(

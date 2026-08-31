@@ -121,6 +121,7 @@ def running_server(app: AgentdApp) -> Generator[str, None, None]:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_api_url_reads_agentd_health_without_local_profile() -> None:
     app, _ = build_app([])
     output = StringIO()
@@ -142,6 +143,7 @@ async def test_cli_api_url_reads_agentd_health_without_local_profile() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_api_url_runs_goal_and_reads_remote_session() -> None:
     app, backend = build_app([inspect_workload(), finish()])
     run_output = StringIO()
@@ -189,6 +191,7 @@ async def test_cli_api_url_runs_goal_and_reads_remote_session() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_api_url_forwards_repair_state_events() -> None:
     app, _ = build_app([])
     output = StringIO()
@@ -212,6 +215,7 @@ async def test_cli_api_url_forwards_repair_state_events() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_api_url_forwards_distributed_goal_to_remote_worker() -> None:
     coordinator = DistributedRuntimeCoordinator()
     app, backend = build_app(
@@ -275,6 +279,7 @@ async def test_cli_api_url_forwards_distributed_goal_to_remote_worker() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_api_url_forwards_distributed_lock_lifecycle() -> None:
     app, _ = build_app([], distributed_coordinator=DistributedRuntimeCoordinator())
     acquire_output = StringIO()
@@ -336,6 +341,7 @@ async def test_cli_api_url_forwards_distributed_lock_lifecycle() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_api_url_sends_bearer_token_from_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -362,6 +368,7 @@ async def test_cli_api_url_sends_bearer_token_from_env(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_api_url_maps_agentd_error_to_cli_error() -> None:
     app, _ = build_app([], auth=AgentdAuthPolicy("server-token"))
     error = StringIO()
@@ -379,6 +386,7 @@ async def test_cli_api_url_maps_agentd_error_to_cli_error() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_api_url_rejects_local_only_commands() -> None:
     app, _ = build_app([])
     error = StringIO()

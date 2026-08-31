@@ -75,12 +75,13 @@ class SessionRuntimeState:
 def start_session(
     state: AgentState,
     components: RuntimeComponents,
+    tasks: TaskManager | None = None,
 ) -> SessionRuntimeState:
     metadata = components.active_domain.manifest.metadata
     identities = components.domain_composition.identities
     session = SessionRuntimeState(
         state,
-        TaskManager(state.current_task),
+        tasks if tasks is not None else TaskManager(state.current_task),
         components.evidence_store,
         components.world_model,
         metadata.name,

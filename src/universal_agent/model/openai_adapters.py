@@ -136,12 +136,9 @@ class OpenAIResponsesModelAdapter:
         openai_response = _openai_responses_payload(response)
         _raise_for_openai_response_status(openai_response)
         output_text = _openai_output_text(openai_response)
-        try:
-            decoded = loads_json(output_text)
-        except JsonCodecError as exc:
-            raise JsonHttpModelError(
-                f"OpenAI response output_text was not JSON: {json_error_message(exc)}"
-            ) from exc
+        # OpenAI-compatible providers may wrap the JSON decision in a markdown
+        # code fence even when a strict schema is requested.
+        decoded = _loads_json_text(output_text, "OpenAI response output_text")
         payload = decision_payload(json_mapping(decoded, "output_text"))
         try:
             decision = decode_decision(payload)
@@ -172,6 +169,7 @@ class OpenAIResponsesModelAdapter:
                 "are already satisfied in the runtime context. "
                 "Do not claim tool execution or task completion in prose."
             ),
+            "decision_schema": _openai_decision_json_schema(),
             "context": dict(context_payload),
         }
         payload: dict[str, JsonValue] = {
@@ -272,6 +270,9 @@ class OpenAIChatCompletionsModelAdapter:
         prompt = {
             "runtime_contract": (
                 "Return exactly one Universal Agent Runtime Decision as JSON. "
+                "The top-level JSON object must have exactly these fields: "
+                "type (one of execute, wait, ask_user, finish), reason, capability, "
+                "target, arguments, expected_observations, message. "
                 "Use execute only for one capability listed in context.capabilities. "
                 "Construct execute arguments from that capability's required_arguments "
                 "and argument_schema. "
@@ -280,6 +281,7 @@ class OpenAIChatCompletionsModelAdapter:
                 "are already satisfied in the runtime context. "
                 "Do not claim tool execution or task completion in prose."
             ),
+            "decision_schema": _openai_decision_json_schema(),
             "context": dict(decision_context_payload(context)),
         }
         payload: dict[str, JsonValue] = {

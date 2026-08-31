@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from universal_agent.core import ExecutionStatus, immutable_json
 from universal_agent.evaluation.console import (
     EvaluationConsoleSnapshot,
@@ -20,6 +22,7 @@ from universal_agent.evaluation.recording import (
 )
 
 
+@pytest.mark.unit
 def test_evaluation_console_renders_and_escapes_report_snapshot() -> None:
     report = evaluation_report("daily <suite>")
     snapshot = EvaluationConsoleSnapshot("/tmp/<reports>", (report,))
@@ -40,6 +43,7 @@ def test_evaluation_console_renders_and_escapes_report_snapshot() -> None:
     assert "Gate Failures" in rendered
 
 
+@pytest.mark.unit
 def test_evaluation_console_renders_terminal_text_snapshot() -> None:
     report = evaluation_report("daily regression suite")
     snapshot = EvaluationConsoleSnapshot("/tmp/reports", (report,))
@@ -63,6 +67,7 @@ def test_evaluation_console_renders_terminal_text_snapshot() -> None:
     assert "- daily regression suite/min_pass_rate status=fail" in rendered
 
 
+@pytest.mark.unit
 def test_evaluation_console_handles_empty_report_directory(tmp_path: Path) -> None:
     snapshot = build_evaluation_console_snapshot(tmp_path / "missing")
 
@@ -78,6 +83,7 @@ def test_evaluation_console_handles_empty_report_directory(tmp_path: Path) -> No
     assert text_rendered.count("- none") == 3
 
 
+@pytest.mark.unit
 def test_evaluation_console_snapshot_loads_file_report_store(tmp_path: Path) -> None:
     report = evaluation_report("daily regression suite")
     FileEvaluationReportStore(tmp_path).save(report)

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from universal_agent.core import SessionId, TaskId, immutable_json
 from universal_agent.distributed import (
     DistributedHealthStatus,
@@ -16,6 +18,7 @@ from universal_agent.distributed import (
 )
 
 
+@pytest.mark.behavior
 def test_distributed_runtime_coordinator_wires_scheduler_snapshot_and_health() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -36,6 +39,7 @@ def test_distributed_runtime_coordinator_wires_scheduler_snapshot_and_health() -
     assert health.status is DistributedHealthStatus.OK
 
 
+@pytest.mark.behavior
 def test_distributed_runtime_coordinator_schedules_session_work_and_reports_state() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -62,6 +66,7 @@ def test_distributed_runtime_coordinator_schedules_session_work_and_reports_stat
     assert result.health.status is DistributedHealthStatus.OK
 
 
+@pytest.mark.behavior
 def test_distributed_runtime_coordinator_schedules_goal_work_and_reports_state() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -91,6 +96,7 @@ def test_distributed_runtime_coordinator_schedules_goal_work_and_reports_state()
     assert result.health.status is DistributedHealthStatus.OK
 
 
+@pytest.mark.behavior
 def test_distributed_runtime_coordinator_schedules_task_work_and_reports_state() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -119,6 +125,7 @@ def test_distributed_runtime_coordinator_schedules_task_work_and_reports_state()
     assert result.health.status is DistributedHealthStatus.OK
 
 
+@pytest.mark.unit
 def test_distributed_runtime_coordinator_manages_worker_lifecycle() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -156,6 +163,7 @@ def test_distributed_runtime_coordinator_manages_worker_lifecycle() -> None:
     assert offline.snapshot.workers.offline_count == 1
 
 
+@pytest.mark.unit
 def test_distributed_runtime_coordinator_manages_lock_lifecycle() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -191,6 +199,7 @@ def test_distributed_runtime_coordinator_manages_lock_lifecycle() -> None:
     assert released.snapshot.locks == ()
 
 
+@pytest.mark.contract
 def test_distributed_runtime_coordinator_runs_expiry_sweep_with_one_timestamp() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -222,6 +231,7 @@ def test_distributed_runtime_coordinator_runs_expiry_sweep_with_one_timestamp() 
     assert result.health.status is DistributedHealthStatus.ERROR
 
 
+@pytest.mark.behavior
 def test_distributed_runtime_coordinator_cancels_work_item_and_reports_state() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -246,6 +256,7 @@ def test_distributed_runtime_coordinator_cancels_work_item_and_reports_state() -
     assert result.health.status is DistributedHealthStatus.OK
 
 
+@pytest.mark.contract
 def test_distributed_runtime_coordinator_prunes_terminal_work_and_reports_state() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     coordinator = DistributedRuntimeCoordinator()
@@ -279,6 +290,7 @@ def test_distributed_runtime_coordinator_prunes_terminal_work_and_reports_state(
     assert result.health.status is DistributedHealthStatus.OK
 
 
+@pytest.mark.behavior
 def test_distributed_runtime_coordinator_accepts_injected_primitives() -> None:
     queue = InMemoryWorkQueue()
     locks = InMemoryDistributedLockRegistry()

@@ -162,6 +162,7 @@ def call(tool: str, capability: str, arguments: JsonMapping | None = None) -> To
     return ToolCall(new_action_id(), tool, capability, immutable_json(arguments))
 
 
+@pytest.mark.unit
 def test_registry_rejects_duplicate_names() -> None:
     registry = ToolRegistry()
     registry.register(EchoTool())
@@ -169,12 +170,14 @@ def test_registry_rejects_duplicate_names() -> None:
         registry.register(EchoTool())
 
 
+@pytest.mark.unit
 def test_registry_rejects_empty_tool_name() -> None:
     with pytest.raises(ValueError, match="tool name must not be empty"):
         ToolRegistry().register(EmptyNameTool())
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_tool_runtime_validates_required_arguments() -> None:
     registry = ToolRegistry()
     registry.register(EchoTool())
@@ -184,6 +187,7 @@ async def test_tool_runtime_validates_required_arguments() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_tool_runtime_validates_argument_schema_before_execution() -> None:
     registry = ToolRegistry()
     tool = SchemaTool()
@@ -221,6 +225,7 @@ async def test_tool_runtime_validates_argument_schema_before_execution() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_tool_runtime_validates_nested_argument_schema_before_execution() -> None:
     registry = ToolRegistry()
     tool = NestedSchemaTool()
@@ -284,6 +289,7 @@ async def test_tool_runtime_validates_nested_argument_schema_before_execution() 
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_tool_runtime_rejects_domain_mismatch() -> None:
     registry = ToolRegistry()
     registry.register(EchoTool(), DomainIdentity("alpha", "1.0.0"))
@@ -317,6 +323,7 @@ async def test_tool_runtime_rejects_domain_mismatch() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_tool_runtime_resolves_secret_refs_at_execution_boundary() -> None:
     provider = EnvSecretProvider({"API_KEY": "secret-value"})
     resolution = resolve_secret_refs(
@@ -342,6 +349,7 @@ async def test_tool_runtime_resolves_secret_refs_at_execution_boundary() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_tool_runtime_rejects_unavailable_secret_refs_before_tool_execution() -> None:
     registry = ToolRegistry()
     tool = SecretTool()
@@ -359,6 +367,7 @@ async def test_tool_runtime_rejects_unavailable_secret_refs_before_tool_executio
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_tool_runtime_normalizes_unknown_failure_and_timeout() -> None:
     registry = ToolRegistry()
     registry.register(BrokenTool())

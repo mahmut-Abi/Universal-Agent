@@ -1,3 +1,7 @@
+from universal_agent.coordination.concurrency import (
+    CancellableTaskGroup,
+    ConcurrentResult,
+)
 from universal_agent.coordination.locks import (
     ResourceConflictError,
     ResourceLock,
@@ -8,6 +12,8 @@ from universal_agent.coordination.locks import (
 )
 
 __all__ = [
+    "CancellableTaskGroup",
+    "ConcurrentResult",
     "ResourceConflictError",
     "ResourceLock",
     "ResourceLockRegistry",

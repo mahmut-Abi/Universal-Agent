@@ -15,6 +15,7 @@ from universal_agent.core.config_validation import (
 WorkItemId = NewType("WorkItemId", str)
 WorkerId = NewType("WorkerId", str)
 LeaseId = NewType("LeaseId", str)
+FencingToken = NewType("FencingToken", int)
 
 
 class WorkItemStatus(StrEnum):
@@ -44,6 +45,14 @@ class WorkerLease:
     leased_at: datetime
     lease_expires_at: datetime
     heartbeat_at: datetime
+    fencing_token: FencingToken = FencingToken(0)
+
+    def __post_init__(self) -> None:
+        parse_non_negative_int(
+            self.fencing_token,
+            "fencing_token",
+            range_template="{path} must be non-negative",
+        )
 
 
 @dataclass(frozen=True, slots=True)

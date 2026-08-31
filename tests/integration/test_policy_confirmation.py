@@ -177,6 +177,7 @@ def goal_task() -> tuple[Goal, Task]:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_policy_denial_prevents_tool_execution() -> None:
     runtime, _, events, tool = build(PolicyEffect.DENY)
     result = await runtime.run(*goal_task())
@@ -186,6 +187,7 @@ async def test_policy_denial_prevents_tool_execution() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_confirmation_pauses_then_executes_after_recheck() -> None:
     runtime, store, events, tool = build(PolicyEffect.REQUIRE_CONFIRMATION)
     waiting = await runtime.run(*goal_task())
@@ -201,6 +203,7 @@ async def test_confirmation_pauses_then_executes_after_recheck() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_confirmation_rejection_never_executes_tool() -> None:
     runtime, _, _, tool = build(PolicyEffect.REQUIRE_CONFIRMATION)
     waiting = await runtime.run(*goal_task())

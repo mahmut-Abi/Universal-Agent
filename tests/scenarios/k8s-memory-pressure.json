@@ -1,0 +1,39 @@
+{
+  "name": "k8s-memory-pressure",
+  "description": "Handle memory pressure in a Kubernetes node",
+  "scenarios": [
+    {
+      "name": "detect-and-mitigate-memory-pressure",
+      "goal": {
+        "description": "Detect memory pressure on node and identify pods to evict or scale down",
+        "success_criteria": [
+          {"key": "memory_pressure_detected", "expected": true},
+          {"key": "mitigation_plan_ready", "expected": true}
+        ]
+      },
+      "task": {
+        "description": "Check node conditions, identify high-memory pods, and propose mitigation",
+        "required_criteria": ["memory_pressure_detected"]
+      },
+      "expectations": {
+        "expected_status": "completed",
+        "max_iterations": 8,
+        "required_capabilities": [
+          "inspect_node",
+          "inspect_pod",
+          "list_pods"
+        ],
+        "required_evidence_claims": [
+          "node.conditions",
+          "pod.memory_usage"
+        ]
+      },
+      "kind": "scenario",
+      "tags": ["kubernetes", "node", "memory", "pressure"]
+    }
+  ],
+  "quality_gate": {
+    "min_pass_rate": 0.8,
+    "min_goal_completion_rate": 0.85
+  }
+}

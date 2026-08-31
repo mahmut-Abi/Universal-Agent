@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hmac
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from types import MappingProxyType
@@ -53,13 +53,15 @@ class HttpResponse:
     body: JsonMapping
     headers: Mapping[str, str] = field(default_factory=_default_headers)
     text_body: str | None = None
+    stream_body: AsyncIterator[str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class GoalSubmission:
     goal: Goal
-    task: Task
+    task: Task | None
     profile_name: str | None = None
+    compile_goal: bool = False
 
 
 class _SuccessCriterionPayload(ConfigPayload):
@@ -79,8 +81,9 @@ class _TaskPayload(ConfigPayload):
 
 class _GoalSubmissionPayload(ConfigPayload):
     goal: _GoalPayload
-    task: _TaskPayload
+    task: _TaskPayload | None = None
     profile: PydanticNonEmptyString | None = None
+    compile_goal: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,8 +232,14 @@ def parse_goal_submission(body: JsonMapping) -> GoalSubmission:
     goal_payload = payload.goal
     task_payload = payload.task
     goal = Goal(goal_payload.description, _success_criteria(goal_payload.success_criteria))
+    if payload.compile_goal:
+        if task_payload is not None:
+            raise ValueError("task must be omitted when compile_goal is true")
+        return GoalSubmission(goal, None, payload.profile, True)
+    if task_payload is None:
+        raise ValueError("task is required")
     task = Task(task_payload.description, tuple(task_payload.required_criteria))
-    return GoalSubmission(goal, task, payload.profile)
+    return GoalSubmission(goal, task, payload.profile, False)
 
 
 def _parse_goal_submission_payload(body: JsonMapping) -> _GoalSubmissionPayload:

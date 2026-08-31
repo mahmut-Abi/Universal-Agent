@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import AsyncGenerator, Iterator
 from pathlib import Path
 from urllib.parse import quote
 
@@ -25,13 +25,14 @@ from universal_agent.persistence.codec import (
     encode_runtime_event,
     encode_session_snapshot,
 )
-from universal_agent.runtime.events import filter_events
+from universal_agent.runtime.events import filter_events, poll_event_reader
 from universal_agent.state import (
     SessionSnapshot,
     SessionVersionConflictError,
     StateNotFoundError,
     session_from_state,
 )
+from universal_agent.state.event_store import SESSION_STATE_EVENT
 from universal_agent.state.session import with_state
 
 
@@ -114,7 +115,20 @@ class FileEventStore:
         self._path = Path(root) / "events.jsonl"
 
     async def emit(self, event: RuntimeEvent) -> None:
+        self.append(event)
+
+    def append(self, event: RuntimeEvent) -> None:
+        if self._event_exists(event.id):
+            return
         _append_json_line(self._path, encode_runtime_event(event))
+
+    def events_for(self, session_id: SessionId) -> tuple[RuntimeEvent, ...]:
+        return tuple(event for event in self.all() if event.session_id == session_id)
+
+    def all(self) -> tuple[RuntimeEvent, ...]:
+        if not self._path.exists():
+            return ()
+        return tuple(_load_runtime_events(self._path))
 
     async def list_events(
         self,
@@ -125,13 +139,31 @@ class FileEventStore:
     ) -> tuple[RuntimeEvent, ...]:
         if not self._path.exists():
             return ()
-        events = _load_runtime_events(self._path)
+        events = tuple(event for event in self.all() if event.type != SESSION_STATE_EVENT)
         return filter_events(
             events,
             session_id=session_id,
             after_event_id=after_event_id,
             limit=limit,
         )
+
+    async def watch_events(
+        self,
+        session_id: SessionId | None = None,
+        *,
+        after_event_id: EventId | None = None,
+        heartbeat_interval: float = 15.0,
+    ) -> AsyncGenerator[RuntimeEvent, None]:
+        async for event in poll_event_reader(
+            self,
+            session_id,
+            after_event_id=after_event_id,
+            heartbeat_interval=heartbeat_interval,
+        ):
+            yield event
+
+    def _event_exists(self, event_id: EventId) -> bool:
+        return any(event.id == event_id for event in self.all())
 
 
 class FileRuntimeStore(FileSessionStore, FileEventStore):

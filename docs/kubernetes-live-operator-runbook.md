@@ -149,12 +149,51 @@ export UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE=.universal-agent/kubernetes-produ
 export UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE_NAME=production-operator
 export UNIVERSAL_AGENT_LIVE_KUBERNETES_WORKLOAD=deployment/api
 export UNIVERSAL_AGENT_LIVE_KUBERNETES_NAMESPACE=prod
+export UNIVERSAL_AGENT_LIVE_KUBERNETES_ARTIFACT_DIR=.universal-agent/live-contract-artifacts
 .venv/bin/python -m pytest tests/live/test_kubernetes_live_operator.py -q
 ```
 
 This gate runs `kubernetes check` and requires `contract.status=ok`. Set
 `UNIVERSAL_AGENT_LIVE_KUBERNETES_RUN=true` only when intentionally submitting
 the Runtime-owned remediation goal against the live profile.
+
+When `UNIVERSAL_AGENT_LIVE_KUBERNETES_ARTIFACT_DIR` is set, the live tests write
+redacted JSON artifacts for `check` and, when enabled, `run`. The artifact writer
+uses the shared runtime secret scanner and refuses to write any artifact that
+still contains unredacted secret-shaped fields.
+
+## 4.2 GitHub Gated Live Contract
+
+The CI workflow includes a disabled-by-default `kubernetes-live-contract` job.
+Enable it only for trusted `main` branch pushes after provisioning an approved
+cluster target and scoped credentials.
+
+Required repository variable:
+
+- `UNIVERSAL_AGENT_LIVE_KUBERNETES_ENABLED=true`
+- `UNIVERSAL_AGENT_LIVE_KUBERNETES_WORKLOAD=deployment/api`
+
+Optional repository variables:
+
+- `UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE_NAME=production-operator`
+- `UNIVERSAL_AGENT_LIVE_KUBERNETES_NAMESPACE=prod`
+- `UNIVERSAL_AGENT_LIVE_KUBERNETES_RUN=true`
+
+Required repository secret:
+
+- `UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE_B64`: base64-encoded profile JSON
+  whose secret references point at CI environment secret names.
+
+Provider and cluster secrets depend on the chosen profile backend:
+
+- `OPENAI_API_KEY` for the OpenAI-compatible model provider.
+- `KUBERNETES_API_TOKEN` for the direct Kubernetes API backend.
+- `UNIVERSAL_AGENT_LIVE_KUBECONFIG_B64` for kubectl-backed profiles that need a
+  kubeconfig file.
+
+The job uploads only files under
+`.universal-agent/live-contract/artifacts`. Those files are produced by the
+live test harness after redaction and secret scanning.
 
 ## 5. Run The Pre-Run Gate
 

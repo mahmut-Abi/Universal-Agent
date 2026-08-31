@@ -340,6 +340,7 @@ class RoutedDomain:
         return ()
 
 
+@pytest.mark.unit
 def test_base_domain_runtime_defaults_optional_extension_hooks() -> None:
     loaded = DomainLoader().load(MinimalSDKDomain())
 
@@ -354,17 +355,20 @@ def test_base_domain_runtime_defaults_optional_extension_hooks() -> None:
     assert loaded.memories == ()
 
 
+@pytest.mark.unit
 def test_base_domain_runtime_requires_core_contract_methods() -> None:
     with pytest.raises(NotImplementedError, match="manifest"):
         _ = IncompleteSDKDomain().manifest
 
 
+@pytest.mark.unit
 def test_domain_loader_activates_structured_domain() -> None:
     active = DomainLoader().load(TestDomain())
     assert active.manifest.metadata.name == "test"
     assert active.capabilities[0].name == "inspect"
 
 
+@pytest.mark.unit
 def test_domain_loader_rejects_invalid_capability_reference() -> None:
     domain = TestDomain()
     domain.manifest = DomainManifest(
@@ -379,6 +383,7 @@ def test_domain_loader_rejects_invalid_capability_reference() -> None:
         DomainLoader().load(domain)
 
 
+@pytest.mark.behavior
 def test_domain_loader_rejects_empty_evaluator_set() -> None:
     class NoEvaluatorDomain(TestDomain):
         manifest = DomainManifest(
@@ -397,6 +402,7 @@ def test_domain_loader_rejects_empty_evaluator_set() -> None:
         DomainLoader().load(NoEvaluatorDomain())
 
 
+@pytest.mark.behavior
 def test_criteria_evaluator_requires_matching_observation_state() -> None:
     goal = Goal("Verify", (SuccessCriterion("healthy", True),))
     task = Task("Inspect", ("healthy",))
@@ -411,6 +417,7 @@ def test_criteria_evaluator_requires_matching_observation_state() -> None:
     assert result.status.value == "incomplete"
 
 
+@pytest.mark.behavior
 def test_runtime_builder_isolates_stores_unless_they_are_injected() -> None:
     """Two runtimes may share one store, but must not do so by accident.
 
@@ -437,6 +444,7 @@ def test_runtime_builder_isolates_stores_unless_they_are_injected() -> None:
     assert shared_first.world_model is shared_second.world_model is world
 
 
+@pytest.mark.behavior
 def test_runtime_builder_composes_multiple_domains() -> None:
     loader = DomainLoader()
     alpha = loader.load(NamedDomain("alpha", "inspect_alpha", "alpha_inspect"))
@@ -466,6 +474,7 @@ def test_runtime_builder_composes_multiple_domains() -> None:
     assert [fragment.key for fragment in fragments] == ["alpha.scope", "beta.scope"]
 
 
+@pytest.mark.behavior
 def test_observation_processor_routes_owned_domain_processing_components() -> None:
     extractor_calls: list[str] = []
     updater_calls: list[str] = []
@@ -532,6 +541,7 @@ def test_observation_processor_routes_owned_domain_processing_components() -> No
     assert processed.evaluation.evaluator_name == "beta-evaluator"
 
 
+@pytest.mark.behavior
 def test_hydrate_session_replays_world_updates_using_evidence_owner() -> None:
     extractor_calls: list[str] = []
     updater_calls: list[str] = []
@@ -595,6 +605,7 @@ def test_hydrate_session_replays_world_updates_using_evidence_owner() -> None:
     assert session.world().value_for("alpha_seen", subject="alpha/subject") is None
 
 
+@pytest.mark.unit
 def test_domain_manager_registers_and_activates_domains_in_order() -> None:
     manager = DomainManager(
         (
@@ -610,6 +621,7 @@ def test_domain_manager_registers_and_activates_domains_in_order() -> None:
     assert activation.primary.identity.name == "alpha"
 
 
+@pytest.mark.unit
 def test_domain_manager_activates_explicit_identity_order() -> None:
     manager = DomainManager(
         (
@@ -624,6 +636,7 @@ def test_domain_manager_activates_explicit_identity_order() -> None:
     assert activation.primary.identity.name == "beta"
 
 
+@pytest.mark.unit
 def test_domain_manager_reports_missing_and_ambiguous_domains() -> None:
     manager = DomainManager((NamedDomain("alpha", "inspect_alpha", "alpha_inspect"),))
 
@@ -636,6 +649,7 @@ def test_domain_manager_reports_missing_and_ambiguous_domains() -> None:
         manager.activate_by_name(("alpha",))
 
 
+@pytest.mark.unit
 def test_domain_manager_rejects_duplicate_registration() -> None:
     domain = NamedDomain("alpha", "inspect_alpha", "alpha_inspect")
     manager = DomainManager((domain,))
@@ -644,6 +658,7 @@ def test_domain_manager_rejects_duplicate_registration() -> None:
         manager.register(domain)
 
 
+@pytest.mark.unit
 def test_domain_composition_rejects_duplicate_capabilities() -> None:
     loader = DomainLoader()
     alpha = loader.load(NamedDomain("alpha", "inspect", "alpha_inspect"))
@@ -653,6 +668,7 @@ def test_domain_composition_rejects_duplicate_capabilities() -> None:
         DomainComposition((alpha, beta))
 
 
+@pytest.mark.unit
 def test_domain_composition_rejects_duplicate_tools() -> None:
     loader = DomainLoader()
     alpha = loader.load(NamedDomain("alpha", "inspect_alpha", "inspect"))

@@ -38,6 +38,7 @@ def result(
     )
 
 
+@pytest.mark.behavior
 def test_result_merger_completes_with_all_results_and_evidence() -> None:
     merge = AgentResultMerger().merge(
         (
@@ -58,6 +59,7 @@ def test_result_merger_completes_with_all_results_and_evidence() -> None:
     assert merge.evidence_ids == (EvidenceId("evidence-1"), EvidenceId("evidence-2"))
 
 
+@pytest.mark.behavior
 def test_result_merger_waits_for_missing_expected_results() -> None:
     merge = AgentResultMerger().merge(
         (result("agent-task-a"),),
@@ -70,6 +72,7 @@ def test_result_merger_waits_for_missing_expected_results() -> None:
     assert merge.missing_task_ids == (AgentTaskId("agent-task-b"),)
 
 
+@pytest.mark.unit
 def test_result_merger_fails_when_required_child_result_failed() -> None:
     merge = AgentResultMerger().merge(
         (
@@ -82,6 +85,7 @@ def test_result_merger_fails_when_required_child_result_failed() -> None:
     assert merge.failed_task_ids == (AgentTaskId("agent-task-b"),)
 
 
+@pytest.mark.behavior
 def test_result_merger_can_merge_partial_when_not_all_children_required() -> None:
     merge = AgentResultMerger().merge(
         (
@@ -96,6 +100,7 @@ def test_result_merger_can_merge_partial_when_not_all_children_required() -> Non
     assert merge.failed_task_ids == (AgentTaskId("agent-task-b"),)
 
 
+@pytest.mark.behavior
 def test_result_merger_marks_completed_result_without_evidence_as_partial() -> None:
     merge = AgentResultMerger().merge((result("agent-task-a", evidence_ids=()),))
 
@@ -103,6 +108,7 @@ def test_result_merger_marks_completed_result_without_evidence_as_partial() -> N
     assert merge.missing_evidence_task_ids == (AgentTaskId("agent-task-a"),)
 
 
+@pytest.mark.contract
 def test_result_merger_requires_review_for_unresolved_conflicts() -> None:
     conflict = ConflictResolution(
         resource_key="deployment/example",
@@ -118,6 +124,7 @@ def test_result_merger_requires_review_for_unresolved_conflicts() -> None:
     assert merge.evidence_ids == (EvidenceId("evidence-1"), EvidenceId("evidence-conflict"))
 
 
+@pytest.mark.unit
 def test_result_merger_rejects_duplicate_results_and_expected_ids() -> None:
     with pytest.raises(ValueError, match="duplicate agent task results"):
         AgentResultMerger().merge((result("agent-task-a"), result("agent-task-a")))
@@ -128,6 +135,7 @@ def test_result_merger_rejects_duplicate_results_and_expected_ids() -> None:
         )
 
 
+@pytest.mark.contract
 def test_result_merge_payload_is_json_safe() -> None:
     conflict = ConflictResolution(
         resource_key="deployment/example",
@@ -147,6 +155,7 @@ def test_result_merge_payload_is_json_safe() -> None:
     assert conflicts[0]["selected_proposal_id"] == "proposal-a"
 
 
+@pytest.mark.contract
 def test_result_merge_payload_round_trips_merge_report() -> None:
     conflict = ConflictResolution(
         resource_key="deployment/example",
@@ -165,6 +174,7 @@ def test_result_merge_payload_round_trips_merge_report() -> None:
     assert decoded.conflict_resolutions[0].review_proposal_ids == (AgentProposalId("proposal-a"),)
 
 
+@pytest.mark.contract
 def test_result_merge_decoder_rejects_invalid_pydantic_payload_shape() -> None:
     with pytest.raises(ValueError, match="passed must be a boolean"):
         decode_agent_result_merge(

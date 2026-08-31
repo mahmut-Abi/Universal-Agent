@@ -44,6 +44,7 @@ def make_record(
     return MemoryRecord(kind, subject, content, scope, confidence)
 
 
+@pytest.mark.unit
 def test_memory_record_validates_confidence_and_fields() -> None:
     with pytest.raises(ValueError, match="confidence"):
         MemoryRecord(MemoryKind.SEMANTIC, "s", "c", confidence=1.5)
@@ -55,6 +56,7 @@ def test_memory_record_validates_confidence_and_fields() -> None:
         MemoryRecord(MemoryKind.SEMANTIC, "s", " ")
 
 
+@pytest.mark.contract
 def test_store_round_trip_dedup_and_stable_export() -> None:
     store = InMemoryMemoryStore()
     record = make_record()
@@ -67,6 +69,7 @@ def test_store_round_trip_dedup_and_stable_export() -> None:
     assert exported == tuple(sorted((record, second), key=lambda r: (r.created_at, str(r.id))))
 
 
+@pytest.mark.unit
 def test_query_filters_by_kind_subject_scope_limit() -> None:
     store = InMemoryMemoryStore()
     semantic = make_record(kind=MemoryKind.SEMANTIC, subject="alpha", scope="kubernetes")
@@ -86,6 +89,7 @@ def test_query_filters_by_kind_subject_scope_limit() -> None:
     assert len(store.query(MemoryQuery(limit=1))) == 1
 
 
+@pytest.mark.unit
 def test_retriever_isolates_by_scope_recall() -> None:
     store = InMemoryMemoryStore()
     a = make_record(subject="pod", content="alpha detail", scope="kubernetes")
@@ -102,6 +106,7 @@ def test_retriever_isolates_by_scope_recall() -> None:
     assert len(retriever.retrieve(RetrievalRequest("g", "t"))) == 3
 
 
+@pytest.mark.unit
 def test_relevance_filter_scores_thresholds_and_truncates() -> None:
     store = InMemoryMemoryStore()
     relevant = make_record(subject="pod health", content="check pods readiness", confidence=0.9)
@@ -123,6 +128,7 @@ def test_relevance_filter_scores_thresholds_and_truncates() -> None:
     )
 
 
+@pytest.mark.unit
 def test_relevance_filter_uses_library_fuzzy_matching_for_word_variants() -> None:
     record = make_record(
         subject="HTTP probe failure",
@@ -140,6 +146,7 @@ def test_relevance_filter_uses_library_fuzzy_matching_for_word_variants() -> Non
     assert filtered == (record,)
 
 
+@pytest.mark.unit
 def test_relevance_filter_applies_confidence_after_fuzzy_score() -> None:
     record = make_record(
         subject="HTTP probe failure",
@@ -159,6 +166,7 @@ def test_relevance_filter_applies_confidence_after_fuzzy_score() -> None:
     )
 
 
+@pytest.mark.unit
 def test_query_limit_returns_most_recent_records() -> None:
     store = InMemoryMemoryStore()
     oldest = MemoryRecord(
@@ -185,6 +193,7 @@ def test_query_limit_returns_most_recent_records() -> None:
     assert store.query(MemoryQuery(limit=2)) == (newest, middle)
 
 
+@pytest.mark.unit
 def test_runtime_builder_seeds_domain_memories_once() -> None:
     class Backend:
         async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
@@ -203,6 +212,7 @@ def test_runtime_builder_seeds_domain_memories_once() -> None:
     ]
 
 
+@pytest.mark.behavior
 def test_domain_loader_rejects_episodic_memory() -> None:
     class EpisodicDomain:
         @property

@@ -18,6 +18,7 @@ from universal_agent.distributed.health import (
 )
 from universal_agent.distributed.locks import (
     DistributedLockConflictError,
+    DistributedLockFencingToken,
     DistributedLockLease,
     DistributedLockLeaseId,
     DistributedLockLeaseLostError,
@@ -27,6 +28,7 @@ from universal_agent.distributed.locks import (
     SQLiteDistributedLockRegistry,
 )
 from universal_agent.distributed.queue import (
+    FencingToken,
     FileWorkQueue,
     InMemoryWorkQueue,
     LeaseId,
@@ -76,6 +78,7 @@ __all__ = [
     "DistributedHealthReport",
     "DistributedHealthStatus",
     "DistributedLockConflictError",
+    "DistributedLockFencingToken",
     "DistributedLockLease",
     "DistributedLockLeaseId",
     "DistributedLockLeaseLostError",
@@ -88,6 +91,7 @@ __all__ = [
     "DistributedRuntimeSnapshot",
     "DistributedSchedulingResult",
     "DistributedWorkerLifecycleResult",
+    "FencingToken",
     "FileDistributedLockRegistry",
     "FileWorkQueue",
     "FileWorkerRegistry",

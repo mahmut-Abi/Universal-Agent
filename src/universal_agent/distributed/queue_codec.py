@@ -12,6 +12,7 @@ from universal_agent.core.config_validation import (
     pydantic_error_details,
 )
 from universal_agent.distributed.queue_models import (
+    FencingToken,
     LeaseId,
     WorkerId,
     WorkerLease,
@@ -36,6 +37,7 @@ class _WorkerLeasePayload(_QueueCodecPayload):
     leased_at: datetime
     lease_expires_at: datetime
     heartbeat_at: datetime
+    fencing_token: StrictInt = 0
 
 
 class _WorkItemPayload(_QueueCodecPayload):
@@ -120,6 +122,7 @@ def _encode_worker_lease(lease: WorkerLease) -> dict[str, object]:
         "leased_at": lease.leased_at.isoformat(),
         "lease_expires_at": lease.lease_expires_at.isoformat(),
         "heartbeat_at": lease.heartbeat_at.isoformat(),
+        "fencing_token": int(lease.fencing_token),
     }
 
 
@@ -132,6 +135,7 @@ def _decode_optional_worker_lease(value: _WorkerLeasePayload | None) -> WorkerLe
         leased_at=value.leased_at,
         lease_expires_at=value.lease_expires_at,
         heartbeat_at=value.heartbeat_at,
+        fencing_token=FencingToken(value.fencing_token),
     )
 
 

@@ -134,6 +134,7 @@ def sample_report_recording(name: str = "nightly behavior suite") -> EvaluationR
     )
 
 
+@pytest.mark.contract
 def test_evaluation_report_codec_round_trips_stable_report() -> None:
     recording = sample_report_recording()
 
@@ -160,6 +161,7 @@ def test_evaluation_report_codec_round_trips_stable_report() -> None:
     assert restored.gate.checks[0].name == "pass_rate"
 
 
+@pytest.mark.contract
 def test_evaluation_report_junit_xml_marks_scenarios_and_gates() -> None:
     recording = sample_report_recording()
 
@@ -185,6 +187,7 @@ def test_evaluation_report_junit_xml_marks_scenarios_and_gates() -> None:
     }
 
 
+@pytest.mark.unit
 def test_evaluation_report_recording_rejects_ambiguous_scenario_keys() -> None:
     recording = sample_report_recording()
     first = recording.scenarios[0]
@@ -211,6 +214,7 @@ def test_evaluation_report_recording_rejects_ambiguous_scenario_keys() -> None:
         replace(recording, scenarios=(first, first))
 
 
+@pytest.mark.contract
 def test_evaluation_report_codec_decodes_v1_reports_without_gate() -> None:
     payload = encode_evaluation_report(sample_report_recording())
     payload["schema_version"] = 1
@@ -232,6 +236,7 @@ def test_evaluation_report_codec_decodes_v1_reports_without_gate() -> None:
     assert restored.scenarios[0].evidence_claims == ()
 
 
+@pytest.mark.contract
 def test_evaluation_report_codec_rejects_unknown_schema_version() -> None:
     payload = encode_evaluation_report(sample_report_recording())
     payload["schema_version"] = 999
@@ -240,6 +245,7 @@ def test_evaluation_report_codec_rejects_unknown_schema_version() -> None:
         decode_evaluation_report(payload)
 
 
+@pytest.mark.contract
 def test_evaluation_report_comparison_passes_matching_recordings() -> None:
     expected = sample_report_recording()
     actual = decode_evaluation_report(encode_evaluation_report(expected))
@@ -250,6 +256,7 @@ def test_evaluation_report_comparison_passes_matching_recordings() -> None:
     assert comparison.failed_checks == ()
 
 
+@pytest.mark.behavior
 def test_evaluation_report_comparison_detects_behavior_drift() -> None:
     expected = sample_report_recording()
     assert expected.gate is not None
@@ -283,6 +290,7 @@ def test_evaluation_report_comparison_detects_behavior_drift() -> None:
     } <= {check.name for check in comparison.failed_checks}
 
 
+@pytest.mark.unit
 def test_file_evaluation_report_store_saves_lists_and_loads_reports(tmp_path: Path) -> None:
     store = FileEvaluationReportStore(tmp_path)
     first = sample_report_recording("nightly behavior suite")
@@ -300,6 +308,7 @@ def test_file_evaluation_report_store_saves_lists_and_loads_reports(tmp_path: Pa
     )
 
 
+@pytest.mark.unit
 def test_file_evaluation_report_store_reports_missing_report(tmp_path: Path) -> None:
     store = FileEvaluationReportStore(tmp_path)
 
@@ -350,6 +359,7 @@ def sample_recording(name: str = "policy regression") -> ReplayRecording:
     )
 
 
+@pytest.mark.contract
 def test_replay_recording_codec_round_trips_stable_trace() -> None:
     recording = sample_recording()
 
@@ -364,11 +374,13 @@ def test_replay_recording_codec_round_trips_stable_trace() -> None:
     assert restored.metrics == recording.metrics
 
 
+@pytest.mark.unit
 def test_replay_recording_rejects_empty_scenario_key() -> None:
     with pytest.raises(ValueError, match="replay recording scenario name must not be empty"):
         sample_recording(" ")
 
 
+@pytest.mark.contract
 def test_replay_recording_codec_defaults_missing_optional_metrics() -> None:
     payload = encode_replay_recording(sample_recording())
     metrics = payload["metrics"]
@@ -390,6 +402,7 @@ def test_replay_recording_codec_defaults_missing_optional_metrics() -> None:
     assert restored.metrics.model_estimated_cost_micros == 0
 
 
+@pytest.mark.contract
 def test_replay_recording_codec_rejects_unknown_schema_version() -> None:
     payload = encode_replay_recording(sample_recording())
     payload["schema_version"] = 999
@@ -398,6 +411,7 @@ def test_replay_recording_codec_rejects_unknown_schema_version() -> None:
         decode_replay_recording(payload)
 
 
+@pytest.mark.unit
 def test_file_replay_recording_store_saves_lists_and_loads_recordings(tmp_path: Path) -> None:
     store = FileReplayRecordingStore(tmp_path)
     first = sample_recording("policy regression")
@@ -413,6 +427,7 @@ def test_file_replay_recording_store_saves_lists_and_loads_recordings(tmp_path: 
     assert store.load("policy regression").audit_entries == first.audit_entries
 
 
+@pytest.mark.unit
 def test_file_replay_recording_store_reports_missing_recording(tmp_path: Path) -> None:
     store = FileReplayRecordingStore(tmp_path)
 

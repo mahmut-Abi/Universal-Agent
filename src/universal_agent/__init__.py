@@ -1,4 +1,3 @@
-from universal_agent.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
 from universal_agent.core import (
     Decision,
     DecisionType,
@@ -98,6 +97,18 @@ from universal_agent.domain import (
     scaffold_domain_package,
     verify_domain_package,
     verify_domain_package_registry,
+)
+from universal_agent.domains.observability import (
+    HttpxPrometheusTransport,
+    MetricsBackend,
+    MetricsHealthEvaluator,
+    ObservabilityDomain,
+    ObservabilityEvidenceExtractor,
+    ObservabilityQueryMetricsTool,
+    PrometheusBackend,
+    PrometheusQueryError,
+    PrometheusTransport,
+    StaticMetricsBackend,
 )
 from universal_agent.ecosystem import (
     AmbiguousEcosystemRegistryItemError,
@@ -223,6 +234,12 @@ from universal_agent.multi_agent import (
     AgentTaskUsage,
     ConflictResolution,
     ConflictResolutionStatus,
+    DelegationEvent,
+    DelegationEventId,
+    DelegationLedger,
+    DelegationManager,
+    FileDelegationLedger,
+    InMemoryDelegationLedger,
     MultiAgentEvaluationCheck,
     MultiAgentEvaluationExpectations,
     MultiAgentEvaluationReport,
@@ -250,8 +267,10 @@ from universal_agent.multi_agent import (
     decode_agent_task_request,
     decode_agent_task_result,
     decode_conflict_resolution,
+    decode_delegation_event,
     decode_multi_agent_evaluation_expectations,
     decode_multi_agent_evaluation_report,
+    delegation_event_payload,
     multi_agent_evaluation_expectations_payload,
     multi_agent_evaluation_report_payload,
     rejected_agent_task_result,
@@ -261,6 +280,7 @@ from universal_agent.persistence import (
     FileRuntimeStore,
     FileSessionStore,
     SQLiteEventStore,
+    SQLiteOutboxEvent,
     SQLiteRuntimeStore,
     SQLiteSessionStore,
 )
@@ -290,14 +310,6 @@ from universal_agent.runtime import (
     SessionSummaryView,
     StateEventCommitView,
 )
-from universal_agent.sdk import (
-    RuntimeSDKError,
-    SDKGoal,
-    SDKRunResult,
-    SDKSuccessCriterion,
-    SDKTask,
-    UniversalAgentRuntime,
-)
 from universal_agent.security import (
     EnvSecretProvider,
     FileSecretProvider,
@@ -312,6 +324,7 @@ from universal_agent.security import (
     resolve_secret_value,
 )
 from universal_agent.service import (
+    AuditIntegrityReportView,
     AuditRecordView,
     DistributedPendingActionSchedulingResult,
     DoctorReportView,
@@ -336,9 +349,18 @@ from universal_agent.service import (
     WorldNeighborhoodView,
     WorldRelationView,
 )
+from universal_agent.service.sdk import (
+    RuntimeSDKError,
+    SDKGoal,
+    SDKRunResult,
+    SDKSuccessCriterion,
+    SDKTask,
+    UniversalAgentRuntime,
+)
 from universal_agent.state import InMemoryStateStore, StateStore
+from universal_agent.terminal.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
+from universal_agent.terminal.tui import TuiSnapshot, build_tui_snapshot, render_tui_snapshot
 from universal_agent.tools import Tool
-from universal_agent.tui import TuiSnapshot, build_tui_snapshot, render_tui_snapshot
 from universal_agent.web import (
     WebConsoleSnapshot,
     build_web_console_snapshot,
@@ -392,6 +414,7 @@ __all__ = [
     "AmbiguousDomainPackageError",
     "AmbiguousEcosystemRegistryItemError",
     "AmbiguousEvaluationDatasetError",
+    "AuditIntegrityReportView",
     "AuditRecordView",
     "BaseDomainRuntime",
     "ConflictResolution",
@@ -399,6 +422,10 @@ __all__ = [
     "Decision",
     "DecisionType",
     "DeclarativeDomainRuntime",
+    "DelegationEvent",
+    "DelegationEventId",
+    "DelegationLedger",
+    "DelegationManager",
     "DistributedCancellationResult",
     "DistributedCapacityGap",
     "DistributedExpiringLease",
@@ -479,6 +506,7 @@ __all__ = [
     "EvidenceView",
     "ExecutionResult",
     "ExecutionStatus",
+    "FileDelegationLedger",
     "FileDistributedLockRegistry",
     "FileEcosystemRegistryStore",
     "FileEventStore",
@@ -489,6 +517,8 @@ __all__ = [
     "FileWorkerRegistry",
     "Goal",
     "HttpxJsonHttpTransport",
+    "HttpxPrometheusTransport",
+    "InMemoryDelegationLedger",
     "InMemoryDistributedLockRegistry",
     "InMemoryEventSink",
     "InMemoryStateStore",
@@ -499,6 +529,8 @@ __all__ = [
     "JsonHttpModelTransport",
     "LeaseId",
     "LeaseLostError",
+    "MetricsBackend",
+    "MetricsHealthEvaluator",
     "ModelAdapter",
     "ModelConfig",
     "ModelProvider",
@@ -510,6 +542,9 @@ __all__ = [
     "MultiAgentMergeEvaluator",
     "NoEligibleAgentError",
     "NoWorkAvailable",
+    "ObservabilityDomain",
+    "ObservabilityEvidenceExtractor",
+    "ObservabilityQueryMetricsTool",
     "OpenAIChatCompletionsModelAdapter",
     "OpenAIModelTransport",
     "OpenAIResponsesModelAdapter",
@@ -521,6 +556,9 @@ __all__ = [
     "ProfileConfig",
     "ProfileConfigNotFoundError",
     "ProfileRegistry",
+    "PrometheusBackend",
+    "PrometheusQueryError",
+    "PrometheusTransport",
     "RuntimeAPI",
     "RuntimeAgentExecutor",
     "RuntimeBuilder",
@@ -546,6 +584,7 @@ __all__ = [
     "SDKTask",
     "SQLiteDistributedLockRegistry",
     "SQLiteEventStore",
+    "SQLiteOutboxEvent",
     "SQLiteRuntimeStore",
     "SQLiteSessionStore",
     "SQLiteWorkQueue",
@@ -567,6 +606,7 @@ __all__ = [
     "StateEventRepairSkipView",
     "StateEventRepairView",
     "StateStore",
+    "StaticMetricsBackend",
     "StdlibJsonHttpTransport",
     "StoreBackend",
     "StoreConfig",
@@ -634,11 +674,13 @@ __all__ = [
     "decode_agent_task_request",
     "decode_agent_task_result",
     "decode_conflict_resolution",
+    "decode_delegation_event",
     "decode_domain_package_manifest",
     "decode_ecosystem_registry_manifest",
     "decode_evaluation_dataset_manifest",
     "decode_multi_agent_evaluation_expectations",
     "decode_multi_agent_evaluation_report",
+    "delegation_event_payload",
     "domain_package_scaffold_spec_from_runtime_spec",
     "encode_domain_package_manifest",
     "encode_ecosystem_registry_manifest",

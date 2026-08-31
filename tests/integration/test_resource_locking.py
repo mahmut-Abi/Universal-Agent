@@ -184,6 +184,7 @@ def goal_task() -> tuple[Goal, Task]:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_mutation_conflict_prevents_tool_execution() -> None:
     runtime, _, events, components, tool = build_runtime(PolicyEffect.ALLOW)
     components.resource_locks.acquire(
@@ -204,6 +205,7 @@ async def test_mutation_conflict_prevents_tool_execution() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_stale_resource_version_prevents_tool_execution() -> None:
     runtime, _, events, components, tool = build_runtime(PolicyEffect.ALLOW)
     components.resource_versions.set_current("setting/example", "rv-2")
@@ -227,6 +229,7 @@ async def test_stale_resource_version_prevents_tool_execution() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_matching_resource_version_allows_mutation_and_updates_current_version() -> None:
     runtime, _, events, components, tool = build_runtime(PolicyEffect.ALLOW)
     components.resource_versions.set_current("setting/example", "rv-1")
@@ -250,6 +253,7 @@ async def test_matching_resource_version_allows_mutation_and_updates_current_ver
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_confirmation_holds_resource_lock_until_rejection() -> None:
     runtime, store, events, components, tool = build_runtime(PolicyEffect.REQUIRE_CONFIRMATION)
 
@@ -274,6 +278,7 @@ async def test_confirmation_holds_resource_lock_until_rejection() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_confirmed_mutation_reuses_and_releases_resource_lock() -> None:
     runtime, _, events, components, tool = build_runtime(PolicyEffect.REQUIRE_CONFIRMATION)
     waiting = await runtime.run(*goal_task())

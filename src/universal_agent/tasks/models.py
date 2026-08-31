@@ -14,6 +14,9 @@ class TaskSpec:
     description: str
     required_criteria: tuple[str, ...] = ()
     depends_on: tuple[TaskId, ...] = ()
+    # Optional stable id used when a compiler has already assigned identities.
+    # Dynamic expanders may omit it and let TaskManager generate one.
+    task_id: TaskId | None = None
 
 
 @dataclass(frozen=True, slots=True)

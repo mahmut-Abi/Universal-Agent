@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from typing import NewType, Protocol
 
 from universal_agent.core import JsonMapping, JsonValue, SessionId, immutable_json, utc_now
@@ -55,6 +56,12 @@ class WorldRelation:
     evidence_ids: tuple[EvidenceId, ...] = ()
 
 
+class WorldRelationDirection(StrEnum):
+    OUTGOING = "outgoing"
+    INCOMING = "incoming"
+    BOTH = "both"
+
+
 @dataclass(frozen=True, slots=True)
 class WorldNeighborhood:
     root: WorldEntity | None
@@ -62,6 +69,30 @@ class WorldNeighborhood:
     outgoing_relations: tuple[WorldRelation, ...] = ()
     incoming_relations: tuple[WorldRelation, ...] = ()
     related_entities: tuple[WorldEntity, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class WorldGraphNode:
+    entity_id: EntityId
+    depth: int
+    entity: WorldEntity | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class WorldGraph:
+    root: WorldEntity | None
+    nodes: tuple[WorldGraphNode, ...] = ()
+    relations: tuple[WorldRelation, ...] = ()
+    entities: tuple[WorldEntity, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class WorldGraphQuery:
+    max_depth: int = 1
+    relations: tuple[str, ...] = ()
+    direction: WorldRelationDirection | str = WorldRelationDirection.BOTH
+    entity_kinds: tuple[str, ...] = ()
+    required_facts: JsonMapping = field(default_factory=immutable_json)
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +193,123 @@ class WorldSnapshot:
             outgoing,
             incoming,
             related_entities,
+        )
+
+    def relation_graph_for(
+        self,
+        entity_id: EntityId | str,
+        *,
+        max_depth: int = 1,
+        relations: tuple[str, ...] = (),
+        direction: WorldRelationDirection | str = WorldRelationDirection.BOTH,
+        query: WorldGraphQuery | None = None,
+    ) -> WorldGraph:
+        graph_query = query or WorldGraphQuery(max_depth, relations, direction)
+        if graph_query.max_depth < 0:
+            raise ValueError("world relation graph max_depth must be >= 0")
+        try:
+            normalized_direction = WorldRelationDirection(graph_query.direction)
+        except ValueError as exc:
+            raise ValueError(
+                "world relation graph direction must be one of: outgoing, incoming, both"
+            ) from exc
+
+        root_id = EntityId(str(entity_id))
+        root = self.entity_for(root_id)
+        if root is None:
+            return WorldGraph(root=None)
+
+        relation_filter = frozenset(graph_query.relations)
+        depth_by_id: dict[EntityId, int] = {root_id: 0}
+        frontier: tuple[EntityId, ...] = (root_id,)
+        traversed: dict[tuple[EntityId, str, EntityId], WorldRelation] = {}
+
+        for depth in range(graph_query.max_depth):
+            next_frontier: list[EntityId] = []
+            for current in frontier:
+                for world_relation in self._graph_relations_for(
+                    current,
+                    relation_filter=relation_filter,
+                    direction=normalized_direction,
+                ):
+                    relation_key = (
+                        world_relation.source,
+                        world_relation.relation,
+                        world_relation.target,
+                    )
+                    traversed.setdefault(relation_key, world_relation)
+                    related_id = (
+                        world_relation.target
+                        if world_relation.source == current
+                        else world_relation.source
+                    )
+                    if related_id in depth_by_id:
+                        continue
+                    depth_by_id[related_id] = depth + 1
+                    next_frontier.append(related_id)
+            frontier = tuple(dict.fromkeys(next_frontier))
+            if not frontier:
+                break
+
+        candidate_nodes = tuple(
+            WorldGraphNode(entity_id, depth, self.entity_for(entity_id))
+            for entity_id, depth in sorted(
+                depth_by_id.items(),
+                key=lambda item: (item[1], str(item[0])),
+            )
+        )
+        nodes = tuple(
+            node
+            for node in candidate_nodes
+            if node.entity_id == root_id or self._graph_node_matches_query(node, graph_query)
+        )
+        included_ids = frozenset(node.entity_id for node in nodes)
+        graph_relations = tuple(
+            relation
+            for relation in sorted(
+                traversed.values(),
+                key=lambda item: (str(item.source), item.relation, str(item.target)),
+            )
+            if relation.source in included_ids and relation.target in included_ids
+        )
+        entities = tuple(node.entity for node in nodes if node.entity is not None)
+        return WorldGraph(
+            root,
+            nodes,
+            graph_relations,
+            entities,
+        )
+
+    def _graph_relations_for(
+        self,
+        entity_id: EntityId,
+        *,
+        relation_filter: frozenset[str],
+        direction: WorldRelationDirection,
+    ) -> tuple[WorldRelation, ...]:
+        selected: list[WorldRelation] = []
+        if direction in {WorldRelationDirection.OUTGOING, WorldRelationDirection.BOTH}:
+            selected.extend(self.relations_for(source=entity_id))
+        if direction in {WorldRelationDirection.INCOMING, WorldRelationDirection.BOTH}:
+            selected.extend(self.relations_for(target=entity_id))
+        return tuple(
+            item for item in selected if not relation_filter or item.relation in relation_filter
+        )
+
+    def _graph_node_matches_query(
+        self,
+        node: WorldGraphNode,
+        query: WorldGraphQuery,
+    ) -> bool:
+        if not query.entity_kinds and not query.required_facts:
+            return True
+        if node.entity is None:
+            return False
+        if query.entity_kinds and node.entity.kind not in query.entity_kinds:
+            return False
+        return all(
+            self.value_for(claim, subject=str(node.entity_id)) == expected
+            for claim, expected in query.required_facts.items()
         )
 
 

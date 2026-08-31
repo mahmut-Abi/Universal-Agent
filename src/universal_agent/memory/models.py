@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import NewType
 from uuid import uuid4
 
-from universal_agent.core import SessionId, utc_now
+from universal_agent.core import JsonMapping, SessionId, immutable_json, utc_now
 from universal_agent.core.config_validation import parse_bounded_float, parse_non_empty_string
 
 MemoryId = NewType("MemoryId", str)
@@ -40,6 +40,11 @@ class MemoryRecord:
     source_session_id: SessionId | None = None
     id: MemoryId = field(default_factory=new_memory_id)
     created_at: datetime = field(default_factory=utc_now)
+    # New fields for enhanced memory
+    version: int = 1
+    tags: tuple[str, ...] = ()
+    source: str = ""  # e.g., "domain", "user", "runtime", "consolidator"
+    metadata: JsonMapping = field(default_factory=immutable_json)
 
     def __post_init__(self) -> None:
         parse_bounded_float(

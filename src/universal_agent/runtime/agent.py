@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from typing import cast
 
-from universal_agent.capability import CapabilityUnavailableError, UnknownCapabilityError
 from universal_agent.context import BasicContextCompiler, ContextCompiler
 from universal_agent.core import (
     ActionId,
@@ -11,6 +9,7 @@ from universal_agent.core import (
     CapabilityDefinition,
     CapabilityInputContract,
     Decision,
+    DecisionContext,
     DecisionType,
     ErrorCode,
     EvaluationStatus,
@@ -21,17 +20,16 @@ from universal_agent.core import (
     JsonMapping,
     ObservationStatus,
     PendingAction,
-    RuntimeEvent,
     SessionId,
     Task,
     TaskStatus,
     immutable_json,
     new_session_id,
-    validate_argument_contract,
 )
 from universal_agent.domain import RuntimeComponents
-from universal_agent.memory import MemoryKind, MemoryRecord, RetrievalRequest
+from universal_agent.goals import DefaultGoalCompiler, GoalCompilation, GoalCompiler
 from universal_agent.model import ModelAdapter, model_usage
+from universal_agent.model.router import ModelRouter, ModelSelectionContext
 from universal_agent.recovery import Failure, RecoveryStrategy, classify_failure
 from universal_agent.runtime.actions import (
     ActionExecutor,
@@ -39,7 +37,12 @@ from universal_agent.runtime.actions import (
     ActionRejected,
     ConfirmationRequired,
 )
+from universal_agent.runtime.capabilities import CapabilityAdvisor
+from universal_agent.runtime.decision import DecisionEngine
+from universal_agent.runtime.emission import EventEmitter
 from universal_agent.runtime.events import EventSink
+from universal_agent.runtime.initial_state import seed_initial_state
+from universal_agent.runtime.memory import MemoryConsultant
 from universal_agent.runtime.processing import ObservationProcessor, ObservationRoutingError
 from universal_agent.runtime.session import (
     SessionHydrationError,
@@ -59,12 +62,19 @@ from universal_agent.runtime.transitions import (
 )
 from universal_agent.runtime.transitions import pause as pause_transition
 from universal_agent.security import SecretProvider, SecretResolutionReport
+from universal_agent.security.sandbox import Sandbox
 from universal_agent.state import (
     SessionSnapshot,
     SessionStore,
-    StateEventCommitter,
-    session_from_state,
 )
+from universal_agent.state.event_store import EventStore
+from universal_agent.tasks import TaskManager
+
+_RISK_RANK = {
+    "low": 0,
+    "medium": 1,
+    "high": 2,
+}
 
 
 class AgentRuntime:
@@ -85,9 +95,16 @@ class AgentRuntime:
         context_compiler: ContextCompiler | None = None,
         max_iterations: int = 20,
         max_recovery_steps: int = 8,
+        max_total_cost_micros: int | None = None,
+        max_total_tokens: int | None = None,
         environment: JsonMapping | None = None,
         secret_provider: SecretProvider | None = None,
         secret_resolution: SecretResolutionReport | None = None,
+        event_store: EventStore | None = None,
+        goal_compiler: GoalCompiler | None = None,
+        decision_engine: DecisionEngine | None = None,
+        model_router: ModelRouter | None = None,
+        sandbox: Sandbox | None = None,
     ) -> None:
         if max_iterations < 1:
             raise ValueError("max_iterations must be positive")
@@ -96,29 +113,89 @@ class AgentRuntime:
         self._model = model
         self._state_store = state_store
         self._components = components
-        self._event_sink = event_sink
-        self._state_event_committer = (
-            cast(StateEventCommitter, state_store)
-            if hasattr(state_store, "commit_session_event")
-            else None
+        self._event_store = event_store
+        if self._event_store is None and hasattr(event_sink, "append"):
+            self._event_store = cast(EventStore, event_sink)
+        self._events = EventEmitter(
+            event_sink=event_sink,
+            state_store=state_store,
+            event_store=self._event_store,
         )
         self._context_compiler = context_compiler or BasicContextCompiler()
+        self._capability_advisor = CapabilityAdvisor(components)
+        self._memory = MemoryConsultant(components)
         self._observation_processor = ObservationProcessor(components)
         self._max_iterations = max_iterations
         self._max_recovery_steps = max_recovery_steps
+        self._max_total_cost_micros = max_total_cost_micros
+        self._max_total_tokens = max_total_tokens
         self._environment = immutable_json(environment)
+        self._goal_compiler = goal_compiler
+        self._decision_engine = decision_engine
+        self._model_router = model_router
         self._actions = ActionExecutor(
             components,
             self._environment,
             secret_provider=secret_provider,
             secret_resolution=secret_resolution,
+            sandbox=sandbox,
+        )
+        self._capability_context_cache: (
+            tuple[tuple[CapabilityDefinition, ...], tuple[CapabilityInputContract, ...]] | None
+        ) = None
+
+    async def run(
+        self,
+        goal: Goal,
+        task: Task,
+        *,
+        initial_state: JsonMapping | None = None,
+    ) -> ExecutionResult:
+        if self._goal_compiler is not None:
+            compilation = await self._goal_compiler.compile(goal)
+            return await self._run_compilation(goal, compilation, initial_state=initial_state)
+        return await self._start_run(goal, task, initial_state=initial_state)
+
+    async def run_compiled(
+        self,
+        goal: Goal,
+        *,
+        initial_state: JsonMapping | None = None,
+    ) -> ExecutionResult:
+        compilation = await DefaultGoalCompiler().compile(goal)
+        return await self._run_compilation(goal, compilation, initial_state=initial_state)
+
+    async def _run_compilation(
+        self,
+        goal: Goal,
+        compilation: GoalCompilation,
+        *,
+        initial_state: JsonMapping | None,
+    ) -> ExecutionResult:
+        tasks = TaskManager.from_specs(compilation.initial_tasks)
+        return await self._start_run(
+            goal,
+            tasks.current,
+            initial_state=initial_state,
+            tasks=tasks,
+            compilation=compilation,
         )
 
-    async def run(self, goal: Goal, task: Task) -> ExecutionResult:
+    async def _start_run(
+        self,
+        goal: Goal,
+        task: Task,
+        *,
+        initial_state: JsonMapping | None = None,
+        tasks: TaskManager | None = None,
+        compilation: GoalCompilation | None = None,
+    ) -> ExecutionResult:
         state = AgentState(session_id=new_session_id(), goal=goal, current_task=task)
-        state.tasks.append(task)
-        session = start_session(state, self._components)
+        state.tasks = list(tasks.all()) if tasks is not None else [task]
+        session = start_session(state, self._components, tasks=tasks)
         await self._state_store.create_session(session.snapshot())
+        if initial_state:
+            seed_initial_state(session, initial_state)
         await self._emit(
             state,
             "DomainActivated",
@@ -130,13 +207,30 @@ class AgentRuntime:
                 ),
             },
         )
+        if compilation is not None:
+            await self._emit(
+                state,
+                "GoalCompiled",
+                data={
+                    "task_count": len(compilation.initial_tasks),
+                    "notes": compilation.notes,
+                },
+            )
         await self._emit(state, "GoalCreated")
-        await self._emit(state, "TaskCreated")
+        for created_task in session.tasks.all():
+            await self._emit(
+                state,
+                "TaskCreated",
+                data={
+                    "created_task_id": created_task.id,
+                    "description": created_task.description,
+                },
+            )
         goal.status = GoalStatus.RUNNING
-        task.status = TaskStatus.RUNNING
-        await self._commit_session_event(
+        mark_current_task(session, TaskStatus.RUNNING)
+        await self._events.commit_session_event(
             session,
-            self._runtime_event(state, "StateUpdated"),
+            self._events.runtime_event(state, "StateUpdated"),
         )
         return await self._loop(session)
 
@@ -146,7 +240,7 @@ class AgentRuntime:
         *,
         confirmed: bool | None = None,
     ) -> ExecutionResult:
-        snapshot = await self._state_store.load_session(session_id)
+        snapshot = await self._load_session(session_id)
         try:
             session = hydrate_session(snapshot, self._components)
         except SessionHydrationError as exc:
@@ -175,9 +269,9 @@ class AgentRuntime:
         state.goal.status = GoalStatus.RUNNING
         mark_current_task(session, TaskStatus.RUNNING)
         state.termination_reason = None
-        await self._commit_session_event(
+        await self._events.commit_session_event(
             session,
-            self._runtime_event(state, "SessionResumed"),
+            self._events.runtime_event(state, "SessionResumed"),
         )
         if pending is not None:
             result = await self._drive(session, pending=pending)
@@ -191,7 +285,7 @@ class AgentRuntime:
         *,
         reason: str = "session paused",
     ) -> ExecutionResult:
-        snapshot = await self._state_store.load_session(session_id)
+        snapshot = await self._load_session(session_id)
         try:
             session = hydrate_session(snapshot, self._components)
         except SessionHydrationError as exc:
@@ -219,7 +313,7 @@ class AgentRuntime:
         *,
         reason: str = "session cancelled",
     ) -> ExecutionResult:
-        snapshot = await self._state_store.load_session(session_id)
+        snapshot = await self._load_session(session_id)
         try:
             session = hydrate_session(snapshot, self._components)
         except SessionHydrationError as exc:
@@ -243,7 +337,7 @@ class AgentRuntime:
         while state.iteration < self._max_iterations:
             state.iteration += 1
             await self._save(session)
-            capabilities, input_contracts = self._capability_context()
+            capabilities, input_contracts = self._get_capability_context()
             context = self._context_compiler.compile(
                 state,
                 capabilities,
@@ -252,17 +346,17 @@ class AgentRuntime:
                 session.world(),
                 session.query(limit=8),
                 session.tasks,
-                self._recall(session),
+                self._memory.recall(session),
                 input_contracts,
             )
             try:
-                decision = await self._model.decide(context)
+                decision, usage_source = await self._decide(context)
             except Exception as exc:
                 return await self._settle(
                     session,
                     fail(session, ErrorCode.MODEL_FAILURE, f"model failed: {exc}"),
                 )
-            usage = model_usage(self._model)
+            usage = model_usage(usage_source)
             await self._emit(
                 state,
                 "DecisionGenerated",
@@ -282,11 +376,41 @@ class AgentRuntime:
                         "currency": usage.currency,
                     },
                 )
+                state.cumulative_cost_micros += usage.estimated_cost_micros
+                state.cumulative_tokens += usage.total_tokens
+                if (
+                    self._max_total_cost_micros is not None
+                    and state.cumulative_cost_micros >= self._max_total_cost_micros
+                ):
+                    limit = self._max_total_cost_micros
+                    current = state.cumulative_cost_micros
+                    return await self._settle(
+                        session,
+                        fail(
+                            session,
+                            ErrorCode.COST_LIMIT_EXCEEDED,
+                            f"cost limit reached: {current} >= {limit}",
+                        ),
+                    )
+                if (
+                    self._max_total_tokens is not None
+                    and state.cumulative_tokens >= self._max_total_tokens
+                ):
+                    limit = self._max_total_tokens
+                    current = state.cumulative_tokens
+                    return await self._settle(
+                        session,
+                        fail(
+                            session,
+                            ErrorCode.COST_LIMIT_EXCEEDED,
+                            f"token limit reached: {current} >= {limit}",
+                        ),
+                    )
             try:
                 decision.validate()
             except ValueError as exc:
                 reason = f"invalid decision: {exc}"
-                await self._emit_decision_rejected(
+                await self._events.emit_decision_rejected(
                     state,
                     decision,
                     ErrorCode.VALIDATION_ERROR,
@@ -297,14 +421,14 @@ class AgentRuntime:
                     session,
                     fail(session, ErrorCode.VALIDATION_ERROR, reason),
                 )
-            context_error = self._validate_decision_context(
+            context_error = self._capability_advisor.validate_decision_context(
                 decision,
                 capabilities,
                 input_contracts,
             )
             if context_error is not None:
                 error_code, reason = context_error
-                await self._emit_decision_rejected(
+                await self._events.emit_decision_rejected(
                     state,
                     decision,
                     error_code,
@@ -316,7 +440,7 @@ class AgentRuntime:
                 state,
                 "DecisionValidated",
                 data={
-                    **self._decision_event_data(decision),
+                    **self._events.decision_event_data(decision),
                     "available_capability_count": len(capabilities),
                 },
             )
@@ -330,6 +454,31 @@ class AgentRuntime:
                 ErrorCode.ITERATION_LIMIT,
                 f"maximum iterations reached: {self._max_iterations}",
             ),
+        )
+
+    async def _decide(self, context: DecisionContext) -> tuple[Decision, ModelAdapter]:
+        if self._decision_engine is not None:
+            return await self._decision_engine.decide(context), self._model
+        if self._model_router is not None:
+            route = await self._model_router.select(self._model_selection_context(context))
+            return await route.adapter.decide(context), route.adapter
+        return await self._model.decide(context), self._model
+
+    def _model_selection_context(self, context: DecisionContext) -> ModelSelectionContext:
+        capabilities = context.capabilities
+        if not capabilities:
+            from universal_agent.core import RiskLevel
+
+            return ModelSelectionContext(risk=RiskLevel.LOW, readonly=True)
+        highest = max(
+            capabilities,
+            key=lambda item: _RISK_RANK.get(item.risk.value, 0),
+        )
+        readonly = all(item.category.value != "mutation" for item in capabilities)
+        return ModelSelectionContext(
+            risk=highest.risk,
+            capability_category=highest.category,
+            readonly=readonly,
         )
 
     async def _apply_decision(
@@ -376,7 +525,7 @@ class AgentRuntime:
         Recovery is a bounded loop, not recursion: a misconfigured domain can
         exhaust the step budget but can never grow the Python stack.
         """
-        emit = self._emitter(session)
+        emit = self._events.emitter_for(session)
         for _ in range(self._max_recovery_steps):
             if pending is not None:
                 outcome = await self._actions.execute(session, pending, emit, confirmed=True)
@@ -483,9 +632,9 @@ class AgentRuntime:
                 "TaskStarted",
                 data={"started_task_id": processed.next_task.id},
             )
-        await self._commit_session_event(
+        await self._events.commit_session_event(
             session,
-            self._runtime_event(
+            self._events.runtime_event(
                 state,
                 "StateUpdated",
                 action_id=observation.action_id,
@@ -519,9 +668,9 @@ class AgentRuntime:
         if key:
             state.recovery_attempts[key] = recovery.attempt
         # Persist the spent budget before retrying so a crash cannot reset it.
-        await self._commit_session_event(
+        await self._events.commit_session_event(
             session,
-            self._runtime_event(
+            self._events.runtime_event(
                 state,
                 "RecoveryExhausted" if recovery.exhausted else "RecoveryPlanned",
                 action_id=pending.action_id,
@@ -567,216 +716,49 @@ class AgentRuntime:
             await self._actions.release_pending_resource(
                 session,
                 pending,
-                self._emitter(session),
+                self._events.emitter_for(session),
             )
-        self._record_episodic(session, transition)
-        event = self._runtime_event(
+        self._memory.record_episodic(session, transition)
+        event = self._events.runtime_event(
             session.state,
             transition.event_type,
             action_id=transition.action_id,
             data=transition.event_data,
         )
-        await self._commit_session_event(session, event)
+        await self._events.commit_session_event(session, event)
         return transition.result
 
-    def _recall(self, session: SessionRuntimeState) -> tuple[MemoryRecord, ...]:
-        """Run the three-stage pipeline: retrieve, filter.
-
-        Memory enters the context only through this path, so it stays advisory
-        and never reaches evidence, the world model, or the evaluator.
-        """
-        state = session.state
-        request = RetrievalRequest(
-            goal_description=state.goal.description,
-            task_description=state.current_task.description,
-            subjects=tuple(fact.subject for fact in session.world().facts),
-            scope=self._components.memory_scope,
-        )
-        candidates = self._components.memory_retriever.retrieve(request)
-        return self._components.memory_filter.filter(candidates, request)
-
-    def _capability_context(
+    def _get_capability_context(
         self,
     ) -> tuple[tuple[CapabilityDefinition, ...], tuple[CapabilityInputContract, ...]]:
-        executable: list[CapabilityDefinition] = []
-        contracts: list[CapabilityInputContract] = []
-        for capability in self._components.capabilities.all():
-            try:
-                resolution = self._components.resolver.resolve_registration(capability.name)
-            except (UnknownCapabilityError, CapabilityUnavailableError):
-                continue
-            tool = resolution.tool.definition
-            executable.append(capability)
-            contracts.append(
-                CapabilityInputContract(
-                    capability.name,
-                    required_arguments=tool.required_arguments,
-                    argument_schema=tool.argument_schema,
-                )
-            )
-        return tuple(executable), tuple(contracts)
-
-    def _validate_decision_context(
-        self,
-        decision: Decision,
-        capabilities: tuple[CapabilityDefinition, ...],
-        input_contracts: tuple[CapabilityInputContract, ...],
-    ) -> tuple[ErrorCode, str] | None:
-        if decision.type is not DecisionType.EXECUTE:
-            return None
-        capability = decision.capability or ""
-        if capability in {item.name for item in capabilities}:
-            contracts = {item.capability: item for item in input_contracts}
-            contract = contracts.get(capability)
-            if contract is None:
-                return None
-            argument_error = validate_argument_contract(
-                required_arguments=contract.required_arguments,
-                argument_schema=contract.argument_schema,
-                arguments=decision.arguments,
-            )
-            if argument_error is not None:
-                return (
-                    ErrorCode.VALIDATION_ERROR,
-                    f"invalid decision arguments for capability {capability}: {argument_error}",
-                )
-            return None
-        try:
-            self._components.capabilities.resolve_registration(capability)
-        except UnknownCapabilityError as exc:
-            return ErrorCode.UNKNOWN_CAPABILITY, str(exc)
-        return (
-            ErrorCode.NO_CAPABILITY_TOOL,
-            f"capability is not executable in current context: {capability}",
-        )
-
-    def _record_episodic(
-        self,
-        session: SessionRuntimeState,
-        transition: Transition,
-    ) -> None:
-        """Write a single episodic record at a terminal transition.
-
-        WAITING is not a terminal state: the session may resume, so there is no
-        settled experience to record yet. Only COMPLETED / FAILED produce an
-        episodic memory, which future sessions of the same runtime may recall.
-        """
-        result = transition.result
-        if result.status is ExecutionStatus.WAITING:
-            return
-        state = session.state
-        kind = MemoryKind.EPISODIC
-        content = f"Goal '{state.goal.description}' ended as {result.status.value}: {result.reason}"
-        record = MemoryRecord(
-            kind=kind,
-            subject=f"session {state.session_id}",
-            content=content,
-            scope=self._components.memory_scope or "",
-            confidence=1.0,
-            source_session_id=state.session_id,
-        )
-        self._components.memory_store.add(record)
-
-    async def _emit_decision_rejected(
-        self,
-        state: AgentState,
-        decision: Decision,
-        error_code: ErrorCode,
-        reason: str,
-        *,
-        validation_stage: str,
-    ) -> None:
-        await self._emit(
-            state,
-            "DecisionRejected",
-            data={
-                **self._decision_event_data(decision),
-                "error_code": error_code.value,
-                "validation_stage": validation_stage,
-                "rejection_reason": reason,
-            },
-        )
-
-    def _decision_event_data(self, decision: Decision) -> dict[str, object]:
-        data: dict[str, object] = {
-            "decision_type": decision.type.value,
-            "reason": decision.reason,
-            "argument_names": tuple(sorted(decision.arguments)),
-            "expected_observations": decision.expected_observations,
-        }
-        if decision.capability is not None:
-            data["capability"] = decision.capability
-        if decision.target is not None:
-            data["target"] = decision.target
-        if decision.message is not None:
-            data["message"] = decision.message
-        return data
+        if self._capability_context_cache is not None:
+            return self._capability_context_cache
+        self._capability_context_cache = self._capability_advisor.context()
+        return self._capability_context_cache
 
     async def _reject_session(self, snapshot: SessionSnapshot, reason: str) -> ExecutionResult:
-        """Fail a session that could not be hydrated into a runtime state."""
-        state = snapshot.state
-        state.goal.status = GoalStatus.FAILED
-        state.current_task.status = TaskStatus.FAILED
-        state.tasks = [state.current_task]
-        state.termination_reason = reason
-        state.error_code = ErrorCode.INVALID_STATE
-        failed_snapshot = session_from_state(
-            state,
-            domain_name=snapshot.domain_name,
-            domain_version=snapshot.domain_version,
-            domain_identities=snapshot.domains,
-        )
-        failed_snapshot.version = snapshot.version
-        event = self._runtime_event(
-            state,
-            "GoalFailed",
-            data={"error_code": ErrorCode.INVALID_STATE.value, "reason": reason},
-        )
-        if self._state_event_committer is None:
-            await self._state_store.save_session(failed_snapshot)
-            await self._event_sink.emit(event)
-        else:
-            await self._state_event_committer.commit_session_event(failed_snapshot, event)
-        return build_result(
-            state,
-            ExecutionStatus.FAILED,
-            reason,
-            error_code=ErrorCode.INVALID_STATE,
-        )
+        return await self._events.reject_session(snapshot, reason)
 
     async def _save(self, session: SessionRuntimeState) -> None:
         snapshot = session.snapshot()
         await self._state_store.save_session(snapshot)
         session.version = snapshot.version
 
-    async def _commit_session_event(
-        self,
-        session: SessionRuntimeState,
-        event: RuntimeEvent,
-    ) -> None:
-        snapshot = session.snapshot()
-        if self._state_event_committer is None:
-            await self._state_store.save_session(snapshot)
-            session.version = snapshot.version
-            await self._event_sink.emit(event)
-            return
-        await self._state_event_committer.commit_session_event(snapshot, event)
-        session.version = snapshot.version
+    async def _load_session(self, session_id: SessionId) -> SessionSnapshot:
+        from universal_agent.state.event_store import EventReplayError
+        from universal_agent.state.store import StateNotFoundError
 
-    def _emitter(
-        self,
-        session: SessionRuntimeState,
-    ) -> Callable[[str, ActionId | None, dict[str, object]], Awaitable[None]]:
-        """Narrow the event sink down to what action execution is allowed to do."""
+        try:
+            return await self._state_store.load_session(session_id)
+        except StateNotFoundError:
+            if self._event_store is not None:
+                from universal_agent.state.event_store import rebuild_session_snapshot
 
-        async def emit(
-            event_type: str,
-            action_id: ActionId | None,
-            data: dict[str, object],
-        ) -> None:
-            await self._emit(session.state, event_type, action_id=action_id, data=data)
-
-        return emit
+                try:
+                    return rebuild_session_snapshot(self._event_store, session_id)
+                except EventReplayError as err:
+                    raise StateNotFoundError(f"session not found: {session_id}") from err
+            raise
 
     async def _emit(
         self,
@@ -786,23 +768,4 @@ class AgentRuntime:
         action_id: ActionId | None = None,
         data: dict[str, object] | None = None,
     ) -> None:
-        await self._event_sink.emit(
-            self._runtime_event(state, event_type, action_id=action_id, data=data)
-        )
-
-    def _runtime_event(
-        self,
-        state: AgentState,
-        event_type: str,
-        *,
-        action_id: ActionId | None = None,
-        data: dict[str, object] | None = None,
-    ) -> RuntimeEvent:
-        return RuntimeEvent(
-            type=event_type,
-            session_id=state.session_id,
-            goal_id=state.goal.id,
-            task_id=state.current_task.id,
-            action_id=action_id,
-            data=data or {},
-        )
+        await self._events.emit(state, event_type, action_id=action_id, data=data)

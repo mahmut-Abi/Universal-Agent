@@ -25,11 +25,14 @@ from universal_agent.core.config_validation import (
     parse_payload,
 )
 from universal_agent.evaluation.harness import (
+    EvaluationInitialState,
     EvaluationQualityGate,
     EvaluationScenario,
     EvaluationScenarioKind,
     EvaluationSuite,
     ScenarioExpectations,
+    WorldEntitySeed,
+    WorldStateSeed,
 )
 
 
@@ -96,6 +99,25 @@ class _ScenarioPayload(ConfigPayload):
     expectations: _ExpectationsPayload | None = None
     kind: str = EvaluationScenarioKind.SCENARIO.value
     tags: list[PydanticNonEmptyString] = Field(default_factory=list)
+    initial_state: _InitialStatePayload | None = None
+
+
+class _WorldStateSeedPayload(ConfigPayload):
+    subject: PydanticNonEmptyString
+    claim: PydanticNonEmptyString
+    value: PydanticJsonValue
+    confidence: float = 1.0
+
+
+class _WorldEntitySeedPayload(ConfigPayload):
+    entity_id: PydanticNonEmptyString
+    kind: PydanticNonEmptyString
+    attributes: dict[PydanticNonEmptyString, PydanticJsonValue] = Field(default_factory=dict)
+
+
+class _InitialStatePayload(ConfigPayload):
+    world_facts: list[_WorldStateSeedPayload] = Field(default_factory=list)
+    world_entities: list[_WorldEntitySeedPayload] = Field(default_factory=list)
 
 
 class _QualityGatePayload(ConfigPayload):
@@ -162,7 +184,33 @@ def _scenario_from_payload(payload: _ScenarioPayload) -> EvaluationScenario:
         else ScenarioExpectations(),
         kind=EvaluationScenarioKind(payload.kind),
         tags=_string_tuple(payload.tags, "scenario.tags"),
+        initial_state=_initial_state_from_payload(payload.initial_state)
+        if payload.initial_state is not None
+        else None,
     )
+
+
+def _initial_state_from_payload(payload: _InitialStatePayload) -> EvaluationInitialState:
+    from universal_agent.core import immutable_json
+
+    world_facts = tuple(
+        WorldStateSeed(
+            subject=fact.subject,
+            claim=fact.claim,
+            value=fact.value,
+            confidence=fact.confidence,
+        )
+        for fact in payload.world_facts
+    )
+    world_entities = tuple(
+        WorldEntitySeed(
+            entity_id=entity.entity_id,
+            kind=entity.kind,
+            attributes=immutable_json(entity.attributes) if entity.attributes else immutable_json(),
+        )
+        for entity in payload.world_entities
+    )
+    return EvaluationInitialState(world_facts=world_facts, world_entities=world_entities)
 
 
 def _goal_from_payload(payload: _GoalPayload) -> Goal:

@@ -101,6 +101,7 @@ def production_profile() -> AgentProfile:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_sdk_submits_goal_and_reads_events_through_service() -> None:
     sdk, backend = build_sdk([inspect_workload(), finish()])
 
@@ -123,6 +124,7 @@ async def test_runtime_sdk_submits_goal_and_reads_events_through_service() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_sdk_accepts_public_goal_and_task_types() -> None:
     sdk, _ = build_sdk([inspect_workload(), finish()])
     goal = SDKGoal(
@@ -139,6 +141,23 @@ async def test_runtime_sdk_accepts_public_goal_and_task_types() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_runtime_sdk_submits_compiled_goal() -> None:
+    sdk, backend = build_sdk([inspect_workload(), inspect_workload(), finish()])
+
+    result = await sdk.submit_compiled_goal(
+        "Verify workload health",
+        success_criteria={"healthy": True},
+    )
+    session = await sdk.get_session(result.session_id)
+
+    assert result.status == "completed"
+    assert len(session.tasks) == 2
+    assert backend.inspect_calls == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
 async def test_runtime_sdk_validates_profile_selection() -> None:
     sdk, _ = build_sdk([finish()])
 
@@ -151,6 +170,7 @@ async def test_runtime_sdk_validates_profile_selection() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_runtime_sdk_lifecycle_methods_return_public_results() -> None:
     sdk, _ = build_sdk([wait()])
 
@@ -164,6 +184,7 @@ async def test_runtime_sdk_lifecycle_methods_return_public_results() -> None:
     assert cancelled.goal_status == "cancelled"
 
 
+@pytest.mark.unit
 def test_runtime_sdk_rejects_invalid_public_inputs() -> None:
     with pytest.raises(RuntimeSDKError, match="success criteria must not be empty"):
         SDKGoal("No criteria", ())

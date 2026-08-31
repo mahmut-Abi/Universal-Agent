@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from universal_agent.core import (
     Observation,
     ObservationStatus,
@@ -16,6 +18,7 @@ from universal_agent.evidence import EvidenceContext
 from universal_agent.world import EntityId, FactWorldUpdater, InMemoryWorldModel
 
 
+@pytest.mark.behavior
 def test_kubernetes_workload_observation_projects_pod_world_facts() -> None:
     task = Task("Inspect Kubernetes workload", ("healthy",))
     observation = Observation(
@@ -78,6 +81,7 @@ def test_kubernetes_workload_observation_projects_pod_world_facts() -> None:
     assert snapshot.value_for("root_cause", subject="pod/api-123") == "crash_loop_back_off"
 
 
+@pytest.mark.behavior
 def test_kubernetes_evidence_extractor_ignores_failed_observations() -> None:
     task = Task("Inspect Kubernetes workload", ("healthy",))
     observation = Observation(
@@ -98,6 +102,7 @@ def test_kubernetes_evidence_extractor_ignores_failed_observations() -> None:
     )
 
 
+@pytest.mark.behavior
 def test_kubernetes_log_observation_marks_pod_diagnostics_observed() -> None:
     task = Task("Collect pod logs", ("pod_diagnostics_observed",))
     observation = Observation(

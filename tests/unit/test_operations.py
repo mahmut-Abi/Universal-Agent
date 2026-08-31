@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
 
+import pytest
+
 from universal_agent.core import (
     ActionId,
     ErrorCode,
@@ -14,6 +16,7 @@ from universal_agent.core import (
     TaskStatus,
 )
 from universal_agent.operations import (
+    build_audit_integrity,
     build_audit_records,
     build_doctor_report,
     build_opentelemetry_trace_export,
@@ -77,6 +80,7 @@ def event(
     )
 
 
+@pytest.mark.behavior
 def test_runtime_metrics_are_derived_from_sessions_and_events() -> None:
     events = (
         event("event-1", "PolicyChecked", action_id="action-1", data={"effect": "allow"}),
@@ -175,6 +179,7 @@ def test_runtime_metrics_are_derived_from_sessions_and_events() -> None:
     assert metrics.model_estimated_cost_micros == 42
 
 
+@pytest.mark.unit
 def test_prometheus_metrics_export_projects_runtime_metrics_text() -> None:
     metrics = build_runtime_metrics(
         (session(), session(GoalStatus.WAITING)),
@@ -222,6 +227,7 @@ def test_prometheus_metrics_export_projects_runtime_metrics_text() -> None:
     assert "universal_agent_runtime_model_estimated_cost_micros 42.0\n" in exported
 
 
+@pytest.mark.unit
 def test_prometheus_metrics_export_sanitizes_metric_prefix() -> None:
     metrics = build_runtime_metrics((), ())
 
@@ -230,6 +236,7 @@ def test_prometheus_metrics_export_sanitizes_metric_prefix() -> None:
     assert "_123_bad_prefix_sessions 0.0\n" in exported
 
 
+@pytest.mark.unit
 def test_runtime_cost_is_grouped_by_model_usage_events() -> None:
     events = (
         event(
@@ -285,6 +292,7 @@ def test_runtime_cost_is_grouped_by_model_usage_events() -> None:
     assert cost.by_model[1].total_tokens == 185
 
 
+@pytest.mark.unit
 def test_runtime_logs_project_redacted_structured_records() -> None:
     events = (
         event(
@@ -326,6 +334,7 @@ def test_runtime_logs_project_redacted_structured_records() -> None:
     assert nested["password"] == "[REDACTED]"
 
 
+@pytest.mark.unit
 def test_runtime_logs_use_library_case_conversion_for_unknown_events() -> None:
     logs = build_runtime_logs(
         (
@@ -337,6 +346,44 @@ def test_runtime_logs_use_library_case_conversion_for_unknown_events() -> None:
     assert [record.message for record in logs] == ["goal created", "http probe failed"]
 
 
+@pytest.mark.unit
+def test_audit_integrity_builds_stable_hash_chain() -> None:
+    events = (
+        event(
+            "event-1",
+            "PolicyChecked",
+            action_id="action-1",
+            data={
+                "effect": "allow",
+                "policy": "safe-mutation",
+                "capability": "scale_workload",
+                "tool_name": "kubernetes_scale_workload",
+                "side_effect": "reversible",
+                "risk": "medium",
+            },
+            occurred_at=datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
+        ),
+        event(
+            "event-2",
+            "ActionCompleted",
+            action_id="action-1",
+            data={"status": "succeeded"},
+            occurred_at=datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC),
+        ),
+    )
+    records = build_audit_records(events)
+
+    integrity = build_audit_integrity(records)
+    repeated = build_audit_integrity(records)
+
+    assert integrity == repeated
+    assert integrity.record_count == 1
+    assert len(integrity.root_hash) == 64
+    assert integrity.records[0].record_id == "event-1"
+    assert integrity.records[0].record_hash == integrity.root_hash
+
+
+@pytest.mark.behavior
 def test_runtime_trace_spans_project_session_and_action_tree() -> None:
     events = (
         event(
@@ -413,6 +460,7 @@ def test_runtime_trace_spans_project_session_and_action_tree() -> None:
     assert policy.attributes["policy"] == "allow-safe-read"
 
 
+@pytest.mark.behavior
 def test_runtime_trace_spans_project_decision_model_and_evaluation_phases() -> None:
     events = (
         event(
@@ -481,6 +529,7 @@ def test_runtime_trace_spans_project_decision_model_and_evaluation_phases() -> N
     assert evaluation.attributes["evaluator"] == "workload-health"
 
 
+@pytest.mark.behavior
 def test_runtime_logs_and_traces_project_rejected_decisions() -> None:
     events = (
         event("event-1", "GoalCreated"),
@@ -509,6 +558,7 @@ def test_runtime_logs_and_traces_project_rejected_decisions() -> None:
     assert rejected_span.attributes["validation_stage"] == "context"
 
 
+@pytest.mark.unit
 def test_runtime_trace_spans_project_resource_lock_phases() -> None:
     events = (
         event(
@@ -567,6 +617,7 @@ def test_runtime_trace_spans_project_resource_lock_phases() -> None:
     assert conflict.attributes["reason"] == "already locked"
 
 
+@pytest.mark.contract
 def test_opentelemetry_trace_export_projects_otlp_json_payload() -> None:
     events = (
         event(
@@ -650,6 +701,7 @@ def test_opentelemetry_trace_export_projects_otlp_json_payload() -> None:
     } in attributes
 
 
+@pytest.mark.unit
 def test_opentelemetry_trace_export_keeps_empty_span_list() -> None:
     payload = build_opentelemetry_trace_export(())
 
@@ -664,6 +716,7 @@ def test_opentelemetry_trace_export_keeps_empty_span_list() -> None:
     assert scope_span["spans"] == []
 
 
+@pytest.mark.behavior
 def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -715,6 +768,7 @@ def test_doctor_report_aggregates_readiness_and_event_stream_checks() -> None:
     assert next(check for check in report.checks if check.name == "secret_scanning").status == "ok"
 
 
+@pytest.mark.unit
 def test_doctor_report_errors_on_missing_required_runtime_secrets() -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -745,6 +799,7 @@ def test_doctor_report_errors_on_missing_required_runtime_secrets() -> None:
     assert "openai_api_key" in runtime_secrets.message
 
 
+@pytest.mark.contract
 def test_doctor_report_errors_on_unredacted_secret_payloads() -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -765,6 +820,7 @@ def test_doctor_report_errors_on_unredacted_secret_payloads() -> None:
     assert "$.events[0].api_token" in secret_scanning.message
 
 
+@pytest.mark.behavior
 def test_doctor_report_errors_on_state_event_consistency_gaps() -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -788,6 +844,7 @@ def test_doctor_report_errors_on_state_event_consistency_gaps() -> None:
     assert "terminal_event_gaps=1" in consistency.message
 
 
+@pytest.mark.unit
 def test_doctor_report_accepts_consistent_terminal_session_events() -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -806,6 +863,7 @@ def test_doctor_report_accepts_consistent_terminal_session_events() -> None:
     assert "terminal_events_verified" in consistency.message
 
 
+@pytest.mark.unit
 def test_doctor_report_errors_when_persistent_state_event_commit_is_split() -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -829,6 +887,7 @@ def test_doctor_report_errors_when_persistent_state_event_commit_is_split() -> N
     assert "persistent store lacks state/event commit support" in commit.message
 
 
+@pytest.mark.unit
 def test_doctor_report_accepts_persistent_state_event_commit_strategy() -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -851,6 +910,7 @@ def test_doctor_report_accepts_persistent_state_event_commit_strategy() -> None:
     assert "file_journal" in commit.message
 
 
+@pytest.mark.contract
 def test_doctor_report_errors_on_invalid_runtime_config_projection() -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -877,6 +937,7 @@ def test_doctor_report_errors_on_invalid_runtime_config_projection() -> None:
     assert "max_recovery_steps=0" in runtime_config.message
 
 
+@pytest.mark.unit
 def test_doctor_report_accepts_ready_persistent_runtime_paths(tmp_path: Path) -> None:
     store_path = tmp_path / "runtime-store"
     store_path.mkdir()
@@ -906,6 +967,7 @@ def test_doctor_report_accepts_ready_persistent_runtime_paths(tmp_path: Path) ->
     assert runtime_paths.message == "persistent runtime paths ready: 3"
 
 
+@pytest.mark.unit
 def test_doctor_report_warns_on_runtime_paths_that_will_be_created(tmp_path: Path) -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -935,6 +997,7 @@ def test_doctor_report_warns_on_runtime_paths_that_will_be_created(tmp_path: Pat
     )
 
 
+@pytest.mark.unit
 def test_doctor_report_errors_on_invalid_runtime_path_shapes(tmp_path: Path) -> None:
     store_path = tmp_path / "runtime-store"
     queue_path = tmp_path / "work-queue.json"
@@ -970,6 +1033,7 @@ def test_doctor_report_errors_on_invalid_runtime_path_shapes(tmp_path: Path) -> 
     assert "distributed_locks sqlite backend requires path" in runtime_paths.message
 
 
+@pytest.mark.unit
 def test_doctor_report_warns_on_resource_lock_conflicts() -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -1002,6 +1066,7 @@ def test_doctor_report_warns_on_resource_lock_conflicts() -> None:
     assert resource_locks.message == "resource conflicts detected: 1"
 
 
+@pytest.mark.behavior
 def test_audit_records_include_only_side_effecting_policy_checks() -> None:
     events = (
         event(
@@ -1068,6 +1133,7 @@ def test_audit_records_include_only_side_effecting_policy_checks() -> None:
     assert records[1].completed_at == datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
 
 
+@pytest.mark.unit
 def test_doctor_report_includes_distributed_runtime_health() -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -1094,6 +1160,7 @@ def test_doctor_report_includes_distributed_runtime_health() -> None:
     )
 
 
+@pytest.mark.unit
 def test_doctor_report_errors_on_invalid_distributed_session_work_items() -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -1116,6 +1183,7 @@ def test_doctor_report_errors_on_invalid_distributed_session_work_items() -> Non
     assert distributed_queue.message == "invalid_session_work_items=2"
 
 
+@pytest.mark.unit
 def test_doctor_report_warns_on_terminal_distributed_work_items() -> None:
     report = build_doctor_report(
         health_status="ok",
@@ -1139,6 +1207,7 @@ def test_doctor_report_warns_on_terminal_distributed_work_items() -> None:
     assert distributed_queue.message == "terminal_work_items=3 prune recommended"
 
 
+@pytest.mark.unit
 def test_doctor_report_allows_missing_distributed_runtime() -> None:
     report = build_doctor_report(
         health_status="ok",

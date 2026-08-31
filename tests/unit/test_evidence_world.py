@@ -56,6 +56,7 @@ def make_evidence(
     )
 
 
+@pytest.mark.unit
 def test_evidence_validates_confidence_and_fields_through_pydantic_helpers() -> None:
     with pytest.raises(ValueError, match="evidence confidence must be between zero and one"):
         make_evidence(value=True, confidence=1.5, seconds=1)
@@ -67,6 +68,7 @@ def test_evidence_validates_confidence_and_fields_through_pydantic_helpers() -> 
         make_evidence(value=True, confidence=0.9, seconds=1, claim=cast(str, 1))
 
 
+@pytest.mark.unit
 def test_evidence_store_is_idempotent_and_queryable() -> None:
     store = InMemoryEvidenceStore()
     evidence = make_evidence(value=True, confidence=0.9, seconds=1)
@@ -77,6 +79,7 @@ def test_evidence_store_is_idempotent_and_queryable() -> None:
     assert store.query(EvidenceQuery(evidence.session_id, subject="missing")) == ()
 
 
+@pytest.mark.behavior
 def test_world_model_preserves_conflicting_provenance() -> None:
     model = InMemoryWorldModel()
     older_high_confidence = make_evidence(value=False, confidence=0.99, seconds=1)
@@ -104,6 +107,7 @@ def test_world_model_preserves_conflicting_provenance() -> None:
     assert snapshot.conflicting_facts() == (history,)
 
 
+@pytest.mark.behavior
 def test_fact_world_updater_projects_entities_from_kind_evidence() -> None:
     model = InMemoryWorldModel()
     updater = FactWorldUpdater()
@@ -121,6 +125,7 @@ def test_fact_world_updater_projects_entities_from_kind_evidence() -> None:
     assert entity.evidence_ids == (kind.id,)
 
 
+@pytest.mark.behavior
 def test_entity_kind_uses_current_fact_when_kind_evidence_conflicts() -> None:
     model = InMemoryWorldModel()
     updater = FactWorldUpdater()
@@ -147,6 +152,7 @@ def test_entity_kind_uses_current_fact_when_kind_evidence_conflicts() -> None:
     assert entity.evidence_ids == (high_confidence_kind.id, low_confidence_kind.id)
 
 
+@pytest.mark.behavior
 def test_fact_world_updater_projects_relations_from_relation_evidence() -> None:
     model = InMemoryWorldModel()
     updater = FactWorldUpdater()
@@ -168,6 +174,7 @@ def test_fact_world_updater_projects_relations_from_relation_evidence() -> None:
     assert snapshot.relations_for(relation="owns")[0].evidence_ids == (relation.id,)
 
 
+@pytest.mark.behavior
 def test_world_snapshot_queries_entity_neighborhoods() -> None:
     model = InMemoryWorldModel()
     updater = FactWorldUpdater()
@@ -210,6 +217,7 @@ def test_world_snapshot_queries_entity_neighborhoods() -> None:
     assert pod.outgoing_relations == ()
 
 
+@pytest.mark.behavior
 def test_world_model_rejects_empty_entity_kind() -> None:
     model = InMemoryWorldModel()
 
@@ -220,6 +228,7 @@ def test_world_model_rejects_empty_entity_kind() -> None:
         )
 
 
+@pytest.mark.behavior
 def test_world_model_rejects_empty_relation_name() -> None:
     model = InMemoryWorldModel()
 

@@ -20,6 +20,7 @@ from universal_agent.service.distributed_runtime import (
 )
 
 
+@pytest.mark.contract
 def test_goal_work_payload_round_trips_through_pydantic_decoder() -> None:
     goal_created_at = datetime(2026, 1, 1, 8, 30, tzinfo=UTC)
     task_created_at = datetime(2026, 1, 1, 8, 31, tzinfo=UTC)
@@ -144,6 +145,7 @@ def test_goal_work_payload_round_trips_through_pydantic_decoder() -> None:
         ),
     ),
 )
+@pytest.mark.contract
 def test_goal_task_from_work_payload_reports_stable_validation_messages(
     payload: dict[str, JsonValue],
     message: str,

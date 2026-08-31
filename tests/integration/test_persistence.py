@@ -118,6 +118,7 @@ def finish() -> Decision:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store_kind", ["file", "sqlite"])
+@pytest.mark.behavior
 async def test_persistent_session_stores_reject_stale_snapshot_versions(
     tmp_path: Path,
     store_kind: str,
@@ -146,6 +147,7 @@ async def test_persistent_session_stores_reject_stale_snapshot_versions(
     assert latest.state.iteration == 1
 
 
+@pytest.mark.behavior
 def test_runtime_api_reports_state_event_commit_strategy(tmp_path: Path) -> None:
     backend = PersistentRemediationBackend()
     components = RuntimeBuilder().build(
@@ -203,6 +205,7 @@ def test_runtime_api_reports_state_event_commit_strategy(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_sqlite_runtime_store_commits_session_and_event_atomically(
     tmp_path: Path,
 ) -> None:
@@ -230,6 +233,13 @@ async def test_sqlite_runtime_store_commits_session_and_event_atomically(
     assert latest.version == 1
     assert latest.state.iteration == 1
     assert [item.id for item in events] == [EventId("event-1")]
+    pending_outbox = store.pending_outbox_events()
+    assert [item.event_id for item in pending_outbox] == [EventId("event-1")]
+    assert [item.event.type for item in pending_outbox] == ["StateUpdated"]
+
+    assert store.mark_outbox_published((EventId("event-1"),)) == 1
+    assert store.pending_outbox_events() == ()
+    assert store.mark_outbox_published((EventId("event-1"),)) == 0
 
     duplicate_event_snapshot = await store.load_session(snapshot.state.session_id)
     duplicate_event_snapshot.state.iteration = 2
@@ -246,6 +256,40 @@ async def test_sqlite_runtime_store_commits_session_and_event_atomically(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
+async def test_sqlite_event_store_outbox_tracks_appended_events(tmp_path: Path) -> None:
+    store = SQLiteEventStore(tmp_path / "events.sqlite3")
+    state = goal_state(
+        Goal("Outbox append", (SuccessCriterion("healthy", True),)),
+        Task("Inspect", ("healthy",)),
+    )
+    first = RuntimeEvent(
+        "StateUpdated",
+        state.session_id,
+        state.goal.id,
+        state.current_task.id,
+        id=EventId("event-1"),
+    )
+    second = RuntimeEvent(
+        "GoalCompleted",
+        state.session_id,
+        state.goal.id,
+        state.current_task.id,
+        id=EventId("event-2"),
+    )
+
+    await store.emit(first)
+    await store.emit(first)
+    await store.emit(second)
+
+    pending = store.pending_outbox_events(limit=1)
+    assert [item.event_id for item in pending] == [EventId("event-1")]
+    assert store.mark_outbox_published((EventId("event-1"), EventId("event-2"))) == 2
+    assert store.pending_outbox_events() == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_file_runtime_store_commits_session_and_event_through_journal(
     tmp_path: Path,
 ) -> None:
@@ -290,6 +334,7 @@ async def test_file_runtime_store_commits_session_and_event_through_journal(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_file_event_store_reads_and_appends_jsonlines_events(tmp_path: Path) -> None:
     store = FileEventStore(tmp_path)
     state = goal_state(
@@ -325,6 +370,7 @@ async def test_file_event_store_reads_and_appends_jsonlines_events(tmp_path: Pat
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_file_runtime_store_recovers_incomplete_journal_commit(
     tmp_path: Path,
 ) -> None:
@@ -366,6 +412,7 @@ async def test_file_runtime_store_recovers_incomplete_journal_commit(
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_file_runtime_store_rejects_invalid_journal_commit_payload(
     tmp_path: Path,
 ) -> None:
@@ -438,6 +485,7 @@ def build_file_api(
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_file_persistence_resumes_confirmation_after_runtime_rebuild(
     tmp_path: Path,
 ) -> None:
@@ -498,6 +546,7 @@ async def test_file_persistence_resumes_confirmation_after_runtime_rebuild(
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_sqlite_persistence_resumes_confirmation_after_runtime_rebuild(
     tmp_path: Path,
 ) -> None:

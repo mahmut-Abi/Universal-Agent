@@ -41,10 +41,11 @@ class PolicyRule:
 class PolicyEngine:
     def __init__(self, policies: tuple[Policy, ...]) -> None:
         self._policies = policies
+        self._summary: tuple[str, ...] = tuple(policy.name for policy in policies)
 
     @property
     def summary(self) -> tuple[str, ...]:
-        return tuple(policy.name for policy in self._policies)
+        return self._summary
 
     def check(self, context: PolicyContext) -> PolicyResult:
         results = [result for policy in self._policies if (result := policy.evaluate(context))]

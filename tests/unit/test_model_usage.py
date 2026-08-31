@@ -33,6 +33,7 @@ def finish() -> Decision:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_scripted_model_adapter_exposes_last_usage_record() -> None:
     usage = ModelUsage(
         provider="scripted",
@@ -50,6 +51,7 @@ async def test_scripted_model_adapter_exposes_last_usage_record() -> None:
     assert usage.total_tokens == 150
 
 
+@pytest.mark.unit
 def test_model_usage_rejects_negative_values() -> None:
     with pytest.raises(ValueError, match="model usage input_tokens must not be negative"):
         ModelUsage("provider", "model", input_tokens=-1)
@@ -64,6 +66,7 @@ def test_model_usage_rejects_negative_values() -> None:
         ModelUsage("provider", "model", estimated_cost_micros=-1)
 
 
+@pytest.mark.unit
 def test_model_usage_uses_strict_pydantic_scalar_validation() -> None:
     with pytest.raises(ValueError, match="model usage provider must not be empty"):
         ModelUsage(" ", "model")

@@ -257,6 +257,7 @@ def build_domain(context) -> WidgetDomain:
     )
 
 
+@pytest.mark.contract
 def test_decode_domain_package_manifest_accepts_structured_ecosystem_metadata() -> None:
     manifest = decode_domain_package_manifest(package_payload())
 
@@ -276,6 +277,7 @@ def test_decode_domain_package_manifest_accepts_structured_ecosystem_metadata() 
     assert manifest.tags == ("ops",)
 
 
+@pytest.mark.contract
 def test_decode_domain_package_manifest_preserves_custom_metadata() -> None:
     payload = package_payload()
     metadata = payload["metadata"]
@@ -288,6 +290,7 @@ def test_decode_domain_package_manifest_preserves_custom_metadata() -> None:
     assert manifest.metadata["name"] == "kubernetes"
 
 
+@pytest.mark.contract
 def test_decode_domain_package_manifest_accepts_legacy_snake_case_api_version() -> None:
     payload = package_payload()
     payload["api_version"] = payload.pop("apiVersion")
@@ -297,6 +300,7 @@ def test_decode_domain_package_manifest_accepts_legacy_snake_case_api_version() 
     assert manifest.api_version == "agent.nantian.dev/v1alpha1"
 
 
+@pytest.mark.contract
 def test_decode_domain_package_manifest_rejects_conflicting_api_version_keys() -> None:
     payload = package_payload()
     payload["api_version"] = "agent.nantian.dev/v2"
@@ -305,6 +309,7 @@ def test_decode_domain_package_manifest_rejects_conflicting_api_version_keys() -
         decode_domain_package_manifest(payload)
 
 
+@pytest.mark.unit
 def test_domain_package_compatibility_validates_runtime_api_specifiers() -> None:
     compatibility = DomainPackageCompatibility(runtime_api=">=0.1,<1")
 
@@ -316,6 +321,7 @@ def test_domain_package_compatibility_validates_runtime_api_specifiers() -> None
         compatibility.supports_runtime_api("not-a-version")
 
 
+@pytest.mark.contract
 def test_decode_domain_package_manifest_rejects_resources_outside_package_root() -> None:
     payload = package_payload()
     payload["resources"] = ["../outside.md"]
@@ -324,6 +330,7 @@ def test_decode_domain_package_manifest_rejects_resources_outside_package_root()
         decode_domain_package_manifest(payload)
 
 
+@pytest.mark.unit
 def test_domain_package_registry_installs_validated_package(tmp_path: Path) -> None:
     root = tmp_path / "kubernetes-domain"
     manifest_path = write_manifest(root, package_payload())
@@ -339,6 +346,7 @@ def test_domain_package_registry_installs_validated_package(tmp_path: Path) -> N
     assert registry.list(tag="database") == ()
 
 
+@pytest.mark.unit
 def test_load_domain_package_accepts_yaml_manifest(tmp_path: Path) -> None:
     root = tmp_path / "kubernetes-domain"
     manifest_path = write_yaml_manifest(root, package_payload())
@@ -351,6 +359,7 @@ def test_load_domain_package_accepts_yaml_manifest(tmp_path: Path) -> None:
     assert package.manifest.capabilities == ("inspect_workload",)
 
 
+@pytest.mark.unit
 def test_load_domain_package_rejects_non_object_manifest(tmp_path: Path) -> None:
     root = tmp_path / "broken-domain"
     root.mkdir()
@@ -363,6 +372,7 @@ def test_load_domain_package_rejects_non_object_manifest(tmp_path: Path) -> None
         load_domain_package(root)
 
 
+@pytest.mark.unit
 def test_domain_package_registry_discovers_manifests_in_stable_order(tmp_path: Path) -> None:
     write_manifest(tmp_path / "beta-domain", package_payload("beta", tags=("database",)))
     write_manifest(tmp_path / "alpha-domain", package_payload("alpha", tags=("ops",)))
@@ -379,6 +389,7 @@ def test_domain_package_registry_discovers_manifests_in_stable_order(tmp_path: P
     )
 
 
+@pytest.mark.unit
 def test_domain_package_registry_rejects_multiple_manifests_in_one_package(
     tmp_path: Path,
 ) -> None:
@@ -390,6 +401,7 @@ def test_domain_package_registry_rejects_multiple_manifests_in_one_package(
         DomainPackageRegistry().install(root)
 
 
+@pytest.mark.unit
 def test_domain_package_registry_reports_duplicate_missing_and_ambiguous_packages(
     tmp_path: Path,
 ) -> None:
@@ -408,11 +420,13 @@ def test_domain_package_registry_reports_duplicate_missing_and_ambiguous_package
         registry.get_by_name("alpha")
 
 
+@pytest.mark.unit
 def test_domain_package_registry_refuses_missing_manifest(tmp_path: Path) -> None:
     with pytest.raises(DomainPackageNotFoundError, match="manifest not found"):
         DomainPackageRegistry().install(tmp_path / "missing-domain")
 
 
+@pytest.mark.unit
 def test_domain_package_verification_checks_local_package_paths_and_manifest_identity(
     tmp_path: Path,
 ) -> None:
@@ -437,6 +451,7 @@ def test_domain_package_verification_checks_local_package_paths_and_manifest_ide
     assert "identity mismatch" in failed_checks["package_manifest_matches_identity"]
 
 
+@pytest.mark.unit
 def test_domain_package_registry_verification_checks_dependency_closure(
     tmp_path: Path,
 ) -> None:
@@ -455,6 +470,7 @@ def test_domain_package_registry_verification_checks_dependency_closure(
     assert passing.passed is True
 
 
+@pytest.mark.unit
 def test_domain_package_registry_verification_reports_dependency_cycles(
     tmp_path: Path,
 ) -> None:
@@ -475,6 +491,7 @@ def test_domain_package_registry_verification_reports_dependency_cycles(
     assert "beta@1.0.0" in failed["package_dependencies_acyclic"]
 
 
+@pytest.mark.behavior
 def test_domain_package_registry_can_verify_local_package_path_integrity(
     tmp_path: Path,
 ) -> None:
@@ -494,6 +511,7 @@ def test_domain_package_registry_can_verify_local_package_path_integrity(
     assert "identity mismatch" in failed["package_manifest_matches_identity:kubernetes@1.0.0"]
 
 
+@pytest.mark.contract
 def test_build_domain_package_manifest_encodes_sdk_spec_with_default_entrypoint() -> None:
     manifest = build_domain_package_manifest(
         DomainPackageScaffoldSpec(
@@ -528,6 +546,7 @@ def test_build_domain_package_manifest_encodes_sdk_spec_with_default_entrypoint(
     assert decoded.tags == ("ops", "ai")
 
 
+@pytest.mark.contract
 def test_scaffold_domain_package_creates_registry_loadable_package(tmp_path: Path) -> None:
     package_root = tmp_path / "ai-ops-domain"
 
@@ -563,6 +582,7 @@ def test_scaffold_domain_package_creates_registry_loadable_package(tmp_path: Pat
     assert result.written_paths == (package_root / "manifest.json",)
 
 
+@pytest.mark.unit
 def test_domain_package_verification_reports_missing_resources(tmp_path: Path) -> None:
     root = tmp_path / "kubernetes-domain"
     write_manifest(root, package_payload())
@@ -577,6 +597,7 @@ def test_domain_package_verification_reports_missing_resources(tmp_path: Path) -
     assert "resources/runbook.md" in failed["package_resources_exist"]
 
 
+@pytest.mark.unit
 def test_scaffold_domain_package_rejects_resources_outside_package_root(
     tmp_path: Path,
 ) -> None:
@@ -603,6 +624,7 @@ def test_scaffold_domain_package_rejects_resources_outside_package_root(
         )
 
 
+@pytest.mark.unit
 def test_scaffold_domain_package_requires_force_to_overwrite_manifest(tmp_path: Path) -> None:
     package_root = tmp_path / "database-domain"
     scaffold_domain_package(
@@ -634,6 +656,7 @@ def test_scaffold_domain_package_requires_force_to_overwrite_manifest(tmp_path: 
     assert result.package.identity == DomainIdentity("database", "2.0.0")
 
 
+@pytest.mark.unit
 def test_scaffold_domain_package_can_write_loadable_runtime_stub(tmp_path: Path) -> None:
     package_root = tmp_path / "widget-domain"
 
@@ -665,6 +688,7 @@ def test_scaffold_domain_package_can_write_loadable_runtime_stub(tmp_path: Path)
     assert package_root / "manifest.json" in result.written_paths
 
 
+@pytest.mark.unit
 def test_scaffold_domain_package_runtime_stub_requires_evaluator(tmp_path: Path) -> None:
     with pytest.raises(DomainPackageValidationError, match="requires at least one evaluator"):
         scaffold_domain_package(
@@ -679,6 +703,7 @@ def test_scaffold_domain_package_runtime_stub_requires_evaluator(tmp_path: Path)
         )
 
 
+@pytest.mark.unit
 def test_domain_package_runtime_loader_imports_explicit_entrypoint(tmp_path: Path) -> None:
     root = tmp_path / "widget-domain"
     module_name = "widget_domain_runtime_loader"
@@ -697,6 +722,7 @@ def test_domain_package_runtime_loader_imports_explicit_entrypoint(tmp_path: Pat
     assert tuple(sys.path) == sys_path_before
 
 
+@pytest.mark.unit
 def test_domain_package_runtime_loader_passes_host_context_to_entrypoint(
     tmp_path: Path,
 ) -> None:
@@ -724,6 +750,7 @@ def test_domain_package_runtime_loader_passes_host_context_to_entrypoint(
     )
 
 
+@pytest.mark.unit
 def test_domain_package_runtime_loader_requires_explicit_entrypoint(tmp_path: Path) -> None:
     root = tmp_path / "metadata-only-domain"
     payload = runtime_package_payload()
@@ -735,6 +762,7 @@ def test_domain_package_runtime_loader_requires_explicit_entrypoint(tmp_path: Pa
         load_domain_package_runtime(package)
 
 
+@pytest.mark.unit
 def test_domain_package_runtime_loader_validates_entrypoint_with_stdlib_parser(
     tmp_path: Path,
 ) -> None:
@@ -756,6 +784,7 @@ def test_domain_package_runtime_loader_validates_entrypoint_with_stdlib_parser(
         load_domain_package_runtime(package)
 
 
+@pytest.mark.unit
 def test_domain_package_runtime_loader_reports_missing_entrypoint_attribute(
     tmp_path: Path,
 ) -> None:
@@ -771,6 +800,7 @@ def test_domain_package_runtime_loader_reports_missing_entrypoint_attribute(
         load_domain_package_runtime(package)
 
 
+@pytest.mark.unit
 def test_domain_package_runtime_loader_rejects_identity_mismatch(tmp_path: Path) -> None:
     root = tmp_path / "widget-domain"
     module_name = "widget_domain_identity_mismatch"
@@ -782,6 +812,7 @@ def test_domain_package_runtime_loader_rejects_identity_mismatch(tmp_path: Path)
         load_domain_package_runtime(package)
 
 
+@pytest.mark.unit
 def test_domain_package_runtime_loader_rejects_declared_metadata_mismatch(
     tmp_path: Path,
 ) -> None:

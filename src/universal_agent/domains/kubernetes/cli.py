@@ -49,6 +49,19 @@ def add_kubernetes_command(
     kubernetes_run.add_argument("--skip-preflight", action="store_true")
     kubernetes_run.add_argument("--skip-model-probe", action="store_true")
     kubernetes_run.add_argument("--skip-cluster", action="store_true")
+    kubernetes_evidence = kubernetes_commands.add_parser("evidence")
+    kubernetes_evidence.add_argument("profile")
+    kubernetes_evidence.add_argument("--workload", required=True)
+    kubernetes_evidence.add_argument("--namespace")
+    kubernetes_evidence.add_argument("--skip-cluster", action="store_true")
+    kubernetes_evidence.add_argument(
+        "--submit-run",
+        action="store_true",
+        help=(
+            "Submit the Runtime-owned remediation goal after model probe and preflight pass. "
+            "Without this flag the command proves only the pre-run production gate."
+        ),
+    )
 
 
 def is_kubernetes_probe_service_command(args: argparse.Namespace) -> bool:

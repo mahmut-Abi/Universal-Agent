@@ -25,6 +25,7 @@ class _DebugValue:
         return "debug-value"
 
 
+@pytest.mark.unit
 def test_secret_scanner_reports_unredacted_sensitive_values() -> None:
     report = scan_for_secrets(
         {
@@ -38,6 +39,7 @@ def test_secret_scanner_reports_unredacted_sensitive_values() -> None:
     assert report.paths == ("$.api_token", "$.nested.password")
 
 
+@pytest.mark.unit
 def test_secret_scanner_allows_redacted_values_and_secret_reference_metadata() -> None:
     report = scan_for_secrets(
         {
@@ -60,6 +62,7 @@ def test_secret_scanner_allows_redacted_values_and_secret_reference_metadata() -
     assert is_sensitive_key("model_total_tokens") is False
 
 
+@pytest.mark.unit
 def test_redact_sensitive_mapping_uses_shared_sensitive_key_rules() -> None:
     redacted = redact_sensitive_mapping(
         {
@@ -84,6 +87,7 @@ def test_redact_sensitive_mapping_uses_shared_sensitive_key_rules() -> None:
     assert redact_sensitive_value("token", ["secret"], replacement="<redacted>") == "<redacted>"
 
 
+@pytest.mark.unit
 def test_secret_resolver_reports_env_secret_availability_without_values() -> None:
     report = resolve_secret_refs(
         (
@@ -105,6 +109,7 @@ def test_secret_resolver_reports_env_secret_availability_without_values() -> Non
     assert optional.status is SecretResolutionStatus.MISSING_OPTIONAL
 
 
+@pytest.mark.unit
 def test_secret_resolver_blocks_missing_required_env_secrets() -> None:
     report = resolve_secret_refs(
         (SecretRef.env("openai_api_key", "OPENAI_API_KEY"),),
@@ -119,6 +124,7 @@ def test_secret_resolver_blocks_missing_required_env_secrets() -> None:
     assert resolved.status is SecretResolutionStatus.MISSING_REQUIRED
 
 
+@pytest.mark.unit
 def test_secret_resolver_reads_file_secrets_without_projecting_values(tmp_path: Path) -> None:
     secret_path = tmp_path / "model-api-key"
     secret_path.write_text("file-secret-value\n", encoding="utf-8")
@@ -138,6 +144,7 @@ def test_secret_resolver_reads_file_secrets_without_projecting_values(tmp_path: 
     assert "file-secret-value" not in str(report)
 
 
+@pytest.mark.unit
 def test_file_secret_provider_returns_none_for_missing_empty_or_escaped_paths(
     tmp_path: Path,
 ) -> None:
@@ -153,6 +160,7 @@ def test_file_secret_provider_returns_none_for_missing_empty_or_escaped_paths(
     assert provider.get_secret(str(outside_path)) is None
 
 
+@pytest.mark.unit
 def test_secret_argument_resolver_replaces_declared_secret_refs() -> None:
     provider = EnvSecretProvider({"API_KEY": "secret-value"})
     report = resolve_secret_refs(
@@ -175,6 +183,7 @@ def test_secret_argument_resolver_replaces_declared_secret_refs() -> None:
     }
 
 
+@pytest.mark.unit
 def test_secret_argument_resolver_replaces_declared_file_secret_refs(tmp_path: Path) -> None:
     secret_path = tmp_path / "api-key"
     secret_path.write_text("file-secret-value\n", encoding="utf-8")
@@ -192,6 +201,7 @@ def test_secret_argument_resolver_replaces_declared_file_secret_refs(tmp_path: P
     assert resolved == {"headers": {"authorization": "file-secret-value"}}
 
 
+@pytest.mark.unit
 def test_secret_argument_resolver_rejects_unknown_or_malformed_refs() -> None:
     provider = EnvSecretProvider({"API_KEY": "secret-value"})
     report = resolve_secret_refs(

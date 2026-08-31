@@ -70,6 +70,8 @@ class _StoreConfigPayload(ConfigPayload):
 class _RuntimeLimitsConfigPayload(ConfigPayload):
     max_iterations: int = 20
     max_recovery_steps: int = 8
+    max_total_cost_micros: int | None = None
+    max_total_tokens: int | None = None
 
 
 class _DomainConfigPayload(ConfigPayload):
@@ -185,6 +187,8 @@ class StoreConfig:
 class RuntimeLimitsConfig:
     max_iterations: int = 20
     max_recovery_steps: int = 8
+    max_total_cost_micros: int | None = None
+    max_total_tokens: int | None = None
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> RuntimeLimitsConfig:
@@ -192,6 +196,8 @@ class RuntimeLimitsConfig:
         config = cls(
             max_iterations=payload.max_iterations,
             max_recovery_steps=payload.max_recovery_steps,
+            max_total_cost_micros=payload.max_total_cost_micros,
+            max_total_tokens=payload.max_total_tokens,
         )
         config.validate()
         return config
@@ -199,6 +205,10 @@ class RuntimeLimitsConfig:
     def validate(self) -> None:
         parse_positive_int(self.max_iterations, "max_iterations")
         parse_positive_int(self.max_recovery_steps, "max_recovery_steps")
+        if self.max_total_cost_micros is not None and self.max_total_cost_micros < 0:
+            raise ValueError("max_total_cost_micros must be non-negative")
+        if self.max_total_tokens is not None and self.max_total_tokens < 0:
+            raise ValueError("max_total_tokens must be non-negative")
 
 
 @dataclass(frozen=True, slots=True)

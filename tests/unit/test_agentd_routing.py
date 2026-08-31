@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
+from universal_agent.agentd._routes_distributed import _DISTRIBUTED_ROUTES
+from universal_agent.agentd._routes_session import _SESSION_ROUTES
 from universal_agent.agentd.app import (
     _DETAIL_GET_ROUTES,
-    _DISTRIBUTED_ROUTES,
     _OPENAPI_ROUTE_DEFINITIONS,
-    _SESSION_ROUTES,
 )
 from universal_agent.agentd.console_routes import _CONSOLE_ROUTES
 from universal_agent.agentd.openapi import build_agentd_openapi_schema
@@ -28,6 +28,7 @@ def json_object(value: JsonValue) -> dict[str, JsonValue]:
     return value
 
 
+@pytest.mark.unit
 def test_agentd_route_tables_match_starlette_path_templates() -> None:
     session = _SESSION_ROUTES.match("/v1/sessions/session-1/events/stream", "GET")
     task = _DISTRIBUTED_ROUTES.match(
@@ -84,6 +85,7 @@ def test_agentd_route_tables_match_starlette_path_templates() -> None:
     assert package.path_params == {"name": "kubernetes", "version": "0.2.0"}
 
 
+@pytest.mark.contract
 def test_agentd_openapi_schema_is_generated_from_runtime_route_definitions() -> None:
     schema = build_agentd_openapi_schema(_OPENAPI_ROUTE_DEFINITIONS)
     paths = schema["paths"]
@@ -117,6 +119,7 @@ def test_agentd_openapi_schema_is_generated_from_runtime_route_definitions() -> 
     }
 
 
+@pytest.mark.unit
 def test_agentd_route_tables_ignore_query_and_trailing_slashes() -> None:
     session = _SESSION_ROUTES.match("/v1/sessions/session-1/events?limit=1", "GET")
     package = _DETAIL_GET_ROUTES.match("/v1/domain-packages/kubernetes/?tag=ops", "GET")
@@ -135,6 +138,7 @@ def test_agentd_route_tables_ignore_query_and_trailing_slashes() -> None:
     assert cancelled.path_params == {"work_item_id": "work-1"}
 
 
+@pytest.mark.unit
 def test_agentd_query_helpers_use_starlette_query_params_contract() -> None:
     assert _optional_query_value("/v1/domain-packages?tag=ops", "tag") == "ops"
     assert _optional_query_value("/v1/domain-packages?tag=ops%20team", "tag") == "ops team"
@@ -146,6 +150,7 @@ def test_agentd_query_helpers_use_starlette_query_params_contract() -> None:
         _optional_query_value("/v1/domain-packages?tag=", "tag")
 
 
+@pytest.mark.unit
 def test_agentd_query_scalar_helpers_use_pydantic_parsing_with_stable_errors() -> None:
     assert _optional_bool_query("/v1/sessions/session-1/events/stream?wait=yes", "wait") is True
     assert _optional_bool_query("/v1/sessions/session-1/events/stream?wait=0", "wait") is False
@@ -184,6 +189,7 @@ def test_agentd_query_scalar_helpers_use_pydantic_parsing_with_stable_errors() -
         )
 
 
+@pytest.mark.contract
 def test_agentd_request_payload_errors_preserve_indexed_pydantic_paths() -> None:
     with pytest.raises(
         ValueError,
@@ -192,6 +198,7 @@ def test_agentd_request_payload_errors_preserve_indexed_pydantic_paths() -> None
         _distributed_worker_registration_payload(immutable_json({"capabilities": [1]}))
 
 
+@pytest.mark.unit
 def test_agentd_path_matching_uses_starlette_route_contract_without_unquoting() -> None:
     assert _match_path(
         "/v1/sessions/session-1/events/stream?limit=1",
@@ -213,6 +220,7 @@ def test_agentd_path_matching_uses_starlette_route_contract_without_unquoting() 
     )
 
 
+@pytest.mark.unit
 def test_agentd_route_matcher_uses_starlette_paths_and_preserves_method_contract() -> None:
     matcher = AgentdRouteMatcher(
         (
@@ -236,6 +244,7 @@ def test_agentd_route_matcher_uses_starlette_paths_and_preserves_method_contract
     assert matcher.match("/missing", "GET") is None
 
 
+@pytest.mark.contract
 def test_agentd_route_tables_reject_unknown_paths_and_preserve_encoded_segments() -> None:
     encoded_session = _CONSOLE_ROUTES.match("/console/sessions/%20", "GET")
     task_schedule = _DISTRIBUTED_ROUTES.match(

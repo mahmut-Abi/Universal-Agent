@@ -30,6 +30,7 @@ from universal_agent.state import InMemoryStateStore, StateNotFoundError
 from universal_agent.world import EntityId, WorldEntity, WorldFact, WorldRelation, WorldSnapshot
 
 
+@pytest.mark.unit
 def test_decision_contract_rejects_invalid_shapes() -> None:
     with pytest.raises(ValueError, match="capability"):
         Decision(
@@ -47,6 +48,7 @@ def test_decision_contract_rejects_invalid_shapes() -> None:
         Decision(type=DecisionType.ASK_USER, reason="need input").validate()
 
 
+@pytest.mark.behavior
 def test_runtime_primitives_override_ids_and_clock_inside_context() -> None:
     current = datetime(2026, 1, 1, tzinfo=UTC)
     counters: dict[str, int] = {}
@@ -75,6 +77,7 @@ def test_runtime_primitives_override_ids_and_clock_inside_context() -> None:
     assert new_session_id() != "session-fixed-2"
 
 
+@pytest.mark.behavior
 def test_parse_iso_datetime_uses_dateutil_and_timezone_policy() -> None:
     parsed = parse_iso_datetime(
         "2026-01-01T00:00:00Z",
@@ -93,6 +96,7 @@ def test_parse_iso_datetime_uses_dateutil_and_timezone_policy() -> None:
         parse_iso_datetime("not-a-date", field="created_at")
 
 
+@pytest.mark.behavior
 def test_basic_context_exposes_capabilities_not_tools() -> None:
     state = AgentState(
         session_id=new_session_id(),
@@ -134,6 +138,7 @@ def test_basic_context_exposes_capabilities_not_tools() -> None:
     assert context.policy_summary == ("read-only",)
 
 
+@pytest.mark.contract
 def test_argument_contract_uses_jsonschema_keywords_beyond_runtime_subset() -> None:
     schema = immutable_json(
         {
@@ -175,6 +180,7 @@ def test_argument_contract_uses_jsonschema_keywords_beyond_runtime_subset() -> N
     assert "not valid under any of the given schemas" in one_of_error
 
 
+@pytest.mark.contract
 def test_argument_contract_uses_pydantic_json_adapter_before_jsonschema() -> None:
     error = validate_argument_contract(
         required_arguments=(),
@@ -185,6 +191,7 @@ def test_argument_contract_uses_pydantic_json_adapter_before_jsonschema() -> Non
     assert error == "arguments.payload must be JSON-compatible"
 
 
+@pytest.mark.behavior
 def test_basic_context_projects_world_entities_and_relations() -> None:
     observed_at = datetime(2026, 1, 1, tzinfo=UTC)
     state = AgentState(
@@ -225,6 +232,7 @@ def test_basic_context_projects_world_entities_and_relations() -> None:
     )
 
 
+@pytest.mark.behavior
 def test_memory_context_uses_advisory_priority_and_independent_budget() -> None:
     state = AgentState(
         session_id=new_session_id(),
@@ -259,6 +267,7 @@ def test_memory_context_uses_advisory_priority_and_independent_budget() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_state_store_controls_session_lifecycle() -> None:
     store = InMemoryStateStore()
     state = AgentState(

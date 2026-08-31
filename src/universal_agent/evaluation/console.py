@@ -10,8 +10,8 @@ from universal_agent.evaluation.recording import (
     EvaluationScenarioRecording,
     FileEvaluationReportStore,
 )
-from universal_agent.terminal import render_terminal_lines
-from universal_agent.web_ui import (
+from universal_agent.terminal.render import render_terminal_lines
+from universal_agent.web.ui import (
     _hero_block,
     _HeroPill,
     _metric_card,

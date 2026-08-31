@@ -11,3 +11,7 @@ venv/
 *.egg-info/
 build/
 dist/
+
+# Universal Agent local runtime state (never commit)
+.universal-agent/
+.pi/

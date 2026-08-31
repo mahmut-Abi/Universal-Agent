@@ -9,7 +9,7 @@ from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
 from starlette.applications import Starlette
 from starlette.requests import Request as StarletteRequest
-from starlette.responses import JSONResponse, PlainTextResponse
+from starlette.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from starlette.responses import Response as StarletteResponse
 from starlette.routing import Route
 from uvicorn import Config, Server
@@ -224,6 +224,13 @@ async def _request_body(
 
 def _starlette_response(response: HttpResponse) -> StarletteResponse:
     headers = dict(response.headers)
+    if response.stream_body is not None:
+        return StreamingResponse(
+            response.stream_body,
+            status_code=response.status_code,
+            headers=headers,
+            media_type="text/event-stream",
+        )
     if response.text_body is not None:
         return PlainTextResponse(
             response.text_body,

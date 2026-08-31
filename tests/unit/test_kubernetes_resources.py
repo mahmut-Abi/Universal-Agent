@@ -6,6 +6,7 @@ from universal_agent.core import JsonValue
 from universal_agent.domains.kubernetes import resources as k8s
 
 
+@pytest.mark.contract
 def test_kubernetes_items_use_structured_json_object_parsing() -> None:
     payload: dict[str, JsonValue] = {
         "items": [
@@ -22,6 +23,7 @@ def test_kubernetes_items_use_structured_json_object_parsing() -> None:
     )
 
 
+@pytest.mark.contract
 def test_pod_summary_uses_structured_container_payload_defaults() -> None:
     summary = k8s.pod_summary(
         {
@@ -74,6 +76,7 @@ def test_pod_summary_uses_structured_container_payload_defaults() -> None:
     ]
 
 
+@pytest.mark.unit
 def test_event_summary_maps_kubernetes_alias_fields() -> None:
     assert k8s.event_summary(
         {
@@ -101,6 +104,7 @@ def test_event_summary_maps_kubernetes_alias_fields() -> None:
     }
 
 
+@pytest.mark.unit
 def test_kubernetes_argument_helpers_use_structured_scalar_validation() -> None:
     assert k8s.required_string({"name": "api"}, "name") == "api"
     assert k8s.required_int({"replicas": 3}, "replicas") == 3
@@ -115,6 +119,7 @@ def test_kubernetes_argument_helpers_use_structured_scalar_validation() -> None:
         k8s.positive_int("10", default=100)
 
 
+@pytest.mark.contract
 def test_kubernetes_optional_helpers_remain_tolerant_for_cluster_json() -> None:
     assert k8s.optional_int(3) == 3
     assert k8s.optional_int(True) is None
@@ -126,6 +131,7 @@ def test_kubernetes_optional_helpers_remain_tolerant_for_cluster_json() -> None:
     assert k8s.optional_resource_version(True) is None
 
 
+@pytest.mark.unit
 def test_snake_case_uses_library_case_conversion_with_kubernetes_separators() -> None:
     assert k8s.snake_case("CrashLoopBackOff") == "crash_loop_back_off"
     assert k8s.snake_case("HTTPProbeFailed") == "http_probe_failed"

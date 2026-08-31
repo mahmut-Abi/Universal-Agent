@@ -53,3 +53,58 @@ jobs:
 
       - name: Build runtime image
         run: docker build -t universal-agent-runtime:ci .
+
+  kubernetes-live-contract:
+    name: Kubernetes live contract
+    runs-on: ubuntu-latest
+    needs: quality
+    timeout-minutes: 20
+    if: ${{ github.event_name == 'push' && vars.UNIVERSAL_AGENT_LIVE_KUBERNETES_ENABLED == 'true' }}
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      KUBERNETES_API_TOKEN: ${{ secrets.KUBERNETES_API_TOKEN }}
+      UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE: .universal-agent/live-contract/profile.json
+      UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE_NAME: ${{ vars.UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE_NAME || 'production-operator' }}
+      UNIVERSAL_AGENT_LIVE_KUBERNETES_WORKLOAD: ${{ vars.UNIVERSAL_AGENT_LIVE_KUBERNETES_WORKLOAD }}
+      UNIVERSAL_AGENT_LIVE_KUBERNETES_NAMESPACE: ${{ vars.UNIVERSAL_AGENT_LIVE_KUBERNETES_NAMESPACE }}
+      UNIVERSAL_AGENT_LIVE_KUBERNETES_RUN: ${{ vars.UNIVERSAL_AGENT_LIVE_KUBERNETES_RUN || 'false' }}
+      UNIVERSAL_AGENT_LIVE_KUBERNETES_ARTIFACT_DIR: .universal-agent/live-contract/artifacts
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+
+      - name: Prepare live profile
+        env:
+          PROFILE_CONFIG_B64: ${{ secrets.UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE_B64 }}
+          KUBECONFIG_B64: ${{ secrets.UNIVERSAL_AGENT_LIVE_KUBECONFIG_B64 }}
+        run: |
+          test -n "$PROFILE_CONFIG_B64"
+          mkdir -p .universal-agent/live-contract
+          printf '%s' "$PROFILE_CONFIG_B64" | base64 --decode > "$UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE"
+          if [ -n "$KUBECONFIG_B64" ]; then
+            printf '%s' "$KUBECONFIG_B64" | base64 --decode > .universal-agent/live-contract/kubeconfig
+            echo "KUBECONFIG=$PWD/.universal-agent/live-contract/kubeconfig" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run live Kubernetes contract
+        run: python -m pytest -q tests/live/test_kubernetes_live_operator.py
+
+      - name: Upload live contract artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubernetes-live-contract
+          path: .universal-agent/live-contract/artifacts
+          if-no-files-found: ignore

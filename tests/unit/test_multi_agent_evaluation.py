@@ -41,6 +41,7 @@ def result(
     )
 
 
+@pytest.mark.behavior
 def test_multi_agent_evaluator_passes_completed_merge_expectations() -> None:
     merge = AgentResultMerger().merge(
         (
@@ -64,6 +65,7 @@ def test_multi_agent_evaluator_passes_completed_merge_expectations() -> None:
     assert report.failed_checks == ()
 
 
+@pytest.mark.behavior
 def test_multi_agent_evaluator_reports_missing_evidence_and_tasks() -> None:
     merge = AgentResultMerger().merge(
         (result("agent-task-a", evidence_ids=(EvidenceId("evidence-a"),)),),
@@ -86,6 +88,7 @@ def test_multi_agent_evaluator_reports_missing_evidence_and_tasks() -> None:
     assert failed == {"required_evidence_ids", "required_completed_task_ids", "missing_task_count"}
 
 
+@pytest.mark.contract
 def test_multi_agent_evaluator_detects_failed_waiting_and_review_counts() -> None:
     conflict = ConflictResolution(
         resource_key="deployment/example",
@@ -126,6 +129,7 @@ def test_multi_agent_evaluator_detects_failed_waiting_and_review_counts() -> Non
     }
 
 
+@pytest.mark.behavior
 def test_multi_agent_evaluator_allows_relaxed_partial_expectations() -> None:
     merge = AgentResultMerger().merge(
         (
@@ -147,6 +151,7 @@ def test_multi_agent_evaluator_allows_relaxed_partial_expectations() -> None:
     assert report.passed
 
 
+@pytest.mark.unit
 def test_multi_agent_evaluation_expectations_reject_invalid_thresholds_and_duplicates() -> None:
     with pytest.raises(ValueError, match="max_failed_task_count must be non-negative"):
         MultiAgentEvaluationExpectations(max_failed_task_count=-1)
@@ -157,6 +162,7 @@ def test_multi_agent_evaluation_expectations_reject_invalid_thresholds_and_dupli
         )
 
 
+@pytest.mark.contract
 def test_multi_agent_evaluation_payload_is_json_safe() -> None:
     merge = AgentResultMerger().merge((result("agent-task-a"),))
     report = MultiAgentMergeEvaluator().evaluate(merge)
@@ -169,6 +175,7 @@ def test_multi_agent_evaluation_payload_is_json_safe() -> None:
     assert checks[0]["name"] == "merge_status"
 
 
+@pytest.mark.contract
 def test_multi_agent_evaluation_payload_round_trips_report_and_expectations() -> None:
     merge = AgentResultMerger().merge(
         (result("agent-task-a", evidence_ids=(EvidenceId("evidence-a"),)),)

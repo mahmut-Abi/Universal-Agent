@@ -3,12 +3,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import cast
 
+import pytest
+
 from universal_agent.core import JsonMapping, JsonValue, immutable_json
 from universal_agent.domains.kubernetes.production_contract import (
     kubernetes_production_contract_report,
 )
 
 
+@pytest.mark.contract
 def test_kubernetes_production_contract_uses_structured_payloads_for_preflight_checks() -> None:
     report = kubernetes_production_contract_report(
         operation=immutable_json({"workload": "deployment/api", "namespace": "prod"}),
@@ -47,6 +50,7 @@ def test_kubernetes_production_contract_uses_structured_payloads_for_preflight_c
     assert checks["runtime_submission"]["status"] == "skipped"
 
 
+@pytest.mark.contract
 def test_kubernetes_production_contract_payloads_keep_malformed_probe_tolerant() -> None:
     report = kubernetes_production_contract_report(
         operation=immutable_json({"workload": "deployment/api", "namespace": "prod"}),

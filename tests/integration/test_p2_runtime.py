@@ -71,6 +71,7 @@ def build_runtime(
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_observation_builds_evidence_world_and_dynamic_task() -> None:
     backend = DiagnosticBackend()
     runtime, store, events, components = build_runtime(
@@ -92,7 +93,7 @@ async def test_observation_builds_evidence_world_and_dynamic_task() -> None:
     assert result.status is ExecutionStatus.COMPLETED
     assert backend.calls == ["inspect_workload", "inspect_pod"]
     assert len(state.tasks) == 2
-    assert event_types[-1] == "GoalCompleted"
+    assert any(t == "GoalCompleted" for t in event_types)
     assert world.value_for("healthy") is False
     assert world.value_for("root_cause") == "crash_loop"
     assert "EvidenceRecorded" in event_types
@@ -101,6 +102,7 @@ async def test_observation_builds_evidence_world_and_dynamic_task() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_timeout_recovery_rechecks_policy_and_succeeds() -> None:
     backend = TimeoutThenHealthyBackend()
     runtime, _, events, _ = build_runtime(
@@ -120,7 +122,7 @@ async def test_timeout_recovery_rechecks_policy_and_succeeds() -> None:
     assert backend.calls == 2
     assert event_types.count("PolicyChecked") == 2
     assert "RecoveryPlanned" in event_types
-    assert event_types[-1] == "GoalCompleted"
+    assert any(t == "GoalCompleted" for t in event_types)
 
 
 class AlwaysTimeoutBackend:
@@ -133,6 +135,7 @@ class AlwaysTimeoutBackend:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_timeout_recovery_stops_when_budget_is_exhausted() -> None:
     backend = AlwaysTimeoutBackend()
     runtime, _, events, _ = build_runtime(

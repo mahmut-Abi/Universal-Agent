@@ -119,6 +119,7 @@ class FixtureKubernetesApiTransport:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
 async def test_kubernetes_production_contract_runs_openai_chat_and_api_preflight(
     tmp_path: Path,
 ) -> None:

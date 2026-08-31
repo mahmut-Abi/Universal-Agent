@@ -47,6 +47,7 @@ from universal_agent.distributed.queue_codec import (
     _encode_work_item,
 )
 from universal_agent.distributed.queue_models import (
+    FencingToken,
     LeaseId,
     LeaseLostError,
     NoWorkAvailable,
@@ -59,6 +60,7 @@ from universal_agent.distributed.queue_models import (
 )
 
 __all__ = [
+    "FencingToken",
     "FileWorkQueue",
     "InMemoryWorkQueue",
     "LeaseId",
@@ -104,6 +106,7 @@ class InMemoryWorkQueue:
     def __init__(self) -> None:
         self._items: dict[WorkItemId, WorkItem] = {}
         self._sequence = 0
+        self._fencing_sequences: dict[WorkItemId, int] = {}
 
     def enqueue(
         self,
@@ -160,6 +163,7 @@ class InMemoryWorkQueue:
             leased_at=timestamp,
             lease_expires_at=_lease_deadline(timestamp, ttl_seconds),
             heartbeat_at=timestamp,
+            fencing_token=FencingToken(self._next_fencing_token(item.work_item_id)),
         )
         leased = replace(
             item,
@@ -312,6 +316,7 @@ class InMemoryWorkQueue:
         )
         for item in pruned:
             del self._items[item.work_item_id]
+            self._fencing_sequences.pop(item.work_item_id, None)
         return pruned
 
     def get(self, work_item_id: WorkItemId) -> WorkItem:
@@ -337,6 +342,19 @@ class InMemoryWorkQueue:
             if item.idempotency_key == idempotency_key and not _is_terminal(item):
                 return item
         return None
+
+    def _next_fencing_token(self, work_item_id: WorkItemId) -> int:
+        """Return the next monotonic fencing token for one work item."""
+
+        next_token = self._fencing_sequences.get(work_item_id, 0) + 1
+        self._fencing_sequences[work_item_id] = next_token
+        return next_token
+
+    def _restore_fencing_sequence(self, work_item_id: WorkItemId, token: int) -> None:
+        """Keep the highest seen fencing token when reloading persisted items."""
+
+        if token > self._fencing_sequences.get(work_item_id, 0):
+            self._fencing_sequences[work_item_id] = token
 
     def _next_leaseable(
         self,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from types import MappingProxyType
 
 from universal_agent.agentd.http import HttpResponse
@@ -13,6 +13,7 @@ from universal_agent.agentd.routing import (
 )
 from universal_agent.agentd.session_representations import event_body
 from universal_agent.core import (
+    EventId,
     ExecutionResult,
     JsonMapping,
     JsonValue,
@@ -41,6 +42,7 @@ from universal_agent.runtime import (
     RuntimeSessionBatch,
 )
 from universal_agent.service import (
+    AuditIntegrityReportView,
     AuditRecordView,
     CapabilityView,
     DistributedPendingActionSchedulingResult,
@@ -139,6 +141,54 @@ def sse_event_batch_text(batch: RuntimeEventBatch) -> str:
     if batch.next_cursor is not None:
         chunks.append(f": next_cursor={batch.next_cursor}\n\n")
     return "".join(chunks)
+
+
+async def _sse_stream_generator(
+    service: RuntimeService,
+    session_id: SessionId,
+    after_event_id: EventId | None,
+    heartbeat_interval: float,
+) -> AsyncIterator[str]:
+    """Yield SSE-formatted strings from a live event stream."""
+
+    async for view in service.watch_events(
+        session_id,
+        after_event_id=after_event_id,
+        heartbeat_interval=heartbeat_interval,
+    ):
+        chunks: list[str] = []
+        chunks.append(f"id: {view.event_id}\n")
+        chunks.append(f"event: {view.type}\n")
+        chunks.append("data: ")
+        chunks.append(dumps_json(event_body(view)))
+        chunks.append("\n\n")
+        yield "".join(chunks)
+
+
+def sse_streaming_response(
+    service: RuntimeService,
+    session_id: SessionId,
+    *,
+    after_event_id: EventId | None = None,
+    heartbeat_interval: float = 15.0,
+) -> HttpResponse:
+    """Return a streaming SSE response for real-time event delivery."""
+    return HttpResponse(
+        status_code=200,
+        body=immutable_json(),
+        headers=MappingProxyType(
+            {
+                "content-type": "text/event-stream",
+                "cache-control": "no-cache",
+            }
+        ),
+        stream_body=_sse_stream_generator(
+            service,
+            session_id,
+            after_event_id,
+            heartbeat_interval,
+        ),
+    )
 
 
 def execution_result_body(result: ExecutionResult) -> dict[str, JsonValue]:
@@ -410,6 +460,10 @@ def state_event_repair_body(view: StateEventRepairReport) -> JsonMapping:
 
 def audit_records_body(records: tuple[AuditRecordView, ...]) -> JsonMapping:
     return immutable_json({"audit_records": [audit_record_body(record) for record in records]})
+
+
+def audit_integrity_body(report: AuditIntegrityReportView) -> JsonMapping:
+    return immutable_json(_object_body(report))
 
 
 def log_records_body(records: tuple[RuntimeLogRecordView, ...]) -> JsonMapping:
