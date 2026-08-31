@@ -1405,6 +1405,7 @@ dev = [
     { name = "ruff" },
     { name = "types-jsonschema" },
     { name = "types-protobuf" },
+    { name = "types-python-dateutil" },
     { name = "types-pyyaml" },
 ]
 
@@ -1442,6 +1443,7 @@ requires-dist = [
     { name = "textual", specifier = ">=3.0" },
     { name = "types-jsonschema", marker = "extra == 'dev'", specifier = ">=4.23,<5" },
     { name = "types-protobuf", marker = "extra == 'dev'", specifier = ">=6,<8" },
+    { name = "types-python-dateutil", marker = "extra == 'dev'", specifier = ">=2.9,<3" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6,<7" },
     { name = "uvicorn", specifier = ">=0.30,<1" },
 ]
