@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from typing import TextIO, cast
 
 from universal_agent.agentd.client import AgentdClient, quote_path_segment
+from universal_agent.agentd.tui_remote import agentd_snapshot_provider
 from universal_agent.cli.io import (
     CliExit,
     _doctor_should_fail,
@@ -46,6 +47,27 @@ _REMOTE_LIST_ROUTES: Mapping[str, str] = {
 }
 
 
+async def _dispatch_remote_tui(args: argparse.Namespace, client: AgentdClient) -> None:
+    """Run the interactive TUI dashboard against a remote agentd Runtime API.
+
+    The runtime state stays behind agentd; the dashboard is a pure client of
+    the snapshot projections it already exposes over HTTP.
+    """
+
+    from universal_agent.terminal.tui_app import RuntimeTuiApp
+
+    session_id = cast(str | None, args.session_id)
+    app = RuntimeTuiApp(
+        snapshot_provider=agentd_snapshot_provider(
+            client,
+            session_limit=cast(int, args.session_limit),
+            event_limit=cast(int, args.event_limit),
+        ),
+        session_id=SessionId(session_id) if session_id is not None else None,
+    )
+    await app.run_async()
+
+
 async def dispatch_agentd_cli(args: argparse.Namespace, out: TextIO) -> None:
     async with AgentdClient(
         cast(str, args.api_url),
@@ -57,6 +79,9 @@ async def dispatch_agentd_cli(args: argparse.Namespace, out: TextIO) -> None:
             _write_json(out, payload)
             if _doctor_should_fail(str(payload.get("status") or ""), cast(str, args.fail_on)):
                 raise CliExit(1)
+            return
+        if command == "tui":
+            await _dispatch_remote_tui(args, client)
             return
         if command in _REMOTE_STATIC_JSON_ROUTES:
             if command == "audit" and cast(bool, args.integrity):
@@ -104,7 +129,6 @@ def command_supports_agentd(args: argparse.Namespace) -> bool:
         "serve",
         "version",
         "kubernetes",
-        "tui",
         "ecosystem",
         "eval",
     }:
