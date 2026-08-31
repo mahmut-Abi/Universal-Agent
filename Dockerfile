@@ -49,5 +49,5 @@ STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import json, os, urllib.request; response = urllib.request.urlopen(os.environ.get('AGENTD_HEALTH_URL', 'http://127.0.0.1:8765/ready'), timeout=3); data = json.load(response); raise SystemExit(0 if data.get('ready') is True else 1)"
 
-ENTRYPOINT ["agent"]
-CMD ["sh", "-c", "test -f /config/profile.json || agent init; exec agent --profile-config /config/profile.json serve --host 0.0.0.0 --port 8765"]
+ENTRYPOINT ["sh", "-c"]
+CMD ["test -f /config/profile.json || agent init; exec agent --profile-config /config/profile.json serve --host 0.0.0.0 --port 8765"]

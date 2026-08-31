@@ -41,6 +41,7 @@ agent = "universal_agent.cli:main"
 [project.optional-dependencies]
 dev = [
   "mypy>=1.11,<2",
+  "types-python-dateutil>=2.9,<3",
   "pytest>=8.3,<10",
   "pytest-asyncio>=0.24,<1",
   "ruff>=0.8,<1",
