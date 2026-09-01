@@ -68,7 +68,7 @@ class DomainPackageRegistry:
             ) from exc
 
     def get_by_name(self, name: str) -> DomainPackage:
-        matches = tuple(package for package in self.list() if package.identity.name == name)
+        matches = [package for package in self.list() if package.identity.name == name]
         if not matches:
             raise DomainPackageNotFoundError(f"domain package not registered: {name}")
         if len(matches) > 1:

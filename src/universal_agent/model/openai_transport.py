@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Protocol, cast
+from typing import Any, Protocol, cast, runtime_checkable
 
 import httpx
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI, OpenAIError
@@ -45,6 +45,7 @@ class OpenAIClientFactory(Protocol):
     ) -> OpenAIClient: ...
 
 
+@runtime_checkable
 class OpenAIModelTransport(Protocol):
     async def create_response(
         self,

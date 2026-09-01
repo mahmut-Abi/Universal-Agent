@@ -46,11 +46,11 @@ class EcosystemRegistryIndex:
         name: str,
         version: str | None = None,
     ) -> EcosystemDomainPackageRef:
-        matches = tuple(
+        matches = [
             package
             for package in self.manifest.domain_packages
             if package.name == name and (version is None or package.version == version)
-        )
+        ]
         if not matches:
             raise EcosystemRegistryItemNotFoundError(
                 _missing_registry_item_message("domain package", name, version)
@@ -79,11 +79,11 @@ class EcosystemRegistryIndex:
         name: str,
         version: str | None = None,
     ) -> EcosystemEvaluationDatasetRef:
-        matches = tuple(
+        matches = [
             dataset
             for dataset in self.manifest.evaluation_datasets
             if dataset.name == name and (version is None or dataset.version == version)
-        )
+        ]
         if not matches:
             raise EcosystemRegistryItemNotFoundError(
                 _missing_registry_item_message("evaluation dataset", name, version)
@@ -105,11 +105,11 @@ class EcosystemRegistryIndex:
         return tuple(profile for profile in profiles if domain in profile.domains)
 
     def profile(self, name: str, version: str | None = None) -> EcosystemProfileRef:
-        matches = tuple(
+        matches = [
             profile
             for profile in self.manifest.profiles
             if profile.name == name and (version is None or profile.version == version)
-        )
+        ]
         if not matches:
             raise EcosystemRegistryItemNotFoundError(
                 _missing_registry_item_message("profile", name, version)

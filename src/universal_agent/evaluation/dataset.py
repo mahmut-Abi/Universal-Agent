@@ -227,7 +227,7 @@ class EvaluationDatasetRegistry:
             ) from exc
 
     def get_by_name(self, name: str) -> EvaluationDataset:
-        matches = tuple(dataset for dataset in self.list() if dataset.identity.name == name)
+        matches = [dataset for dataset in self.list() if dataset.identity.name == name]
         if not matches:
             raise EvaluationDatasetNotFoundError(f"evaluation dataset not registered: {name}")
         if len(matches) > 1:

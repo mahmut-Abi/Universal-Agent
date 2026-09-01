@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -350,8 +350,8 @@ def _openai_model_transport(
 ) -> OpenAIModelTransport:
     if transport is None:
         return OpenAISdkModelTransport()
-    if hasattr(transport, "create_response") and hasattr(transport, "create_chat_completion"):
-        return cast(OpenAIModelTransport, transport)
+    if isinstance(transport, OpenAIModelTransport):
+        return transport
     return _LegacyOpenAIJsonHttpTransport(transport)
 
 

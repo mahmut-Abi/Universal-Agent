@@ -132,7 +132,8 @@ def _instance_at_path(arguments: Mapping[str, Any], path: tuple[Any, ...]) -> ob
         if isinstance(current, Mapping) and isinstance(part, str):
             current = current.get(part)
         elif isinstance(current, list) and isinstance(part, int):
-            current = current[part]
+            items: list[object] = list(current)
+            current = items[part]
         else:
             return None
     return current

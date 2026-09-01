@@ -93,7 +93,7 @@ class DomainManager:
         return self.activate(tuple(self._identity_for_name(name) for name in names))
 
     def _identity_for_name(self, name: str) -> DomainIdentity:
-        matches = tuple(identity for identity in self._domains if identity.name == name)
+        matches = [identity for identity in self._domains if identity.name == name]
         if not matches:
             raise DomainNotFoundError(f"domain not registered: {name}")
         if len(matches) > 1:
