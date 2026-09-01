@@ -847,7 +847,7 @@ def kubernetes_run_next_step(
     profile_config: str | None,
 ) -> JsonValue:
     if run.session.pending_action is not None:
-        command = ["python", "-m", "universal_agent_cli.cli"]
+        command = ["python", "-m", "universal_agent_cli"]
         if profile_config is not None:
             command.extend(("--profile-config", profile_config))
         command.extend(("session", "resume", str(run.result.session_id), "--confirmed", "true"))
@@ -859,7 +859,7 @@ def kubernetes_run_next_step(
             "command": shlex.join(command),
         }
     if run.result.status is ExecutionStatus.FAILED:
-        command = ["python", "-m", "universal_agent_cli.cli"]
+        command = ["python", "-m", "universal_agent_cli"]
         if profile_config is not None:
             command.extend(("--profile-config", profile_config))
         command.extend(("session", "diagnostics", str(run.result.session_id)))
