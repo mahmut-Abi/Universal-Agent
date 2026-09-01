@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -192,6 +194,31 @@ class KubernetesApiBackend:
             default_kind="deployment",
             default_namespace=self._default_namespace,
         )
+        wait_seconds = k8s.optional_int(arguments.get("wait_seconds")) or 0
+        if wait_seconds > 0 and ref.kind in ("deployment", "statefulset"):
+            # Bounded read-only poll so a freshly scaled workload gets a chance
+            # to become available before the health snapshot is taken; a wait
+            # timeout is acceptable, the final GET below reports the real state.
+            path = _workload_path(ref.kind, ref.namespace, ref.name)
+            deadline = time.monotonic() + min(wait_seconds, 60)
+            while True:
+                snapshot = await self._request_json("GET", path)
+                status = k8s.object_value(snapshot.get("status"))
+                spec = k8s.object_value(snapshot.get("spec"))
+                desired_now = k8s.optional_int(spec.get("replicas"))
+                if desired_now is None:
+                    desired_now = 1
+                ready_now = k8s.optional_int(status.get("readyReplicas")) or 0
+                available_now = k8s.optional_int(status.get("availableReplicas"))
+                if (
+                    desired_now > 0
+                    and ready_now >= desired_now
+                    and (available_now is None or available_now >= desired_now)
+                ):
+                    break
+                if time.monotonic() >= deadline:
+                    break
+                await asyncio.sleep(min(1.0, max(0.05, deadline - time.monotonic())))
         payload = await self._request_json("GET", _workload_path(ref.kind, ref.namespace, ref.name))
         metadata = k8s.object_value(payload.get("metadata"))
         spec = k8s.object_value(payload.get("spec"))

@@ -883,6 +883,71 @@ async def test_kubernetes_api_backend_treats_zero_replica_deployment_as_unhealth
 
 @pytest.mark.asyncio
 @pytest.mark.contract
+async def test_kubernetes_api_backend_inspect_waits_for_availability_when_requested() -> None:
+    transport = RecordingKubernetesApiTransport(
+        {
+            (
+                "GET",
+                "/apis/apps/v1/namespaces/prod/deployments/api",
+                (),
+            ): {
+                "metadata": {"name": "api", "resourceVersion": "rv-4"},
+                "spec": {"replicas": 1},
+                "status": {"readyReplicas": 1, "availableReplicas": 1},
+            }
+        }
+    )
+    backend = KubernetesApiBackend(
+        api_server="https://cluster.example.test",
+        transport=transport,
+        default_namespace="prod",
+    )
+
+    result = await backend.inspect(
+        "inspect_workload",
+        immutable_json({"name": "deployment/api", "wait_seconds": 15}),
+    )
+
+    assert result["healthy"] is True
+    # One availability poll plus the final health snapshot.
+    assert len(transport.requests) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_kubernetes_api_backend_inspect_survives_availability_wait_timeout() -> None:
+    transport = RecordingKubernetesApiTransport(
+        {
+            (
+                "GET",
+                "/apis/apps/v1/namespaces/prod/deployments/api",
+                (),
+            ): {
+                "metadata": {"name": "api", "resourceVersion": "rv-5"},
+                "spec": {"replicas": 1},
+                "status": {"readyReplicas": 0},
+            }
+        }
+    )
+    backend = KubernetesApiBackend(
+        api_server="https://cluster.example.test",
+        transport=transport,
+        default_namespace="prod",
+    )
+
+    result = await backend.inspect(
+        "inspect_workload",
+        immutable_json({"name": "deployment/api", "wait_seconds": 1}),
+    )
+
+    # The workload never becomes available within the bounded window; the
+    # final snapshot still reports real state and the evaluator decides.
+    assert result["healthy"] is False
+    assert len(transport.requests) >= 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
 async def test_kubernetes_api_backend_rejects_non_object_json_response() -> None:
     transport = RecordingKubernetesApiTransport(
         {
