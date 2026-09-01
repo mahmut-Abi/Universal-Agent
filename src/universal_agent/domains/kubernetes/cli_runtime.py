@@ -98,19 +98,34 @@ class KubernetesRemediationDecisionAdapter:
         self._namespace = namespace
         self._phase = "inspect"
         self._verifications = 0
+        self._last_goal_id: str | None = None
         self.contexts: list[DecisionContext] = []
 
     async def decide(self, context: DecisionContext) -> Decision:
         self.contexts.append(context)
+        # One adapter instance serves every run of a shared service (e.g. each
+        # chat line): restart the sequence whenever a new goal arrives.
+        if context.goal_id != self._last_goal_id:
+            self._last_goal_id = context.goal_id
+            self._phase = "inspect"
+            self._verifications = 0
         workload, namespace = self._workload_and_namespace(context)
         namespace = namespace or self._namespace
         ns_args: dict[str, JsonValue] = {}
         if namespace:
             ns_args["namespace"] = namespace
 
+        # Text without a workload target (e.g. a chat turn) gets a read-only
+        # cluster overview instead of the remediation sequence.
+        if workload is None:
+            return self._confirming_decision(context)
+
         # Mirror the domain evaluator: when the accumulated evidence already
         # satisfies every goal criterion and task requirement the sequence is
-        # done — continuing would only trigger unnecessary mutations.
+        # done — continuing would only trigger unnecessary mutations. Goals
+        # with no criteria at all (e.g. chat turns) are exempt: an empty
+        # subset check would otherwise finish every such run immediately and
+        # get rejected by the runtime's finish gate.
         expected = {
             criterion.key: criterion.expected for criterion in context.goal_success_criteria
         }
@@ -121,7 +136,11 @@ class KubernetesRemediationDecisionAdapter:
             for key, value in context.satisfied_criteria.items()
             if key in relevant and (key not in expected or value == expected[key])
         }
-        if set(expected).issubset(matched) and required.issubset(matched):
+        if (
+            (expected or required)
+            and set(expected).issubset(matched)
+            and required.issubset(matched)
+        ):
             return Decision(
                 DecisionType.FINISH,
                 f"Workload {workload} already satisfies all success criteria",
@@ -214,6 +233,37 @@ class KubernetesRemediationDecisionAdapter:
             f"Remediation sequence completed for {workload}",
         )
 
+    def _confirming_decision(self, context: DecisionContext) -> Decision:
+        """Respond to goal text that names no workload (e.g. a chat turn).
+
+        Runs one read-only cluster overview so the evaluator executes, then
+        finishes with the real summary - a bare FINISH would be rejected by
+        the runtime's finish gate because the evaluator only runs after an
+        action.
+        """
+        if self._phase != "inspect":
+            observation = context.latest_observation
+            data = observation.data if observation is not None else immutable_json({})
+            nodes = data.get("node_count")
+            ready = data.get("ready_node_count")
+            namespaces = data.get("namespace_count")
+            healthy = data.get("healthy")
+            return Decision(
+                DecisionType.FINISH,
+                f"Cluster overview: {nodes} node(s) ({ready} ready), "
+                f"{namespaces} namespace(s), healthy={healthy}. Name a workload "
+                "(e.g. deployment/<name> in namespace <ns>) to inspect or remediate it.",
+            )
+        self._phase = "confirm"
+        return Decision(
+            DecisionType.EXECUTE,
+            "Inspect cluster overview",
+            capability="inspect_cluster",
+            target="cluster",
+            arguments=immutable_json({"name": "cluster"}),
+            expected_observations=("healthy",),
+        )
+
     @staticmethod
     def _first_pod_name(context: DecisionContext) -> str | None:
         observation = context.latest_observation
@@ -242,22 +292,26 @@ class KubernetesRemediationDecisionAdapter:
     def model_usage(self) -> ModelUsage | None:
         return None
 
-    @staticmethod
     def _workload_and_namespace(
+        self,
         context: DecisionContext,
-    ) -> tuple[str, str | None]:
+    ) -> tuple[str | None, str | None]:
         import re
 
+        namespace: str | None = None
         for text in (context.task_description, context.goal_description):
+            if namespace is None:
+                found = re.search(r"namespace ([A-Za-z0-9._-]+)", text)
+                if found:
+                    namespace = found.group(1)
             workload = re.search(r"deployment/([A-Za-z0-9._-]+)", text)
             if not workload:
                 continue
-            namespace = re.search(r"namespace ([A-Za-z0-9._-]+)", text)
             return (
                 workload.group(1),
-                namespace.group(1) if namespace else None,
+                namespace,
             )
-        return "example", None
+        return None, namespace
 
 
 def default_profile() -> AgentProfile:
@@ -303,7 +357,7 @@ def build_default_service() -> RuntimeService:
     store = InMemoryStateStore()
     events = InMemoryEventSink()
     runtime = AgentRuntime(
-        model=KubernetesRemediationDecisionAdapter(),
+        model=KubernetesRemediationDecisionAdapter(namespace="default"),
         state_store=store,
         components=components,
         event_sink=events,

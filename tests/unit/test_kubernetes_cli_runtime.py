@@ -2,9 +2,19 @@ from __future__ import annotations
 
 import pytest
 
-from universal_agent.core import immutable_json
+from universal_agent.core import (
+    DecisionType,
+    GoalId,
+    SessionId,
+    TaskId,
+    immutable_json,
+)
+from universal_agent.core.models import DecisionContext
 from universal_agent.domains.kubernetes import KubectlBackend, KubernetesApiBackend
-from universal_agent.domains.kubernetes.cli_runtime import configured_kubernetes_backend
+from universal_agent.domains.kubernetes.cli_runtime import (
+    KubernetesRemediationDecisionAdapter,
+    configured_kubernetes_backend,
+)
 from universal_agent.host import DomainConfig, RuntimeConfig, SecretRef
 from universal_agent.security import EnvSecretProvider
 
@@ -93,3 +103,33 @@ def test_configured_kubernetes_api_backend_requires_api_server_after_settings_pa
                 ),
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_adapter_does_not_finish_goal_without_criteria() -> None:
+    """Chat-style goals carry no criteria; the adapter must not finish them
+    immediately (the runtime's finish gate would reject such a finish)."""
+    adapter = KubernetesRemediationDecisionAdapter()
+    context = DecisionContext(
+        session_id=SessionId("session-test"),
+        goal_id=GoalId("goal-test"),
+        goal_description="f — Chat turn",
+        task_id=TaskId("task-test"),
+        task_description="Chat turn",
+        iteration=1,
+        satisfied_criteria=immutable_json({}),
+        latest_observation=None,
+        capabilities=(),
+    )
+
+    decision = await adapter.decide(context)
+
+    # The confirmation path runs a read-only cluster overview first; a bare
+    # FINISH would be rejected by the runtime's finish gate.
+    assert decision.type is DecisionType.EXECUTE
+    assert decision.capability == "inspect_cluster"
+
+    followup = await adapter.decide(context)
+
+    assert followup.type is DecisionType.FINISH
+    assert "Cluster overview" in followup.reason
