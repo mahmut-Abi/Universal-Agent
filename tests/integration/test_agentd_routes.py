@@ -702,7 +702,7 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
 
     memories = memory.body["memories"]
     assert isinstance(memories, list)
-    assert {item["subject"] for item in memories if isinstance(item, dict)} >= {
+    assert {str(item["subject"]) for item in memories if isinstance(item, dict)} >= {
         "kubernetes readiness",
         "unhealthy workload triage",
     }
@@ -1996,7 +1996,7 @@ async def test_agentd_distributed_cancel_route_cancels_work_item() -> None:
     checks = health["checks"]
     assert isinstance(checks, list)
     assert health["status"] == "ok"
-    assert {check["name"] for check in checks if isinstance(check, dict)} >= {
+    assert {str(check["name"]) for check in checks if isinstance(check, dict)} >= {
         "worker_pool",
         "worker_registry",
     }
@@ -2124,7 +2124,7 @@ async def test_agentd_operations_routes_expose_metrics_doctor_and_audit() -> Non
         "runtime.action.inspect_workload",
     ]
     phase_span_names = {
-        item["name"]
+        str(item["name"])
         for item in span_items[1:]
         if isinstance(item, dict) and not str(item["name"]).startswith("runtime.action.")
     }

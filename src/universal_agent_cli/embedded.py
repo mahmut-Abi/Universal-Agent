@@ -14,7 +14,9 @@ import subprocess
 import sys
 import tempfile
 import time
+from os import getpid
 from pathlib import Path
+from uuid import uuid4
 
 
 class EmbeddedRuntimeError(RuntimeError):
@@ -52,9 +54,9 @@ def launch_embedded_runtime(
 ) -> EmbeddedRuntime:
     """Spawn the kernel's agentd server and wait for its bound port."""
 
-    handle, port_file_name = tempfile.mkstemp(prefix="universal-agent-agentd-", suffix=".port")
-    Path(port_file_name).unlink(missing_ok=True)
-    port_file = Path(port_file_name)
+    port_file = Path(tempfile.gettempdir()) / (
+        f"universal-agent-agentd-{getpid()}-{uuid4().hex}.port"
+    )
     command = [
         sys.executable,
         "-m",

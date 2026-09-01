@@ -1436,7 +1436,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "rapidfuzz", specifier = ">=3.9,<4" },
     { name = "rich", specifier = ">=13.9,<15" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8,<1" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = "==0.16.4" },
     { name = "sqlalchemy", specifier = ">=2.0,<3" },
     { name = "starlette", specifier = ">=0.37,<1" },
     { name = "tenacity", specifier = ">=9,<10" },

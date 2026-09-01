@@ -26,6 +26,7 @@ def test_task_manager_expands_idempotently_and_honors_dependencies() -> None:
     manager.complete_current()
     next_task = manager.start_next()
     assert next_task is created[0]
+    assert next_task is not None
     assert next_task.status is TaskStatus.RUNNING
 
 
