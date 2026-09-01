@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from typing import cast
 
 from universal_agent_api.types import JsonMapping, JsonValue
 
@@ -37,8 +38,9 @@ def immutable_json(values: Mapping[str, JsonValue] | None = None) -> JsonMapping
 
 def parse_json_object(value: object, field: str) -> JsonMapping:
     if not isinstance(value, Mapping):
-        raise ValueError(f"{field} must be a JSON object")
-    return dict(value)
+        raise TypeError(f"{field} must be a JSON object")
+    result: dict[str, JsonValue] = {str(key): cast(JsonValue, item) for key, item in value.items()}
+    return result
 
 
 def parse_non_empty_string(
@@ -54,7 +56,7 @@ def parse_non_empty_string(
 
 def parse_positive_float(value: object, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{field} must be a number")
+        raise TypeError(f"{field} must be a number")
     try:
         number = float(value)
     except (OverflowError, ValueError) as exc:
