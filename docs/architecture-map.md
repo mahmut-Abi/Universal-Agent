@@ -121,3 +121,13 @@ imports the kernel directly (the full CLI contract is far beyond what the HTTP
 API covers today); the web console is server-rendered inside the kernel package.
 The extraction plan is: move CLI local-mode dispatch behind a locally spawned
 agentd subprocess, then cut the client packages into their own repositories.
+
+
+## Extracted Client SDK
+
+The `universal_agent_api` SDK is extracted to its own repository
+(`universal-agent-api`, private) with an independent build, tests and CI. The
+monorepo keeps an editable copy under `src/universal_agent_api` for in-repo
+development; the standalone repo is the publication source. The remaining
+client packages (CLI/TUI/Web) follow once their embedded-mode transition debt
+(see above) is cleared.
