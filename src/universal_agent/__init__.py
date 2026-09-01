@@ -359,19 +359,6 @@ from universal_agent.service.sdk import (
 )
 from universal_agent.state import InMemoryStateStore, StateStore
 from universal_agent.tools import Tool
-from universal_agent.web import (
-    WebConsoleSnapshot,
-    build_web_console_snapshot,
-    render_web_console,
-    render_web_domain_detail,
-    render_web_domain_package_detail,
-    render_web_evidence_explorer,
-    render_web_session_detail,
-    render_web_settings,
-    render_web_world_model_explorer,
-)
-from universal_agent_tui.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
-from universal_agent_tui.tui import TuiSnapshot, build_tui_snapshot, render_tui_snapshot
 
 __all__ = [
     "AGENT_TASK_API_VERSION",
@@ -565,7 +552,6 @@ __all__ = [
     "RuntimeConfig",
     "RuntimeConfigDomainView",
     "RuntimeConfigView",
-    "RuntimeConsoleSnapshot",
     "RuntimeCostView",
     "RuntimeEventBatch",
     "RuntimeEventRepairUnavailableError",
@@ -614,9 +600,7 @@ __all__ = [
     "Task",
     "Tool",
     "ToolDefinition",
-    "TuiSnapshot",
     "UniversalAgentRuntime",
-    "WebConsoleSnapshot",
     "WorkHandler",
     "WorkHandlerResult",
     "WorkHandlerStatus",
@@ -660,9 +644,6 @@ __all__ = [
     "build_domain_package_manifest",
     "build_domain_runtime",
     "build_ecosystem_registry_manifest",
-    "build_runtime_console_snapshot",
-    "build_tui_snapshot",
-    "build_web_console_snapshot",
     "conflict_resolution_payload",
     "decode_agent_delegation_batch_result",
     "decode_agent_delegation_spec",
@@ -702,14 +683,6 @@ __all__ = [
     "redact_sensitive_mapping",
     "redact_sensitive_value",
     "rejected_agent_task_result",
-    "render_tui_snapshot",
-    "render_web_console",
-    "render_web_domain_detail",
-    "render_web_domain_package_detail",
-    "render_web_evidence_explorer",
-    "render_web_session_detail",
-    "render_web_settings",
-    "render_web_world_model_explorer",
     "resolve_secret_refs",
     "resolve_secret_value",
     "scaffold_domain_package",

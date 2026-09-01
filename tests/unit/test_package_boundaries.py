@@ -18,7 +18,12 @@ import pytest
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 
-CLIENT_PACKAGES = ("universal_agent_api",)
+CLIENT_PACKAGES = (
+    "universal_agent_api",
+    "universal_agent_cli",
+    "universal_agent_tui",
+    "universal_agent_web",
+)
 KERNEL_PACKAGE = "universal_agent"
 
 

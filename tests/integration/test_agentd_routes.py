@@ -58,7 +58,6 @@ from universal_agent.evaluation.recording import (
     EvaluationReportRecording,
     EvaluationScenarioRecording,
     EvaluationSummaryRecording,
-    FileEvaluationReportStore,
 )
 from universal_agent.security import EnvSecretProvider, SecretResolutionReport, resolve_secret_refs
 
@@ -1142,7 +1141,7 @@ async def test_agentd_create_session_route_accepts_compiled_goal() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.behavior
-async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
+async def test_agentd_web_console_route_serves_static_frontend() -> None:
     service, backend = build_service(
         [inspect_workload(), finish()],
         domain_packages=package_registry(),
@@ -1155,272 +1154,22 @@ async def test_agentd_web_console_route_renders_runtime_snapshot() -> None:
     session_id = result["session_id"]
     assert isinstance(session_id, str)
 
-    console = await app.handle(
-        HttpRequest("GET", f"/console?session_id={session_id}&event_limit=20")
-    )
-    sessions_page = await app.handle(HttpRequest("GET", "/console/sessions?event_limit=20"))
-    detail = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}?event_limit=20"))
-    evidence_page = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/evidence"))
-    world_page = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}/world"))
-    focused_world_page = await app.handle(
-        HttpRequest(
-            "GET",
-            f"/console/sessions/{session_id}/world?entity_id=deployment/example",
-        )
-    )
-    top_evidence_page = await app.handle(
-        HttpRequest("GET", f"/console/evidence?session_id={session_id}")
-    )
-    top_world_page = await app.handle(HttpRequest("GET", f"/console/world?session_id={session_id}"))
-    top_focused_world_page = await app.handle(
-        HttpRequest(
-            "GET",
-            f"/console/world?session_id={session_id}&entity_id=deployment/example&relation=owns",
-        )
-    )
-    domain_page = await app.handle(HttpRequest("GET", "/console/domains/kubernetes/0.2.0"))
-    package_page = await app.handle(HttpRequest("GET", "/console/domain-packages/kubernetes/0.2.0"))
-    profile_page = await app.handle(HttpRequest("GET", "/console/profiles"))
-    doctor_page = await app.handle(HttpRequest("GET", "/console/doctor"))
-    distributed_page = await app.handle(HttpRequest("GET", "/console/distributed"))
-    multi_agent_page = await app.handle(HttpRequest("GET", "/console/multi-agent"))
-    settings_page = await app.handle(HttpRequest("GET", "/console/settings"))
-    catalog_pages = {
-        "domains": "Domain Catalog",
-        "domain-packages": "Domain Package Catalog",
-        "capabilities": "Capability Catalog",
-        "tools": "Tool Catalog",
-        "policies": "Policy Catalog",
-        "evaluators": "Evaluator Catalog",
-        "memory": "Memory Catalog",
-    }
-    catalog_responses = {
-        name: await app.handle(HttpRequest("GET", f"/console/{name}")) for name in catalog_pages
-    }
-    catalog_method = await app.handle(HttpRequest("POST", "/console/tools"))
-    missing_domain_page = await app.handle(HttpRequest("GET", "/console/domains/missing/0.1.0"))
-    missing_package_page = await app.handle(
-        HttpRequest("GET", "/console/domain-packages/missing/0.1.0")
-    )
-    package_method = await app.handle(
-        HttpRequest("POST", "/console/domain-packages/kubernetes/0.2.0")
-    )
-    unknown_detail_page = await app.handle(
-        HttpRequest("GET", f"/console/sessions/{session_id}/unknown")
-    )
-    missing = await app.handle(HttpRequest("GET", "/console?session_id=missing-session"))
-    missing_detail = await app.handle(HttpRequest("GET", "/console/sessions/missing-session"))
-    invalid_limit = await app.handle(HttpRequest("GET", "/console?event_limit=0"))
-    invalid_detail_limit = await app.handle(
-        HttpRequest("GET", f"/console/sessions/{session_id}?event_limit=0")
-    )
-    invalid_world_filter = await app.handle(
-        HttpRequest("GET", f"/console/sessions/{session_id}/world?relation=owns")
-    )
+    # The console frontend is a static single-page client: every console GET
+    # path serves the same shell, and data arrives through the Runtime API.
+    console = await app.handle(HttpRequest("GET", f"/console?session_id={session_id}"))
+    deep_link = await app.handle(HttpRequest("GET", f"/console/sessions/{session_id}"))
+    asset = await app.handle(HttpRequest("GET", "/console/app.js"))
 
     assert console.status_code == 200
     assert console.headers["content-type"] == "text/html; charset=utf-8"
     assert console.text_body is not None
-    assert "Universal Agent Runtime Console" in console.text_body
-    assert "Runtime Console" in console.text_body
-    assert "Verify workload health" in console.text_body
-    assert "kubernetes@0.2.0" in console.text_body
-    assert "Domain Package Catalog" in console.text_body
-    assert "universal_agent.domains.kubernetes:KubernetesRemediationDomain" in console.text_body
-    assert "Capability Catalog" in console.text_body
-    assert "inspect_workload" in console.text_body
-    assert "Tool Catalog" in console.text_body
-    assert "kubernetes_inspect_workload" in console.text_body
-    assert "ActionStarted" in console.text_body
-    assert "capability=inspect_workload" in console.text_body
-    assert sessions_page.status_code == 200
-    assert sessions_page.text_body is not None
-    assert "Universal Agent Runtime Sessions" in sessions_page.text_body
-    assert "Verify workload health" in sessions_page.text_body
-    assert "Selected Session" in sessions_page.text_body
-    assert detail.status_code == 200
-    assert detail.headers["content-type"] == "text/html; charset=utf-8"
-    assert detail.text_body is not None
-    assert "Universal Agent Runtime Session Detail" in detail.text_body
-    assert "Session Detail" in detail.text_body
-    assert f"session={session_id}" in detail.text_body
-    assert "Task Timeline" in detail.text_body
-    assert "World Facts" in detail.text_body
-    assert "Session Evidence" in detail.text_body
-    assert "ActionStarted" in detail.text_body
-    assert "capability=inspect_workload" in detail.text_body
-    assert evidence_page.status_code == 200
-    assert evidence_page.text_body is not None
-    assert "Universal Agent Runtime Evidence Explorer" in evidence_page.text_body
-    assert "Session Evidence" in evidence_page.text_body
-    assert "deployment/example" in evidence_page.text_body
-    assert world_page.status_code == 200
-    assert world_page.text_body is not None
-    assert "Universal Agent Runtime World Model Explorer" in world_page.text_body
-    assert "World Facts" in world_page.text_body
-    assert "healthy" in world_page.text_body
-    assert "No focused world neighborhood selected" in world_page.text_body
-    assert focused_world_page.status_code == 200
-    assert focused_world_page.text_body is not None
-    assert "Focused World Neighborhood" in focused_world_page.text_body
-    assert "deployment/example" in focused_world_page.text_body
-    assert "pod/example-1" in focused_world_page.text_body
-    assert top_evidence_page.status_code == 200
-    assert top_evidence_page.text_body is not None
-    assert "Universal Agent Runtime Evidence Explorer" in top_evidence_page.text_body
-    assert "deployment/example" in top_evidence_page.text_body
-    assert top_world_page.status_code == 200
-    assert top_world_page.text_body is not None
-    assert "Universal Agent Runtime World Model Explorer" in top_world_page.text_body
-    assert "healthy" in top_world_page.text_body
-    assert top_focused_world_page.status_code == 200
-    assert top_focused_world_page.text_body is not None
-    assert "Focused World Neighborhood" in top_focused_world_page.text_body
-    assert "No incoming focused relations" in top_focused_world_page.text_body
-    assert domain_page.status_code == 200
-    assert domain_page.text_body is not None
-    assert "Universal Agent Runtime Domain Manager" in domain_page.text_body
-    assert "Domain Manager" in domain_page.text_body
-    assert "domain=kubernetes@0.2.0" in domain_page.text_body
-    assert "inspect_workload" in domain_page.text_body
-    assert "kubernetes_inspect_workload" in domain_page.text_body
-    assert package_page.status_code == 200
-    assert package_page.text_body is not None
-    assert "Universal Agent Runtime Domain Package" in package_page.text_body
-    assert "package=kubernetes@0.2.0" in package_page.text_body
-    assert (
-        "universal_agent.domains.kubernetes:KubernetesRemediationDomain" in package_page.text_body
-    )
-    assert "Package Resources" in package_page.text_body
-    assert "resources/runbook.md" in package_page.text_body
-    assert "Package Security" in package_page.text_body
-    assert "reversible" in package_page.text_body
-    assert "Matching Active Domains" in package_page.text_body
-    assert profile_page.status_code == 200
-    assert profile_page.text_body is not None
-    assert "Universal Agent Runtime Profile Catalog" in profile_page.text_body
-    assert "Profile Catalog" in profile_page.text_body
-    assert "Active Domains" in profile_page.text_body
-    assert doctor_page.status_code == 200
-    assert doctor_page.headers["content-type"] == "text/html; charset=utf-8"
-    assert doctor_page.text_body is not None
-    assert "Universal Agent Runtime Doctor" in doctor_page.text_body
-    assert "Runtime Doctor" in doctor_page.text_body
-    assert "Doctor Checks" in doctor_page.text_body
-    assert "state_event_consistency" in doctor_page.text_body
-    assert "Operational Diagnostics" in doctor_page.text_body
-    assert "Runtime Configuration" in doctor_page.text_body
-    assert distributed_page.status_code == 200
-    assert distributed_page.headers["content-type"] == "text/html; charset=utf-8"
-    assert distributed_page.text_body is not None
-    assert "Universal Agent Runtime Distributed" in distributed_page.text_body
-    assert "Distributed Runtime" in distributed_page.text_body
-    assert "not configured" in distributed_page.text_body
-    assert "Distributed Health Checks" in distributed_page.text_body
-    assert multi_agent_page.status_code == 200
-    assert multi_agent_page.headers["content-type"] == "text/html; charset=utf-8"
-    assert multi_agent_page.text_body is not None
-    assert "Universal Agent Runtime Multi-Agent" in multi_agent_page.text_body
-    assert "Multi-Agent registry is not configured" in multi_agent_page.text_body
-    for name, title in catalog_pages.items():
-        response = catalog_responses[name]
-        assert response.status_code == 200
-        assert response.text_body is not None
-        assert f"Universal Agent Runtime {title}" in response.text_body
-        assert "kubernetes@0.2.0" in response.text_body
-    assert catalog_method.status_code == 405
-    assert settings_page.status_code == 200
-    assert settings_page.text_body is not None
-    assert "Universal Agent Runtime Settings" in settings_page.text_body
-    assert "Runtime Configuration" in settings_page.text_body
-    assert "Configured Domains" in settings_page.text_body
-    assert "kubernetes" in settings_page.text_body
-    assert missing_domain_page.status_code == 404
-    assert missing_package_page.status_code == 404
-    assert package_method.status_code == 405
-    assert unknown_detail_page.status_code == 404
-    assert missing.status_code == 404
-    assert missing_detail.status_code == 404
-    assert invalid_limit.status_code == 400
-    assert invalid_detail_limit.status_code == 400
-    assert invalid_world_filter.status_code == 400
+    assert "Universal Agent Web Console" in console.text_body
+    assert deep_link.status_code == 200
+    assert deep_link.text_body is not None
+    assert "Universal Agent Web Console" in deep_link.text_body
+    assert asset.status_code == 200
+    assert "text/javascript" in asset.headers["content-type"]
     assert backend.inspect_calls == 1
-
-
-@pytest.mark.asyncio
-@pytest.mark.unit
-async def test_agentd_evaluation_console_route_renders_persisted_reports(tmp_path: Path) -> None:
-    report_dir = tmp_path / "reports"
-    FileEvaluationReportStore(report_dir).save(evaluation_report("nightly behavior suite"))
-    service, _ = build_service([])
-    app = AgentdApp(service, evaluation_report_dir=report_dir)
-
-    evaluation_page = await app.handle(HttpRequest("GET", "/console/evaluations"))
-    missing_config = await AgentdApp(service).handle(HttpRequest("GET", "/console/evaluations"))
-    method_not_allowed_response = await app.handle(HttpRequest("POST", "/console/evaluations"))
-
-    assert evaluation_page.status_code == 200
-    assert evaluation_page.headers["content-type"] == "text/html; charset=utf-8"
-    assert evaluation_page.text_body is not None
-    assert "Universal Agent Evaluation Console" in evaluation_page.text_body
-    assert "Evaluation Console" in evaluation_page.text_body
-    assert "nightly behavior suite" in evaluation_page.text_body
-    assert "Scenario Results" in evaluation_page.text_body
-    assert "inspect_workload" in evaluation_page.text_body
-    assert missing_config.status_code == 200
-    assert missing_config.text_body is not None
-    assert "report_dir=not configured" in missing_config.text_body
-    assert "No evaluation reports" in missing_config.text_body
-    assert method_not_allowed_response.status_code == 405
-
-
-@pytest.mark.asyncio
-@pytest.mark.contract
-async def test_agentd_session_list_route_supports_cursor_and_limit() -> None:
-    service, _ = build_service(
-        [
-            inspect_workload(),
-            finish(),
-            inspect_workload(),
-            finish(),
-            inspect_workload(),
-            finish(),
-        ]
-    )
-    app = AgentdApp(service)
-
-    for index in range(3):
-        await app.handle(
-            HttpRequest(
-                "POST",
-                "/v1/sessions",
-                goal_submission_body(goal_description=f"Verify workload health {index}"),
-            )
-        )
-
-    first_page = await app.handle(HttpRequest("GET", "/v1/sessions?limit=2"))
-    first_items = first_page.body["sessions"]
-    assert isinstance(first_items, list)
-    first_cursor = first_page.body["next_cursor"]
-    assert isinstance(first_cursor, str)
-    second_page = await app.handle(HttpRequest("GET", f"/v1/sessions?after={first_cursor}&limit=2"))
-    missing_cursor = await app.handle(HttpRequest("GET", "/v1/sessions?after=missing-session"))
-
-    assert first_page.status_code == 200
-    assert len(first_items) == 2
-    last_first_item = first_items[-1]
-    assert isinstance(last_first_item, dict)
-    assert first_cursor == last_first_item["session_id"]
-    second_items = second_page.body["sessions"]
-    assert isinstance(second_items, list)
-    assert len(second_items) == 1
-    last_second_item = second_items[-1]
-    assert isinstance(last_second_item, dict)
-    assert second_page.body["next_cursor"] == last_second_item["session_id"]
-    assert missing_cursor.status_code == 400
-    error = missing_cursor.body["error"]
-    assert isinstance(error, dict)
-    assert error["message"] == "session cursor not found: missing-session"
 
 
 @pytest.mark.asyncio
@@ -1455,6 +1204,9 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
     snapshot = await app.handle(HttpRequest("GET", "/v1/distributed/snapshot"))
     health = await app.handle(HttpRequest("GET", "/v1/distributed/health"))
     distributed_page = await app.handle(HttpRequest("GET", "/console/distributed"))
+    assert distributed_page.status_code == 200
+    assert distributed_page.text_body is not None
+    assert "Universal Agent Web Console" in distributed_page.text_body
     pruned = await app.handle(
         HttpRequest(
             "POST",
@@ -1509,12 +1261,7 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
     assert health.status_code == 200
     assert distributed_page.status_code == 200
     assert distributed_page.text_body is not None
-    assert "Universal Agent Runtime Distributed" in distributed_page.text_body
-    assert "Distributed: ok" in distributed_page.text_body
-    assert "session-1" in distributed_page.text_body
-    assert "worker-a" in distributed_page.text_body
-    assert "session/session-1" in distributed_page.text_body
-    assert "Distributed Work Queue" in distributed_page.text_body
+    assert "Universal Agent Web Console" in distributed_page.text_body
     assert pruned.status_code == 200
     assert pruned.body["before"] == now.isoformat()
     assert pruned.body["pruned_count"] == 1

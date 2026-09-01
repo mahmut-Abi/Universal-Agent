@@ -311,7 +311,6 @@ def test_agentd_http_server_serves_web_console() -> None:
 
     assert status == 200
     assert headers["content-type"] == "text/html; charset=utf-8"
-    assert "Universal Agent Runtime Console" in text
-    assert "Verify workload health" in text
-    assert "ActionStarted" in text
+    assert "Universal Agent Web Console" in text
+    assert "/console/app.js" in text
     assert backend.inspect_calls == 1

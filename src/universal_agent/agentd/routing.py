@@ -22,8 +22,6 @@ from universal_agent.core.config_validation import (
     pydantic_error_details,
 )
 from universal_agent.distributed import DistributedLockOwnerId
-from universal_agent.service import DomainPackageView, DomainView
-from universal_agent.web import WebConsoleSnapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -500,36 +498,6 @@ def _request_payload_error_message(
     if details.message:
         return details.message.removeprefix("Value error, ")
     return str(error)
-
-
-def _console_domain_view(
-    snapshot: WebConsoleSnapshot,
-    name: str,
-    version: str | None,
-) -> DomainView | None:
-    matches = tuple(
-        domain
-        for domain in snapshot.domains
-        if domain.name == name and (version is None or domain.version == version)
-    )
-    if len(matches) != 1:
-        return None
-    return matches[0]
-
-
-def _console_domain_package_view(
-    snapshot: WebConsoleSnapshot,
-    name: str,
-    version: str | None,
-) -> DomainPackageView | None:
-    matches = tuple(
-        package
-        for package in snapshot.domain_packages
-        if package.name == name and (version is None or package.version == version)
-    )
-    if len(matches) != 1:
-        return None
-    return matches[0]
 
 
 def _domain_not_found_message(name: str, version: str | None) -> str:

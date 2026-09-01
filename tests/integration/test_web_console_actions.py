@@ -1,10 +1,11 @@
 """End-to-end console operator action coverage.
 
-Drives the web console action routes through the real ASGI app (including
-urlencoded form parsing) and asserts the same policy/confirmation boundaries
-the CLI and agentd enforce: pending actions require explicit confirmation,
-rejection never executes the tool, and invalid transitions surface as error
-banners instead of silent no-ops.
+Drives the web console action routes through the real ASGI app and asserts
+the same policy/confirmation boundaries the CLI and agentd enforce: pending
+actions require explicit confirmation, rejection never executes the tool, and
+invalid transitions surface as structured JSON errors instead of silent
+no-ops. The console frontend itself is a static single-page client served
+from the universal_agent_web package.
 """
 
 from __future__ import annotations
@@ -210,18 +211,15 @@ def test_console_resume_confirm_executes_pending_action() -> None:
 
         page = client.get(f"/console/sessions/{session_id}")
         assert page.status_code == 200
-        assert "Operator actions" in page.text
-        assert "Confirm &amp; resume" in page.text
-        assert "Reject pending action" in page.text
-        assert "change_setting" in page.text
+        assert "text/html" in page.headers["content-type"]
 
         response = client.post(
             f"/console/sessions/{session_id}/resume",
-            data={"confirmed": "true"},
-            follow_redirects=False,
+            json={"confirmed": True},
         )
-        assert response.status_code == 303
-        assert response.headers["location"] == f"/console/sessions/{session_id}"
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["run"]["result"]["status"] == "completed"
 
         assert tool.calls == 1
         session = client.get(f"/v1/sessions/{session_id}").json()
@@ -237,17 +235,17 @@ def test_console_resume_reject_never_executes_pending_action() -> None:
 
         response = client.post(
             f"/console/sessions/{session_id}/resume",
-            data={"confirmed": "false"},
+            json={"confirmed": False},
         )
 
         assert response.status_code == 200
-        assert "text/html" in response.headers["content-type"]
-        assert "Action failed" in response.text
-        assert "confirmation_rejected" in response.text
+        payload = response.json()
+        result = payload["run"]["result"]
+        assert result["status"] == "failed"
+        assert result["error_code"] == "confirmation_rejected"
         assert tool.calls == 0
         session = client.get(f"/v1/sessions/{session_id}").json()
         assert session["goal_status"] == "failed"
-        assert "Operator actions" not in response.text
 
 
 @pytest.mark.behavior
@@ -257,12 +255,14 @@ def test_console_resume_without_confirmation_reports_required_boundary() -> None
     with TestClient(build_agentd_asgi_app(app)) as client:
         session_id = waiting_session_id(client)
 
-        response = client.post(f"/console/sessions/{session_id}/resume", data={})
+        response = client.post(f"/console/sessions/{session_id}/resume", json={})
 
         assert response.status_code == 200
-        assert "Action failed" in response.text
-        assert "invalid_state" in response.text
-        assert "resume requires confirmation for pending action" in response.text
+        payload = response.json()
+        result = payload["run"]["result"]
+        assert result["status"] == "failed"
+        assert result["error_code"] == "invalid_state"
+        assert "resume requires confirmation for pending action" in result["reason"]
         assert tool.calls == 0
 
 
@@ -275,25 +275,19 @@ def test_console_pause_and_cancel_round_trip() -> None:
 
         paused = client.post(
             f"/console/sessions/{session_id}/pause",
-            data={"reason": "ops freeze"},
-            follow_redirects=False,
+            json={"reason": "ops freeze"},
         )
-        assert paused.status_code == 303
+        assert paused.status_code == 200
+        assert paused.json()["run"]["result"]["status"] == "waiting"
         session = client.get(f"/v1/sessions/{session_id}").json()
         assert session["goal_status"] == "waiting"
         assert session["termination_reason"] == "ops freeze"
 
-        page = client.get(f"/console/sessions/{session_id}")
-        assert "Operator actions" in page.text
-        # pause 不清除 pending action,恢复仍需显式确认——边界保持不变
-        assert "Confirm &amp; resume" in page.text
-
         cancelled = client.post(
             f"/console/sessions/{session_id}/cancel",
-            data={"reason": "abandoned"},
-            follow_redirects=False,
+            json={"reason": "abandoned"},
         )
-        assert cancelled.status_code == 303
+        assert cancelled.status_code == 200
         session = client.get(f"/v1/sessions/{session_id}").json()
         assert session["goal_status"] == "cancelled"
 
@@ -306,7 +300,7 @@ def test_console_action_routes_reject_unknown_sessions_and_get_method() -> None:
     app, _ = build_mutation_app(PolicyEffect.REQUIRE_CONFIRMATION)
 
     with TestClient(build_agentd_asgi_app(app)) as client:
-        missing = client.post("/console/sessions/session-missing/resume", data={})
+        missing = client.post("/console/sessions/session-missing/resume", json={})
         assert missing.status_code == 404
 
         session_id = waiting_session_id(client)

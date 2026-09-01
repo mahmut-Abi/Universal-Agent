@@ -3,5 +3,8 @@
   "useLibraryCodeForTypes": true,
   "pythonVersion": "3.12",
   "venvPath": ".",
-  "venv": ".venv"
+  "venv": ".venv",
+  "extraPaths": [
+    "src"
+  ]
 }

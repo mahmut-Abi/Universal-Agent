@@ -5,7 +5,7 @@ from collections.abc import Mapping
 import httpx
 import pytest
 
-from universal_agent.core import JsonValue, SessionId, immutable_json
+from universal_agent.core import JsonValue, immutable_json
 from universal_agent_api import AgentdClient, AgentdClientError
 
 
@@ -173,7 +173,7 @@ async def test_agentd_client_stream_events_parses_sse_frames() -> None:
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     agentd = AgentdClient("http://agentd.example.test", client=client)
     try:
-        events = [event async for event in agentd.stream_events(SessionId("s-1"))]
+        events = [event async for event in agentd.stream_events("s-1")]
     finally:
         await client.aclose()
 
@@ -195,7 +195,7 @@ async def test_agentd_client_stream_events_raises_on_http_error() -> None:
     agentd = AgentdClient("http://agentd.example.test", client=client)
     try:
         with pytest.raises(AgentdClientError) as exc_info:
-            async for _event in agentd.stream_events(SessionId("s-missing")):
+            async for _event in agentd.stream_events("s-missing"):
                 pass
     finally:
         await client.aclose()

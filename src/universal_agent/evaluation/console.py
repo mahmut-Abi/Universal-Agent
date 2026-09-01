@@ -3,14 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from universal_agent.evaluation.recording import (
-    EvaluationCheckRecording,
-    EvaluationGateRecording,
-    EvaluationReportRecording,
-    EvaluationScenarioRecording,
-    FileEvaluationReportStore,
-)
-from universal_agent.web.ui import (
+from universal_agent.evaluation.console_render import render_terminal_lines
+from universal_agent.evaluation.html_ui import (
     _hero_block,
     _HeroPill,
     _metric_card,
@@ -20,7 +14,13 @@ from universal_agent.web.ui import (
     _raw_table_cell,
     _table_section,
 )
-from universal_agent_tui.render import render_terminal_lines
+from universal_agent.evaluation.recording import (
+    EvaluationCheckRecording,
+    EvaluationGateRecording,
+    EvaluationReportRecording,
+    EvaluationScenarioRecording,
+    FileEvaluationReportStore,
+)
 
 
 @dataclass(frozen=True, slots=True)
