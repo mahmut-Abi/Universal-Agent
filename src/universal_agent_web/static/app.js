@@ -1,6 +1,5 @@
 /* Universal Agent Web Console — pure HTTP API client (no runtime state). */
 
-
 const $view = document.getElementById("view");
 const $heroStatus = document.getElementById("hero-status");
 const $nav = document.getElementById("nav");
@@ -20,7 +19,10 @@ async function api(path, options) {
   const response = await fetch(path, options);
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = payload && payload.error ? payload.error.message : `HTTP ${response.status}`;
+    const message =
+      payload && payload.error
+        ? payload.error.message
+        : `HTTP ${response.status}`;
     throw new Error(message);
   }
   return payload;
@@ -35,7 +37,9 @@ function el(tag, attrs = {}, ...children) {
   }
   for (const child of children) {
     if (child === null || child === undefined) continue;
-    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+    node.append(
+      child instanceof Node ? child : document.createTextNode(String(child)),
+    );
   }
   return node;
 }
@@ -48,17 +52,35 @@ function table(headers, rows) {
   if (!rows.length) return el("p", { class: "muted" }, "none");
   const head = el("tr", {}, ...headers.map((header) => el("th", {}, header)));
   const body = rows.map((row) =>
-    el("tr", {}, ...row.map((cell) => el("td", {}, cell === null || cell === undefined ? "—" : cell))),
+    el(
+      "tr",
+      {},
+      ...row.map((cell) =>
+        el("td", {}, cell === null || cell === undefined ? "—" : cell),
+      ),
+    ),
   );
-  return el("div", { class: "table-wrap" }, el("table", {}, el("thead", {}, head), el("tbody", {}, body)));
+  return el(
+    "div",
+    { class: "table-wrap" },
+    el("table", {}, el("thead", {}, head), el("tbody", {}, body)),
+  );
 }
 
 function pills(items) {
-  return el("div", { class: "status" }, ...items.map(([label, value]) => el("span", { class: `pill ${value ? "ok" : "warn"}` }, label)));
+  return el(
+    "div",
+    { class: "status" },
+    ...items.map(([label, value]) =>
+      el("span", { class: `pill ${value ? "ok" : "warn"}` }, label),
+    ),
+  );
 }
 
 function renderError(error) {
-  $view.replaceChildren(panel("Error", el("p", { class: "muted" }, String(error.message || error))));
+  $view.replaceChildren(
+    panel("Error", el("p", { class: "muted" }, String(error.message || error))),
+  );
 }
 
 function linked(text, href) {
@@ -88,24 +110,51 @@ async function viewOverview() {
       ["Events", metrics.event_count],
       ["Model Calls", metrics.model_call_count],
     ].map(([label, value]) =>
-      el("div", { class: "card" }, el("span", {}, label), el("strong", {}, String(value))),
+      el(
+        "div",
+        { class: "card" },
+        el("span", {}, label),
+        el("strong", {}, String(value)),
+      ),
     ),
   );
   $view.replaceChildren(
-    panel("Runtime health", pills([["health", health.status === "ok"], ["ready", ready.ready === true]]), metricCards),
+    panel(
+      "Runtime health",
+      pills([
+        ["health", health.status === "ok"],
+        ["ready", ready.ready === true],
+      ]),
+      metricCards,
+    ),
     panel(
       "Doctor",
-      table(["Check", "Status", "Message"], (doctor.checks || []).map((check) => [check.name, check.status, check.message])),
+      table(
+        ["Check", "Status", "Message"],
+        (doctor.checks || []).map((check) => [
+          check.name,
+          check.status,
+          check.message,
+        ]),
+      ),
     ),
     panel(
       "Active domains",
-      table(["Name", "Version"], (domains.domains || []).map((domain) => [domain.name, domain.version])),
+      table(
+        ["Name", "Version"],
+        (domains.domains || []).map((domain) => [domain.name, domain.version]),
+      ),
     ),
     panel(
       "Model cost",
       table(
         ["Model", "Calls", "Tokens", "Cost (µ)"],
-        (cost.by_model || []).map((item) => [item.model, item.call_count, item.total_tokens, item.estimated_cost_micros]),
+        (cost.by_model || []).map((item) => [
+          item.model,
+          item.call_count,
+          item.total_tokens,
+          item.estimated_cost_micros,
+        ]),
       ),
     ),
   );
@@ -135,7 +184,11 @@ async function actionButton(label, path, body) {
       class: "action",
       onclick: async () => {
         try {
-          await api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+          await api(path, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body || {}),
+          });
           await route();
         } catch (error) {
           renderError(error);
@@ -157,9 +210,15 @@ async function viewSessionDetail(sessionId) {
   const actions = el(
     "div",
     { class: "status" },
-    await actionButton("Pause", `/v1/sessions/${sessionId}/pause`, { reason: "paused from web console" }),
-    await actionButton("Resume", `/v1/sessions/${sessionId}/resume`, { confirmed: true }),
-    await actionButton("Cancel", `/v1/sessions/${sessionId}/cancel`, { reason: "cancelled from web console" }),
+    await actionButton("Pause", `/v1/sessions/${sessionId}/pause`, {
+      reason: "paused from web console",
+    }),
+    await actionButton("Resume", `/v1/sessions/${sessionId}/resume`, {
+      confirmed: true,
+    }),
+    await actionButton("Cancel", `/v1/sessions/${sessionId}/cancel`, {
+      reason: "cancelled from web console",
+    }),
   );
   $view.replaceChildren(
     panel(
@@ -169,19 +228,44 @@ async function viewSessionDetail(sessionId) {
       actions,
       table(
         ["Task", "Status", "Required criteria"],
-        (session.tasks || []).map((task) => [task.description, task.status, (task.required_criteria || []).join(", ")]),
+        (session.tasks || []).map((task) => [
+          task.description,
+          task.status,
+          (task.required_criteria || []).join(", "),
+        ]),
       ),
       panel(
         "Recent events",
-        table(["Type", "Time"], (events.events || []).map((event) => [event.type, new Date(event.occurred_at).toLocaleTimeString()])),
+        table(
+          ["Type", "Time"],
+          (events.events || []).map((event) => [
+            event.type,
+            new Date(event.occurred_at).toLocaleTimeString(),
+          ]),
+        ),
       ),
       panel(
         "Evidence",
-        table(["Subject", "Claim", "Value"], (evidence.evidence || []).map((item) => [item.subject, item.claim, String(item.value)])),
+        table(
+          ["Subject", "Claim", "Value"],
+          (evidence.evidence || []).map((item) => [
+            item.subject,
+            item.claim,
+            String(item.value),
+          ]),
+        ),
       ),
       panel(
         "World facts",
-        table(["Subject", "Claim", "Value", "Confidence"], (world.world_facts || []).map((fact) => [fact.subject, fact.claim, String(fact.value), fact.confidence])),
+        table(
+          ["Subject", "Claim", "Value", "Confidence"],
+          (world.world_facts || []).map((fact) => [
+            fact.subject,
+            fact.claim,
+            String(fact.value),
+            fact.confidence,
+          ]),
+        ),
       ),
     ),
   );
@@ -190,14 +274,27 @@ async function viewSessionDetail(sessionId) {
 async function viewSettings() {
   const config = await api("/v1/config");
   $view.replaceChildren(
-    panel("Runtime configuration", el("pre", { class: "code" }, JSON.stringify(config, null, 2))),
+    panel(
+      "Runtime configuration",
+      el("pre", { class: "code" }, JSON.stringify(config, null, 2)),
+    ),
   );
 }
 
 async function viewDoctor() {
   const doctor = await api("/v1/doctor");
   $view.replaceChildren(
-    panel("Doctor", table(["Check", "Status", "Message"], (doctor.checks || []).map((check) => [check.name, check.status, check.message]))),
+    panel(
+      "Doctor",
+      table(
+        ["Check", "Status", "Message"],
+        (doctor.checks || []).map((check) => [
+          check.name,
+          check.status,
+          check.message,
+        ]),
+      ),
+    ),
   );
 }
 
@@ -207,14 +304,25 @@ async function viewDistributed() {
     api("/v1/distributed/health"),
   ]);
   $view.replaceChildren(
-    panel("Distributed health", el("pre", { class: "code" }, JSON.stringify(health, null, 2))),
-    panel("Snapshot", el("pre", { class: "code" }, JSON.stringify(snapshot, null, 2))),
+    panel(
+      "Distributed health",
+      el("pre", { class: "code" }, JSON.stringify(health, null, 2)),
+    ),
+    panel(
+      "Snapshot",
+      el("pre", { class: "code" }, JSON.stringify(snapshot, null, 2)),
+    ),
   );
 }
 
 async function viewMultiAgent() {
   const payload = await api("/v1/multi-agent");
-  $view.replaceChildren(panel("Multi-Agent", el("pre", { class: "code" }, JSON.stringify(payload, null, 2))));
+  $view.replaceChildren(
+    panel(
+      "Multi-Agent",
+      el("pre", { class: "code" }, JSON.stringify(payload, null, 2)),
+    ),
+  );
 }
 
 async function viewProfiles() {
@@ -222,11 +330,16 @@ async function viewProfiles() {
   $view.replaceChildren(
     panel(
       "Profiles",
-      table(["Name", "Version", "Domains"], (payload.profiles || []).map((profile) => [
-        profile.name,
-        profile.version,
-        (profile.domains || []).map((domain) => `${domain.name}@${domain.version}`).join(", "),
-      ])),
+      table(
+        ["Name", "Version", "Domains"],
+        (payload.profiles || []).map((profile) => [
+          profile.name,
+          profile.version,
+          (profile.domains || [])
+            .map((domain) => `${domain.name}@${domain.version}`)
+            .join(", "),
+        ]),
+      ),
     ),
   );
 }
@@ -236,11 +349,14 @@ async function viewDomainPackages() {
   $view.replaceChildren(
     panel(
       "Domain packages",
-      table(["Name", "Version", "Tags"], (payload.domain_packages || []).map((item) => [
-        item.name,
-        item.version,
-        (item.tags || []).join(", "),
-      ])),
+      table(
+        ["Name", "Version", "Tags"],
+        (payload.domain_packages || []).map((item) => [
+          item.name,
+          item.version,
+          (item.tags || []).join(", "),
+        ]),
+      ),
     ),
   );
 }
@@ -248,18 +364,30 @@ async function viewDomainPackages() {
 async function viewEvaluations() {
   const payload = await api("/v1/evaluations");
   if (payload.status === "not_configured") {
-    $view.replaceChildren(panel("Evaluations", el("p", { class: "muted" }, "evaluation report dir is not configured for this agentd instance")));
+    $view.replaceChildren(
+      panel(
+        "Evaluations",
+        el(
+          "p",
+          { class: "muted" },
+          "evaluation report dir is not configured for this agentd instance",
+        ),
+      ),
+    );
     return;
   }
   $view.replaceChildren(
     panel(
       "Evaluation reports",
-      table(["Suite", "Passed", "Scenarios", "Gate"], (payload.reports || []).map((report) => [
-        report.suite_name,
-        String(report.passed),
-        report.scenario_count,
-        String(report.gate_passed),
-      ])),
+      table(
+        ["Suite", "Passed", "Scenarios", "Gate"],
+        (payload.reports || []).map((report) => [
+          report.suite_name,
+          String(report.passed),
+          report.scenario_count,
+          String(report.gate_passed),
+        ]),
+      ),
     ),
   );
 }
@@ -267,7 +395,10 @@ async function viewEvaluations() {
 const ROUTES = [
   [/^#\/?$|^#\/console$/, () => viewOverview()],
   [/^#\/sessions$/, () => viewSessions()],
-  [/^#\/sessions\/([^/]+)$/, (match) => viewSessionDetail(decodeURIComponent(match[1]))],
+  [
+    /^#\/sessions\/([^/]+)$/,
+    (match) => viewSessionDetail(decodeURIComponent(match[1])),
+  ],
   [/^#\/settings$/, () => viewSettings()],
   [/^#\/doctor$/, () => viewDoctor()],
   [/^#\/distributed$/, () => viewDistributed()],

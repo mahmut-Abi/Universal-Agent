@@ -125,7 +125,23 @@ async def run_cli(
         if _is_config_validate_command(args):
             _dispatch_config_validate(args, out)
             return 0
-        runtime_service = service or _service_from_args(args)
+        if service is not None:
+            # Test/embedded-injection path: drive the kernel service directly.
+            await _dispatch(args, service, out, server_runner=server_runner)
+            return 0
+        if command_supports_agentd(args):
+            # Production path without an injected runtime: serve the runtime
+            # in an isolated subprocess and talk to it over its HTTP API.
+            from universal_agent_cli.embedded import launch_embedded_runtime
+
+            embedded = launch_embedded_runtime(cast(str | None, args.profile_config))
+            try:
+                args.api_url = embedded.base_url
+                await dispatch_agentd_cli(args, out)
+            finally:
+                embedded.shutdown()
+            return 0
+        runtime_service = _service_from_args(args)
         await _dispatch(args, runtime_service, out, server_runner=server_runner)
     except (
         MemoryNotFoundError,
