@@ -276,7 +276,36 @@ def pod_summary(pod: dict[str, JsonValue]) -> JsonValue:
 
 
 def ready_pod_count(pods: list[JsonValue]) -> int:
-    return sum(1 for pod in pods if isinstance(pod, dict) and pod.get("ready") is True)
+    return sum(1 for pod in pods if isinstance(pod, dict) and bool(pod.get("ready")))
+
+
+_POD_FAULT_CAUSES = frozenset(
+    {
+        "image_pull_back_off",
+        "err_image_pull",
+        "invalid_image_name",
+        "crash_loop_back_off",
+        "create_container_error",
+        "create_container_config_error",
+        "run_container_error",
+        "evicted",
+    }
+)
+
+
+def pod_fault_reason(pods: list[JsonValue]) -> str | None:
+    """Return the first pod-level fault cause that blocks workload health.
+
+    Transient waiting states such as ``ContainerCreating`` are deliberately
+    excluded so a normal rollout is not flagged unhealthy.
+    """
+    for pod in pods:
+        if not isinstance(pod, dict):
+            continue
+        root_cause = optional_string(pod.get("root_cause"))
+        if root_cause in _POD_FAULT_CAUSES:
+            return root_cause
+    return None
 
 
 def pod_related_root_cause(pods: list[JsonValue]) -> str | None:

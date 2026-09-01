@@ -481,6 +481,99 @@ async def test_kubectl_backend_includes_workload_pod_summaries_from_selector() -
 
 @pytest.mark.asyncio
 @pytest.mark.contract
+async def test_kubectl_backend_flags_pod_fault_despite_sufficient_capacity() -> None:
+    runner = RecordingKubectlRunner(
+        {
+            (
+                "get",
+                "deployment",
+                "api",
+                "--namespace",
+                "prod",
+                "-o",
+                "json",
+            ): {
+                "metadata": {"name": "api", "resourceVersion": "rv-1"},
+                "spec": {
+                    "replicas": 1,
+                    "selector": {"matchLabels": {"app": "api"}},
+                },
+                "status": {"readyReplicas": 1, "availableReplicas": 1},
+            },
+            (
+                "get",
+                "pods",
+                "--namespace",
+                "prod",
+                "-l",
+                "app=api",
+                "-o",
+                "json",
+            ): {"items": [_crash_loop_pod()]},
+        }
+    )
+    backend = KubectlBackend(runner=runner)
+
+    result = await backend.inspect(
+        "inspect_workload",
+        immutable_json({"name": "deployment/api", "namespace": "prod"}),
+    )
+
+    # Capacity reads satisfied (ready 1/1) but the workload's pod is stuck in
+    # CrashLoopBackOff, which must still be reported unhealthy so the agent
+    # diagnoses it instead of declaring success.
+    assert result["healthy"] is False
+    assert result["root_cause"] == "crash_loop_back_off"
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_kubectl_backend_tolerates_container_creating_pods() -> None:
+    runner = RecordingKubectlRunner(
+        {
+            (
+                "get",
+                "deployment",
+                "api",
+                "--namespace",
+                "prod",
+                "-o",
+                "json",
+            ): {
+                "metadata": {"name": "api", "resourceVersion": "rv-1"},
+                "spec": {
+                    "replicas": 1,
+                    "selector": {"matchLabels": {"app": "api"}},
+                },
+                "status": {"readyReplicas": 1, "availableReplicas": 1},
+            },
+            (
+                "get",
+                "pods",
+                "--namespace",
+                "prod",
+                "-l",
+                "app=api",
+                "-o",
+                "json",
+            ): {"items": [_container_creating_pod()]},
+        }
+    )
+    backend = KubectlBackend(runner=runner)
+
+    result = await backend.inspect(
+        "inspect_workload",
+        immutable_json({"name": "deployment/api", "namespace": "prod"}),
+    )
+
+    # ContainerCreating is a normal rollout state, not a pod fault: the
+    # workload stays healthy while the new pod finishes starting.
+    assert result["healthy"] is True
+    assert "root_cause" not in result
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
 async def test_kubectl_backend_inspects_pod_container_diagnostics() -> None:
     runner = RecordingKubectlRunner(
         {
@@ -1013,6 +1106,27 @@ def _event(reason: str, event_type: str) -> dict[str, JsonValue]:
         "count": 1,
         "lastTimestamp": "2026-01-01T00:00:00Z",
         "involvedObject": {"kind": "Deployment", "name": "api"},
+    }
+
+
+def _container_creating_pod() -> dict[str, JsonValue]:
+    return {
+        "metadata": {
+            "name": "api-456",
+            "namespace": "prod",
+            "resourceVersion": "rv-pod-new",
+        },
+        "status": {
+            "phase": "Pending",
+            "containerStatuses": [
+                {
+                    "name": "api",
+                    "ready": False,
+                    "restartCount": 0,
+                    "state": {"waiting": {"reason": "ContainerCreating"}},
+                }
+            ],
+        },
     }
 
 

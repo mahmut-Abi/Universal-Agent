@@ -222,12 +222,22 @@ class KubernetesRemediationDecisionAdapter:
         pods = observation.data.get("pods")
         if not isinstance(pods, list):
             return None
+        first_name: str | None = None
         for item in pods:
-            if isinstance(item, dict):
-                name = item.get("name")
-                if isinstance(name, str) and name:
-                    return name
-        return None
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            if not (isinstance(name, str) and name):
+                continue
+            if first_name is None:
+                first_name = name
+            # Prefer the diagnosable pod: the summary that already carries a
+            # root cause (e.g. ImagePullBackOff) is the actionable target, so
+            # diagnostics do not land on a healthy sibling pod.
+            root_cause = item.get("root_cause")
+            if isinstance(root_cause, str) and root_cause:
+                return name
+        return first_name
 
     def model_usage(self) -> ModelUsage | None:
         return None
