@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
 from types import MappingProxyType
 
@@ -333,3 +334,30 @@ async def test_chat_without_actions_shows_hint() -> None:
         await pilot.pause()
 
         assert app._hint == "chat requires an embedded service or --api-url"
+
+
+@pytest.mark.asyncio
+async def test_event_watcher_triggers_snapshot_refresh() -> None:
+    snapshot = _two_session_snapshot()
+    provider, calls = fake_provider(snapshot)
+    event_calls: list[SessionId] = []
+
+    async def watcher(session_id: SessionId) -> AsyncIterator[object]:
+        event_calls.append(session_id)
+        yield {"event_id": "ev-1"}
+        await asyncio.sleep(3600)
+
+    app = RuntimeTuiApp(
+        snapshot_provider=provider,
+        session_id=SessionId("s-1"),
+        event_watcher=watcher,
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        await pilot.pause()
+
+        assert event_calls == [SessionId("s-1")]
+        # Initial refresh plus at least one event-driven refresh.
+        assert len(calls) >= 2

@@ -15,7 +15,7 @@ provider (embedded) or the agentd HTTP client (remote).
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime  # noqa: F401  (re-exported typing aid for tests)
 from types import MappingProxyType  # noqa: F401
@@ -36,6 +36,7 @@ from universal_agent.service import RuntimeService
 from universal_agent.terminal.tui import TuiSnapshot, build_tui_snapshot
 
 SnapshotProvider = Callable[[SessionId | None], Awaitable[TuiSnapshot]]
+type TuiEventWatcher = Callable[[SessionId], AsyncIterator[object]]
 
 
 @dataclass(frozen=True)
@@ -192,6 +193,7 @@ class RuntimeTuiApp(App[None]):
         refresh_seconds: float = 2.0,
         snapshot_provider: SnapshotProvider | None = None,
         actions: TuiActions | None = None,
+        event_watcher: TuiEventWatcher | None = None,
     ) -> None:
         super().__init__()
         self._service = service
@@ -204,6 +206,8 @@ class RuntimeTuiApp(App[None]):
         self._hint: str | None = None
         self._restoring = False
         self._refresh_task: asyncio.Task[None] | None = None
+        self._event_watcher = event_watcher
+        self._event_task: asyncio.Task[None] | None = None
         self._actions = actions
         self._table: DataTable[Any] = DataTable(id="sessions-table")
         self._detail = Static("", id="detail")
@@ -223,6 +227,27 @@ class RuntimeTuiApp(App[None]):
         self._table.add_columns("session", "status", "goal")
         self.set_interval(self._refresh_seconds, self.action_refresh)
         self.call_after_refresh(self.action_refresh)
+        if self._event_watcher is not None and self._session_id is not None:
+            self._event_task = asyncio.create_task(self._consume_events())
+
+    def on_unmount(self) -> None:
+        if self._event_task is not None and not self._event_task.done():
+            self._event_task.cancel()
+
+    async def _consume_events(self) -> None:
+        watcher = self._event_watcher
+        session_id = self._session_id
+        if watcher is None or session_id is None:
+            return
+        try:
+            async for _event in watcher(session_id):
+                self.action_refresh()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Event streaming is best-effort; polling refresh remains the
+            # safety net when the stream is unavailable or fails mid-flight.
+            self._hint = "event stream unavailable; polling refresh continues"
 
     def action_refresh(self) -> None:
         """Spawn an exclusive snapshot refresh, cancelling any in-flight one."""

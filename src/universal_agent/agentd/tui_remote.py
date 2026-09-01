@@ -13,7 +13,7 @@ strings, ids as plain strings.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from types import MappingProxyType
 
@@ -59,7 +59,7 @@ from universal_agent.service import (
     WorldRelationView,
 )
 from universal_agent.terminal.tui import TuiSnapshot
-from universal_agent.terminal.tui_app import TuiActions
+from universal_agent.terminal.tui_app import TuiActions, TuiEventWatcher
 
 SnapshotProvider = Callable[[SessionId | None], Awaitable[TuiSnapshot]]
 
@@ -426,6 +426,20 @@ def agentd_tui_actions(client: AgentdClient) -> TuiActions:
         )
 
     return TuiActions(pause=pause, resume=resume, cancel=cancel, chat=chat)
+
+
+def agentd_event_watcher(client: AgentdClient) -> TuiEventWatcher:
+    """Return a TUI event watcher backed by agentd's SSE event stream.
+
+    Each delivered runtime event is yielded as a parsed JSON mapping; the TUI
+    uses any delivery as a refresh trigger.
+    """
+
+    async def watcher(session_id: SessionId) -> AsyncIterator[object]:
+        async for event in client.stream_events(session_id):
+            yield event
+
+    return watcher
 
 
 def agentd_snapshot_provider(

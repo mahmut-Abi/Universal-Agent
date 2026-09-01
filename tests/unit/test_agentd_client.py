@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from universal_agent.agentd import AgentdClient, AgentdClientError
-from universal_agent.core import JsonValue, immutable_json
+from universal_agent.core import JsonValue, SessionId, immutable_json
 
 
 @pytest.mark.asyncio
@@ -142,3 +142,63 @@ def json_loads(content: bytes) -> object:
     import json
 
     return json.loads(content.decode("utf-8"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_agentd_client_stream_events_parses_sse_frames() -> None:
+    sse_body = (
+        "id: ev-1\n"
+        "event: ActionCompleted\n"
+        'data: {"event_id": "ev-1"}\n'
+        "\n"
+        ": heartbeat\n"
+        "\n"
+        "event: Broken\n"
+        "data: not-json\n"
+        "\n"
+        'data: {"event_id": "ev-2"}\n'
+        "\n"
+    )
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            content=sse_body.encode("utf-8"),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    agentd = AgentdClient("http://agentd.example.test", client=client)
+    try:
+        events = [event async for event in agentd.stream_events(SessionId("s-1"))]
+    finally:
+        await client.aclose()
+
+    assert events == [{"event_id": "ev-1"}, {"event_id": "ev-2"}]
+    assert requests[0].url.path == "/v1/sessions/s-1/events/stream"
+    assert requests[0].headers["accept"] == "text/event-stream"
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_agentd_client_stream_events_raises_on_http_error() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            404,
+            json={"error": {"code": "not_found", "message": "unknown session"}},
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    agentd = AgentdClient("http://agentd.example.test", client=client)
+    try:
+        with pytest.raises(AgentdClientError) as exc_info:
+            async for _event in agentd.stream_events(SessionId("s-missing")):
+                pass
+    finally:
+        await client.aclose()
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.code == "not_found"

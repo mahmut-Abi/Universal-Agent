@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Any, cast
@@ -12,6 +12,7 @@ from universal_agent.core import (
     JsonCodecError,
     JsonMapping,
     JsonValue,
+    SessionId,
     dumps_json,
     immutable_json,
     loads_json,
@@ -120,6 +121,50 @@ class AgentdClient:
             response.text,
             response.headers.get("content-type"),
         )
+
+    async def stream_events(
+        self,
+        session_id: SessionId,
+        *,
+        after_event_id: str | None = None,
+    ) -> AsyncIterator[JsonMapping]:
+        """Yield parsed SSE event bodies from a session's runtime event stream.
+
+        ``id:``/``event:`` lines and heartbeat comments are ignored; malformed
+        data frames are skipped so one bad frame cannot kill the watcher.
+        """
+        query: dict[str, object] = {}
+        if after_event_id is not None:
+            query["after_event_id"] = after_event_id
+        headers = self._headers(False)
+        headers["Accept"] = "text/event-stream"
+        path = "/v1/sessions/" + quote_path_segment(session_id) + "/events/stream"
+        try:
+            async with self._client.stream(
+                "GET",
+                _request_url(self._base_url, path, query),
+                headers=headers,
+                timeout=self._timeout_seconds,
+            ) as response:
+                if response.status_code >= 400:
+                    await response.aread()
+                    _raise_http_error(response)
+                buffer: list[str] = []
+                async for line in response.aiter_lines():
+                    if line.startswith("data:"):
+                        buffer.append(line[len("data:") :].lstrip())
+                        continue
+                    if line == "" and buffer:
+                        payload_text = "\n".join(buffer)
+                        buffer = []
+                        try:
+                            parsed = loads_json(payload_text)
+                        except JsonCodecError:
+                            continue
+                        if isinstance(parsed, dict):
+                            yield parsed
+        except httpx.RequestError as exc:
+            raise AgentdClientError(f"agentd event stream failed: {exc}") from exc
 
     async def _request(
         self,
