@@ -147,6 +147,19 @@ real deployment environment, credentials, or production infrastructure.
   consolidating repetitive view/codec/projection code without changing runtime
   contracts.
 
+## Toolchain Follow-ups
+
+- [ ] basedpyright (standard mode) reports ~12 pre-existing strictness gaps that
+  mypy (the CI type gate) accepts: 5x first-element access on `tuple[X, ...]`
+  guarded only at runtime (domain manager, package registry, ecosystem index,
+  evaluation dataset), 2x `manifest` class-attribute override of a
+  `BaseDomainRuntime` property (the domain SDK pattern itself), 1x int/str key
+  in `core/arguments.py`, 1x transport union narrowing in
+  `model/openai_adapters.py`, plus example/test cases. Fix in a dedicated
+  typing pass; basedpyright is not currently a CI gate.
+- [x] Pin ruff to an exact version in both dependency declarations so CI and
+  local lint/format never drift between rule generations again.
+
 ## Current Blockers
 
 - Live Kubernetes completion requires a real cluster, scoped kube credentials,
