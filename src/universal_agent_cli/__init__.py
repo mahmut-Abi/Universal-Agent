@@ -45,6 +45,7 @@ from universal_agent.ecosystem import (
     EcosystemRegistryStoreNotFoundError,
 )
 from universal_agent.evaluation.dataset import EvaluationDatasetNotFoundError
+from universal_agent.evaluation.dispatch import DispatchExit
 from universal_agent.host.runtime import RuntimeHost, build_configured_model_adapter
 from universal_agent.memory import MemoryKind, MemoryNotFoundError
 from universal_agent.profile import ProfileConfig, ProfileConfigNotFoundError
@@ -165,6 +166,8 @@ async def run_cli(
         _write_error(err, message, str(exc))
         return 1 if exc.status_code == 404 else 2
     except CliExit as exc:
+        return exc.status
+    except DispatchExit as exc:
         return exc.status
     except (ValueError, DistributedLockConflictError) as exc:
         _write_error(err, "bad_request", str(exc))

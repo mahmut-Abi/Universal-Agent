@@ -7,6 +7,12 @@ from universal_agent.agentd._routes_distributed import (
     _DISTRIBUTED_ROUTE_DEFINITIONS,
     DistributedRouteHandlers,
 )
+from universal_agent.agentd._routes_eval import (
+    _ECOSYSTEM_ROUTE_DEFINITIONS,
+    _EVAL_ROUTE_DEFINITIONS,
+    handle_ecosystem_route,
+    handle_eval_route,
+)
 from universal_agent.agentd._routes_kubernetes import handle_kubernetes_route
 from universal_agent.agentd._routes_session import (
     _SESSION_ROUTE_DEFINITIONS,
@@ -104,6 +110,8 @@ _KUBERNETES_ROUTE_DEFINITIONS = (
     AgentdRouteDefinition("kubernetes_check", "/v1/kubernetes/check", ("POST",)),
     AgentdRouteDefinition("kubernetes_run", "/v1/kubernetes/run", ("POST",)),
     AgentdRouteDefinition("kubernetes_evidence", "/v1/kubernetes/evidence", ("POST",)),
+    *_EVAL_ROUTE_DEFINITIONS,
+    *_ECOSYSTEM_ROUTE_DEFINITIONS,
 )
 
 _MEMORY_ROUTE_DEFINITIONS = (
@@ -173,6 +181,12 @@ class AgentdApp:
         )
         if kubernetes_response is not None:
             return kubernetes_response
+        eval_response = await handle_eval_route(self._service, request, method, path)
+        if eval_response is not None:
+            return eval_response
+        ecosystem_response = handle_ecosystem_route(self._service, request, method, path)
+        if ecosystem_response is not None:
+            return ecosystem_response
         console_response = await handle_console_route(
             self._service,
             self._evaluation_report_dir,

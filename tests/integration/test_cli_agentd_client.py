@@ -4,6 +4,7 @@ import json
 from collections.abc import Generator
 from contextlib import contextmanager
 from io import StringIO
+from pathlib import Path
 from threading import Thread
 from typing import Any, cast
 
@@ -440,3 +441,99 @@ async def test_cli_api_url_runs_kubernetes_preflight_remotely() -> None:
     # preflight inspections run through the route's own backend builder, not
     # the service's goal-execution backend.
     assert backend.inspect_calls == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_cli_api_url_runs_eval_datasets_remotely(tmp_path: Path) -> None:
+
+    dataset_root = tmp_path / "datasets" / "kubernetes"
+    suite_path = dataset_root / "suites" / "healthy.json"
+    suite_path.parent.mkdir(parents=True, exist_ok=True)
+    suite_path.write_text(
+        json.dumps(
+            {
+                "name": "remote eval suite",
+                "scenarios": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (dataset_root / "dataset.json").write_text(
+        json.dumps(
+            {
+                "apiVersion": "agent.nantian.dev/v1alpha1",
+                "kind": "EvaluationDataset",
+                "metadata": {
+                    "name": "remote-dataset",
+                    "version": "1.0.0",
+                    "description": "Remote evaluation dataset",
+                },
+                "suites": [{"name": "healthy", "path": "suites/healthy.json", "tags": ["smoke"]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    app, _ = build_app([])
+    output = StringIO()
+
+    with running_server(app) as base_url:
+        status = await run_cli(
+            [
+                "--api-url",
+                base_url,
+                "eval",
+                "datasets",
+                "--dataset-dir",
+                str(tmp_path / "datasets"),
+            ],
+            stdout=output,
+        )
+
+    payload = read_json(output)
+    assert status == 0
+    datasets = array_value(payload["datasets"])
+    assert datasets[0]["name"] == "remote-dataset"
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_cli_api_url_runs_ecosystem_catalog_remotely(tmp_path: Path) -> None:
+    app, _ = build_app([])
+    dataset_root = tmp_path / "datasets" / "kubernetes"
+    suite_path = dataset_root / "suites" / "healthy.json"
+    suite_path.parent.mkdir(parents=True, exist_ok=True)
+    suite_path.write_text(json.dumps({"name": "eco suite", "scenarios": []}), encoding="utf-8")
+    (dataset_root / "dataset.json").write_text(
+        json.dumps(
+            {
+                "apiVersion": "agent.nantian.dev/v1alpha1",
+                "kind": "EvaluationDataset",
+                "metadata": {
+                    "name": "eco-dataset",
+                    "version": "1.0.0",
+                    "description": "Ecosystem dataset",
+                },
+                "suites": [{"name": "healthy", "path": "suites/healthy.json", "tags": ["smoke"]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = StringIO()
+
+    with running_server(app) as base_url:
+        status = await run_cli(
+            [
+                "--api-url",
+                base_url,
+                "ecosystem",
+                "catalog",
+                "--dataset-dir",
+                str(tmp_path / "datasets"),
+            ],
+            stdout=output,
+        )
+
+    payload = read_json(output)
+    assert status == 0
+    assert payload["summary"]["evaluation_dataset_count"] == 1

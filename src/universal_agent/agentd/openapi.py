@@ -140,6 +140,48 @@ _ROUTE_METADATA: dict[tuple[str, str] | str, tuple[str, str, str]] = {
         "Run remediation and return the collected evidence for the session.",
         "Kubernetes",
     ),
+    "eval_list": ("Evaluation list", "List evaluation scenarios for a suite.", "Evaluation"),
+    "eval_run": (
+        "Evaluation run",
+        "Execute an evaluation suite with optional quality gates.",
+        "Evaluation",
+    ),
+    "eval_replay": (
+        "Evaluation replay",
+        "Replay scenarios against golden recordings.",
+        "Evaluation",
+    ),
+    "eval_recordings": ("Evaluation recordings", "List persisted replay recordings.", "Evaluation"),
+    "eval_compare": (
+        "Evaluation compare",
+        "Compare two evaluation reports for drift.",
+        "Evaluation",
+    ),
+    "eval_reports": ("Evaluation reports", "List persisted evaluation reports.", "Evaluation"),
+    "eval_datasets": ("Evaluation datasets", "List or verify evaluation datasets.", "Evaluation"),
+    "eval_dataset": ("Evaluation dataset", "Show one evaluation dataset manifest.", "Evaluation"),
+    "ecosystem_catalog": (
+        "Ecosystem catalog",
+        "Index local domain packages, datasets and profiles.",
+        "Ecosystem",
+    ),
+    "ecosystem_verify": (
+        "Ecosystem verify",
+        "Verify ecosystem catalog reference integrity.",
+        "Ecosystem",
+    ),
+    "ecosystem_export": ("Ecosystem export", "Export an ecosystem registry manifest.", "Ecosystem"),
+    "ecosystem_registry": (
+        "Ecosystem registry",
+        "Load or verify a registry manifest.",
+        "Ecosystem",
+    ),
+    "ecosystem_install": (
+        "Ecosystem install",
+        "Plan or install ecosystem registry items.",
+        "Ecosystem",
+    ),
+    "ecosystem_store": ("Ecosystem store", "Manage file-backed registry manifests.", "Ecosystem"),
     "memory": (
         "List memories",
         "Memory records: semantic, episodic, procedural and preference kinds.",
