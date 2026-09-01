@@ -52,8 +52,13 @@ from universal_agent.profile import ProfileConfig, ProfileConfigNotFoundError
 from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
 from universal_agent.state import StateNotFoundError
-from universal_agent_api import AgentdClientError
-from universal_agent_cli.agentd import command_supports_agentd, dispatch_agentd_cli
+from universal_agent_api import AgentdClient, AgentdClientError
+from universal_agent_cli.agentd import (
+    _agentd_api_token,
+    command_supports_agentd,
+    dispatch_agentd_cli,
+    dispatch_agentd_commands,
+)
 from universal_agent_cli.catalog_commands import _dispatch_domain_packages, _dispatch_profile
 from universal_agent_cli.config import validate_profile_config_file
 from universal_agent_cli.distributed import _dispatch_distributed
@@ -140,8 +145,11 @@ async def run_cli(
                 probe_only=is_kubernetes_probe_service_command(args),
             )
             try:
-                args.api_url = embedded.base_url
-                await dispatch_agentd_cli(args, out)
+                async with AgentdClient(
+                    embedded.base_url,
+                    bearer_token=_agentd_api_token(args),
+                ) as embedded_client:
+                    await dispatch_agentd_commands(args, out, embedded_client)
             finally:
                 embedded.shutdown()
             return 0

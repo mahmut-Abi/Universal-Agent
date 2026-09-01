@@ -75,66 +75,78 @@ async def _dispatch_remote_tui(args: argparse.Namespace, client: AgentdClient) -
 
 
 async def dispatch_agentd_cli(args: argparse.Namespace, out: TextIO) -> None:
+    """Production entry: connect to --api-url (or an embedded runtime) over HTTP."""
+
     async with AgentdClient(
         cast(str, args.api_url),
         bearer_token=_agentd_api_token(args),
     ) as client:
-        command = cast(str, args.command)
-        if command == "doctor":
-            payload = await client.get_json(_REMOTE_STATIC_JSON_ROUTES[command])
-            _write_json(out, payload)
-            if _doctor_should_fail(str(payload.get("status") or ""), cast(str, args.fail_on)):
-                raise CliExit(1)
+        await dispatch_agentd_commands(args, out, client)
+
+
+async def dispatch_agentd_commands(
+    args: argparse.Namespace,
+    out: TextIO,
+    client: AgentdClient,
+) -> None:
+    """Dispatch agentd-backed commands against an explicit client."""
+
+    command = cast(str, args.command)
+    if command == "doctor":
+        payload = await client.get_json(_REMOTE_STATIC_JSON_ROUTES[command])
+        _write_json(out, payload)
+        if _doctor_should_fail(str(payload.get("status") or ""), cast(str, args.fail_on)):
+            raise CliExit(1)
+        return
+    if command == "tui":
+        await _dispatch_remote_tui(args, client)
+        return
+    if command == "kubernetes":
+        await _dispatch_remote_kubernetes(args, out, client)
+        return
+    if command == "eval":
+        await _dispatch_remote_eval(args, out, client)
+        return
+    if command == "ecosystem":
+        await _dispatch_remote_ecosystem(args, out, client)
+        return
+    if command in _REMOTE_STATIC_JSON_ROUTES:
+        if command == "audit" and cast(bool, args.integrity):
+            _write_json(out, await client.get_json("/v1/audit/integrity"))
             return
-        if command == "tui":
-            await _dispatch_remote_tui(args, client)
-            return
-        if command == "kubernetes":
-            await _dispatch_remote_kubernetes(args, out, client)
-            return
-        if command == "eval":
-            await _dispatch_remote_eval(args, out, client)
-            return
-        if command == "ecosystem":
-            await _dispatch_remote_ecosystem(args, out, client)
-            return
-        if command in _REMOTE_STATIC_JSON_ROUTES:
-            if command == "audit" and cast(bool, args.integrity):
-                _write_json(out, await client.get_json("/v1/audit/integrity"))
-                return
-            _write_json(out, await client.get_json(_REMOTE_STATIC_JSON_ROUTES[command]))
-            return
-        if command == "metrics":
-            await _dispatch_remote_metrics(args, out, client)
-            return
-        if command == "traces":
-            await _dispatch_remote_traces(args, out, client)
-            return
-        if command == "config":
-            await _dispatch_remote_config(args, out, client)
-            return
-        if command == "repair":
-            await _dispatch_remote_repair(args, out, client)
-            return
-        if command == "distributed":
-            await _dispatch_remote_distributed(args, out, client)
-            return
-        if command == "run":
-            await _dispatch_remote_run(args, out, client)
-            return
-        if command in _REMOTE_LIST_ROUTES:
-            await _dispatch_remote_list_command(args, out, client, command)
-            return
-        if command == "profile":
-            await _dispatch_remote_profile(args, out, client)
-            return
-        if command == "domain-packages":
-            await _dispatch_remote_domain_packages(args, out, client)
-            return
-        if command == "session":
-            await _dispatch_remote_session(args, out, client)
-            return
-        raise ValueError(f"command does not support --api-url: {command}")
+        _write_json(out, await client.get_json(_REMOTE_STATIC_JSON_ROUTES[command]))
+        return
+    if command == "metrics":
+        await _dispatch_remote_metrics(args, out, client)
+        return
+    if command == "traces":
+        await _dispatch_remote_traces(args, out, client)
+        return
+    if command == "config":
+        await _dispatch_remote_config(args, out, client)
+        return
+    if command == "repair":
+        await _dispatch_remote_repair(args, out, client)
+        return
+    if command == "distributed":
+        await _dispatch_remote_distributed(args, out, client)
+        return
+    if command == "run":
+        await _dispatch_remote_run(args, out, client)
+        return
+    if command in _REMOTE_LIST_ROUTES:
+        await _dispatch_remote_list_command(args, out, client, command)
+        return
+    if command == "profile":
+        await _dispatch_remote_profile(args, out, client)
+        return
+    if command == "domain-packages":
+        await _dispatch_remote_domain_packages(args, out, client)
+        return
+    if command == "session":
+        await _dispatch_remote_session(args, out, client)
+        return
+    raise ValueError(f"command does not support --api-url: {command}")
 
 
 async def _dispatch_remote_kubernetes(
