@@ -1715,9 +1715,12 @@ async def test_cli_kubernetes_preflight_runs_read_only_checks() -> None:
 @pytest.mark.asyncio
 @pytest.mark.contract
 async def test_cli_kubernetes_preflight_can_skip_cluster_inspection() -> None:
+    service, _ = build_cli_service([])
     output = StringIO()
 
-    status = await run_cli(["kubernetes", "preflight", "--skip-cluster"], stdout=output)
+    status = await run_cli(
+        ["kubernetes", "preflight", "--skip-cluster"], service=service, stdout=output
+    )
     payload = read_json(output)
     checks = {item["name"]: item for item in payload["checks"]}
 
@@ -1819,6 +1822,7 @@ async def test_cli_kubernetes_model_probe_rejects_out_of_scope_workload(
             "--namespace",
             "prod",
         ],
+        service=build_cli_service([])[0],
         stdout=probe_output,
     )
     payload = read_json(probe_output)
@@ -1966,6 +1970,7 @@ async def test_cli_kubernetes_check_stops_before_preflight_when_model_probe_fail
             "--namespace",
             "prod",
         ],
+        service=build_cli_service([])[0],
         stdout=check_output,
     )
     payload = read_json(check_output)
@@ -2300,6 +2305,7 @@ async def test_cli_kubernetes_run_stops_before_preflight_when_model_probe_fails(
             "--namespace",
             "prod",
         ],
+        service=build_cli_service([])[0],
         stdout=run_output,
     )
     payload = read_json(run_output)

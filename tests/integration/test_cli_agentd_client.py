@@ -414,3 +414,29 @@ def array_value(value: JsonValue) -> list[dict[str, Any]]:
     for item in value:
         assert isinstance(item, dict)
     return cast(list[dict[str, Any]], value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_cli_api_url_runs_kubernetes_preflight_remotely() -> None:
+    app, backend = build_app([])
+
+    with running_server(app) as base_url:
+        status = await run_cli(
+            [
+                "--api-url",
+                base_url,
+                "kubernetes",
+                "preflight",
+                "--workload",
+                "api",
+                "--namespace",
+                "prod",
+            ],
+            stdout=StringIO(),
+        )
+
+    assert status == 0
+    # preflight inspections run through the route's own backend builder, not
+    # the service's goal-execution backend.
+    assert backend.inspect_calls == 0

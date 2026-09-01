@@ -89,6 +89,9 @@ async def dispatch_agentd_cli(args: argparse.Namespace, out: TextIO) -> None:
         if command == "tui":
             await _dispatch_remote_tui(args, client)
             return
+        if command == "kubernetes":
+            await _dispatch_remote_kubernetes(args, out, client)
+            return
         if command in _REMOTE_STATIC_JSON_ROUTES:
             if command == "audit" and cast(bool, args.integrity):
                 _write_json(out, await client.get_json("/v1/audit/integrity"))
@@ -128,13 +131,53 @@ async def dispatch_agentd_cli(args: argparse.Namespace, out: TextIO) -> None:
         raise ValueError(f"command does not support --api-url: {command}")
 
 
+async def _dispatch_remote_kubernetes(
+    args: argparse.Namespace,
+    out: TextIO,
+    client: AgentdClient,
+) -> None:
+    kubernetes_command = cast(str, args.kubernetes_command)
+    operation = {
+        "preflight": "preflight",
+        "model-probe": "model-probe",
+        "check": "check",
+        "run": "run",
+        "evidence": "evidence",
+    }[kubernetes_command]
+    body: dict[str, JsonValue] = {
+        "workload": cast(str, args.workload),
+    }
+    # preflight has no profile positional; the operator commands do.
+    profile = cast(str | None, getattr(args, "profile", None))
+    if profile is not None:
+        body["profile"] = profile
+    # The profile config path is resolved on the agentd host (same machine for
+    # the embedded runtime), so model/secret semantics match the local path.
+    profile_config = cast(str | None, getattr(args, "profile_config", None))
+    if profile_config is not None:
+        body["profile_config"] = profile_config
+    namespace = cast(str | None, args.namespace)
+    if namespace is not None:
+        body["namespace"] = namespace
+    if kubernetes_command in {"preflight", "check", "run"}:
+        body["skip_preflight"] = bool(getattr(args, "skip_preflight", False))
+    if kubernetes_command in {"check", "run"}:
+        body["skip_model_probe"] = bool(getattr(args, "skip_model_probe", False))
+    if kubernetes_command == "preflight":
+        body["skip_cluster"] = bool(getattr(args, "skip_cluster", False))
+
+    payload = await client.post_json(f"/v1/kubernetes/{operation}", body=body)
+    _write_json(out, payload)
+    if str(payload.get("status")) == "failed":
+        raise CliExit(1)
+
+
 def command_supports_agentd(args: argparse.Namespace) -> bool:
     command = cast(str, args.command)
     if command in {
         "init",
         "serve",
         "version",
-        "kubernetes",
         "ecosystem",
         "eval",
     }:

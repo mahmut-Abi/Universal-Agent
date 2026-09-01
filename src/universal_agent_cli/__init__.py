@@ -134,7 +134,10 @@ async def run_cli(
             # in an isolated subprocess and talk to it over its HTTP API.
             from universal_agent_cli.embedded import launch_embedded_runtime
 
-            embedded = launch_embedded_runtime(cast(str | None, args.profile_config))
+            embedded = launch_embedded_runtime(
+                cast(str | None, args.profile_config),
+                probe_only=is_kubernetes_probe_service_command(args),
+            )
             try:
                 args.api_url = embedded.base_url
                 await dispatch_agentd_cli(args, out)

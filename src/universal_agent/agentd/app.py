@@ -7,6 +7,7 @@ from universal_agent.agentd._routes_distributed import (
     _DISTRIBUTED_ROUTE_DEFINITIONS,
     DistributedRouteHandlers,
 )
+from universal_agent.agentd._routes_kubernetes import handle_kubernetes_route
 from universal_agent.agentd._routes_session import (
     _SESSION_ROUTE_DEFINITIONS,
     SessionRouteHandlers,
@@ -97,6 +98,14 @@ _DETAIL_GET_ROUTE_DEFINITIONS = (
 )
 _DETAIL_GET_ROUTES = AgentdRouteMatcher(_DETAIL_GET_ROUTE_DEFINITIONS)
 
+_KUBERNETES_ROUTE_DEFINITIONS = (
+    AgentdRouteDefinition("kubernetes_preflight", "/v1/kubernetes/preflight", ("POST",)),
+    AgentdRouteDefinition("kubernetes_model_probe", "/v1/kubernetes/model-probe", ("POST",)),
+    AgentdRouteDefinition("kubernetes_check", "/v1/kubernetes/check", ("POST",)),
+    AgentdRouteDefinition("kubernetes_run", "/v1/kubernetes/run", ("POST",)),
+    AgentdRouteDefinition("kubernetes_evidence", "/v1/kubernetes/evidence", ("POST",)),
+)
+
 _MEMORY_ROUTE_DEFINITIONS = (
     AgentdRouteDefinition("memory_create", "/v1/memory", ("POST",)),
     AgentdRouteDefinition(
@@ -110,6 +119,7 @@ _MEMORY_ROUTES = AgentdRouteMatcher(_MEMORY_ROUTE_DEFINITIONS)
 _OPENAPI_ROUTE_DEFINITIONS = (
     *_STATIC_GET_ROUTE_DEFINITIONS,
     *_DETAIL_GET_ROUTE_DEFINITIONS,
+    *_KUBERNETES_ROUTE_DEFINITIONS,
     *_MEMORY_ROUTE_DEFINITIONS,
     *_DISTRIBUTED_ROUTE_DEFINITIONS,
     *_SESSION_ROUTE_DEFINITIONS,
@@ -155,6 +165,14 @@ class AgentdApp:
         if static_response is not None:
             return static_response
 
+        kubernetes_response = await handle_kubernetes_route(
+            self._service,
+            request,
+            method,
+            path,
+        )
+        if kubernetes_response is not None:
+            return kubernetes_response
         console_response = await handle_console_route(
             self._service,
             self._evaluation_report_dir,

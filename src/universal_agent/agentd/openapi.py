@@ -115,6 +115,31 @@ _ROUTE_METADATA: dict[tuple[str, str] | str, tuple[str, str, str]] = {
         "Registered evaluators with completion semantics.",
         "Catalog",
     ),
+    "kubernetes_preflight": (
+        "Kubernetes preflight",
+        "Run the kubernetes preflight checks for a workload.",
+        "Kubernetes",
+    ),
+    "kubernetes_model_probe": (
+        "Kubernetes model probe",
+        "Probe the configured model's decision contract for a workload.",
+        "Kubernetes",
+    ),
+    "kubernetes_check": (
+        "Kubernetes check",
+        "Run model probe followed by preflight for a workload.",
+        "Kubernetes",
+    ),
+    "kubernetes_run": (
+        "Kubernetes remediation run",
+        "Run the full kubernetes remediation operator flow for a workload.",
+        "Kubernetes",
+    ),
+    "kubernetes_evidence": (
+        "Kubernetes evidence",
+        "Run remediation and return the collected evidence for the session.",
+        "Kubernetes",
+    ),
     "memory": (
         "List memories",
         "Memory records: semantic, episodic, procedural and preference kinds.",

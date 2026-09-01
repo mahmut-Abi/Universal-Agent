@@ -50,6 +50,7 @@ class EmbeddedRuntime:
 def launch_embedded_runtime(
     profile_config: str | None = None,
     *,
+    probe_only: bool = False,
     timeout_seconds: float = 20.0,
 ) -> EmbeddedRuntime:
     """Spawn the kernel's agentd server and wait for its bound port."""
@@ -70,6 +71,8 @@ def launch_embedded_runtime(
     ]
     if profile_config is not None:
         command.extend(("--profile-config", profile_config))
+    if probe_only:
+        command.append("--probe-only")
 
     process = subprocess.Popen(command)
     deadline = time.monotonic() + timeout_seconds

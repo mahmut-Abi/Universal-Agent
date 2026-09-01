@@ -36,6 +36,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--port-file",
         help="Write the bound port to this file so a launcher can discover it.",
     )
+    parser.add_argument(
+        "--probe-only",
+        action="store_true",
+        help="Build the service without requiring the configured model to connect "
+        "(for probe-style commands that never execute model calls).",
+    )
     parser.add_argument("--auth-token")
     parser.add_argument("--read-only-auth-token")
     parser.add_argument("--evaluation-report-dir")
@@ -71,7 +77,14 @@ def main(argv: list[str] | None = None) -> int:
     args = build_argument_parser().parse_args(argv)
     profile_config = args.profile_config
     if profile_config is not None:
-        service = _build_service_from_profile(profile_config)
+        if args.probe_only:
+            from universal_agent.domains.kubernetes.cli_runtime import (
+                build_configured_probe_service,
+            )
+
+            service = build_configured_probe_service(profile_config)
+        else:
+            service = _build_service_from_profile(profile_config)
     else:
         from universal_agent.domains.kubernetes.cli_runtime import (
             build_default_service,
