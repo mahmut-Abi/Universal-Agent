@@ -358,8 +358,6 @@ from universal_agent.service.sdk import (
     UniversalAgentRuntime,
 )
 from universal_agent.state import InMemoryStateStore, StateStore
-from universal_agent.terminal.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
-from universal_agent.terminal.tui import TuiSnapshot, build_tui_snapshot, render_tui_snapshot
 from universal_agent.tools import Tool
 from universal_agent.web import (
     WebConsoleSnapshot,
@@ -372,6 +370,8 @@ from universal_agent.web import (
     render_web_settings,
     render_web_world_model_explorer,
 )
+from universal_agent_tui.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
+from universal_agent_tui.tui import TuiSnapshot, build_tui_snapshot, render_tui_snapshot
 
 __all__ = [
     "AGENT_TASK_API_VERSION",

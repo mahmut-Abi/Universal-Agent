@@ -3,8 +3,6 @@ from __future__ import annotations
 import argparse
 from typing import TextIO, cast
 
-from universal_agent.cli.evaluation import _evaluation_dataset_body
-from universal_agent.cli.io import _write_json
 from universal_agent.domain import DomainPackage
 from universal_agent.ecosystem import (
     EcosystemCatalog,
@@ -24,6 +22,8 @@ from universal_agent.ecosystem import (
     write_ecosystem_registry_manifest,
 )
 from universal_agent.profile import ProfileCatalogEntry
+from universal_agent_cli.evaluation import _evaluation_dataset_body
+from universal_agent_cli.io import _write_json
 
 
 def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:

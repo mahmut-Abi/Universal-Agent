@@ -9,9 +9,9 @@ from typing import TextIO, cast
 from universal_agent.agentd.app import AgentdApp
 from universal_agent.agentd.http import AgentdAuthPolicy
 from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
-from universal_agent.cli.io import _write_json
 from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
+from universal_agent_cli.io import _write_json
 
 ServerRunner = Callable[[AgentdHttpServer], Awaitable[None] | None]
 

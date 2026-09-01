@@ -27,9 +27,9 @@ from universal_agent import (
     immutable_json,
 )
 from universal_agent.agentd import AgentdApp, AgentdAuthPolicy, AgentdHttpServer, AgentdServerConfig
-from universal_agent.cli import run_cli
 from universal_agent.core import JsonMapping, JsonValue
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent_cli import run_cli
 
 
 class RemoteCliBackend:

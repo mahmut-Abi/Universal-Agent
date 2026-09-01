@@ -36,7 +36,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agent = "universal_agent.cli:main"
+agent = "universal_agent_cli.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -51,7 +51,12 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/universal_agent"]
+packages = [
+  "src/universal_agent",
+  "src/universal_agent_api",
+  "src/universal_agent_cli",
+  "src/universal_agent_tui",
+]
 
 [tool.pytest.ini_options]
 addopts = "-q"

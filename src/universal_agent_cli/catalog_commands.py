@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import TextIO, cast
 
 from universal_agent.agentd.representations import domain_package_body, profile_body
-from universal_agent.cli.io import _parse_domain_identity, _write_json
 from universal_agent.core import immutable_json
 from universal_agent.domain import (
     DomainPackageCompatibility,
@@ -21,6 +20,7 @@ from universal_agent.profile import (
     load_profile_catalog,
 )
 from universal_agent.service import RuntimeService
+from universal_agent_cli.io import _parse_domain_identity, _write_json
 
 
 def _dispatch_profile(

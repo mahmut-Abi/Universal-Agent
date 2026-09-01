@@ -4,12 +4,6 @@ import argparse
 from pathlib import Path
 from typing import TextIO, cast
 
-from universal_agent.cli.io import (
-    CliExit,
-    _parse_domain_identity,
-    _write_json,
-    _write_text,
-)
 from universal_agent.core import (
     ErrorCode,
     ExecutionStatus,
@@ -68,6 +62,12 @@ from universal_agent.evaluation.scenario_config import (
     load_evaluation_suite_config,
 )
 from universal_agent.service import RuntimeService
+from universal_agent_cli.io import (
+    CliExit,
+    _parse_domain_identity,
+    _write_json,
+    _write_text,
+)
 
 
 async def _dispatch_eval(

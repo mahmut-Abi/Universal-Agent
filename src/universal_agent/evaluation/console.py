@@ -10,7 +10,6 @@ from universal_agent.evaluation.recording import (
     EvaluationScenarioRecording,
     FileEvaluationReportStore,
 )
-from universal_agent.terminal.render import render_terminal_lines
 from universal_agent.web.ui import (
     _hero_block,
     _HeroPill,
@@ -21,6 +20,7 @@ from universal_agent.web.ui import (
     _raw_table_cell,
     _table_section,
 )
+from universal_agent_tui.render import render_terminal_lines
 
 
 @dataclass(frozen=True, slots=True)

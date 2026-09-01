@@ -8,7 +8,6 @@ from types import MappingProxyType
 import httpx
 import pytest
 
-from universal_agent.agentd.client import AgentdClient
 from universal_agent.agentd.representations import (
     audit_records_body,
     cost_body,
@@ -26,22 +25,6 @@ from universal_agent.agentd.session_representations import (
     world_entity_body,
     world_fact_body,
     world_relation_body,
-)
-from universal_agent.agentd.tui_remote import (
-    _audit_record_from_body,
-    _event_from_body,
-    _evidence_from_body,
-    _world_entity_from_body,
-    _world_fact_from_body,
-    _world_relation_from_body,
-    agentd_snapshot_provider,
-    cost_from_body,
-    doctor_from_body,
-    health_from_body,
-    metrics_from_body,
-    ready_from_body,
-    session_summary_from_body,
-    session_view_from_body,
 )
 from universal_agent.core import (
     ActionId,
@@ -78,6 +61,23 @@ from universal_agent.service import (
     WorldEntityView,
     WorldFactView,
     WorldRelationView,
+)
+from universal_agent_api import AgentdClient
+from universal_agent_tui.tui_remote import (
+    _audit_record_from_body,
+    _event_from_body,
+    _evidence_from_body,
+    _world_entity_from_body,
+    _world_fact_from_body,
+    _world_relation_from_body,
+    agentd_snapshot_provider,
+    cost_from_body,
+    doctor_from_body,
+    health_from_body,
+    metrics_from_body,
+    ready_from_body,
+    session_summary_from_body,
+    session_view_from_body,
 )
 
 pytestmark = pytest.mark.contract

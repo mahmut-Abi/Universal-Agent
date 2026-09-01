@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from universal_agent.cli import LOCAL_PROFILE_NAME, run_cli
+from universal_agent_cli import LOCAL_PROFILE_NAME, run_cli
 
 
 def read_json(buffer: StringIO) -> dict[str, Any]:

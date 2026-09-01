@@ -57,7 +57,7 @@ from universal_agent.service import (
     WorldFactView,
     WorldRelationView,
 )
-from universal_agent.terminal.tui import TuiSnapshot, render_tui_snapshot
+from universal_agent_tui.tui import TuiSnapshot, render_tui_snapshot
 
 
 @pytest.mark.behavior

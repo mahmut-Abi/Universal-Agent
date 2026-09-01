@@ -90,3 +90,34 @@ implementation objects directly.
   default way to combine multiple domains inside one Agent.
 - Ecosystem registry install planning validates metadata and checksums; it does
   not import package entrypoints or install external dependencies.
+
+## Package Structure (client/server split)
+
+The repository is organized so client packages can be extracted to their own
+repository without dragging the runtime along. Clients talk to the runtime only
+over its HTTP API (JSON Runtime API + SSE event streams); gRPC was evaluated and
+deferred — the HTTP surface is battle-tested, documented through OpenAPI, needs
+no extra dependencies, and SSE already covers event push.
+
+```text
+src/
+├── universal_agent/           # Kernel + agentd HTTP server (server -> kernel only)
+├── universal_agent_api/       # Client SDK: AgentdClient, SSE streaming, types.
+│                              #   Zero kernel imports — enforced by tests.
+├── universal_agent_cli/       # CLI client (embedded mode still imports the kernel;
+│                              #   remote --api-url mode depends on the SDK only)
+├── universal_agent_tui/       # TUI client incl. the remote snapshot projection
+└── universal_agent/           # web console rendering is still kernel-side
+                               #   (server-rendered; pure-frontend rewrite pending)
+```
+
+Boundary rules, enforced by `tests/unit/test_package_boundaries.py`:
+
+- `universal_agent_api` must not import `universal_agent`.
+- `universal_agent` must not import client packages.
+
+Transition debt before the split is complete: CLI/TUI embedded mode still
+imports the kernel directly (the full CLI contract is far beyond what the HTTP
+API covers today); the web console is server-rendered inside the kernel package.
+The extraction plan is: move CLI local-mode dispatch behind a locally spawned
+agentd subprocess, then cut the client packages into their own repositories.

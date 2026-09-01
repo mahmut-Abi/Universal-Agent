@@ -16,13 +16,13 @@ from universal_agent.agentd.representations import (
     state_event_repair_body,
     trace_spans_body,
 )
-from universal_agent.cli.io import (
+from universal_agent.service import RuntimeService
+from universal_agent_cli.io import (
     CliExit,
     _doctor_should_fail,
     _write_json,
     _write_text,
 )
-from universal_agent.service import RuntimeService
 
 
 async def _dispatch_observability(

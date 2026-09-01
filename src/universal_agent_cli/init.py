@@ -4,11 +4,11 @@ import argparse
 from pathlib import Path
 from typing import TextIO, cast
 
-from universal_agent.cli.io import _parse_key_value_options, _write_json
 from universal_agent.core import write_json_file
 from universal_agent.domains.kubernetes.cli import (
     profile_domain_config as kubernetes_profile_domain_config,
 )
+from universal_agent_cli.io import _parse_key_value_options, _write_json
 
 
 def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:

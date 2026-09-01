@@ -6,7 +6,7 @@ from io import StringIO
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from universal_agent.cli import run_cli
+from universal_agent_cli import run_cli
 
 
 def read_json(buffer: StringIO) -> dict[str, Any]:

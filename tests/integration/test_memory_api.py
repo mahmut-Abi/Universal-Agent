@@ -10,7 +10,6 @@ from starlette.testclient import TestClient
 
 from universal_agent.agentd import AgentdApp
 from universal_agent.agentd.server import build_agentd_asgi_app
-from universal_agent.cli import run_cli
 from universal_agent.core import (
     Decision,
     DecisionType,
@@ -25,6 +24,7 @@ from universal_agent.profile import AgentProfile
 from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore
+from universal_agent_cli import run_cli
 
 
 class Backend:

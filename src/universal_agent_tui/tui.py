@@ -22,8 +22,8 @@ from universal_agent.service import (
     SessionExplorerView,
     ToolView,
 )
-from universal_agent.terminal.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
-from universal_agent.terminal.render import render_terminal_lines
+from universal_agent_tui.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
+from universal_agent_tui.render import render_terminal_lines
 
 TuiSnapshot = RuntimeConsoleSnapshot
 _TUI_SECTION_TITLES = frozenset(

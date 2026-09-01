@@ -20,16 +20,16 @@ from universal_agent.agentd.session_representations import (
     session_explorer_body,
     session_world_body,
 )
-from universal_agent.cli.io import (
-    _optional_bool,
-    _write_json,
-    _write_text,
-)
 from universal_agent.core import EventId, SessionId
 from universal_agent.core.config_validation import parse_bounded_float
 from universal_agent.core.polling import poll_async_result
 from universal_agent.runtime.api import RuntimeEventBatch
 from universal_agent.service import RuntimeService
+from universal_agent_cli.io import (
+    _optional_bool,
+    _write_json,
+    _write_text,
+)
 
 
 async def _dispatch_session(

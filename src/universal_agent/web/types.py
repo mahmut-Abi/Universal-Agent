@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from universal_agent.core import SessionId
 from universal_agent.service import RuntimeService
-from universal_agent.terminal.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
+from universal_agent_tui.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
 
 WebConsoleSnapshot = RuntimeConsoleSnapshot
 

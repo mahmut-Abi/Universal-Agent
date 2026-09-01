@@ -5,7 +5,7 @@ import json
 from io import StringIO
 from typing import Any
 
-from universal_agent.cli import LOCAL_PROFILE_NAME, build_default_service, run_cli
+from universal_agent_cli import LOCAL_PROFILE_NAME, build_default_service, run_cli
 
 
 def read_json(buffer: StringIO) -> dict[str, Any]:

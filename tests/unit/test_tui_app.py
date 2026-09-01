@@ -34,8 +34,8 @@ from universal_agent.service import (
     RuntimeConfigDomainView,
     RuntimeConfigView,
 )
-from universal_agent.terminal.tui import TuiSnapshot
-from universal_agent.terminal.tui_app import (
+from universal_agent_tui.tui import TuiSnapshot
+from universal_agent_tui.tui_app import (
     RuntimeTuiApp,
     TuiActions,
     TuiChatScreen,

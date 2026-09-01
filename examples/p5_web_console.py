@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 
 from universal_agent.agentd import AgentdApp, HttpRequest
-from universal_agent.cli import LOCAL_PROFILE_NAME, build_default_service
 from universal_agent.core import JsonMapping, JsonValue, immutable_json
+from universal_agent_cli import LOCAL_PROFILE_NAME, build_default_service
 
 
 def session_request_body() -> JsonMapping:

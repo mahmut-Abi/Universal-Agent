@@ -9,9 +9,9 @@ from typing import Any, cast
 
 import pytest
 
-from universal_agent.cli import run_cli
 from universal_agent.core import JsonMapping
 from universal_agent.domains.kubernetes import write_kubernetes_live_contract_artifact
+from universal_agent_cli import run_cli
 
 PROFILE_CONFIG_ENV = "UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE"
 PROFILE_NAME_ENV = "UNIVERSAL_AGENT_LIVE_KUBERNETES_PROFILE_NAME"

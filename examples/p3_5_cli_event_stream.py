@@ -19,9 +19,9 @@ from universal_agent import (
     Task,
     immutable_json,
 )
-from universal_agent.cli import run_cli
 from universal_agent.core import JsonMapping, SessionId
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent_cli import run_cli
 
 
 class FakeCliBackend:

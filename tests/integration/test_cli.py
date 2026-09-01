@@ -12,7 +12,7 @@ from xml.etree.ElementTree import fromstring
 
 import pytest
 
-import universal_agent.cli as cli_module
+import universal_agent_cli as cli_module
 from universal_agent import (
     AgentProfile,
     AgentRuntime,
@@ -44,8 +44,6 @@ from universal_agent import (
     scaffold_domain_package,
 )
 from universal_agent.agentd import AgentdHttpServer
-from universal_agent.cli import run_cli
-from universal_agent.cli import serve as cli_serve
 from universal_agent.core import DomainIdentity, JsonMapping, JsonValue, SessionId
 from universal_agent.domain import (
     DomainPackage,
@@ -61,6 +59,8 @@ from universal_agent.evaluation.recording import (
 )
 from universal_agent.operations import DoctorCheckView, DoctorReportView
 from universal_agent.security import EnvSecretProvider, SecretResolutionReport, resolve_secret_refs
+from universal_agent_cli import run_cli
+from universal_agent_cli import serve as cli_serve
 
 
 class CliBackend:

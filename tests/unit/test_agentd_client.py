@@ -5,8 +5,8 @@ from collections.abc import Mapping
 import httpx
 import pytest
 
-from universal_agent.agentd import AgentdClient, AgentdClientError
 from universal_agent.core import JsonValue, SessionId, immutable_json
+from universal_agent_api import AgentdClient, AgentdClientError
 
 
 @pytest.mark.asyncio

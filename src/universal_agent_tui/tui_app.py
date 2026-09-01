@@ -33,7 +33,7 @@ from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Ric
 from universal_agent.core import GoalStatus, JsonMapping, SessionId
 from universal_agent.runtime import SessionSummaryView, SessionView
 from universal_agent.service import RuntimeService
-from universal_agent.terminal.tui import TuiSnapshot, build_tui_snapshot
+from universal_agent_tui.tui import TuiSnapshot, build_tui_snapshot
 
 SnapshotProvider = Callable[[SessionId | None], Awaitable[TuiSnapshot]]
 type TuiEventWatcher = Callable[[SessionId], AsyncIterator[object]]
@@ -138,7 +138,7 @@ def session_detail_lines(
         )
     lines.append("")
     lines.append("Recent events")
-    from universal_agent.terminal.tui import _event_lines
+    from universal_agent_tui.tui import _event_lines
 
     event_lines = _event_lines(snapshot.events)
     lines.extend(event_lines[-_EVENT_TAIL:] if _EVENT_TAIL else event_lines)

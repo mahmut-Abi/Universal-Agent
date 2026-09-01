@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from universal_agent import Goal, SuccessCriterion, Task
-from universal_agent.cli import build_default_service
+from universal_agent_cli import build_default_service
 
 
 async def main() -> None:

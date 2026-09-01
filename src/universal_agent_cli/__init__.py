@@ -8,7 +8,6 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TextIO, cast
 
-from universal_agent.agentd.client import AgentdClientError
 from universal_agent.agentd.representations import (
     capability_body,
     config_body,
@@ -19,24 +18,6 @@ from universal_agent.agentd.representations import (
     runtime_run_body,
     tool_body,
 )
-from universal_agent.cli.agentd import command_supports_agentd, dispatch_agentd_cli
-from universal_agent.cli.catalog_commands import _dispatch_domain_packages, _dispatch_profile
-from universal_agent.cli.config import validate_profile_config_file
-from universal_agent.cli.distributed import _dispatch_distributed
-from universal_agent.cli.ecosystem import _dispatch_ecosystem
-from universal_agent.cli.evaluation import _dispatch_eval
-from universal_agent.cli.init import _dispatch_init
-from universal_agent.cli.io import (
-    CliExit,
-    _success_criteria,
-    _write_error,
-    _write_json,
-    _write_text,
-)
-from universal_agent.cli.observability import _dispatch_observability
-from universal_agent.cli.parser import build_parser
-from universal_agent.cli.serve import ServerRunner, _dispatch_serve
-from universal_agent.cli.session import _dispatch_session
 from universal_agent.core import Goal, SessionId, Task
 from universal_agent.distributed import (
     DistributedLockConflictError,
@@ -70,8 +51,27 @@ from universal_agent.profile import ProfileConfig, ProfileConfigNotFoundError
 from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
 from universal_agent.state import StateNotFoundError
-from universal_agent.terminal.tui import build_tui_snapshot, render_tui_snapshot
-from universal_agent.terminal.tui_app import RuntimeTuiApp, service_tui_actions
+from universal_agent_api import AgentdClientError
+from universal_agent_cli.agentd import command_supports_agentd, dispatch_agentd_cli
+from universal_agent_cli.catalog_commands import _dispatch_domain_packages, _dispatch_profile
+from universal_agent_cli.config import validate_profile_config_file
+from universal_agent_cli.distributed import _dispatch_distributed
+from universal_agent_cli.ecosystem import _dispatch_ecosystem
+from universal_agent_cli.evaluation import _dispatch_eval
+from universal_agent_cli.init import _dispatch_init
+from universal_agent_cli.io import (
+    CliExit,
+    _success_criteria,
+    _write_error,
+    _write_json,
+    _write_text,
+)
+from universal_agent_cli.observability import _dispatch_observability
+from universal_agent_cli.parser import build_parser
+from universal_agent_cli.serve import ServerRunner, _dispatch_serve
+from universal_agent_cli.session import _dispatch_session
+from universal_agent_tui.tui import build_tui_snapshot, render_tui_snapshot
+from universal_agent_tui.tui_app import RuntimeTuiApp, service_tui_actions
 
 
 def build_default_service() -> RuntimeService:

@@ -17,7 +17,6 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from types import MappingProxyType
 
-from universal_agent.agentd.client import AgentdClient, quote_path_segment
 from universal_agent.core import (
     ActionId,
     ErrorCode,
@@ -58,8 +57,9 @@ from universal_agent.service import (
     WorldFactView,
     WorldRelationView,
 )
-from universal_agent.terminal.tui import TuiSnapshot
-from universal_agent.terminal.tui_app import TuiActions, TuiEventWatcher
+from universal_agent_api import AgentdClient, quote_path_segment
+from universal_agent_tui.tui import TuiSnapshot
+from universal_agent_tui.tui_app import TuiActions, TuiEventWatcher
 
 SnapshotProvider = Callable[[SessionId | None], Awaitable[TuiSnapshot]]
 

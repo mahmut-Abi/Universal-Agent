@@ -5,7 +5,7 @@ from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from universal_agent.cli import LOCAL_PROFILE_NAME, run_cli
+from universal_agent_cli import LOCAL_PROFILE_NAME, run_cli
 
 
 async def main() -> None:

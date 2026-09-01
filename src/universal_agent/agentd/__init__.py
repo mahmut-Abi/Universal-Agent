@@ -1,10 +1,4 @@
 from universal_agent.agentd.app import AgentdApp
-from universal_agent.agentd.client import (
-    AgentdClient,
-    AgentdClientError,
-    AgentdClientResponse,
-    AgentdTextResponse,
-)
 from universal_agent.agentd.http import (
     AgentdAuthPolicy,
     GoalSubmission,
@@ -20,12 +14,8 @@ from universal_agent.agentd.server import (
 __all__ = [
     "AgentdApp",
     "AgentdAuthPolicy",
-    "AgentdClient",
-    "AgentdClientError",
-    "AgentdClientResponse",
     "AgentdHttpServer",
     "AgentdServerConfig",
-    "AgentdTextResponse",
     "GoalSubmission",
     "HttpRequest",
     "HttpResponse",

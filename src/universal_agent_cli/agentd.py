@@ -4,20 +4,6 @@ import argparse
 from collections.abc import Mapping
 from typing import TextIO, cast
 
-from universal_agent.agentd.client import AgentdClient, quote_path_segment
-from universal_agent.agentd.tui_remote import (
-    agentd_event_watcher,
-    agentd_snapshot_provider,
-    agentd_tui_actions,
-)
-from universal_agent.cli.io import (
-    CliExit,
-    _doctor_should_fail,
-    _optional_bool,
-    _success_criteria,
-    _write_json,
-    _write_text,
-)
 from universal_agent.core import (
     ActionId,
     EventId,
@@ -30,6 +16,20 @@ from universal_agent.core import (
 from universal_agent.core.config_validation import parse_bounded_float
 from universal_agent.core.polling import poll_async_result
 from universal_agent.security import EnvSecretProvider
+from universal_agent_api import AgentdClient, quote_path_segment
+from universal_agent_cli.io import (
+    CliExit,
+    _doctor_should_fail,
+    _optional_bool,
+    _success_criteria,
+    _write_json,
+    _write_text,
+)
+from universal_agent_tui.tui_remote import (
+    agentd_event_watcher,
+    agentd_snapshot_provider,
+    agentd_tui_actions,
+)
 
 _REMOTE_STATIC_JSON_ROUTES: Mapping[str, str] = {
     "health": "/health",
@@ -58,7 +58,7 @@ async def _dispatch_remote_tui(args: argparse.Namespace, client: AgentdClient) -
     the snapshot projections it already exposes over HTTP.
     """
 
-    from universal_agent.terminal.tui_app import RuntimeTuiApp
+    from universal_agent_tui.tui_app import RuntimeTuiApp
 
     session_id = cast(str | None, args.session_id)
     app = RuntimeTuiApp(

@@ -1,3 +1,10 @@
+"""HTTP client adapter for the agentd Runtime API.
+
+The client owns wire concerns only: URL normalization, auth headers,
+request/response JSON, SSE event streaming and HTTP error mapping. Runtime
+state and behavior stay behind agentd's existing Runtime API routes.
+"""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping
@@ -8,20 +15,15 @@ from urllib.parse import quote
 
 import httpx
 
-from universal_agent.core import (
+from universal_agent_api._json import (
     JsonCodecError,
-    JsonMapping,
-    JsonValue,
-    SessionId,
     dumps_json,
-    immutable_json,
     loads_json,
-)
-from universal_agent.core.config_validation import (
     parse_json_object,
     parse_non_empty_string,
     parse_positive_float,
 )
+from universal_agent_api.types import JsonMapping, JsonValue
 
 
 class AgentdClientError(RuntimeError):
@@ -124,7 +126,7 @@ class AgentdClient:
 
     async def stream_events(
         self,
-        session_id: SessionId,
+        session_id: str,
         *,
         after_event_id: str | None = None,
     ) -> AsyncIterator[JsonMapping]:
@@ -238,7 +240,7 @@ def _response_json(response: httpx.Response) -> JsonMapping:
             f"agentd returned invalid JSON with HTTP {response.status_code}"
         ) from exc
     try:
-        return immutable_json(parse_json_object(loaded, "agentd response"))
+        return parse_json_object(loaded, "agentd response")
     except ValueError as exc:
         raise AgentdClientError(str(exc), status_code=response.status_code) from exc
 

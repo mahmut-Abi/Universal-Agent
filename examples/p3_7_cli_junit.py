@@ -4,7 +4,7 @@ import asyncio
 from io import StringIO
 from xml.etree.ElementTree import fromstring
 
-from universal_agent.cli import LOCAL_PROFILE_NAME, run_cli
+from universal_agent_cli import LOCAL_PROFILE_NAME, run_cli
 
 
 async def main() -> None:

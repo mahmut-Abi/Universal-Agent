@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import argparse
 
-from universal_agent.cli.defaults import (
+from universal_agent.domains.kubernetes.cli import LOCAL_PROFILE_NAME, add_kubernetes_command
+from universal_agent.evaluation.harness import EvaluationScenarioKind
+from universal_agent_cli.defaults import (
     default_distributed_locks_path,
     default_init_output_path,
     default_store_path,
     default_work_queue_path,
     default_workers_path,
 )
-from universal_agent.domains.kubernetes.cli import LOCAL_PROFILE_NAME, add_kubernetes_command
-from universal_agent.evaluation.harness import EvaluationScenarioKind
 
 
 def build_parser() -> argparse.ArgumentParser:
