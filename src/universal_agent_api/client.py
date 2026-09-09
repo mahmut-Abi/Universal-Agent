@@ -124,6 +124,22 @@ class AgentdClient:
             response.headers.get("content-type"),
         )
 
+    async def post_text(
+        self,
+        path: str,
+        *,
+        body: Mapping[str, JsonValue] | None = None,
+        query: Mapping[str, object] | None = None,
+    ) -> AgentdTextResponse:
+        response = await self._request("POST", path, body=body, query=query)
+        if response.status_code >= 400:
+            _raise_http_error(response)
+        return AgentdTextResponse(
+            response.status_code,
+            response.text,
+            response.headers.get("content-type"),
+        )
+
     async def stream_events(
         self,
         session_id: str,

@@ -48,7 +48,12 @@ def make_evidence(*, claim: str, value: bool, confidence: float, seconds: int) -
 def make_state() -> AgentState:
     goal = Goal("Restore workload", (SuccessCriterion("healthy", True),))
     task = Task("Inspect workload", ("healthy",))
-    state = AgentState(session_id=new_session_id(), goal=goal, current_task=task)
+    state = AgentState(
+        session_id=new_session_id(),
+        goal=goal,
+        current_task=task,
+        read_only=True,
+    )
     state.tasks.append(task)
     state.satisfied_criteria["healthy"] = False
     state.recovery_attempts["task-root:timeout:rule"] = 1
@@ -56,6 +61,7 @@ def make_state() -> AgentState:
 
 
 @pytest.mark.behavior
+@pytest.mark.asyncio
 async def test_session_store_isolates_saved_state() -> None:
     store = InMemorySessionStore()
     state = make_state()
@@ -72,11 +78,13 @@ async def test_session_store_isolates_saved_state() -> None:
     reloaded = await store.load(state.session_id)
     assert reloaded.iteration == 7
     assert reloaded.satisfied_criteria == {"healthy": True}
+    assert reloaded.read_only is True
     assert reloaded.recovery_attempts == {"task-root:timeout:rule": 1}
     assert reloaded.current_task is not state.current_task
 
 
 @pytest.mark.behavior
+@pytest.mark.asyncio
 async def test_session_store_rejects_stale_snapshot_version() -> None:
     store = InMemorySessionStore()
     state = make_state()
@@ -97,6 +105,7 @@ async def test_session_store_rejects_stale_snapshot_version() -> None:
 
 
 @pytest.mark.contract
+@pytest.mark.asyncio
 async def test_session_snapshot_round_trip_preserves_graph_and_evidence() -> None:
     store = InMemorySessionStore()
     state = make_state()

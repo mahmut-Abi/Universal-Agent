@@ -140,6 +140,7 @@ class _AgentStatePayload(ConfigPayload):
     session_id: str
     goal: _GoalPayload
     current_task_id: str
+    read_only: bool = False
     iteration: int
     satisfied_criteria: dict[str, PydanticJsonValue]
     observations: list[_ObservationPayload]
@@ -263,6 +264,7 @@ def _encode_agent_state(state: AgentState) -> JsonObject:
         "session_id": str(state.session_id),
         "goal": _encode_goal(state.goal),
         "current_task_id": str(state.current_task.id),
+        "read_only": state.read_only,
         "iteration": state.iteration,
         "satisfied_criteria": _to_json(state.satisfied_criteria),
         "observations": [_encode_observation(item) for item in state.observations],
@@ -285,6 +287,7 @@ def _decode_agent_state(payload: _AgentStatePayload, tasks: Mapping[TaskId, Task
         session_id=SessionId(payload.session_id),
         goal=_decode_goal(payload.goal),
         current_task=current_task,
+        read_only=payload.read_only,
         iteration=payload.iteration,
         satisfied_criteria=dict(json_mapping(payload.satisfied_criteria)),
         observations=[_decode_observation(item) for item in payload.observations],

@@ -45,6 +45,8 @@ from universal_agent.tasks import TaskExpander, TaskGraphSnapshot
 from universal_agent.tools import Tool
 from universal_agent.world import WorldUpdater
 
+pytestmark = pytest.mark.asyncio
+
 
 class FakeKubernetesBackend:
     def __init__(self, observations: list[bool]) -> None:

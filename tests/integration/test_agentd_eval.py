@@ -149,10 +149,28 @@ def test_eval_datasets_route_rejects_unknown_dataset(tmp_path: Path) -> None:
         json={"name": "database", "dataset_dir": str(tmp_path / "datasets")},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 404
     payload = response.json()
-    assert payload["error"]["type"] == "EvaluationDatasetNotFoundError"
+    assert payload["error"]["code"] == "not_found"
     assert "evaluation dataset not registered" in payload["error"]["message"]
+
+
+@pytest.mark.integration
+def test_eval_datasets_route_rejects_invalid_dataset(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "datasets" / "broken"
+    dataset_root.mkdir(parents=True, exist_ok=True)
+    (dataset_root / "dataset.json").write_text("{not-json", encoding="utf-8")
+    client = TestClient(build_agentd_asgi_app(build_app()))
+
+    response = client.post(
+        "/v1/eval/datasets",
+        json={"dataset_dir": str(tmp_path / "datasets"), "verify": True},
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["error"]["code"] == "bad_request"
+    assert "invalid evaluation dataset manifest JSON" in payload["error"]["message"]
 
 
 @pytest.mark.integration
@@ -186,6 +204,38 @@ def test_eval_run_route_executes_suite(tmp_path: Path) -> None:
     assert payload["passed"] is True
     assert payload["suite"]["summary"]["scenario_count"] == 1
     assert payload["gate"]["passed"] is True
+
+
+@pytest.mark.integration
+def test_eval_run_route_returns_junit_xml(tmp_path: Path) -> None:
+    decisions = (
+        Decision(
+            DecisionType.EXECUTE,
+            "Inspect workload",
+            capability="inspect_workload",
+            target="deployment/example",
+            arguments=immutable_json({"name": "example"}),
+            expected_observations=("healthy",),
+        ),
+        Decision(DecisionType.FINISH, "Health verified"),
+    )
+    client = TestClient(build_agentd_asgi_app(build_app(decisions)))
+
+    response = client.post(
+        "/v1/eval/run",
+        json={
+            "profile": "local-kubernetes",
+            "report_dir": str(tmp_path / "reports"),
+            "format": "junit",
+            "kind": ["regression"],
+            "tag": ["smoke"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/xml")
+    assert response.text.startswith('<?xml version="1.0" encoding="utf-8"?>')
+    assert "healthy workload" in response.text
 
 
 @pytest.mark.integration

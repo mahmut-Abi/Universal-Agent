@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import cast
+import asyncio
+from dataclasses import dataclass, field
+from typing import Any, cast
 
 from universal_agent.context import BasicContextCompiler, ContextCompiler
 from universal_agent.core import (
     ActionId,
     AgentState,
+    CapabilityCategory,
     CapabilityDefinition,
     CapabilityInputContract,
     Decision,
@@ -77,6 +80,16 @@ _RISK_RANK = {
 }
 
 
+@dataclass(slots=True)
+class _SessionControl:
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    active_task: asyncio.Task[Any] | None = None
+    cancel_requested: bool = False
+    cancel_reason: str | None = None
+    pause_requested: bool = False
+    pause_reason: str | None = None
+
+
 class AgentRuntime:
     """Drives the session loop.
 
@@ -143,6 +156,7 @@ class AgentRuntime:
         self._capability_context_cache: (
             tuple[tuple[CapabilityDefinition, ...], tuple[CapabilityInputContract, ...]] | None
         ) = None
+        self._session_controls: dict[SessionId, _SessionControl] = {}
 
     async def run(
         self,
@@ -150,20 +164,32 @@ class AgentRuntime:
         task: Task,
         *,
         initial_state: JsonMapping | None = None,
+        read_only: bool = False,
     ) -> ExecutionResult:
         if self._goal_compiler is not None:
             compilation = await self._goal_compiler.compile(goal)
-            return await self._run_compilation(goal, compilation, initial_state=initial_state)
-        return await self._start_run(goal, task, initial_state=initial_state)
+            return await self._run_compilation(
+                goal,
+                compilation,
+                initial_state=initial_state,
+                read_only=read_only,
+            )
+        return await self._start_run(goal, task, initial_state=initial_state, read_only=read_only)
 
     async def run_compiled(
         self,
         goal: Goal,
         *,
         initial_state: JsonMapping | None = None,
+        read_only: bool = False,
     ) -> ExecutionResult:
         compilation = await DefaultGoalCompiler().compile(goal)
-        return await self._run_compilation(goal, compilation, initial_state=initial_state)
+        return await self._run_compilation(
+            goal,
+            compilation,
+            initial_state=initial_state,
+            read_only=read_only,
+        )
 
     async def _run_compilation(
         self,
@@ -171,12 +197,14 @@ class AgentRuntime:
         compilation: GoalCompilation,
         *,
         initial_state: JsonMapping | None,
+        read_only: bool,
     ) -> ExecutionResult:
         tasks = TaskManager.from_specs(compilation.initial_tasks)
         return await self._start_run(
             goal,
             tasks.current,
             initial_state=initial_state,
+            read_only=read_only,
             tasks=tasks,
             compilation=compilation,
         )
@@ -187,10 +215,16 @@ class AgentRuntime:
         task: Task,
         *,
         initial_state: JsonMapping | None = None,
+        read_only: bool = False,
         tasks: TaskManager | None = None,
         compilation: GoalCompilation | None = None,
     ) -> ExecutionResult:
-        state = AgentState(session_id=new_session_id(), goal=goal, current_task=task)
+        state = AgentState(
+            session_id=new_session_id(),
+            goal=goal,
+            current_task=task,
+            read_only=read_only,
+        )
         state.tasks = list(tasks.all()) if tasks is not None else [task]
         session = start_session(state, self._components, tasks=tasks)
         await self._state_store.create_session(session.snapshot())
@@ -232,7 +266,7 @@ class AgentRuntime:
             session,
             self._events.runtime_event(state, "StateUpdated"),
         )
-        return await self._loop(session)
+        return await self._run_controlled(session)
 
     async def resume(
         self,
@@ -240,44 +274,44 @@ class AgentRuntime:
         *,
         confirmed: bool | None = None,
     ) -> ExecutionResult:
-        snapshot = await self._load_session(session_id)
-        try:
-            session = hydrate_session(snapshot, self._components)
-        except SessionHydrationError as exc:
-            return await self._reject_session(snapshot, str(exc))
-        state = session.state
-        pending = state.pending_action
-        if state.goal.status is not GoalStatus.WAITING:
-            return await self._settle(
-                session,
-                fail(session, ErrorCode.INVALID_STATE, "session is not waiting"),
-            )
-        if pending is not None and confirmed is None:
-            return await self._settle(
-                session,
-                fail(
+        control = self._control_for(session_id)
+        async with control.lock:
+            snapshot = await self._load_session(session_id)
+            try:
+                session = hydrate_session(snapshot, self._components)
+            except SessionHydrationError as exc:
+                return await self._reject_session(snapshot, str(exc))
+            state = session.state
+            pending = state.pending_action
+            if state.goal.status is not GoalStatus.WAITING:
+                return build_result(
+                    state,
+                    ExecutionStatus.FAILED,
+                    "session is not waiting",
+                    error_code=ErrorCode.INVALID_STATE,
+                )
+            if pending is not None and confirmed is None:
+                return await self._settle(
                     session,
-                    ErrorCode.INVALID_STATE,
-                    "resume requires confirmation for pending action",
-                ),
-            )
-        if pending is not None and not confirmed:
-            return await self._settle(
+                    fail(
+                        session,
+                        ErrorCode.INVALID_STATE,
+                        "resume requires confirmation for pending action",
+                    ),
+                )
+            if pending is not None and not confirmed:
+                return await self._settle(
+                    session,
+                    fail(session, ErrorCode.CONFIRMATION_REJECTED, "user rejected pending action"),
+                )
+            state.goal.status = GoalStatus.RUNNING
+            mark_current_task(session, TaskStatus.RUNNING)
+            state.termination_reason = None
+            await self._events.commit_session_event(
                 session,
-                fail(session, ErrorCode.CONFIRMATION_REJECTED, "user rejected pending action"),
+                self._events.runtime_event(state, "SessionResumed"),
             )
-        state.goal.status = GoalStatus.RUNNING
-        mark_current_task(session, TaskStatus.RUNNING)
-        state.termination_reason = None
-        await self._events.commit_session_event(
-            session,
-            self._events.runtime_event(state, "SessionResumed"),
-        )
-        if pending is not None:
-            result = await self._drive(session, pending=pending)
-            if result is not None:
-                return result
-        return await self._loop(session)
+            return await self._continue_controlled(session, control, pending=pending)
 
     async def pause(
         self,
@@ -285,6 +319,18 @@ class AgentRuntime:
         *,
         reason: str = "session paused",
     ) -> ExecutionResult:
+        control = self._session_controls.get(session_id)
+        active = None if control is None else control.active_task
+        current = asyncio.current_task()
+        if (
+            control is not None
+            and active is not None
+            and active is not current
+            and not active.done()
+        ):
+            control.pause_requested = True
+            control.pause_reason = reason
+            return await asyncio.shield(active)
         snapshot = await self._load_session(session_id)
         try:
             session = hydrate_session(snapshot, self._components)
@@ -313,6 +359,19 @@ class AgentRuntime:
         *,
         reason: str = "session cancelled",
     ) -> ExecutionResult:
+        control = self._session_controls.get(session_id)
+        active = None if control is None else control.active_task
+        current = asyncio.current_task()
+        if (
+            control is not None
+            and active is not None
+            and active is not current
+            and not active.done()
+        ):
+            control.cancel_requested = True
+            control.cancel_reason = reason
+            active.cancel()
+            return await asyncio.shield(active)
         snapshot = await self._load_session(session_id)
         try:
             session = hydrate_session(snapshot, self._components)
@@ -335,9 +394,17 @@ class AgentRuntime:
     async def _loop(self, session: SessionRuntimeState) -> ExecutionResult:
         state = session.state
         while state.iteration < self._max_iterations:
+            requested = await self._requested_control_transition(session)
+            if requested is not None:
+                return requested
             state.iteration += 1
             await self._save(session)
-            capabilities, input_contracts = self._get_capability_context()
+            all_capabilities, all_input_contracts = self._get_capability_context()
+            capabilities, input_contracts = _constrain_capability_context(
+                state,
+                all_capabilities,
+                all_input_contracts,
+            )
             context = self._context_compiler.compile(
                 state,
                 capabilities,
@@ -360,7 +427,7 @@ class AgentRuntime:
             await self._emit(
                 state,
                 "DecisionGenerated",
-                data={"decision_type": decision.type.value, "reason": decision.reason},
+                data=self._events.decision_event_data(decision),
             )
             if usage is not None:
                 await self._emit(
@@ -421,6 +488,17 @@ class AgentRuntime:
                     session,
                     fail(session, ErrorCode.VALIDATION_ERROR, reason),
                 )
+            constraint_error = _validate_session_constraints(state, decision, all_capabilities)
+            if constraint_error is not None:
+                error_code, reason = constraint_error
+                await self._events.emit_decision_rejected(
+                    state,
+                    decision,
+                    error_code,
+                    reason,
+                    validation_stage="session_constraints",
+                )
+                return await self._settle(session, fail(session, error_code, reason))
             context_error = self._capability_advisor.validate_decision_context(
                 decision,
                 capabilities,
@@ -527,6 +605,9 @@ class AgentRuntime:
         """
         emit = self._events.emitter_for(session)
         for _ in range(self._max_recovery_steps):
+            requested = await self._requested_control_transition(session)
+            if requested is not None:
+                return requested
             if pending is not None:
                 outcome = await self._actions.execute(session, pending, emit, confirmed=True)
                 pending = None
@@ -563,6 +644,73 @@ class AgentRuntime:
                 f"maximum recovery steps reached: {self._max_recovery_steps}",
             ),
         )
+
+    def _control_for(self, session_id: SessionId) -> _SessionControl:
+        control = self._session_controls.get(session_id)
+        if control is None:
+            control = _SessionControl()
+            self._session_controls[session_id] = control
+        return control
+
+    async def _run_controlled(self, session: SessionRuntimeState) -> ExecutionResult:
+        control = self._control_for(session.state.session_id)
+        async with control.lock:
+            return await self._continue_controlled(session, control)
+
+    async def _continue_controlled(
+        self,
+        session: SessionRuntimeState,
+        control: _SessionControl,
+        *,
+        pending: PendingAction | None = None,
+    ) -> ExecutionResult:
+        current = asyncio.current_task()
+        control.active_task = current
+        try:
+            requested = await self._requested_control_transition(session)
+            if requested is not None:
+                return requested
+            if pending is not None:
+                result = await self._drive(session, pending=pending)
+                if result is not None:
+                    return result
+            return await self._loop(session)
+        except asyncio.CancelledError:
+            if control.cancel_requested:
+                return await self._settle(
+                    session,
+                    cancel_transition(session, control.cancel_reason or "session cancelled"),
+                )
+            raise
+        finally:
+            if control.active_task is current:
+                control.active_task = None
+            control.cancel_requested = False
+            control.cancel_reason = None
+            control.pause_requested = False
+            control.pause_reason = None
+
+    async def _requested_control_transition(
+        self,
+        session: SessionRuntimeState,
+    ) -> ExecutionResult | None:
+        control = self._session_controls.get(session.state.session_id)
+        if control is None:
+            return None
+        if control.cancel_requested:
+            return await self._settle(
+                session,
+                cancel_transition(session, control.cancel_reason or "session cancelled"),
+            )
+        if control.pause_requested:
+            reason = control.pause_reason or "session paused"
+            control.pause_requested = False
+            control.pause_reason = None
+            return await self._settle(
+                session,
+                pause_transition(session, reason, event_type="SessionPaused"),
+            )
+        return None
 
     async def _observe(
         self,
@@ -769,3 +917,44 @@ class AgentRuntime:
         data: dict[str, object] | None = None,
     ) -> None:
         await self._events.emit(state, event_type, action_id=action_id, data=data)
+
+
+def _constrain_capability_context(
+    state: AgentState,
+    capabilities: tuple[CapabilityDefinition, ...],
+    input_contracts: tuple[CapabilityInputContract, ...],
+) -> tuple[tuple[CapabilityDefinition, ...], tuple[CapabilityInputContract, ...]]:
+    if not state.read_only:
+        return capabilities, input_contracts
+    allowed_capability_names = {
+        capability.name
+        for capability in capabilities
+        if capability.category is not CapabilityCategory.MUTATION
+    }
+    return (
+        tuple(
+            capability for capability in capabilities if capability.name in allowed_capability_names
+        ),
+        tuple(
+            contract
+            for contract in input_contracts
+            if contract.capability in allowed_capability_names
+        ),
+    )
+
+
+def _validate_session_constraints(
+    state: AgentState,
+    decision: Decision,
+    capabilities: tuple[CapabilityDefinition, ...],
+) -> tuple[ErrorCode, str] | None:
+    if not state.read_only or decision.type is not DecisionType.EXECUTE:
+        return None
+    capability_name = decision.capability or ""
+    capability = next((item for item in capabilities if item.name == capability_name), None)
+    if capability is None or capability.category is not CapabilityCategory.MUTATION:
+        return None
+    return (
+        ErrorCode.POLICY_DENIED,
+        f"read-only session cannot execute mutation capability: {capability.name}",
+    )

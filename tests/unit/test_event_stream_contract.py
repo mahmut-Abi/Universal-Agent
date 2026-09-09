@@ -8,6 +8,8 @@ from universal_agent.core import EventId, GoalId, RuntimeEvent, SessionId, TaskI
 from universal_agent.runtime.event_stream import BrokerBackedEventStream, InMemoryEventSignalBroker
 from universal_agent.runtime.events import InMemoryEventSink
 
+pytestmark = pytest.mark.asyncio
+
 
 @pytest.mark.unit
 async def test_broker_event_stream_replays_from_cursor_before_waiting() -> None:

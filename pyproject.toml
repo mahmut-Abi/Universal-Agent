@@ -61,9 +61,9 @@ packages = [
 
 [tool.pytest.ini_options]
 addopts = "-q"
-asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
+  "integration: integration tests over runtime/service/CLI/HTTP seams",
   "live: tests that contact external model providers or Kubernetes clusters",
   "behavior: tests that assert on real agent runtime outcomes (goal/task completion, world model, policy, recovery, evaluation)",
   "contract: tests that assert on payload/serialization/view round-trip shape rather than agent behavior",

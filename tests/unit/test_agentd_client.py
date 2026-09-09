@@ -88,6 +88,59 @@ async def test_agentd_client_posts_json() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.contract
+async def test_agentd_client_posts_text() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            text="<testsuite />\n",
+            headers={"content-type": "text/xml; charset=utf-8"},
+            request=request,
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    agentd = AgentdClient("http://agentd.example.test", client=client)
+
+    try:
+        response = await agentd.post_text("/v1/eval/run", body={"format": "junit"})
+    finally:
+        await client.aclose()
+
+    assert response.status_code == 200
+    assert response.text == "<testsuite />\n"
+    assert response.content_type == "text/xml; charset=utf-8"
+    assert requests[0].headers["content-type"] == "application/json"
+    assert json_loads(requests[0].content) == {"format": "junit"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_agentd_client_post_text_maps_structured_http_errors() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={"error": {"code": "bad_request", "message": "invalid request"}},
+            request=request,
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    agentd = AgentdClient("http://agentd.example.test", client=client)
+
+    try:
+        with pytest.raises(AgentdClientError) as raised:
+            await agentd.post_text("/v1/eval/run", body={"format": "junit"})
+    finally:
+        await client.aclose()
+
+    assert raised.value.status_code == 400
+    assert raised.value.code == "bad_request"
+    assert str(raised.value) == "agentd returned HTTP 400 bad_request: invalid request"
+
+
+@pytest.mark.asyncio
 @pytest.mark.unit
 async def test_agentd_client_maps_structured_http_errors() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:

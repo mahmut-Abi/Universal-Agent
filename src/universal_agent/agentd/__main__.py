@@ -16,6 +16,7 @@ from pathlib import Path
 from universal_agent.agentd.app import AgentdApp
 from universal_agent.agentd.http import AgentdAuthPolicy
 from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
+from universal_agent.core.config_validation import parse_non_empty_string
 from universal_agent.domains.kubernetes.cli_runtime import (
     build_configured_service,
 )
@@ -43,7 +44,9 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "(for probe-style commands that never execute model calls).",
     )
     parser.add_argument("--auth-token")
+    parser.add_argument("--auth-token-env")
     parser.add_argument("--read-only-auth-token")
+    parser.add_argument("--read-only-auth-token-env")
     parser.add_argument("--evaluation-report-dir")
     return parser
 
@@ -73,8 +76,44 @@ def _build_service_from_profile(profile_config: str) -> RuntimeService:
     return build_configured_service(profile_config)
 
 
+def _resolve_agentd_auth_token(
+    *,
+    explicit: str | None,
+    env_key: str | None,
+    label: str,
+) -> str | None:
+    if explicit is not None and env_key is not None:
+        raise ValueError(f"agentd {label} accepts either a literal value or env key, not both")
+    if explicit is not None:
+        return explicit
+    if env_key is None:
+        return None
+    token = EnvSecretProvider().get_secret(env_key)
+    if token is None:
+        raise ValueError(f"agentd {label} env key is missing or empty: {env_key}")
+    return token
+
+
+def _host_requires_auth(host: str) -> bool:
+    normalized = parse_non_empty_string(host, "agentd host").strip().lower()
+    return normalized not in {"127.0.0.1", "localhost", "::1"}
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_argument_parser().parse_args(argv)
+    parser = build_argument_parser()
+    args = parser.parse_args(argv)
+    auth_token = _resolve_agentd_auth_token(
+        explicit=args.auth_token,
+        env_key=args.auth_token_env,
+        label="auth token",
+    )
+    read_only_auth_token = _resolve_agentd_auth_token(
+        explicit=args.read_only_auth_token,
+        env_key=args.read_only_auth_token_env,
+        label="read-only auth token",
+    )
+    if _host_requires_auth(args.host) and auth_token is None and read_only_auth_token is None:
+        parser.error("agentd auth token is required when binding to non-loopback host")
     profile_config = args.profile_config
     if profile_config is not None:
         if args.probe_only:
@@ -96,8 +135,8 @@ def main(argv: list[str] | None = None) -> int:
         AgentdApp(
             service,
             auth=AgentdAuthPolicy(
-                bearer_token=args.auth_token,
-                read_only_bearer_token=args.read_only_auth_token,
+                bearer_token=auth_token,
+                read_only_bearer_token=read_only_auth_token,
             ),
             evaluation_report_dir=args.evaluation_report_dir,
         ),

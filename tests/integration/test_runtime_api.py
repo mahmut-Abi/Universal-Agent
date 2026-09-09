@@ -8,6 +8,7 @@ import pytest
 from universal_agent import (
     AgentExpectedOutput,
     AgentRuntime,
+    AgentTaskConstraints,
     AgentTaskRequest,
     AgentTaskResultStatus,
     Decision,
@@ -173,6 +174,8 @@ def build_remediation_api(
     decisions: list[Decision],
     store: InMemoryStateStore,
     events: InMemoryEventSink,
+    *,
+    environment: str = "production",
 ) -> RuntimeAPI:
     runtime = AgentRuntime(
         model=ScriptedModelAdapter(decisions),
@@ -181,7 +184,7 @@ def build_remediation_api(
             DomainLoader().load(KubernetesRemediationDomain(backend, backend))
         ),
         event_sink=events,
-        environment=immutable_json({"environment": "production"}),
+        environment=immutable_json({"environment": environment}),
     )
     return RuntimeAPI(runtime=runtime, session_store=store, event_reader=events)
 
@@ -246,6 +249,33 @@ async def test_runtime_agent_executor_reports_usage_from_runtime_events() -> Non
     assert result.usage.total_tokens == 37
     assert result.usage.estimated_cost == 0.000042
     assert result.usage.currency == "USD"
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_runtime_agent_executor_enforces_read_only_request_constraint() -> None:
+    backend = RemediationBackend()
+    store = InMemoryStateStore()
+    events = InMemoryEventSink()
+    api = build_remediation_api(
+        backend,
+        [scale_workload(), finish()],
+        store,
+        events,
+        environment="staging",
+    )
+
+    result = await RuntimeAgentExecutor(api).execute_agent_task(
+        AgentTaskRequest(
+            goal="Inspect delegated workload without mutation",
+            constraints=AgentTaskConstraints(read_only=True),
+            expected_output=AgentExpectedOutput("health_report"),
+        )
+    )
+
+    assert result.status is AgentTaskResultStatus.FAILED
+    assert result.error_code in {ErrorCode.NO_CAPABILITY_TOOL, ErrorCode.POLICY_DENIED}
+    assert backend.mutation_calls == 0
 
 
 @pytest.mark.asyncio

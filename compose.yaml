@@ -5,9 +5,17 @@ services:
     container_name: universal-agent-agentd
     ports:
       - "8765:8765"
+    environment:
+      AGENTD_AUTH_TOKEN: ${AGENTD_AUTH_TOKEN:?set AGENTD_AUTH_TOKEN before starting agentd}
     volumes:
       - agent-data:/data
       - agent-config:/config
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    cpus: "1.0"
     restart: unless-stopped
 
 volumes:

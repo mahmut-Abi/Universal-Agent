@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
@@ -15,6 +16,8 @@ from universal_agent.coordination import (
 )
 from universal_agent.core import (
     ActionId,
+    AgentState,
+    CapabilityCategory,
     CapabilityDefinition,
     Decision,
     DomainIdentity,
@@ -26,6 +29,7 @@ from universal_agent.core import (
     PendingAction,
     PolicyContext,
     PolicyEffect,
+    PolicyResult,
     SideEffect,
     ToolCall,
     ToolDefinition,
@@ -251,7 +255,11 @@ class ActionExecutor:
                 ErrorCode.VALIDATION_ERROR,
                 "side-effecting action requires a resource identity",
             )
-        policy_result = self.components.policy_engine.check(
+        policy_result = _read_only_policy_result(
+            state,
+            capability,
+            tool.definition,
+        ) or self.components.policy_engine.check(
             PolicyContext(
                 session_id=state.session_id,
                 goal_id=state.goal.id,
@@ -293,35 +301,48 @@ class ActionExecutor:
                 return lock
             state.pending_action = pending
             return ConfirmationRequired(pending, policy_result.reason)
-        # Only record idempotency key when we're actually going to execute (no confirmation needed)
-        idempotency_key = IdempotencyKey(pending.idempotency_key)
-        idempotency_recorded = False
-        if tool.definition.side_effect is not SideEffect.NONE:
-            idempotency_recorded = self.idempotency_store.record(idempotency_key)
-            await emit(
-                "IdempotencyChecked",
-                pending.action_id,
-                {
-                    "matched": not idempotency_recorded,
-                    "parameters_hash": pending.parameters_hash,
-                },
-            )
-            if not idempotency_recorded:
-                return ActionRejected(
-                    ErrorCode.INVALID_STATE,
-                    "side-effecting action already has an execution record; reconcile before retry",
-                )
         state.pending_action = None
         lock = await self._acquire_resource_lock(session, pending, emit)
         if isinstance(lock, ActionRejected):
             return lock
+        idempotency_key = IdempotencyKey(pending.idempotency_key)
+        idempotency_recorded = False
         try:
+            # Record only after deterministic preconditions and resource locking
+            # have passed. A rejected action must not poison later retries.
+            if tool.definition.side_effect is not SideEffect.NONE:
+                idempotency_recorded = self.idempotency_store.record(idempotency_key)
+                await emit(
+                    "IdempotencyChecked",
+                    pending.action_id,
+                    {
+                        "matched": not idempotency_recorded,
+                        "parameters_hash": pending.parameters_hash,
+                    },
+                )
+                if not idempotency_recorded:
+                    return ActionRejected(
+                        ErrorCode.INVALID_STATE,
+                        "side-effecting action already has an execution record; "
+                        "reconcile before retry",
+                    )
             observed = await self._invoke(session, pending, emit)
-            if idempotency_recorded and observed.observation.status is ObservationStatus.FAILED:
+            if (
+                idempotency_recorded
+                and observed.observation.status is not ObservationStatus.SUCCEEDED
+            ):
                 self.idempotency_store.forget(idempotency_key)
             return observed
+        except asyncio.CancelledError:
+            if idempotency_recorded:
+                self.idempotency_store.forget(idempotency_key)
+            raise
+        except Exception:
+            if idempotency_recorded:
+                self.idempotency_store.forget(idempotency_key)
+            raise
         finally:
-            await self._release_resource_lock(lock, emit)
+            await asyncio.shield(self._release_resource_lock(lock, emit))
 
     async def _invoke(
         self,
@@ -608,6 +629,25 @@ def _ensure_resource_metadata(
     if not resource_key and resource_version is None:
         return pending
     return replace(pending, resource_key=resource_key, resource_version=resource_version)
+
+
+def _read_only_policy_result(
+    state: AgentState,
+    capability: CapabilityDefinition,
+    tool: ToolDefinition,
+) -> PolicyResult | None:
+    if not state.read_only:
+        return None
+    if (
+        capability.category is not CapabilityCategory.MUTATION
+        and tool.side_effect is SideEffect.NONE
+    ):
+        return None
+    return PolicyResult(
+        PolicyEffect.DENY,
+        f"read-only session cannot execute side-effecting capability: {capability.name}",
+        "runtime-read-only",
+    )
 
 
 def _resource_metadata(

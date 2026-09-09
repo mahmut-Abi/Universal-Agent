@@ -15,6 +15,8 @@ from universal_agent.multi_agent import (
     AgentDelegationDependencyError,
     AgentDelegationLimitError,
     AgentDelegationSpec,
+    AgentDelegationState,
+    AgentDelegationTaskState,
     AgentExecutorNotRegisteredError,
     AgentExpectedOutput,
     AgentId,
@@ -183,15 +185,18 @@ def instance(agent_id: str = "agent-1", *, name: str = "security-auditor") -> Ag
 def request(
     *,
     constraints: AgentTaskConstraints | None = None,
+    task_id: AgentTaskId | None = None,
     parent_task_id: AgentTaskId | None = None,
+    delegation_depth: int = 0,
 ) -> AgentTaskRequest:
     return AgentTaskRequest(
         goal="Audit deployment security",
         input=immutable_json({"resource": "deployment/example"}),
         constraints=constraints or AgentTaskConstraints(read_only=True),
         expected_output=output(),
-        task_id=AgentTaskId("agent-task-1"),
+        task_id=AgentTaskId("agent-task-1") if task_id is None else task_id,
         parent_task_id=parent_task_id,
+        delegation_depth=delegation_depth,
     )
 
 
@@ -664,12 +669,27 @@ async def test_agent_orchestrator_enforces_parent_child_limit() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
     orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): RecordingExecutor()})
     parent = AgentTaskId("agent-task-parent")
-    constraints = AgentTaskConstraints(read_only=True, max_children=1)
+    constraints = AgentTaskConstraints(read_only=True, max_children=1, max_depth=1)
 
-    await orchestrator.delegate(request(constraints=constraints, parent_task_id=parent))
+    await orchestrator.delegate(request(constraints=constraints, task_id=parent))
+    await orchestrator.delegate(
+        request(
+            constraints=constraints,
+            task_id=AgentTaskId("agent-task-child"),
+            parent_task_id=parent,
+            delegation_depth=1,
+        )
+    )
 
     with pytest.raises(AgentDelegationLimitError, match="max_children exceeded"):
-        await orchestrator.delegate(request(constraints=constraints, parent_task_id=parent))
+        await orchestrator.delegate(
+            request(
+                constraints=constraints,
+                task_id=AgentTaskId("agent-task-second-child"),
+                parent_task_id=parent,
+                delegation_depth=1,
+            )
+        )
 
 
 @pytest.mark.asyncio
@@ -677,14 +697,33 @@ async def test_agent_orchestrator_enforces_parent_child_limit() -> None:
 async def test_agent_orchestrator_missing_executor_does_not_consume_child_limit() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
     parent = AgentTaskId("agent-task-parent")
-    constraints = AgentTaskConstraints(read_only=True, max_children=1)
-    orchestrator = AgentOrchestrator(registry)
+    constraints = AgentTaskConstraints(read_only=True, max_children=1, max_depth=1)
+    orchestrator = AgentOrchestrator(
+        registry,
+        delegation_state=AgentDelegationState(
+            (AgentDelegationTaskState(parent, child_count=0, delegation_depth=0),)
+        ),
+    )
 
     with pytest.raises(AgentExecutorNotRegisteredError):
-        await orchestrator.delegate(request(constraints=constraints, parent_task_id=parent))
+        await orchestrator.delegate(
+            request(
+                constraints=constraints,
+                task_id=AgentTaskId("agent-task-child"),
+                parent_task_id=parent,
+                delegation_depth=1,
+            )
+        )
 
     orchestrator.register_executor(AgentId("agent-1"), RecordingExecutor())
-    result = await orchestrator.delegate(request(constraints=constraints, parent_task_id=parent))
+    result = await orchestrator.delegate(
+        request(
+            constraints=constraints,
+            task_id=AgentTaskId("agent-task-child"),
+            parent_task_id=parent,
+            delegation_depth=1,
+        )
+    )
 
     assert result.status is AgentTaskResultStatus.COMPLETED
 
@@ -752,6 +791,30 @@ async def test_agent_orchestrator_rejects_forged_child_delegation_depth() -> Non
                 delegation_depth=0,
             )
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_agent_orchestrator_rejects_unknown_parent_delegation_depth() -> None:
+    registry = AgentRegistry((profile(),), (instance(),))
+    executor = RecordingExecutor()
+    orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): executor})
+    constraints = AgentTaskConstraints(read_only=True, max_children=2, max_depth=2)
+
+    with pytest.raises(AgentDelegationLimitError, match="unknown parent_task_id"):
+        await orchestrator.delegate(
+            AgentTaskRequest(
+                goal="Run orphan child",
+                input=immutable_json({"task": "child"}),
+                constraints=constraints,
+                expected_output=output(),
+                task_id=AgentTaskId("agent-task-child"),
+                parent_task_id=AgentTaskId("agent-task-missing"),
+                delegation_depth=1,
+            )
+        )
+
+    assert executor.requests == []
 
 
 @pytest.mark.asyncio

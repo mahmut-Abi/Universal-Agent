@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import NoReturn
 
 from sqlalchemy import (
-    URL,
     Column,
     Engine,
     Index,
@@ -17,7 +16,6 @@ from sqlalchemy import (
     String,
     Table,
     Text,
-    create_engine,
 )
 from sqlalchemy import insert as sql_insert
 from sqlalchemy import select as sql_select
@@ -42,6 +40,7 @@ from universal_agent.persistence.codec import (
     encode_runtime_event,
     encode_session_snapshot,
 )
+from universal_agent.persistence.sqlite_engine import create_configured_sqlite_engine
 from universal_agent.runtime.events import filter_events, poll_event_reader
 from universal_agent.state import (
     SessionSnapshot,
@@ -58,6 +57,7 @@ _SESSIONS = Table(
     _METADATA,
     Column("session_id", String, primary_key=True),
     Column("created_at", String, nullable=False),
+    Column("version", Integer, nullable=False, default=0),
     Column("payload", Text, nullable=False),
 )
 _RUNTIME_EVENTS = Table(
@@ -118,6 +118,7 @@ class SQLiteSessionStore:
                     sql_insert(_SESSIONS).values(
                         session_id=str(snapshot.state.session_id),
                         created_at=snapshot.state.goal.created_at.isoformat(),
+                        version=snapshot.version,
                         payload=payload,
                     ),
                 )
@@ -127,35 +128,39 @@ class SQLiteSessionStore:
     async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
         with self._connect() as connection:
             rows = connection.execute(
-                sql_select(_SESSIONS.c.payload).order_by(
+                sql_select(_SESSIONS.c.payload, _SESSIONS.c.version).order_by(
                     _SESSIONS.c.created_at.desc(),
                     _SESSIONS.c.session_id.desc(),
                 )
             ).all()
-        return tuple(decode_session_snapshot(_loads_json_object(row[0])) for row in rows)
+        return tuple(_decode_stored_session(row[0], row[1]) for row in rows)
 
     async def load_session(self, session_id: SessionId) -> SessionSnapshot:
         with self._connect() as connection:
             return _load_stored_session(connection, session_id)
 
     async def save_session(self, snapshot: SessionSnapshot) -> None:
+        original_version = snapshot.version
+        snapshot.version = original_version + 1
+        payload = _encode_json(encode_session_snapshot(snapshot))
         with self._connect() as connection:
-            stored = _load_stored_session(connection, snapshot.state.session_id)
-            if snapshot.version != stored.version:
-                raise SessionVersionConflictError(
-                    f"session version conflict: {snapshot.state.session_id} expected "
-                    f"{stored.version}, got {snapshot.version}"
-                )
-            snapshot.version = stored.version + 1
-            payload = _encode_json(encode_session_snapshot(snapshot))
-            connection.execute(
+            result = connection.execute(
                 sql_update(_SESSIONS)
                 .where(_SESSIONS.c.session_id == str(snapshot.state.session_id))
+                .where(_SESSIONS.c.version == original_version)
                 .values(
                     created_at=snapshot.state.goal.created_at.isoformat(),
+                    version=snapshot.version,
                     payload=payload,
                 ),
             )
+            if result.rowcount != 1:
+                snapshot.version = original_version
+                _raise_session_version_conflict(
+                    connection,
+                    snapshot.state.session_id,
+                    original_version,
+                )
 
     async def create(self, state: AgentState) -> None:
         await self.create_session(session_from_state(state))
@@ -175,8 +180,9 @@ class SQLiteSessionStore:
 
     def _sqlite_engine(self) -> Engine:
         if self._engine is None:
-            self._engine = create_engine(URL.create("sqlite", database=str(self._path)))
+            self._engine = create_configured_sqlite_engine(self._path)
             _METADATA.create_all(self._engine)
+            _ensure_sessions_version_column(self._engine)
         return self._engine
 
 
@@ -290,8 +296,9 @@ class SQLiteEventStore:
 
     def _sqlite_engine(self) -> Engine:
         if self._engine is None:
-            self._engine = create_engine(URL.create("sqlite", database=str(self._path)))
+            self._engine = create_configured_sqlite_engine(self._path)
             _METADATA.create_all(self._engine)
+            _ensure_sessions_version_column(self._engine)
         return self._engine
 
 
@@ -306,23 +313,27 @@ class SQLiteRuntimeStore(SQLiteSessionStore, SQLiteEventStore):
         event: RuntimeEvent,
     ) -> None:
         original_version = snapshot.version
+        snapshot.version = original_version + 1
+        payload = _encode_json(encode_session_snapshot(snapshot))
         with self._connect() as connection:
-            stored = _load_stored_session(connection, snapshot.state.session_id)
-            if snapshot.version != stored.version:
-                raise SessionVersionConflictError(
-                    f"session version conflict: {snapshot.state.session_id} expected "
-                    f"{stored.version}, got {snapshot.version}"
-                )
-            snapshot.version = stored.version + 1
             try:
-                connection.execute(
+                result = connection.execute(
                     sql_update(_SESSIONS)
                     .where(_SESSIONS.c.session_id == str(snapshot.state.session_id))
+                    .where(_SESSIONS.c.version == original_version)
                     .values(
                         created_at=snapshot.state.goal.created_at.isoformat(),
-                        payload=_encode_json(encode_session_snapshot(snapshot)),
+                        version=snapshot.version,
+                        payload=payload,
                     ),
                 )
+                if result.rowcount != 1:
+                    snapshot.version = original_version
+                    _raise_session_version_conflict(
+                        connection,
+                        snapshot.state.session_id,
+                        original_version,
+                    )
                 _insert_runtime_event(connection, event)
                 _insert_runtime_event_outbox(connection, event)
             except SQLAlchemyIntegrityError as exc:
@@ -341,13 +352,70 @@ def _loads_json_object(value: str | bytes | bytearray) -> JsonMapping:
     return parse_json_object(loads_json(value), "sqlite payload")
 
 
+def _decode_stored_session(
+    payload: str | bytes | bytearray,
+    version: object,
+) -> SessionSnapshot:
+    snapshot = decode_session_snapshot(_loads_json_object(payload))
+    snapshot.version = _decode_version(version)
+    return snapshot
+
+
 def _load_stored_session(connection: Connection, session_id: SessionId) -> SessionSnapshot:
     row = connection.execute(
-        sql_select(_SESSIONS.c.payload).where(_SESSIONS.c.session_id == str(session_id))
+        sql_select(_SESSIONS.c.payload, _SESSIONS.c.version).where(
+            _SESSIONS.c.session_id == str(session_id)
+        )
     ).first()
     if row is None:
         raise StateNotFoundError(f"session not found: {session_id}")
-    return decode_session_snapshot(_loads_json_object(row[0]))
+    return _decode_stored_session(row[0], row[1])
+
+
+def _raise_session_version_conflict(
+    connection: Connection,
+    session_id: SessionId,
+    attempted_version: int,
+) -> NoReturn:
+    row = connection.execute(
+        sql_select(_SESSIONS.c.version).where(_SESSIONS.c.session_id == str(session_id))
+    ).first()
+    if row is None:
+        raise StateNotFoundError(f"session not found: {session_id}")
+    stored_version = _decode_version(row[0])
+    raise SessionVersionConflictError(
+        f"session version conflict: {session_id} expected {stored_version}, got {attempted_version}"
+    )
+
+
+def _ensure_sessions_version_column(engine: Engine) -> None:
+    with engine.begin() as connection:
+        columns = {
+            str(row[1]) for row in connection.exec_driver_sql("PRAGMA table_info(sessions)").all()
+        }
+        if "version" in columns:
+            return
+        connection.exec_driver_sql(
+            "ALTER TABLE sessions ADD COLUMN version INTEGER NOT NULL DEFAULT 0"
+        )
+        rows = connection.execute(sql_select(_SESSIONS.c.session_id, _SESSIONS.c.payload)).all()
+        for row in rows:
+            snapshot = decode_session_snapshot(_loads_json_object(row[1]))
+            connection.execute(
+                sql_update(_SESSIONS)
+                .where(_SESSIONS.c.session_id == str(row[0]))
+                .values(version=snapshot.version)
+            )
+
+
+def _decode_version(value: object) -> int:
+    if isinstance(value, bool):
+        raise ValueError("sqlite session version must be an integer")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str | bytes | bytearray):
+        return int(value)
+    raise ValueError("sqlite session version must be an integer")
 
 
 def _insert_runtime_event(connection: Connection, event: RuntimeEvent) -> None:

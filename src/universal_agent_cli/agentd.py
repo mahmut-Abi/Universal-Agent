@@ -162,9 +162,10 @@ async def _dispatch_remote_kubernetes(
         "run": "run",
         "evidence": "evidence",
     }[kubernetes_command]
-    body: dict[str, JsonValue] = {
-        "workload": cast(str, args.workload),
-    }
+    body: dict[str, JsonValue] = {}
+    workload = cast(str | None, getattr(args, "workload", None))
+    if workload is not None:
+        body["workload"] = workload
     # preflight has no profile positional; the operator commands do.
     profile = cast(str | None, getattr(args, "profile", None))
     if profile is not None:
@@ -181,8 +182,10 @@ async def _dispatch_remote_kubernetes(
         body["skip_preflight"] = bool(getattr(args, "skip_preflight", False))
     if kubernetes_command in {"check", "run"}:
         body["skip_model_probe"] = bool(getattr(args, "skip_model_probe", False))
-    if kubernetes_command == "preflight":
+    if kubernetes_command in {"preflight", "check", "run", "evidence"}:
         body["skip_cluster"] = bool(getattr(args, "skip_cluster", False))
+    if kubernetes_command == "evidence":
+        body["submit_run"] = bool(getattr(args, "submit_run", False))
 
     payload = await client.post_json(f"/v1/kubernetes/{operation}", body=body)
     _write_json(out, payload)
@@ -259,6 +262,9 @@ def _remote_eval_body(args: argparse.Namespace) -> dict[str, JsonValue]:
         body["update"] = True
     if cast(bool, getattr(args, "fail_on_fail", False)):
         body["fail_on_fail"] = True
+    eval_format = cast(str | None, getattr(args, "format", None))
+    if eval_format is not None:
+        body["format"] = eval_format
     for key in _EVAL_REMOTE_FLOAT_FIELDS:
         float_value = cast(float | None, getattr(args, key, None))
         if float_value is not None:
@@ -302,6 +308,11 @@ async def _dispatch_remote_eval(
 ) -> None:
     eval_command = cast(str, args.eval_command)
     operation = _EVAL_REMOTE_OPERATIONS[eval_command]
+    wants_junit = eval_command == "run" and cast(str, getattr(args, "format", "json")) == "junit"
+    if wants_junit:
+        response = await client.post_text(f"/v1/eval/{operation}", body=_remote_eval_body(args))
+        _write_text(out, response.text)
+        return
     payload = await client.post_json(f"/v1/eval/{operation}", body=_remote_eval_body(args))
     _write_json(out, payload)
     if cast(bool, getattr(args, "fail_on_fail", False)) and not payload.get("passed", True):

@@ -21,12 +21,23 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH" \
     AGENT_DATA_DIR=/data \
     AGENT_CONFIG_DIR=/config \
-    AGENTD_HEALTH_URL=http://127.0.0.1:8765/ready
+    AGENTD_HEALTH_URL=http://127.0.0.1:8765/health
 
 WORKDIR /app
 
 RUN groupadd --system agent \
     && useradd --system --gid agent --home-dir /app --shell /usr/sbin/nologin agent
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && arch="$(dpkg --print-architecture)" \
+    && case "$arch" in amd64|arm64) ;; *) echo "unsupported architecture: $arch" >&2; exit 1 ;; esac \
+    && kubectl_version="$(curl -fsSL https://dl.k8s.io/release/stable.txt)" \
+    && curl -fsSLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${kubectl_version}/bin/linux/${arch}/kubectl" \
+    && chmod +x /usr/local/bin/kubectl \
+    && kubectl version --client=true >/tmp/kubectl-version.txt \
+    && apt-get purge -y --auto-remove curl \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=uv /uv /uvx /usr/local/bin/
 COPY pyproject.toml uv.lock README.md ./
@@ -47,7 +58,7 @@ EXPOSE 8765
 STOPSIGNAL SIGTERM
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import json, os, urllib.request; response = urllib.request.urlopen(os.environ.get('AGENTD_HEALTH_URL', 'http://127.0.0.1:8765/ready'), timeout=3); data = json.load(response); raise SystemExit(0 if data.get('ready') is True else 1)"
+    CMD python -c "import json, os, urllib.request; response = urllib.request.urlopen(os.environ.get('AGENTD_HEALTH_URL', 'http://127.0.0.1:8765/health'), timeout=3); data = json.load(response); raise SystemExit(0 if data.get('status') == 'ok' else 1)"
 
 ENTRYPOINT ["sh", "-c"]
-CMD ["test -f /config/profile.json || agent init; exec agent --profile-config /config/profile.json serve --host 0.0.0.0 --port 8765"]
+CMD ["test -f /config/profile.json || agent init; exec agent --profile-config /config/profile.json serve --host 0.0.0.0 --port 8765 --auth-token-env AGENTD_AUTH_TOKEN"]

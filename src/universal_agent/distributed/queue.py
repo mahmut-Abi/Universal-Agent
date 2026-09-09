@@ -8,7 +8,6 @@ from pathlib import Path
 
 from filelock import FileLock
 from sqlalchemy import (
-    URL,
     Column,
     Engine,
     Index,
@@ -17,7 +16,6 @@ from sqlalchemy import (
     String,
     Table,
     Text,
-    create_engine,
 )
 from sqlalchemy import insert as sql_insert
 from sqlalchemy import select as sql_select
@@ -58,6 +56,7 @@ from universal_agent.distributed.queue_models import (
     WorkItemNotFoundError,
     WorkItemStatus,
 )
+from universal_agent.persistence.sqlite_engine import create_configured_sqlite_engine
 
 __all__ = [
     "FencingToken",
@@ -829,10 +828,7 @@ class SQLiteWorkQueue(InMemoryWorkQueue):
 
     def _sqlite_engine(self) -> Engine:
         if self._engine is None:
-            self._engine = create_engine(
-                URL.create("sqlite", database=str(self._path)),
-                connect_args={"timeout": 30.0},
-            )
+            self._engine = create_configured_sqlite_engine(self._path)
             _SQLITE_METADATA.create_all(self._engine)
         return self._engine
 

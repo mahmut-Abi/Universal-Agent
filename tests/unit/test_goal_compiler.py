@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import pytest
+
 from universal_agent.core import Goal, SuccessCriterion
 from universal_agent.goals import DefaultGoalCompiler, GoalCompilation
 from universal_agent.goals.compiler import GoalCompiler
+
+pytestmark = pytest.mark.asyncio
 
 
 def _make_goal(description: str, criteria: tuple[SuccessCriterion, ...]) -> Goal:

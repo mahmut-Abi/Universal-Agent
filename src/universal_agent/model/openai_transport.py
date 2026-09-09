@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import Any, Protocol, TypeGuard, cast, runtime_checkable
 
 import httpx
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI, OpenAIError
@@ -213,3 +213,9 @@ def _json_mapping(value: object, field_name: str) -> JsonMapping:
         return immutable_json(parse_json_object(candidate, field_name))
     except ValueError as exc:
         raise JsonHttpModelError(str(exc)) from exc
+
+
+def is_openai_model_transport(transport: object) -> TypeGuard[OpenAIModelTransport]:
+    """Narrow a transport to the native OpenAI protocol implementation."""
+
+    return isinstance(transport, OpenAIModelTransport)

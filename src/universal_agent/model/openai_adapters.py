@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -37,7 +37,11 @@ from universal_agent.model.decision_codec import (
 )
 from universal_agent.model.errors import JsonHttpModelError
 from universal_agent.model.json_http import JsonHttpModelTransport
-from universal_agent.model.openai_transport import OpenAIModelTransport, OpenAISdkModelTransport
+from universal_agent.model.openai_transport import (
+    OpenAIModelTransport,
+    OpenAISdkModelTransport,
+    is_openai_model_transport,
+)
 
 _SchemaNonEmptyString = Annotated[str, StringConstraints(min_length=1)]
 
@@ -350,9 +354,9 @@ def _openai_model_transport(
 ) -> OpenAIModelTransport:
     if transport is None:
         return OpenAISdkModelTransport()
-    if isinstance(transport, OpenAIModelTransport):
+    if is_openai_model_transport(transport):
         return transport
-    return _LegacyOpenAIJsonHttpTransport(transport)
+    return _LegacyOpenAIJsonHttpTransport(cast(JsonHttpModelTransport, transport))
 
 
 def _openai_headers(api_key: str, extra_headers: Mapping[str, str]) -> Mapping[str, str]:

@@ -425,6 +425,7 @@ class AgentState:
     session_id: SessionId
     goal: Goal
     current_task: Task
+    read_only: bool = False
     iteration: int = 0
     satisfied_criteria: dict[str, JsonValue] = field(default_factory=dict)
     observations: list[Observation] = field(default_factory=list)

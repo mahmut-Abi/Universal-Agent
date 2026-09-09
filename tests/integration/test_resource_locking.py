@@ -44,6 +44,7 @@ from universal_agent.memory import MemoryRecord
 from universal_agent.policy import Policy, PolicyRule
 from universal_agent.recovery import RecoveryRule
 from universal_agent.tasks import TaskExpander
+from universal_agent.tools import UncertainToolExecutionError
 from universal_agent.world import WorldUpdater
 
 
@@ -61,6 +62,12 @@ class LockedMutationTool:
     async def execute(self, arguments: JsonMapping) -> JsonMapping:
         self.calls += 1
         return immutable_json({"changed": True, "resource_version": "rv-2"})
+
+
+class UnknownMutationTool(LockedMutationTool):
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        self.calls += 1
+        raise UncertainToolExecutionError("connection closed after dispatch")
 
 
 class LockedMutationEvaluator:
@@ -158,10 +165,12 @@ def mutation_decision() -> Decision:
 
 def build_runtime(
     effect: PolicyEffect,
+    *,
+    tool: LockedMutationTool | None = None,
 ) -> tuple[
     AgentRuntime, InMemoryStateStore, InMemoryEventSink, RuntimeComponents, LockedMutationTool
 ]:
-    tool = LockedMutationTool()
+    tool = tool or LockedMutationTool()
     components = RuntimeBuilder().build(DomainLoader().load(LockedMutationDomain(tool, effect)))
     store = InMemoryStateStore()
     events = InMemoryEventSink()
@@ -202,6 +211,25 @@ async def test_mutation_conflict_prevents_tool_execution() -> None:
     assert len(components.resource_locks.active()) == 1
     assert "ResourceConflictDetected" in [event.type for event in events.events]
     assert "ActionStarted" not in [event.type for event in events.events]
+    assert "IdempotencyChecked" not in [event.type for event in events.events]
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_unknown_mutation_forgets_idempotency_record() -> None:
+    runtime, _, events, _, tool = build_runtime(
+        PolicyEffect.ALLOW,
+        tool=UnknownMutationTool(),
+    )
+
+    result = await runtime.run(*goal_task())
+    resolved = next(event for event in events.events if event.type == "CapabilityResolved")
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error_code is ErrorCode.UNKNOWN_EXECUTION
+    assert tool.calls == 1
+    assert "IdempotencyChecked" in [event.type for event in events.events]
+    assert not runtime._actions.idempotency_store.seen(resolved.data["idempotency_key"])
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import suppress
+
 import pytest
 
 from universal_agent import (
@@ -25,6 +28,7 @@ from universal_agent.core import (
     EvaluationContext,
     EvaluationResult,
     EvaluationStatus,
+    GoalStatus,
     JsonMapping,
     ToolDefinition,
 )
@@ -65,9 +69,32 @@ class SafeTool:
         return self._output
 
 
-class HighRiskDomain:
+class BlockingTool(SafeTool):
     def __init__(self) -> None:
-        self._safe_tool = SafeTool("inspect_safe_tool", "inspect_safe", {"ok": True})
+        super().__init__("inspect_safe_tool", "inspect_safe", {"ok": True})
+        self.definition = ToolDefinition(
+            "inspect_safe_tool",
+            "Block until cancelled",
+            ("inspect_safe",),
+            timeout_seconds=30.0,
+        )
+        self.started = asyncio.Event()
+        self.cancelled = False
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        self.calls += 1
+        self.started.set()
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        return self._output
+
+
+class HighRiskDomain:
+    def __init__(self, tool: Tool | None = None) -> None:
+        self._safe_tool = tool or SafeTool("inspect_safe_tool", "inspect_safe", {"ok": True})
         self.manifest = DomainManifest(
             "agent.nantian.dev/v1alpha1",
             "Domain",
@@ -155,6 +182,64 @@ async def test_session_snapshot_is_rebuilt_from_event_store_after_loss() -> None
     assert rebuilt.state.session_id == session_id
     assert rebuilt.state.goal.description == original.state.goal.description
     assert len(rebuilt.task_graph.nodes) == len(original.task_graph.nodes)
+
+
+@pytest.mark.asyncio
+async def test_resume_non_waiting_session_does_not_mutate_terminal_state() -> None:
+    store = InMemoryStateStore()
+    components = build_components(HighRiskDomain())
+    runtime = AgentRuntime(
+        model=ScriptedModelAdapter(_decisions()),
+        state_store=store,
+        components=components,
+        event_sink=InMemoryEventStore(),
+    )
+
+    result = await runtime.run(
+        Goal("Finish the task", (SuccessCriterion("done", True),)),
+        Task("Initial task", ("done",)),
+    )
+    rejected = await runtime.resume(result.session_id)
+    snapshot = await store.load_session(result.session_id)
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert rejected.status is ExecutionStatus.FAILED
+    assert snapshot.state.goal.status is GoalStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_cancel_interrupts_running_tool_and_persists_cancelled_state() -> None:
+    store = InMemoryStateStore()
+    tool = BlockingTool()
+    runtime = AgentRuntime(
+        model=ScriptedModelAdapter(_decisions()),
+        state_store=store,
+        components=build_components(HighRiskDomain(tool)),
+        event_sink=InMemoryEventStore(),
+    )
+    running = asyncio.create_task(
+        runtime.run(
+            Goal("Finish the task", (SuccessCriterion("done", True),)),
+            Task("Initial task", ("done",)),
+        )
+    )
+
+    try:
+        await asyncio.wait_for(tool.started.wait(), timeout=1)
+        session_id = (await store.list_sessions())[0].state.session_id
+        cancelled = await runtime.cancel(session_id, reason="operator cancelled")
+        result = await asyncio.wait_for(running, timeout=1)
+        snapshot = await store.load_session(session_id)
+    finally:
+        if not running.done():
+            running.cancel()
+            with suppress(asyncio.CancelledError):
+                await running
+
+    assert cancelled.status is ExecutionStatus.CANCELLED
+    assert result.status is ExecutionStatus.CANCELLED
+    assert tool.cancelled is True
+    assert snapshot.state.goal.status is GoalStatus.CANCELLED
 
 
 @pytest.mark.asyncio

@@ -173,7 +173,11 @@ class RuntimeReplayEngine:
         adapter = _SequentialReplayAdapter(recorded_decisions)
 
         original_model = self._runtime._model
+        original_decision_engine = self._runtime._decision_engine
+        original_model_router = self._runtime._model_router
         self._runtime._model = adapter
+        self._runtime._decision_engine = None
+        self._runtime._model_router = None
 
         try:
             # Find the original goal and task from events
@@ -234,6 +238,8 @@ class RuntimeReplayEngine:
             )
         finally:
             self._runtime._model = original_model
+            self._runtime._decision_engine = original_decision_engine
+            self._runtime._model_router = original_model_router
 
     @staticmethod
     def _latest_snapshot(events: tuple[RuntimeEvent, ...]) -> SessionSnapshot | None:

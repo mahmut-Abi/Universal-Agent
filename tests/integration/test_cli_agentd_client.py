@@ -498,6 +498,36 @@ async def test_cli_api_url_runs_eval_datasets_remotely(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.contract
+async def test_cli_api_url_runs_eval_junit_remotely() -> None:
+    app, _ = build_app([inspect_workload(), finish()])
+    output = StringIO()
+
+    with running_server(app) as base_url:
+        status = await run_cli(
+            [
+                "--api-url",
+                base_url,
+                "eval",
+                "run",
+                "production-operator",
+                "--format",
+                "junit",
+                "--kind",
+                "regression",
+                "--tag",
+                "smoke",
+            ],
+            stdout=output,
+        )
+
+    assert status == 0
+    text = output.getvalue()
+    assert text.startswith('<?xml version="1.0" encoding="utf-8"?>')
+    assert "healthy workload" in text
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
 async def test_cli_api_url_runs_ecosystem_catalog_remotely(tmp_path: Path) -> None:
     app, _ = build_app([])
     dataset_root = tmp_path / "datasets" / "kubernetes"

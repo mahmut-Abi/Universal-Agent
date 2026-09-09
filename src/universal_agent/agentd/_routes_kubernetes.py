@@ -69,8 +69,9 @@ async def handle_kubernetes_route(
         return method_not_allowed(route.allowed_methods)
 
     body = request.body
+    skip_cluster = _flag(body, "skip_cluster")
     workload = _text(body, "workload")
-    if workload is None:
+    if workload is None and (route.name != "kubernetes_preflight" or not skip_cluster):
         return bad_request("workload is required")
 
     args = argparse.Namespace(
@@ -81,13 +82,18 @@ async def handle_kubernetes_route(
         namespace=_text(body, "namespace"),
         skip_preflight=_flag(body, "skip_preflight"),
         skip_model_probe=_flag(body, "skip_model_probe"),
-        skip_cluster=_flag(body, "skip_cluster"),
+        skip_cluster=skip_cluster,
+        submit_run=_flag(body, "submit_run"),
     )
     try:
         result = await dispatch_kubernetes(args, service)
     except ValueError as exc:
         return bad_request(str(exc))
     return json_response(immutable_json(dict(result.payload)))
+
+
+def kubernetes_route_definitions() -> tuple[AgentdRouteDefinition, ...]:
+    return _KUBERNETES_ROUTE_DEFINITIONS
 
 
 def match_kubernetes_route(path: str, method: str) -> AgentdRouteMatch | None:

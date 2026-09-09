@@ -8,6 +8,8 @@ import pytest
 from universal_agent.core import EventId, GoalId, RuntimeEvent, SessionId, TaskId
 from universal_agent.persistence.outbox import publish_outbox_batch
 
+pytestmark = pytest.mark.asyncio
+
 
 @dataclass(frozen=True, slots=True)
 class _OutboxRecord:

@@ -77,6 +77,7 @@ def test_session_snapshot_codec_preserves_rebuildable_runtime_state() -> None:
         session_id=session_id,
         goal=goal,
         current_task=root,
+        read_only=True,
         iteration=3,
         satisfied_criteria={"healthy": False},
         observations=[observation],
@@ -139,6 +140,7 @@ def test_session_snapshot_codec_preserves_rebuildable_runtime_state() -> None:
     )
 
     encoded = encode_session_snapshot(snapshot)
+    state_payload = cast(dict[str, object], encoded["state"])
     restored = decode_session_snapshot(encoded)
 
     assert restored.domain_name == "kubernetes"
@@ -152,6 +154,8 @@ def test_session_snapshot_codec_preserves_rebuildable_runtime_state() -> None:
         DomainIdentity("observability", "0.1.0"),
     )
     assert restored.state.session_id == session_id
+    assert state_payload["read_only"] is True
+    assert restored.state.read_only is True
     assert restored.state.current_task.id == root.id
     assert restored.state.current_task is restored.task_graph.nodes[0].task
     assert restored.state.pending_action is not None

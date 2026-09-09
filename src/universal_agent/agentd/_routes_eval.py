@@ -14,12 +14,19 @@ from io import StringIO
 from universal_agent.agentd.http import (
     HttpRequest,
     HttpResponse,
+    bad_request,
     json_response,
     method_not_allowed,
+    not_found,
+    text_response,
 )
 from universal_agent.agentd.routing import AgentdRouteDefinition, AgentdRouteMatcher
 from universal_agent.core import JsonMapping, immutable_json
 from universal_agent.ecosystem.dispatch import _dispatch_ecosystem
+from universal_agent.evaluation.dataset import (
+    EvaluationDatasetNotFoundError,
+    EvaluationDatasetValidationError,
+)
 from universal_agent.evaluation.dispatch import DispatchExit, _dispatch_eval
 from universal_agent.service import RuntimeService
 
@@ -114,7 +121,7 @@ def _eval_namespace(operation: str, body: JsonMapping) -> argparse.Namespace:
         recording_dir=_text(body, "recording_dir"),
         update=_flag(body, "update"),
         fail_on_fail=_flag(body, "fail_on_fail"),
-        format="json",
+        format=_text(body, "format") or "json",
         min_pass_rate=_optional_float(body.get("min_pass_rate")),
         min_goal_completion_rate=_optional_float(body.get("min_goal_completion_rate")),
         min_task_success_rate=_optional_float(body.get("min_task_success_rate")),
@@ -164,21 +171,12 @@ def _ecosystem_namespace(operation: str, body: JsonMapping) -> argparse.Namespac
     )
 
 
-async def _run_eval_dispatch(args: argparse.Namespace, service: RuntimeService) -> JsonMapping:
-    out = StringIO()
-    try:
-        await _dispatch_eval(args, service, out)
-    except DispatchExit:
-        pass
-    except Exception as exc:
-        return immutable_json({"error": {"type": type(exc).__name__, "message": str(exc)}})
-    return _json_payload(out)
-
-
 def _run_ecosystem_dispatch(args: argparse.Namespace) -> JsonMapping:
     out = StringIO()
     try:
         _dispatch_ecosystem(args, out)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
     except Exception as exc:
         return immutable_json({"error": {"type": type(exc).__name__, "message": str(exc)}})
     return _json_payload(out)
@@ -206,7 +204,29 @@ async def handle_eval_route(
         return method_not_allowed(route.allowed_methods)
 
     operation = _EVAL_COMMAND_NAMES[route.name]
-    payload = await _run_eval_dispatch(_eval_namespace(operation, request.body), service)
+    args = _eval_namespace(operation, request.body)
+    out = StringIO()
+    try:
+        await _dispatch_eval(args, service, out)
+    except EvaluationDatasetNotFoundError as exc:
+        return not_found(str(exc))
+    except EvaluationDatasetValidationError as exc:
+        return bad_request(str(exc))
+    except ValueError as exc:
+        return bad_request(str(exc))
+    except DispatchExit as exc:
+        payload = _json_payload(out)
+        if exc.status != 0:
+            return (
+                json_response(payload, status_code=200)
+                if "passed" in payload
+                else bad_request("dispatch failed")
+            )
+        return json_response(payload)
+    text = out.getvalue()
+    if args.format == "junit":
+        return text_response(text, content_type="text/xml; charset=utf-8")
+    payload = _json_payload(out)
     return json_response(payload)
 
 
@@ -223,7 +243,10 @@ def handle_ecosystem_route(
         return method_not_allowed(route.allowed_methods)
 
     operation = _ECOSYSTEM_COMMAND_NAMES[route.name]
-    payload = _run_ecosystem_dispatch(_ecosystem_namespace(operation, request.body))
+    try:
+        payload = _run_ecosystem_dispatch(_ecosystem_namespace(operation, request.body))
+    except ValueError as exc:
+        return bad_request(str(exc))
     return json_response(payload, status_code=200)
 
 

@@ -147,6 +147,57 @@ async def test_persistent_session_stores_reject_stale_snapshot_versions(
     assert latest.state.iteration == 1
 
 
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_sqlite_session_store_uses_wal_and_version_column(tmp_path: Path) -> None:
+    path = tmp_path / "runtime.sqlite3"
+    store = SQLiteSessionStore(path)
+    snapshot = session_from_state(
+        goal_state(
+            Goal("Persist version", (SuccessCriterion("healthy", True),)),
+            Task("Inspect", ("healthy",)),
+        )
+    )
+
+    await store.create_session(snapshot)
+
+    with sqlite3.connect(path) as connection:
+        journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(sessions)")}
+
+    assert journal_mode.lower() == "wal"
+    assert "version" in columns
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_sqlite_session_store_uses_sql_level_version_cas(tmp_path: Path) -> None:
+    path = tmp_path / "runtime.sqlite3"
+    store = SQLiteSessionStore(path)
+    snapshot = session_from_state(
+        goal_state(
+            Goal("Persist version", (SuccessCriterion("healthy", True),)),
+            Task("Inspect", ("healthy",)),
+        )
+    )
+    await store.create_session(snapshot)
+    stale = await store.load_session(snapshot.state.session_id)
+
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "UPDATE sessions SET version = version + 1 WHERE session_id = ?",
+            (str(snapshot.state.session_id),),
+        )
+
+    stale.state.iteration = 1
+    with pytest.raises(SessionVersionConflictError, match="session version conflict"):
+        await store.save_session(stale)
+
+    latest = await store.load_session(snapshot.state.session_id)
+    assert latest.version == 1
+    assert latest.state.iteration == 0
+
+
 @pytest.mark.behavior
 def test_runtime_api_reports_state_event_commit_strategy(tmp_path: Path) -> None:
     backend = PersistentRemediationBackend()

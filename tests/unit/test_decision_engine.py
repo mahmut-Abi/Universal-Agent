@@ -23,6 +23,8 @@ from universal_agent.runtime.decision import (
     recover_when_no_capability,
 )
 
+pytestmark = pytest.mark.asyncio
+
 
 def _context(capabilities: tuple[CapabilitySummary, ...] = ()) -> DecisionContext:
     return DecisionContext(

@@ -121,6 +121,7 @@ def _copy_state(state: AgentState, tasks: dict[TaskId, Task]) -> AgentState:
         session_id=state.session_id,
         goal=_copy_goal(state.goal),
         current_task=_resolve_task(state.current_task, tasks),
+        read_only=state.read_only,
         iteration=state.iteration,
         satisfied_criteria={
             key: _copy_json(value) for key, value in state.satisfied_criteria.items()

@@ -10,7 +10,7 @@ from typing import NewType
 from filelock import FileLock
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import URL, Column, Engine, Index, MetaData, String, Table, Text, create_engine
+from sqlalchemy import Column, Engine, Index, MetaData, String, Table, Text
 from sqlalchemy import insert as sql_insert
 from sqlalchemy import select as sql_select
 from sqlalchemy import update as sql_update
@@ -34,6 +34,7 @@ from universal_agent.core.config_validation import (
     parse_positive_float,
     pydantic_error_details,
 )
+from universal_agent.persistence.sqlite_engine import create_configured_sqlite_engine
 
 DistributedLockLeaseId = NewType("DistributedLockLeaseId", str)
 DistributedLockOwnerId = NewType("DistributedLockOwnerId", str)
@@ -492,10 +493,7 @@ class SQLiteDistributedLockRegistry(InMemoryDistributedLockRegistry):
 
     def _sqlite_engine(self) -> Engine:
         if self._engine is None:
-            self._engine = create_engine(
-                URL.create("sqlite", database=str(self._path)),
-                connect_args={"timeout": 30.0},
-            )
+            self._engine = create_configured_sqlite_engine(self._path)
             _SQLITE_METADATA.create_all(self._engine)
         return self._engine
 

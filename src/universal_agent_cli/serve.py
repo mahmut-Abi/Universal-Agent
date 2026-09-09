@@ -9,6 +9,7 @@ from typing import TextIO, cast
 from universal_agent.agentd.app import AgentdApp
 from universal_agent.agentd.http import AgentdAuthPolicy
 from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
+from universal_agent.core.config_validation import parse_non_empty_string
 from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
 from universal_agent_cli.io import _write_json
@@ -35,6 +36,8 @@ async def _dispatch_serve(
         env_key=cast(str | None, args.read_only_auth_token_env),
         label="read-only auth token",
     )
+    if _host_requires_auth(host) and auth_token is None and read_only_auth_token is None:
+        raise ValueError("agentd auth token is required when binding to non-loopback host")
     try:
         server = AgentdHttpServer(
             AgentdApp(
@@ -100,3 +103,8 @@ def _resolve_cli_auth_token(
     if token is None:
         raise ValueError(f"agentd {label} env key is missing or empty: {env_key}")
     return token
+
+
+def _host_requires_auth(host: str) -> bool:
+    normalized = parse_non_empty_string(host, "agentd host").strip().lower()
+    return normalized not in {"127.0.0.1", "localhost", "::1"}

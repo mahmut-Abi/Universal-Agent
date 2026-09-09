@@ -257,7 +257,47 @@ Use `--skip-model-probe` only when reusing a model endpoint that just passed
 `kubernetes check`; Kubernetes preflight still runs. Use `--skip-preflight` only
 for an intentional emergency bypass of all pre-run checks.
 
-## 7. Confirm A Production Mutation
+## 7. Collect Production Evidence
+
+Use the evidence gate when you want one command that reports model, preflight,
+contract, and runtime-boundary evidence in a production-review shape. Without
+`--submit-run`, it performs only the model probe and read-only preflight.
+
+```bash
+.venv/bin/python -m universal_agent.cli \
+  --profile-config .universal-agent/kubernetes-production-profile.json \
+  kubernetes evidence production-operator \
+  --workload deployment/api \
+  --namespace prod
+```
+
+Expected pre-run evidence output:
+
+- top-level `status` is `ok` or `attention` when only non-blocking warnings are
+  present.
+- `run` is `null` because no Runtime session was submitted.
+- `evidence_gate.live_runtime_path_observed` is `false`.
+- `next_step.type` is `submit_runtime_run` when model and preflight checks pass.
+
+Add `--submit-run` only when intentionally proving the full Runtime boundary:
+
+```bash
+.venv/bin/python -m universal_agent.cli \
+  --profile-config .universal-agent/kubernetes-production-profile.json \
+  kubernetes evidence production-operator \
+  --workload deployment/api \
+  --namespace prod \
+  --submit-run
+```
+
+With a real model provider, real Kubernetes backend, successful cluster
+inspection, and a completed or confirmation-bounded Runtime run,
+`evidence_gate.evidence_level` reaches `live_runtime_boundary` and
+`live_runtime_path_observed` becomes `true`. This command is intentionally a
+production evidence review surface; it does not weaken policy or confirmation
+requirements.
+
+## 8. Confirm A Production Mutation
 
 Before confirming, inspect the pending action from the `run` output. Confirm
 only if the target resource, namespace, replica count, and policy reason are
@@ -274,7 +314,7 @@ After confirmation, the Runtime re-checks policy, executes the action, observes
 fresh state, updates evidence/world state, and evaluates completion. A successful
 `kubectl scale` or Kubernetes API patch is not considered sufficient by itself.
 
-## 8. Inspect Results
+## 9. Inspect Results
 
 Use these commands after a completed, waiting, or failed run:
 

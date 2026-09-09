@@ -307,9 +307,11 @@ detect accidental split state/event wiring. These adapters are local persistence
   Chat Completions path for OpenAI-compatible `/v1/chat/completions` deployments, and
   `OpenAIResponsesModelAdapter` adds an OpenAI SDK-backed Responses provider path. Both
   request structured `Decision` JSON and still validate the decoded decision locally before the
-  Runtime acts. Kubernetes `check` and `run` responses now include a deterministic production
-  `contract` report covering model probe, preflight, runtime submission, verification evidence and
-  confirmation-boundary status for operator review.
+  Runtime acts. Kubernetes `check`, `run`, and `evidence` responses now include deterministic
+  production review payloads covering model probe, preflight, runtime submission, verification
+  evidence and confirmation-boundary status; `kubernetes evidence --submit-run` is the explicit
+  operator command for proving the full live runtime boundary without weakening policy or
+  confirmation requirements.
 - P3.6/P3.7 foundation: event-derived `metrics`, Prometheus metrics text export, `cost`, `logs`,
   `traces`, OTLP trace export, `doctor` and `audit` projections exposed through RuntimeService,
   agentd-shaped routes and CLI commands, plus optional
@@ -481,7 +483,10 @@ selector labels plus matching Pod summaries in `inspect_workload` observations, 
 CrashLoopBackOff and container readiness evidence to surface before a separate Pod inspection is
 chosen. The production `kubernetes run` entrypoint keeps `healthy=true` as a Goal-level criterion
 and uses scope-only initial Task criteria, so unhealthy workloads can advance into diagnosis and
-policy-gated remediation instead of looping on the first inspection. Profile configs can now opt in with `domain.backend = "kubectl"` or
+policy-gated remediation instead of looping on the first inspection. `agent kubernetes evidence`
+collects the same production model/preflight/contract review without submitting a Runtime session by
+default, and `--submit-run` explicitly adds the Runtime-owned remediation boundary for live evidence
+collection. Profile configs can now opt in with `domain.backend = "kubectl"` or
 `domain.backend = "kubernetes_api"` and backend-specific settings; the local CLI writes those forms
 with `agent init --domain-backend kubectl` or `agent init --domain-backend kubernetes_api` and still
 runs the full operator loop (preflight, model probe, inspection, pod diagnostics, scale remediation

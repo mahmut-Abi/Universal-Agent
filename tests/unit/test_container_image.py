@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -16,8 +17,10 @@ def test_container_image_uses_generic_agentd_entrypoint() -> None:
     assert "--profile-config /config/profile.json" in dockerfile
     assert "--host 0.0.0.0" in dockerfile
     assert "--port 8765" in dockerfile
+    assert "--auth-token-env AGENTD_AUTH_TOKEN" in dockerfile
     assert "HEALTHCHECK" in dockerfile
-    assert "/ready" in dockerfile
+    assert "/health" in dockerfile
+    assert "/ready" not in dockerfile
     assert "kubernetes" not in dockerfile.lower()
 
 
@@ -29,6 +32,8 @@ def test_container_image_installs_from_locked_runtime_dependencies() -> None:
     assert "uv sync --locked --no-dev --no-editable" in dockerfile
     assert "agent version >/tmp/agent-version.json" in dockerfile
     assert "agent health >/tmp/agent-health.json" in dockerfile
+    assert "kubectl version --client=true" in dockerfile
+    assert "https://dl.k8s.io/release/" in dockerfile
     assert "VIRTUAL_ENV=/app/.venv" in dockerfile
     assert 'PATH="/app/.venv/bin:$PATH"' in dockerfile
     assert "pip install" not in dockerfile
@@ -66,3 +71,15 @@ def test_container_build_context_excludes_local_state_and_caches() -> None:
     assert ".github/" in ignored
     assert "*.log" in ignored
     assert ".coverage" in ignored
+
+
+@pytest.mark.unit
+def test_compose_agentd_service_is_fail_closed_and_constrained() -> None:
+    compose = yaml.safe_load((ROOT / "compose.yaml").read_text(encoding="utf-8"))
+    service = compose["services"]["agentd"]
+
+    assert service["environment"]["AGENTD_AUTH_TOKEN"].startswith("${AGENTD_AUTH_TOKEN:?")
+    assert service["cap_drop"] == ["ALL"]
+    assert service["security_opt"] == ["no-new-privileges:true"]
+    assert service["mem_limit"] == "1g"
+    assert service["cpus"] == "1.0"

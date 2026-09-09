@@ -2312,11 +2312,14 @@ async def test_agentd_events_stream_waits_for_new_session_events() -> None:
     assert response.status_code == 200
     assert response.headers["content-type"] == "text/event-stream"
     assert response.text_body is not None
-    assert (
-        "event: StateUpdated\n" in response.text_body
-        or "event: GoalCompleted\n" in response.text_body
+    assert "event: SessionResumed\n" in response.text_body
+    streamed_events = response.body["events"]
+    assert isinstance(streamed_events, list)
+    assert streamed_events
+    assert any(
+        isinstance(event, dict) and event.get("event_id") != last_cursor
+        for event in streamed_events
     )
-    assert response.body["events"]
 
 
 @pytest.mark.asyncio

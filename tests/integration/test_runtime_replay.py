@@ -20,6 +20,7 @@ from universal_agent.context import DomainContextProvider
 from universal_agent.core import (
     CapabilityCategory,
     CapabilityDefinition,
+    DecisionContext,
     DomainManifest,
     DomainMetadata,
     EvaluationContext,
@@ -111,6 +112,16 @@ class HighRiskDomain:
         return ()
 
 
+class RecordingDecisionEngine:
+    def __init__(self, decisions: list[Decision]) -> None:
+        self._decisions = list(decisions)
+        self.calls = 0
+
+    async def decide(self, context: DecisionContext) -> Decision:
+        self.calls += 1
+        return self._decisions.pop(0)
+
+
 def build_components(domain: DomainRuntime) -> RuntimeComponents:
     active = DomainLoader().load(domain)
     return RuntimeBuilder().build(active)
@@ -149,6 +160,13 @@ async def test_replay_reproduces_execution() -> None:
 
     assert result.status is ExecutionStatus.COMPLETED
     session_id = result.session_id
+    generated = [
+        event for event in event_store.events_for(session_id) if event.type == "DecisionGenerated"
+    ]
+    assert generated[0].data["capability"] == "inspect_safe"
+    assert generated[0].data["target"] == "thing/example"
+    assert generated[0].data["arguments"] == {"name": "example"}
+    assert generated[0].data["expected_observations"] == ("ok",)
 
     # Replay the session - should run without errors
     replay_result = await replay_session(runtime, event_store, session_id)
@@ -161,6 +179,44 @@ async def test_replay_reproduces_execution() -> None:
     assert replay_result.original_status is ExecutionStatus.COMPLETED
     assert replay_result.decisions_replayed == 2
     assert replay_result.decisions_matched >= 0  # May not match due to context differences
+
+
+@pytest.mark.asyncio
+async def test_replay_uses_recorded_decisions_with_decision_engine_runtime() -> None:
+    components = build_components(HighRiskDomain())
+    event_store = InMemoryEventStore()
+    engine = RecordingDecisionEngine(
+        [
+            Decision(
+                DecisionType.EXECUTE,
+                "inspect safely",
+                capability="inspect_safe",
+                target="thing/example",
+                arguments=immutable_json({"name": "example"}),
+                expected_observations=("ok",),
+            ),
+            Decision(DecisionType.FINISH, "goal complete"),
+        ]
+    )
+    runtime = AgentRuntime(
+        model=ScriptedModelAdapter([]),
+        state_store=EventSourcedSessionStore(InMemoryStateStore(), event_store),
+        components=components,
+        event_sink=event_store,
+        decision_engine=engine,
+    )
+
+    result = await runtime.run(
+        Goal("Finish the task", (SuccessCriterion("done", True),)),
+        Task("Initial task", ("done",)),
+    )
+    replay_result = await replay_session(runtime, event_store, result.session_id)
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert engine.calls == 2
+    assert replay_result.replay_status is ExecutionStatus.COMPLETED
+    assert replay_result.decisions_replayed == 2
+    assert replay_result.decisions_matched == 2
 
 
 @pytest.mark.asyncio

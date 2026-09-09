@@ -473,7 +473,9 @@ class AgentOrchestrator:
             return
         parent_depth = self._task_depths.get(request.parent_task_id)
         if parent_depth is None:
-            return
+            raise AgentDelegationLimitError(
+                f"agent task unknown parent_task_id: {request.parent_task_id}"
+            )
         expected_depth = parent_depth + 1
         if request.delegation_depth != expected_depth:
             raise AgentDelegationLimitError(
@@ -495,6 +497,7 @@ class RuntimeAgentExecutor:
                 _success_criteria(request.expected_output.schema),
             ),
             Task(request.goal, ()),
+            read_only=request.constraints.read_only,
         )
         diagnostics = await self._runtime_api.get_session_diagnostics(run.result.session_id)
         usage = _agent_task_usage_from_events(

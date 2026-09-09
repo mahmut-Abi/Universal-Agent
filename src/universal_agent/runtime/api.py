@@ -204,8 +204,14 @@ class RuntimeAPI:
         task: Task,
         *,
         initial_state: JsonMapping | None = None,
+        read_only: bool = False,
     ) -> RuntimeRun:
-        result = await self._runtime.run(goal, task, initial_state=initial_state)
+        result = await self._runtime.run(
+            goal,
+            task,
+            initial_state=initial_state,
+            read_only=read_only,
+        )
         return RuntimeRun(result, await self.get_session(result.session_id))
 
     async def run_compiled_goal(
@@ -213,8 +219,13 @@ class RuntimeAPI:
         goal: Goal,
         *,
         initial_state: JsonMapping | None = None,
+        read_only: bool = False,
     ) -> RuntimeRun:
-        result = await self._runtime.run_compiled(goal, initial_state=initial_state)
+        result = await self._runtime.run_compiled(
+            goal,
+            initial_state=initial_state,
+            read_only=read_only,
+        )
         return RuntimeRun(result, await self.get_session(result.session_id))
 
     async def resume_session(

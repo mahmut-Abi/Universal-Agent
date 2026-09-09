@@ -6,8 +6,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import cast
 
-from universal_agent.agentd.representations import runtime_run_body
-from universal_agent.agentd.session_representations import evidence_body
 from universal_agent.core import (
     CapabilityCategory,
     CapabilitySummary,
@@ -22,6 +20,7 @@ from universal_agent.core import (
     SuccessCriterion,
     Task,
     immutable_json,
+    to_json_object,
     validate_argument_contract,
 )
 from universal_agent.domains.kubernetes.backend import KubernetesBackend
@@ -33,6 +32,9 @@ from universal_agent.domains.kubernetes.cli_runtime import (
 )
 from universal_agent.domains.kubernetes.production_contract import (
     kubernetes_production_contract_report,
+)
+from universal_agent.domains.kubernetes.production_evidence import (
+    kubernetes_production_evidence_gate_report,
 )
 from universal_agent.host import build_configured_model_adapter
 from universal_agent.model import ModelAdapter, ScriptedModelAdapter
@@ -46,6 +48,28 @@ from universal_agent.service import RuntimeConfigDomainView, RuntimeConfigView, 
 class KubernetesCliResult:
     payload: JsonMapping
     status: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class KubernetesOperation:
+    profile: str
+    workload: str
+    namespace: str | None = None
+
+    @classmethod
+    def from_args(cls, args: argparse.Namespace) -> KubernetesOperation:
+        return cls(
+            profile=cast(str, args.profile),
+            workload=kubernetes_workload_resource(cast(str, args.workload)),
+            namespace=optional_kubernetes_namespace(cast(str | None, args.namespace)),
+        )
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "profile": self.profile,
+            "workload": self.workload,
+            "namespace": self.namespace or "",
+        }
 
 
 KubernetesPreflightBackendBuilder = Callable[[str | None], KubernetesBackend]
@@ -78,15 +102,16 @@ async def dispatch_kubernetes(
         )
         return KubernetesCliResult(model_probe, 1 if model_probe["status"] == "failed" else 0)
     if command == "evidence":
-        run = await run_kubernetes_remediation(args, service)
-        explorer = await service.session_explorer(run.result.session_id)
-        body = immutable_json(
-            {
-                "session_id": str(run.result.session_id),
-                "evidence": [evidence_body(item) for item in explorer.evidence],
-            }
+        evidence_report = await kubernetes_evidence_gate_report(
+            args,
+            service,
+            model_adapter_builder=model_adapter_builder,
+            backend_builder=backend_builder,
         )
-        return KubernetesCliResult(body, 0)
+        return KubernetesCliResult(
+            evidence_report,
+            1 if evidence_report["status"] == "failed" else 0,
+        )
     if command == "check":
         check = await kubernetes_check_report(
             args,
@@ -228,18 +253,24 @@ async def kubernetes_model_probe_report(
     *,
     model_adapter_builder: ModelAdapterBuilder = build_configured_model_adapter,
 ) -> JsonMapping:
-    profile = cast(str, args.profile)
-    if not service.accepts_profile(profile):
-        raise ValueError(f"unknown profile: {profile}")
-    workload = kubernetes_workload_resource(cast(str, args.workload))
-    namespace = optional_kubernetes_namespace(cast(str | None, args.namespace))
-    config = service.config()
-    context = kubernetes_model_probe_context(service, workload, namespace)
+    operation = KubernetesOperation.from_args(args)
+    if not service.accepts_profile(operation.profile):
+        raise ValueError(f"unknown profile: {operation.profile}")
+    # The probe validates the model configured in the profile config file; the
+    # report must reflect that model, not whatever model the serving runtime
+    # happens to be built with (they differ for remote/embedded dispatch).
+    profile_config_path = cast(str | None, getattr(args, "profile_config", None))
+    config = (
+        ProfileConfig.from_json_file(profile_config_path).to_profile().runtime
+        if profile_config_path is not None
+        else service.config()
+    )
+    context = kubernetes_model_probe_context(service, operation.workload, operation.namespace)
     try:
         model = kubernetes_model_probe_adapter(
             args,
-            workload,
-            namespace,
+            operation.workload,
+            operation.namespace,
             model_adapter_builder=model_adapter_builder,
         )
         decision = await model.decide(context)
@@ -251,7 +282,7 @@ async def kubernetes_model_probe_report(
         return immutable_json(
             {
                 "status": "failed",
-                "operation": kubernetes_operation_body(profile, workload, namespace),
+                "operation": operation.to_json(),
                 "model": kubernetes_model_config_body(config.model),
                 "capability_count": len(context.capabilities),
                 "error": {
@@ -270,7 +301,7 @@ async def kubernetes_model_probe_report(
     return immutable_json(
         {
             "status": "ok",
-            "operation": kubernetes_operation_body(profile, workload, namespace),
+            "operation": operation.to_json(),
             "model": kubernetes_model_config_body(config.model),
             "capability_count": len(context.capabilities),
             "decision": decision_body(decision),
@@ -289,38 +320,21 @@ async def kubernetes_check_report(
     model_adapter_builder: ModelAdapterBuilder = build_configured_model_adapter,
     backend_builder: KubernetesPreflightBackendBuilder | None = None,
 ) -> JsonMapping:
-    profile = cast(str, args.profile)
-    workload = kubernetes_workload_resource(cast(str, args.workload))
-    namespace = optional_kubernetes_namespace(cast(str | None, args.namespace))
+    operation = KubernetesOperation.from_args(args)
     model_probe = await kubernetes_model_probe_report(
         args,
         service,
         model_adapter_builder=model_adapter_builder,
     )
     if model_probe["status"] == "failed":
-        operation = kubernetes_operation_body(profile, workload, namespace)
-        return immutable_json(
-            {
-                "status": "failed",
-                "operation": operation,
-                "model_probe": dict(model_probe),
-                "preflight": None,
-                "contract": dict(
-                    kubernetes_production_contract_report(
-                        operation=operation,
-                        model_probe=model_probe,
-                        preflight=None,
-                        run=None,
-                        include_runtime=False,
-                    )
-                ),
-                "next_step": {
-                    "type": "fix_model_provider",
-                    "message": (
-                        "Fix model probe failure before Kubernetes preflight or remediation."
-                    ),
-                },
-            }
+        return kubernetes_check_failure_body(
+            operation,
+            model_probe,
+            preflight=None,
+            next_step={
+                "type": "fix_model_provider",
+                "message": "Fix model probe failure before Kubernetes preflight or remediation.",
+            },
         )
     preflight = await kubernetes_preflight_report(
         args,
@@ -328,38 +342,25 @@ async def kubernetes_check_report(
         backend_builder=backend_builder,
     )
     if preflight["status"] == "failed":
-        operation = kubernetes_operation_body(profile, workload, namespace)
-        return immutable_json(
-            {
-                "status": "failed",
-                "operation": operation,
-                "model_probe": dict(model_probe),
-                "preflight": dict(preflight),
-                "contract": dict(
-                    kubernetes_production_contract_report(
-                        operation=operation,
-                        model_probe=model_probe,
-                        preflight=preflight,
-                        run=None,
-                        include_runtime=False,
-                    )
-                ),
-                "next_step": {
-                    "type": "fix_preflight",
-                    "message": "Resolve failed Kubernetes preflight checks before remediation.",
-                },
-            }
+        return kubernetes_check_failure_body(
+            operation,
+            model_probe,
+            preflight=preflight,
+            next_step={
+                "type": "fix_preflight",
+                "message": "Resolve failed Kubernetes preflight checks before remediation.",
+            },
         )
-    operation = kubernetes_operation_body(profile, workload, namespace)
+    operation_body = operation.to_json()
     return immutable_json(
         {
             "status": "ok",
-            "operation": operation,
+            "operation": operation_body,
             "model_probe": dict(model_probe),
             "preflight": dict(preflight),
             "contract": dict(
                 kubernetes_production_contract_report(
-                    operation=operation,
+                    operation=operation_body,
                     model_probe=model_probe,
                     preflight=preflight,
                     run=None,
@@ -372,6 +373,131 @@ async def kubernetes_check_report(
             },
         }
     )
+
+
+def kubernetes_check_failure_body(
+    operation: KubernetesOperation,
+    model_probe: JsonMapping,
+    *,
+    preflight: JsonMapping | None,
+    next_step: JsonMapping,
+) -> JsonMapping:
+    operation_body = operation.to_json()
+    return immutable_json(
+        {
+            "status": "failed",
+            "operation": operation_body,
+            "model_probe": dict(model_probe),
+            "preflight": None if preflight is None else dict(preflight),
+            "contract": dict(
+                kubernetes_production_contract_report(
+                    operation=operation_body,
+                    model_probe=model_probe,
+                    preflight=preflight,
+                    run=None,
+                    include_runtime=False,
+                )
+            ),
+            "next_step": dict(next_step),
+        }
+    )
+
+
+async def kubernetes_evidence_gate_report(
+    args: argparse.Namespace,
+    service: RuntimeService,
+    *,
+    model_adapter_builder: ModelAdapterBuilder = build_configured_model_adapter,
+    backend_builder: KubernetesPreflightBackendBuilder | None = None,
+) -> JsonMapping:
+    operation = KubernetesOperation.from_args(args)
+    operation_body = operation.to_json()
+    submit_run = cast(bool, getattr(args, "submit_run", False))
+    skip_cluster = cast(bool, getattr(args, "skip_cluster", False))
+
+    model_probe = await kubernetes_model_probe_report(
+        args,
+        service,
+        model_adapter_builder=model_adapter_builder,
+    )
+    preflight: JsonMapping | None = None
+    runtime_run: RuntimeRun | None = None
+    run_body: dict[str, JsonValue] | None = None
+    if model_probe["status"] == "ok":
+        preflight = await kubernetes_preflight_report(
+            args,
+            service,
+            backend_builder=backend_builder,
+        )
+        if submit_run and preflight["status"] == "ok":
+            runtime_run = await run_kubernetes_remediation(args, service)
+            run_body = to_json_object(runtime_run, fallback_to_string=True)
+
+    contract = kubernetes_production_contract_report(
+        operation=operation_body,
+        model_probe=model_probe,
+        preflight=preflight,
+        run=run_body,
+        include_runtime=submit_run,
+    )
+    gate = kubernetes_production_evidence_gate_report(
+        model_probe=model_probe,
+        preflight=preflight,
+        run=run_body,
+        contract=contract,
+        submit_run=submit_run,
+        skip_cluster=skip_cluster,
+    )
+    return immutable_json(
+        {
+            "status": gate["status"],
+            "passed": gate["passed"],
+            "operation": operation_body,
+            "model_probe": dict(model_probe),
+            "preflight": None if preflight is None else dict(preflight),
+            "run": run_body,
+            "contract": dict(contract),
+            "evidence_gate": dict(gate),
+            "next_step": kubernetes_evidence_next_step(
+                args,
+                model_probe,
+                preflight,
+                runtime_run,
+                submit_run=submit_run,
+            ),
+        }
+    )
+
+
+def kubernetes_evidence_next_step(
+    args: argparse.Namespace,
+    model_probe: JsonMapping,
+    preflight: JsonMapping | None,
+    run: RuntimeRun | None,
+    *,
+    submit_run: bool,
+) -> JsonValue:
+    if model_probe["status"] == "failed":
+        return {
+            "type": "fix_model_provider",
+            "message": "Fix model probe failure before collecting production evidence.",
+        }
+    if preflight is None or preflight["status"] == "failed":
+        return {
+            "type": "fix_preflight",
+            "message": "Resolve Kubernetes preflight before collecting production evidence.",
+        }
+    if not submit_run:
+        return {
+            "type": "submit_runtime_run",
+            "message": "Re-run evidence with --submit-run to observe the runtime boundary.",
+        }
+    if run is None:
+        return {
+            "type": "inspect_failure",
+            "message": "Runtime submission was requested but no run body was produced.",
+        }
+    return kubernetes_run_next_step(run, cast(str | None, args.profile_config))
 
 
 def kubernetes_model_probe_context(
@@ -516,18 +642,6 @@ def normal_probe_workload(value: str, field_name: str) -> str:
         return kubernetes_workload_resource(value)
     except ValueError as exc:
         raise ValueError(f"Kubernetes model probe {field_name} is invalid: {exc}") from exc
-
-
-def kubernetes_operation_body(
-    profile: str,
-    workload: str,
-    namespace: str | None,
-) -> dict[str, JsonValue]:
-    return {
-        "profile": profile,
-        "workload": workload,
-        "namespace": namespace or "",
-    }
 
 
 def kubernetes_model_config_body(model: object) -> dict[str, JsonValue]:
@@ -724,19 +838,17 @@ async def run_kubernetes_remediation(
     args: argparse.Namespace,
     service: RuntimeService,
 ) -> RuntimeRun:
-    profile = cast(str, args.profile)
-    if not service.accepts_profile(profile):
-        raise ValueError(f"unknown profile: {profile}")
-    workload = kubernetes_workload_resource(cast(str, args.workload))
-    namespace = optional_kubernetes_namespace(cast(str | None, args.namespace))
-    criteria = kubernetes_remediation_success_criteria(workload, namespace)
+    operation = KubernetesOperation.from_args(args)
+    if not service.accepts_profile(operation.profile):
+        raise ValueError(f"unknown profile: {operation.profile}")
+    criteria = kubernetes_remediation_success_criteria(operation.workload, operation.namespace)
     goal = Goal(
-        kubernetes_remediation_goal_description(workload, namespace),
+        kubernetes_remediation_goal_description(operation.workload, operation.namespace),
         criteria,
     )
     task = Task(
-        kubernetes_remediation_task_description(workload, namespace),
-        kubernetes_initial_task_required_criteria(namespace),
+        kubernetes_remediation_task_description(operation.workload, operation.namespace),
+        kubernetes_initial_task_required_criteria(operation.namespace),
     )
     return await service.run_goal(goal, task)
 
@@ -748,12 +860,8 @@ def kubernetes_run_body(
     model_probe: JsonMapping | None,
 ) -> JsonMapping:
     profile_config = cast(str | None, args.profile_config)
-    operation: dict[str, JsonValue] = {
-        "profile": cast(str, args.profile),
-        "workload": kubernetes_workload_resource(cast(str, args.workload)),
-        "namespace": optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
-    }
-    run_body = dict(runtime_run_body(run))
+    operation = KubernetesOperation.from_args(args).to_json()
+    run_body = to_json_object(run, fallback_to_string=True)
     return immutable_json(
         {
             "status": run.result.status.value,
@@ -779,11 +887,7 @@ def kubernetes_run_model_probe_failed_body(
     args: argparse.Namespace,
     model_probe: JsonMapping,
 ) -> JsonMapping:
-    operation: dict[str, JsonValue] = {
-        "profile": cast(str, args.profile),
-        "workload": kubernetes_workload_resource(cast(str, args.workload)),
-        "namespace": optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
-    }
+    operation = KubernetesOperation.from_args(args).to_json()
     return immutable_json(
         {
             "status": "failed",
@@ -813,11 +917,7 @@ def kubernetes_run_preflight_failed_body(
     preflight: JsonMapping,
     model_probe: JsonMapping | None,
 ) -> JsonMapping:
-    operation: dict[str, JsonValue] = {
-        "profile": cast(str, args.profile),
-        "workload": kubernetes_workload_resource(cast(str, args.workload)),
-        "namespace": optional_kubernetes_namespace(cast(str | None, args.namespace)) or "",
-    }
+    operation = KubernetesOperation.from_args(args).to_json()
     return immutable_json(
         {
             "status": "failed",

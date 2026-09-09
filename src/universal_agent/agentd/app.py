@@ -8,12 +8,15 @@ from universal_agent.agentd._routes_distributed import (
     DistributedRouteHandlers,
 )
 from universal_agent.agentd._routes_eval import (
-    _ECOSYSTEM_ROUTE_DEFINITIONS,
-    _EVAL_ROUTE_DEFINITIONS,
+    ecosystem_route_definitions,
+    eval_route_definitions,
     handle_ecosystem_route,
     handle_eval_route,
 )
-from universal_agent.agentd._routes_kubernetes import handle_kubernetes_route
+from universal_agent.agentd._routes_kubernetes import (
+    handle_kubernetes_route,
+    kubernetes_route_definitions,
+)
 from universal_agent.agentd._routes_session import (
     _SESSION_ROUTE_DEFINITIONS,
     SessionRouteHandlers,
@@ -104,16 +107,6 @@ _DETAIL_GET_ROUTE_DEFINITIONS = (
 )
 _DETAIL_GET_ROUTES = AgentdRouteMatcher(_DETAIL_GET_ROUTE_DEFINITIONS)
 
-_KUBERNETES_ROUTE_DEFINITIONS = (
-    AgentdRouteDefinition("kubernetes_preflight", "/v1/kubernetes/preflight", ("POST",)),
-    AgentdRouteDefinition("kubernetes_model_probe", "/v1/kubernetes/model-probe", ("POST",)),
-    AgentdRouteDefinition("kubernetes_check", "/v1/kubernetes/check", ("POST",)),
-    AgentdRouteDefinition("kubernetes_run", "/v1/kubernetes/run", ("POST",)),
-    AgentdRouteDefinition("kubernetes_evidence", "/v1/kubernetes/evidence", ("POST",)),
-    *_EVAL_ROUTE_DEFINITIONS,
-    *_ECOSYSTEM_ROUTE_DEFINITIONS,
-)
-
 _MEMORY_ROUTE_DEFINITIONS = (
     AgentdRouteDefinition("memory_create", "/v1/memory", ("POST",)),
     AgentdRouteDefinition(
@@ -127,7 +120,9 @@ _MEMORY_ROUTES = AgentdRouteMatcher(_MEMORY_ROUTE_DEFINITIONS)
 _OPENAPI_ROUTE_DEFINITIONS = (
     *_STATIC_GET_ROUTE_DEFINITIONS,
     *_DETAIL_GET_ROUTE_DEFINITIONS,
-    *_KUBERNETES_ROUTE_DEFINITIONS,
+    *kubernetes_route_definitions(),
+    *eval_route_definitions(),
+    *ecosystem_route_definitions(),
     *_MEMORY_ROUTE_DEFINITIONS,
     *_DISTRIBUTED_ROUTE_DEFINITIONS,
     *_SESSION_ROUTE_DEFINITIONS,

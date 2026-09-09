@@ -18,6 +18,8 @@ from universal_agent.model.router import (
     RiskAwareModelRouter,
 )
 
+pytestmark = pytest.mark.asyncio
+
 
 class FakeAdapter:
     def __init__(self, name: str) -> None:

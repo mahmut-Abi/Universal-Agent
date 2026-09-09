@@ -52,6 +52,7 @@ from universal_agent.domain import (
     DomainPackageRegistry,
 )
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.domains.kubernetes import cli_reports as kubernetes_cli_reports
 from universal_agent.evaluation.recording import (
     FileEvaluationReportStore,
     FileReplayRecordingStore,
@@ -1792,13 +1793,13 @@ async def test_cli_kubernetes_model_probe_rejects_out_of_scope_workload(
         expected_observations=("healthy", "resource", "namespace"),
     )
 
-    def fake_build_configured_model_adapter(*args: Any, **kwargs: Any) -> ScriptedModelAdapter:
+    def fake_kubernetes_model_probe_adapter(*args: Any, **kwargs: Any) -> ScriptedModelAdapter:
         return ScriptedModelAdapter([bad_decision])
 
     monkeypatch.setattr(
-        cli_module,
-        "build_configured_model_adapter",
-        fake_build_configured_model_adapter,
+        kubernetes_cli_reports,
+        "kubernetes_model_probe_adapter",
+        fake_kubernetes_model_probe_adapter,
     )
     init_status = await run_cli(
         [
@@ -2275,13 +2276,13 @@ async def test_cli_kubernetes_run_stops_before_preflight_when_model_probe_fails(
         expected_observations=("healthy", "resource", "namespace"),
     )
 
-    def fake_build_configured_model_adapter(*args: Any, **kwargs: Any) -> ScriptedModelAdapter:
+    def fake_kubernetes_model_probe_adapter(*args: Any, **kwargs: Any) -> ScriptedModelAdapter:
         return ScriptedModelAdapter([bad_decision])
 
     monkeypatch.setattr(
-        cli_module,
-        "build_configured_model_adapter",
-        fake_build_configured_model_adapter,
+        kubernetes_cli_reports,
+        "kubernetes_model_probe_adapter",
+        fake_kubernetes_model_probe_adapter,
     )
     init_status = await run_cli(
         [
@@ -4185,7 +4186,8 @@ async def test_cli_session_events_can_wait_for_new_events() -> None:
     assert isinstance(events, list)
     assert events
     assert wait_payload["next_cursor"] == events[-1]["event_id"]
-    assert any(item["type"] in {"StateUpdated", "GoalCompleted"} for item in events)
+    terminal_or_resume_events = {"SessionResumed", "StateUpdated", "GoalCompleted"}
+    assert any(item["type"] in terminal_or_resume_events for item in events)
 
 
 @pytest.mark.asyncio
@@ -4600,6 +4602,31 @@ async def test_cli_serve_starts_agentd_http_server_with_injected_runner() -> Non
     assert payload["auth_required"] is False
     assert payload["read_only_auth_enabled"] is False
     assert payload["evaluation_report_dir"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_cli_serve_rejects_public_bind_without_agentd_bearer_auth() -> None:
+    service, _ = build_cli_service([])
+    output = StringIO()
+    error = StringIO()
+    observed_urls: list[str] = []
+
+    def runner(server: AgentdHttpServer) -> None:
+        observed_urls.append(server.base_url)
+
+    status = await run_cli(
+        ["serve", "--host", "0.0.0.0", "--port", "0"],
+        service=service,
+        server_runner=runner,
+        stdout=output,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert observed_urls == []
+    assert output.getvalue() == ""
+    assert "agentd auth token is required when binding to non-loopback host" in error.getvalue()
 
 
 @pytest.mark.asyncio
