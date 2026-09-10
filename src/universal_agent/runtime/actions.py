@@ -33,6 +33,7 @@ from universal_agent.core import (
     SideEffect,
     ToolCall,
     ToolDefinition,
+    ToolResult,
     dumps_json,
     immutable_json,
     new_action_id,
@@ -321,10 +322,10 @@ class ActionExecutor:
                     },
                 )
                 if not idempotency_recorded:
-                    return ActionRejected(
-                        ErrorCode.INVALID_STATE,
-                        "side-effecting action already has an execution record; "
-                        "reconcile before retry",
+                    return await self._reconcile_required(
+                        session,
+                        pending,
+                        emit,
                     )
             observed = await self._invoke(session, pending, emit)
             if (
@@ -352,20 +353,7 @@ class ActionExecutor:
     ) -> ActionObserved:
         state = session.state
         tool = self.components.tools.resolve(pending.tool_name)
-        call = ToolCall(
-            action_id=pending.action_id,
-            tool_name=pending.tool_name,
-            capability=pending.capability,
-            arguments=pending.arguments,
-            target=pending.target,
-            domain_name=pending.domain_name,
-            domain_version=pending.domain_version,
-            idempotency_key=pending.idempotency_key,
-            parameters_hash=pending.parameters_hash,
-            attempt=pending.attempt,
-            resource_key=pending.resource_key,
-            resource_version=pending.resource_version,
-        )
+        call = _tool_call(pending)
         await emit(
             "ActionStarted",
             call.action_id,
@@ -402,11 +390,51 @@ class ActionExecutor:
             result=tool_result,
         )
         state.observations.append(observation)
-        await emit(
-            "ObservationReceived",
-            observation.action_id,
-            {"observation_id": observation.id, "status": observation.status.value},
+        await _emit_observation_received(observation, emit)
+        return ActionObserved(pending, observation)
+
+    async def _reconcile_required(
+        self,
+        session: SessionRuntimeState,
+        pending: PendingAction,
+        emit: EmitFn,
+    ) -> ActionObserved:
+        state = session.state
+        message = (
+            "side-effecting action already has an execution record; "
+            "reconcile action outcome before retry"
         )
+        await emit(
+            "ActionReconcileRequired",
+            pending.action_id,
+            {
+                "capability": pending.capability,
+                "tool_name": pending.tool_name,
+                "idempotency_key": pending.idempotency_key,
+                "parameters_hash": pending.parameters_hash,
+                "resource_key": pending.resource_key,
+                "resource_version": pending.resource_version,
+            },
+        )
+        observation = self._observations.from_tool_result(
+            task_id=state.current_task.id,
+            call=_tool_call(pending),
+            result=ToolResult(
+                status=ObservationStatus.UNKNOWN,
+                output=immutable_json(
+                    {
+                        "reconcile_required": True,
+                        "idempotency_key": pending.idempotency_key,
+                        "parameters_hash": pending.parameters_hash,
+                        "resource_key": pending.resource_key,
+                    }
+                ),
+                error=message,
+                error_code=ErrorCode.UNKNOWN_EXECUTION,
+            ),
+        )
+        state.observations.append(observation)
+        await _emit_observation_received(observation, emit)
         return ActionObserved(pending, observation)
 
     async def _check_sandbox(
@@ -598,6 +626,42 @@ class ActionExecutor:
             lock.action_id,
             {"resource_key": lock.resource_key},
         )
+
+
+async def _emit_observation_received(
+    observation: Observation,
+    emit: EmitFn,
+) -> None:
+    data: dict[str, object] = {
+        "observation_id": observation.id,
+        "status": observation.status.value,
+    }
+    if observation.error_code is not None:
+        data["error_code"] = observation.error_code.value
+    if observation.error is not None:
+        data["error"] = observation.error
+    await emit(
+        "ObservationReceived",
+        observation.action_id,
+        data,
+    )
+
+
+def _tool_call(pending: PendingAction) -> ToolCall:
+    return ToolCall(
+        action_id=pending.action_id,
+        tool_name=pending.tool_name,
+        capability=pending.capability,
+        arguments=pending.arguments,
+        target=pending.target,
+        domain_name=pending.domain_name,
+        domain_version=pending.domain_version,
+        idempotency_key=pending.idempotency_key,
+        parameters_hash=pending.parameters_hash,
+        attempt=pending.attempt,
+        resource_key=pending.resource_key,
+        resource_version=pending.resource_version,
+    )
 
 
 def _action_parameters_hash(decision: Decision) -> str:

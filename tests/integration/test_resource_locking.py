@@ -42,7 +42,8 @@ from universal_agent.evaluation import Evaluator
 from universal_agent.evidence import EvidenceExtractor
 from universal_agent.memory import MemoryRecord
 from universal_agent.policy import Policy, PolicyRule
-from universal_agent.recovery import RecoveryRule
+from universal_agent.recovery import FailureCategory, RecoveryRule, RecoveryStrategy
+from universal_agent.runtime.idempotency import IdempotencyKey
 from universal_agent.tasks import TaskExpander
 from universal_agent.tools import UncertainToolExecutionError
 from universal_agent.world import WorldUpdater
@@ -70,6 +71,20 @@ class UnknownMutationTool(LockedMutationTool):
         raise UncertainToolExecutionError("connection closed after dispatch")
 
 
+class AlwaysDuplicateIdempotencyStore:
+    def record(self, key: IdempotencyKey) -> bool:
+        return False
+
+    def seen(self, key: IdempotencyKey) -> bool:
+        return True
+
+    def forget(self, key: IdempotencyKey) -> None:
+        raise AssertionError("duplicate execution records must not be forgotten")
+
+    def clear(self) -> None:
+        pass
+
+
 class LockedMutationEvaluator:
     name = "locked-mutation-evaluator"
 
@@ -93,9 +108,15 @@ class LockedMutationContext:
 
 
 class LockedMutationDomain:
-    def __init__(self, tool: LockedMutationTool, effect: PolicyEffect) -> None:
+    def __init__(
+        self,
+        tool: LockedMutationTool,
+        effect: PolicyEffect,
+        recovery_rules: tuple[RecoveryRule, ...] = (),
+    ) -> None:
         self._tool = tool
         self._effect = effect
+        self._recovery_rules = recovery_rules
 
     @property
     def manifest(self) -> DomainManifest:
@@ -146,7 +167,7 @@ class LockedMutationDomain:
         return ()
 
     def recovery_rules(self) -> tuple[RecoveryRule, ...]:
-        return ()
+        return self._recovery_rules
 
     def memories(self) -> tuple[MemoryRecord, ...]:
         return ()
@@ -167,11 +188,14 @@ def build_runtime(
     effect: PolicyEffect,
     *,
     tool: LockedMutationTool | None = None,
+    recovery_rules: tuple[RecoveryRule, ...] = (),
 ) -> tuple[
     AgentRuntime, InMemoryStateStore, InMemoryEventSink, RuntimeComponents, LockedMutationTool
 ]:
     tool = tool or LockedMutationTool()
-    components = RuntimeBuilder().build(DomainLoader().load(LockedMutationDomain(tool, effect)))
+    components = RuntimeBuilder().build(
+        DomainLoader().load(LockedMutationDomain(tool, effect, recovery_rules))
+    )
     store = InMemoryStateStore()
     events = InMemoryEventSink()
     runtime = AgentRuntime(
@@ -230,6 +254,36 @@ async def test_unknown_mutation_forgets_idempotency_record() -> None:
     assert tool.calls == 1
     assert "IdempotencyChecked" in [event.type for event in events.events]
     assert not runtime._actions.idempotency_store.seen(resolved.data["idempotency_key"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_duplicate_idempotency_record_requires_reconcile_without_reexecuting() -> None:
+    runtime, _, events, _, tool = build_runtime(
+        PolicyEffect.ALLOW,
+        recovery_rules=(
+            RecoveryRule(
+                "ask-user-for-reconcile",
+                (FailureCategory.UNKNOWN,),
+                RecoveryStrategy.ASK_USER,
+                max_attempts=1,
+            ),
+        ),
+    )
+    runtime._actions.idempotency_store = AlwaysDuplicateIdempotencyStore()
+
+    result = await runtime.run(*goal_task())
+    event_types = [event.type for event in events.events]
+    observation = next(event for event in events.events if event.type == "ObservationReceived")
+
+    assert result.status is ExecutionStatus.WAITING
+    assert result.error_code is None
+    assert tool.calls == 0
+    assert "ActionStarted" not in event_types
+    assert "RecoveryPlanned" in event_types
+    assert observation.data["status"] == "unknown"
+    assert observation.data["error_code"] == ErrorCode.UNKNOWN_EXECUTION.value
+    assert "reconcile" in str(observation.data["error"])
 
 
 @pytest.mark.asyncio
