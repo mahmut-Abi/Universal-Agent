@@ -22,6 +22,35 @@ from universal_agent.multi_agent.contracts import AgentTaskRequest
 
 AgentId = NewType("AgentId", str)
 
+_READ_ONLY_PERMISSION = "read_only"
+_MUTATING_PERMISSION_PREFIXES = (
+    "admin",
+    "apply",
+    "create",
+    "delete",
+    "destructive",
+    "execute",
+    "mutat",
+    "patch",
+    "restart",
+    "rollout",
+    "scale",
+    "update",
+    "write",
+)
+_MUTATING_CAPABILITY_PREFIXES = (
+    "apply_",
+    "create_",
+    "delete_",
+    "mutate_",
+    "patch_",
+    "restart_",
+    "rollout_",
+    "scale_",
+    "update_",
+    "write_",
+)
+
 
 class AgentRegistryError(ValueError):
     pass
@@ -306,8 +335,11 @@ class AgentRegistry:
         if constraints.allowed_profiles and profile.name not in constraints.allowed_profiles:
             return False
         permissions = set(profile.permissions)
-        if constraints.read_only and "read_only" not in permissions:
-            return False
+        if constraints.read_only:
+            if _READ_ONLY_PERMISSION not in permissions:
+                return False
+            if _profile_grants_mutation(profile):
+                return False
         return set(constraints.required_permissions).issubset(permissions)
 
     def snapshot(self) -> AgentRegistrySnapshot:
@@ -316,6 +348,24 @@ class AgentRegistry:
 
 def _reject_empty_items(values: tuple[str, ...], field_name: str) -> None:
     parse_non_empty_string_sequence(values, f"agent profile {field_name}")
+
+
+def _profile_grants_mutation(profile: AgentProfileRecord) -> bool:
+    return any(_looks_mutating_permission(item) for item in profile.permissions) or any(
+        _looks_mutating_capability(item) for item in profile.capabilities
+    )
+
+
+def _looks_mutating_permission(value: str) -> bool:
+    normalized = value.strip().lower().replace("-", "_")
+    if normalized == _READ_ONLY_PERMISSION:
+        return False
+    return normalized.startswith(_MUTATING_PERMISSION_PREFIXES)
+
+
+def _looks_mutating_capability(value: str) -> bool:
+    normalized = value.strip().lower().replace("-", "_")
+    return normalized.startswith(_MUTATING_CAPABILITY_PREFIXES)
 
 
 def _optional_session_id(value: str | None) -> SessionId | None:

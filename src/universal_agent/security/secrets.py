@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
@@ -41,6 +42,17 @@ SENSITIVE_KEY_PARTS = (
     "private_key",
     "secret",
     "token",
+)
+_AUTHORIZATION_TEXT_PATTERN = re.compile(
+    r"\b(authorization\s*[:=]\s*(?:bearer|basic)\s+)([A-Za-z0-9._~+/\-]+=*)",
+    re.IGNORECASE,
+)
+_BEARER_TEXT_PATTERN = re.compile(
+    r"\b((?:bearer|basic)\s+)([A-Za-z0-9._~+/\-]+=*)",
+    re.IGNORECASE,
+)
+_JWT_TEXT_PATTERN = re.compile(
+    r"\b(eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})\b"
 )
 
 
@@ -95,7 +107,9 @@ def redact_sensitive_value(
 ) -> JsonValue:
     if is_sensitive_key(key):
         return replacement
-    if value is None or isinstance(value, bool | int | float | str):
+    if isinstance(value, str):
+        return redact_sensitive_text(value, replacement=replacement)
+    if value is None or isinstance(value, bool | int | float):
         return value
     if isinstance(value, Mapping):
         return {
@@ -109,6 +123,24 @@ def redact_sensitive_value(
     if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
         return [redact_sensitive_value(key, item, replacement=replacement) for item in value]
     return str(value)
+
+
+def redact_sensitive_text(
+    value: str,
+    *,
+    replacement: str = "[REDACTED]",
+) -> str:
+    """Redact common credential shapes embedded in otherwise non-secret text."""
+
+    redacted = _AUTHORIZATION_TEXT_PATTERN.sub(
+        lambda match: f"{match.group(1)}{replacement}",
+        value,
+    )
+    redacted = _BEARER_TEXT_PATTERN.sub(
+        lambda match: f"{match.group(1)}{replacement}",
+        redacted,
+    )
+    return _JWT_TEXT_PATTERN.sub(replacement, redacted)
 
 
 class SecretResolutionError(ValueError):
@@ -399,6 +431,8 @@ def _scan_value(value: object, path: str) -> tuple[SecretFinding, ...]:
         for index, item in enumerate(value):
             findings.extend(_scan_value(item, f"{path}[{index}]"))
         return tuple(findings)
+    if isinstance(value, str) and redact_sensitive_text(value) != value:
+        return (SecretFinding(path, "text contains unredacted credential"),)
     return ()
 
 

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import quote
 
 import jsonlines
+from filelock import FileLock
 
 from universal_agent.core import (
     AgentState,
@@ -46,49 +48,56 @@ class FileSessionStore:
     def __init__(self, root: str | Path) -> None:
         self._root = Path(root)
         self._sessions = self._root / "sessions"
+        self._file_lock = FileLock(str(self._root / ".runtime-store.lock"))
 
     async def create_session(self, snapshot: SessionSnapshot) -> None:
-        path = self._session_path(snapshot.state.session_id)
-        if path.exists():
-            raise ValueError(f"session already exists: {snapshot.state.session_id}")
-        snapshot.version = 0
-        self._write_snapshot(path, snapshot)
+        with self._locked():
+            path = self._session_path(snapshot.state.session_id)
+            if path.exists():
+                raise ValueError(f"session already exists: {snapshot.state.session_id}")
+            snapshot.version = 0
+            self._write_snapshot(path, snapshot)
 
     async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
-        if not self._sessions.exists():
-            return ()
-        snapshots: list[SessionSnapshot] = []
-        for path in sorted(self._sessions.glob("*.json")):
-            snapshots.append(decode_session_snapshot(_load_json_object(path, "session snapshot")))
-        return tuple(
-            sorted(
-                snapshots,
-                key=lambda snapshot: (
-                    snapshot.state.goal.created_at,
-                    str(snapshot.state.session_id),
-                ),
-                reverse=True,
+        with self._locked():
+            if not self._sessions.exists():
+                return ()
+            snapshots: list[SessionSnapshot] = []
+            for path in sorted(self._sessions.glob("*.json")):
+                snapshots.append(
+                    decode_session_snapshot(_load_json_object(path, "session snapshot"))
+                )
+            return tuple(
+                sorted(
+                    snapshots,
+                    key=lambda snapshot: (
+                        snapshot.state.goal.created_at,
+                        str(snapshot.state.session_id),
+                    ),
+                    reverse=True,
+                )
             )
-        )
 
     async def load_session(self, session_id: SessionId) -> SessionSnapshot:
-        path = self._session_path(session_id)
-        if not path.exists():
-            raise StateNotFoundError(f"session not found: {session_id}")
-        return decode_session_snapshot(_load_json_object(path, "session snapshot"))
+        with self._locked():
+            path = self._session_path(session_id)
+            if not path.exists():
+                raise StateNotFoundError(f"session not found: {session_id}")
+            return decode_session_snapshot(_load_json_object(path, "session snapshot"))
 
     async def save_session(self, snapshot: SessionSnapshot) -> None:
-        path = self._session_path(snapshot.state.session_id)
-        if not path.exists():
-            raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
-        stored = decode_session_snapshot(_load_json_object(path, "session snapshot"))
-        if snapshot.version != stored.version:
-            raise SessionVersionConflictError(
-                f"session version conflict: {snapshot.state.session_id} expected "
-                f"{stored.version}, got {snapshot.version}"
-            )
-        snapshot.version = stored.version + 1
-        self._write_snapshot(path, snapshot)
+        with self._locked():
+            path = self._session_path(snapshot.state.session_id)
+            if not path.exists():
+                raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
+            stored = decode_session_snapshot(_load_json_object(path, "session snapshot"))
+            if snapshot.version != stored.version:
+                raise SessionVersionConflictError(
+                    f"session version conflict: {snapshot.state.session_id} expected "
+                    f"{stored.version}, got {snapshot.version}"
+                )
+            snapshot.version = stored.version + 1
+            self._write_snapshot(path, snapshot)
 
     async def create(self, state: AgentState) -> None:
         await self.create_session(session_from_state(state))
@@ -107,28 +116,38 @@ class FileSessionStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         write_json_file(path, encode_session_snapshot(snapshot), indent=True)
 
+    @contextmanager
+    def _locked(self) -> Iterator[None]:
+        self._root.mkdir(parents=True, exist_ok=True)
+        with self._file_lock:
+            yield
+
 
 class FileEventStore:
     """File-backed EventSink/EventReader adapter using JSON lines."""
 
     def __init__(self, root: str | Path) -> None:
-        self._path = Path(root) / "events.jsonl"
+        self._root = Path(root)
+        self._path = self._root / "events.jsonl"
+        self._file_lock = FileLock(str(self._root / ".runtime-store.lock"))
 
     async def emit(self, event: RuntimeEvent) -> None:
         self.append(event)
 
     def append(self, event: RuntimeEvent) -> None:
-        if self._event_exists(event.id):
-            return
-        _append_json_line(self._path, encode_runtime_event(event))
+        with self._locked():
+            if self._event_exists(event.id):
+                return
+            _append_json_line(self._path, encode_runtime_event(event))
 
     def events_for(self, session_id: SessionId) -> tuple[RuntimeEvent, ...]:
         return tuple(event for event in self.all() if event.session_id == session_id)
 
     def all(self) -> tuple[RuntimeEvent, ...]:
-        if not self._path.exists():
-            return ()
-        return tuple(_load_runtime_events(self._path))
+        with self._locked():
+            if not self._path.exists():
+                return ()
+            return tuple(_load_runtime_events(self._path))
 
     async def list_events(
         self,
@@ -137,15 +156,20 @@ class FileEventStore:
         after_event_id: EventId | None = None,
         limit: int | None = None,
     ) -> tuple[RuntimeEvent, ...]:
-        if not self._path.exists():
-            return ()
-        events = tuple(event for event in self.all() if event.type != SESSION_STATE_EVENT)
-        return filter_events(
-            events,
-            session_id=session_id,
-            after_event_id=after_event_id,
-            limit=limit,
-        )
+        with self._locked():
+            if not self._path.exists():
+                return ()
+            events = tuple(
+                event
+                for event in _load_runtime_events(self._path)
+                if event.type != SESSION_STATE_EVENT
+            )
+            return filter_events(
+                events,
+                session_id=session_id,
+                after_event_id=after_event_id,
+                limit=limit,
+            )
 
     async def watch_events(
         self,
@@ -163,7 +187,15 @@ class FileEventStore:
             yield event
 
     def _event_exists(self, event_id: EventId) -> bool:
-        return any(event.id == event_id for event in self.all())
+        if not self._path.exists():
+            return False
+        return any(event.id == event_id for event in _iter_runtime_events(self._path))
+
+    @contextmanager
+    def _locked(self) -> Iterator[None]:
+        self._root.mkdir(parents=True, exist_ok=True)
+        with self._file_lock:
+            yield
 
 
 class FileRuntimeStore(FileSessionStore, FileEventStore):
@@ -182,18 +214,22 @@ class FileRuntimeStore(FileSessionStore, FileEventStore):
         self._sessions = self._root / "sessions"
         self._path = self._root / "events.jsonl"
         self._commits = self._root / "commits"
+        self._file_lock = FileLock(str(self._root / ".runtime-store.lock"))
 
     async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
-        self._recover_commits()
-        return await super().list_sessions()
+        with self._locked():
+            self._recover_commits()
+            return await super().list_sessions()
 
     async def load_session(self, session_id: SessionId) -> SessionSnapshot:
-        self._recover_commits()
-        return await super().load_session(session_id)
+        with self._locked():
+            self._recover_commits()
+            return await super().load_session(session_id)
 
     async def save_session(self, snapshot: SessionSnapshot) -> None:
-        self._recover_commits()
-        await super().save_session(snapshot)
+        with self._locked():
+            self._recover_commits()
+            await super().save_session(snapshot)
 
     async def list_events(
         self,
@@ -202,38 +238,40 @@ class FileRuntimeStore(FileSessionStore, FileEventStore):
         after_event_id: EventId | None = None,
         limit: int | None = None,
     ) -> tuple[RuntimeEvent, ...]:
-        self._recover_commits()
-        return await super().list_events(
-            session_id=session_id,
-            after_event_id=after_event_id,
-            limit=limit,
-        )
+        with self._locked():
+            self._recover_commits()
+            return await super().list_events(
+                session_id=session_id,
+                after_event_id=after_event_id,
+                limit=limit,
+            )
 
     async def commit_session_event(
         self,
         snapshot: SessionSnapshot,
         event: RuntimeEvent,
     ) -> None:
-        self._recover_commits()
-        path = self._session_path(snapshot.state.session_id)
-        if not path.exists():
-            raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
-        if self._event_exists(event.id):
-            raise ValueError(f"runtime event already exists: {event.id}")
-        stored = decode_session_snapshot(_load_json_object(path, "session snapshot"))
-        if snapshot.version != stored.version:
-            raise SessionVersionConflictError(
-                f"session version conflict: {snapshot.state.session_id} expected "
-                f"{stored.version}, got {snapshot.version}"
-            )
-        snapshot.version = stored.version + 1
-        commit_path = self._commit_path(event.id)
-        if commit_path.exists():
-            raise ValueError(f"runtime commit already exists: {event.id}")
-        self._write_commit(commit_path, snapshot, event)
-        self._write_snapshot(path, snapshot)
-        self._append_event_if_missing(event)
-        commit_path.unlink(missing_ok=True)
+        with self._locked():
+            self._recover_commits()
+            path = self._session_path(snapshot.state.session_id)
+            if not path.exists():
+                raise StateNotFoundError(f"session not found: {snapshot.state.session_id}")
+            if self._event_exists(event.id):
+                raise ValueError(f"runtime event already exists: {event.id}")
+            stored = decode_session_snapshot(_load_json_object(path, "session snapshot"))
+            if snapshot.version != stored.version:
+                raise SessionVersionConflictError(
+                    f"session version conflict: {snapshot.state.session_id} expected "
+                    f"{stored.version}, got {snapshot.version}"
+                )
+            snapshot.version = stored.version + 1
+            commit_path = self._commit_path(event.id)
+            if commit_path.exists():
+                raise ValueError(f"runtime commit already exists: {event.id}")
+            self._write_commit(commit_path, snapshot, event)
+            self._write_snapshot(path, snapshot)
+            self._append_event_if_missing(event)
+            commit_path.unlink(missing_ok=True)
 
     def _recover_commits(self) -> None:
         if not self._commits.exists():

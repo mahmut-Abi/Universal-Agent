@@ -287,6 +287,7 @@ def build_parser() -> argparse.ArgumentParser:
     ecosystem_install.add_argument("--base-path")
     ecosystem_install.add_argument("--no-verify", action="store_true")
     ecosystem_install.add_argument("--plan-only", action="store_true")
+    ecosystem_install.add_argument("--allow-unsigned", action="store_true")
     ecosystem_install.add_argument("--allow-unverified-signatures", action="store_true")
     ecosystem_store = ecosystem_commands.add_parser("store")
     ecosystem_store_commands = ecosystem_store.add_subparsers(

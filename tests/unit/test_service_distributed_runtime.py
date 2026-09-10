@@ -1,20 +1,37 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
+import universal_agent.service.distributed_runtime as distributed_runtime
 from universal_agent.core import (
+    ExecutionStatus,
     Goal,
     GoalId,
+    GoalStatus,
     JsonValue,
+    SessionId,
     SuccessCriterion,
     Task,
     TaskId,
     immutable_json,
 )
+from universal_agent.distributed import (
+    DistributedLockConflictError,
+    DistributedLockOwnerId,
+    DistributedRuntimeCoordinator,
+    WorkerId,
+    WorkerRunStatus,
+)
+from universal_agent.runtime import RuntimeAPI
 from universal_agent.service.distributed_runtime import (
+    DistributedRuntimeController,
+    distributed_session_lock_key,
     goal_task_from_work_payload,
     goal_work_payload,
 )
@@ -152,3 +169,67 @@ def test_goal_task_from_work_payload_reports_stable_validation_messages(
 ) -> None:
     with pytest.raises(ValueError, match=re.escape(message)):
         goal_task_from_work_payload(immutable_json(payload))
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_distributed_session_lock_is_heartbeated_while_resume_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(distributed_runtime, "_DISTRIBUTED_SESSION_LOCK_TTL_SECONDS", 0.08)
+    coordinator = DistributedRuntimeCoordinator()
+    session_id = SessionId("session-1")
+    scheduled = coordinator.schedule_session(session_id).scheduled_work_item
+    competing_attempts: list[str] = []
+
+    class SlowRuntimeAPI:
+        async def get_session(self, loaded_session_id: SessionId) -> object:
+            assert loaded_session_id == session_id
+            return SimpleNamespace(pending_action=None, goal_status=GoalStatus.WAITING)
+
+        async def resume_session(
+            self,
+            loaded_session_id: SessionId,
+            *,
+            confirmed: bool | None = None,
+        ) -> object:
+            assert loaded_session_id == session_id
+            assert confirmed is None
+            await asyncio.sleep(0.11)
+            try:
+                lease = coordinator.locks.acquire(
+                    lock_key=distributed_session_lock_key(session_id),
+                    owner_id=DistributedLockOwnerId("worker-b"),
+                    ttl_seconds=0.08,
+                )
+            except DistributedLockConflictError:
+                competing_attempts.append("blocked")
+            else:
+                competing_attempts.append("acquired")
+                coordinator.locks.release(
+                    lease.lease_id,
+                    owner_id=DistributedLockOwnerId("worker-b"),
+                )
+            return SimpleNamespace(
+                result=SimpleNamespace(
+                    status=ExecutionStatus.WAITING,
+                    reason="still waiting",
+                )
+            )
+
+    controller = DistributedRuntimeController(
+        runtime_api=cast(RuntimeAPI, SlowRuntimeAPI()),
+        coordinator=coordinator,
+    )
+
+    result = await controller.run_worker_once(
+        WorkerId("worker-a"),
+        lease_ttl_seconds=0.2,
+        worker_ttl_seconds=0.2,
+        heartbeat_interval_seconds=0.02,
+    )
+
+    assert result is not None
+    assert result.status is WorkerRunStatus.COMPLETED
+    assert competing_attempts == ["blocked"]
+    assert coordinator.queue.get(scheduled.work_item_id).status.value == "completed"

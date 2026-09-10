@@ -8,6 +8,7 @@ from universal_agent.core import (
     new_observation_id,
     utc_now,
 )
+from universal_agent.security import redact_sensitive_mapping, redact_sensitive_text
 
 
 class ObservationFactory:
@@ -24,8 +25,8 @@ class ObservationFactory:
             task_id=task_id,
             source=f"{call.capability}:{call.tool_name}",
             status=result.status,
-            data=result.output,
+            data=redact_sensitive_mapping(result.output),
             observed_at=utc_now(),
-            error=result.error,
+            error=None if result.error is None else redact_sensitive_text(result.error),
             error_code=result.error_code,
         )

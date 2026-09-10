@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -63,6 +64,7 @@ if TYPE_CHECKING:
 
 
 _DISTRIBUTED_SESSION_LOCK_TTL_SECONDS = 300.0
+_DISTRIBUTED_SESSION_LOCK_HEARTBEAT_MAX_INTERVAL_SECONDS = 60.0
 
 
 class _GoalWorkSuccessCriterionPayload(ConfigPayload):
@@ -708,13 +710,56 @@ class DistributedRuntimeController:
             )
 
         try:
-            return await operation()
+            return await self._run_with_session_lock_heartbeat(
+                lock.lease_id,
+                owner_id,
+                operation,
+            )
         finally:
             with suppress(DistributedLockLeaseLostError):
                 self._coordinator.locks.release(
                     lock.lease_id,
                     owner_id=owner_id,
                 )
+
+    async def _run_with_session_lock_heartbeat(
+        self,
+        lease_id: DistributedLockLeaseId,
+        owner_id: DistributedLockOwnerId,
+        operation: Callable[[], Awaitable[WorkHandlerResult]],
+    ) -> WorkHandlerResult:
+        if self._coordinator is None:
+            return await operation()
+        task = asyncio.ensure_future(operation())
+        try:
+            while True:
+                done, _ = await asyncio.wait(
+                    {task},
+                    timeout=_session_lock_heartbeat_interval_seconds(),
+                )
+                if task in done:
+                    return task.result()
+                try:
+                    self._coordinator.locks.heartbeat(
+                        lease_id,
+                        owner_id=owner_id,
+                        ttl_seconds=_DISTRIBUTED_SESSION_LOCK_TTL_SECONDS,
+                    )
+                except DistributedLockLeaseLostError as exc:
+                    if not task.done():
+                        task.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await task
+                    return WorkHandlerResult.failed(
+                        f"session execution lock lost: {exc}",
+                        retry=True,
+                    )
+        except BaseException:
+            if not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+            raise
 
 
 def distributed_session_lock_key(session_id: SessionId) -> str:
@@ -727,6 +772,13 @@ def distributed_session_lock_owner(item: WorkItem) -> DistributedLockOwnerId:
         return DistributedLockOwnerId(f"worker:unknown:work:{item.work_item_id}")
     return DistributedLockOwnerId(
         f"worker:{lease.worker_id}:work:{item.work_item_id}:lease:{lease.lease_id}"
+    )
+
+
+def _session_lock_heartbeat_interval_seconds() -> float:
+    return min(
+        _DISTRIBUTED_SESSION_LOCK_HEARTBEAT_MAX_INTERVAL_SECONDS,
+        _DISTRIBUTED_SESSION_LOCK_TTL_SECONDS / 2,
     )
 
 

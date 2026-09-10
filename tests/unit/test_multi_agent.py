@@ -589,6 +589,56 @@ def test_agent_registry_filters_eligible_instances_by_constraints() -> None:
 
 
 @pytest.mark.unit
+def test_agent_registry_rejects_read_only_requests_for_mutating_profiles() -> None:
+    registry = AgentRegistry(
+        (
+            profile("mixed-operator", permissions=("read_only", "mutation")),
+            AgentProfileRecord(
+                name="capability-mutator",
+                version="1.0.0",
+                domains=(DomainIdentity("kubernetes", "0.2.0"),),
+                permissions=("read_only",),
+                capabilities=("inspect_workload", "scale_workload"),
+            ),
+        ),
+        (
+            instance("agent-1", name="mixed-operator"),
+            instance("agent-2", name="capability-mutator"),
+        ),
+    )
+
+    eligible = registry.eligible_instances(
+        request(constraints=AgentTaskConstraints(read_only=True))
+    )
+
+    assert eligible == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_agent_orchestrator_fails_closed_for_read_only_mutating_profile() -> None:
+    executor = RecordingExecutor()
+    registry = AgentRegistry(
+        (
+            AgentProfileRecord(
+                name="operator",
+                version="1.0.0",
+                domains=(DomainIdentity("kubernetes", "0.2.0"),),
+                permissions=("read_only",),
+                capabilities=("inspect_workload", "scale_workload"),
+            ),
+        ),
+        (instance(name="operator"),),
+    )
+    orchestrator = AgentOrchestrator(registry, {AgentId("agent-1"): executor})
+
+    with pytest.raises(NoEligibleAgentError):
+        await orchestrator.delegate(request(), agent_id=AgentId("agent-1"))
+
+    assert executor.requests == []
+
+
+@pytest.mark.unit
 def test_agent_registry_updates_instance_status() -> None:
     registry = AgentRegistry((profile(),), (instance(),))
 

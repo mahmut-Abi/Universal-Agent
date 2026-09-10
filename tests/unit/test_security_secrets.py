@@ -88,6 +88,29 @@ def test_redact_sensitive_mapping_uses_shared_sensitive_key_rules() -> None:
 
 
 @pytest.mark.unit
+def test_redact_sensitive_mapping_redacts_bearer_and_jwt_text() -> None:
+    redacted = redact_sensitive_mapping(
+        {
+            "recent_logs": (
+                "Authorization: Bearer log-token\n"
+                "standalone jwt "
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+                "eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+                "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+            )
+        },
+        replacement="<redacted>",
+    )
+
+    assert redacted == {
+        "recent_logs": (
+            "Authorization: Bearer <redacted>\n"
+            "standalone jwt <redacted>"
+        )
+    }
+
+
+@pytest.mark.unit
 def test_secret_resolver_reports_env_secret_availability_without_values() -> None:
     report = resolve_secret_refs(
         (

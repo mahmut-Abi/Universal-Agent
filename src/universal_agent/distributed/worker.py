@@ -242,7 +242,15 @@ class WorkQueueWorker:
                 now=now,
             )
             return None
-        if record.status in {WorkerStatus.DRAINING, WorkerStatus.OFFLINE, WorkerStatus.LOST}:
+        if record.status is WorkerStatus.LOST:
+            self._worker_registry.register(
+                self._worker_id,
+                capabilities=self._worker_capabilities,
+                ttl_seconds=self._worker_ttl_seconds,
+                now=now,
+            )
+            return None
+        if record.status in {WorkerStatus.DRAINING, WorkerStatus.OFFLINE}:
             return WorkerRunResult(
                 status=WorkerRunStatus.WORKER_INACTIVE,
                 worker_id=self._worker_id,
@@ -255,6 +263,18 @@ class WorkQueueWorker:
                 now=now,
             )
         except WorkerNotFoundError as exc:
+            try:
+                expired_record = self._worker_registry.get(self._worker_id)
+            except WorkerNotFoundError:
+                expired_record = None
+            if expired_record is not None and expired_record.status is WorkerStatus.LOST:
+                self._worker_registry.register(
+                    self._worker_id,
+                    capabilities=self._worker_capabilities,
+                    ttl_seconds=self._worker_ttl_seconds,
+                    now=now,
+                )
+                return None
             return WorkerRunResult(
                 status=WorkerRunStatus.WORKER_INACTIVE,
                 worker_id=self._worker_id,

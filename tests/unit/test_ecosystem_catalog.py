@@ -60,6 +60,9 @@ class StaticRegistrySignatureVerifier:
         )
 
 
+LOCAL_UNSIGNED_TRUST = EcosystemRegistryTrustPolicy(allow_unsigned=True)
+
+
 def write_json(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -563,8 +566,8 @@ def test_ecosystem_registry_plans_and_installs_domain_packages(
     catalog = load_ecosystem_catalog(domain_package_root=domain_root)
     manifest = catalog.registry_manifest()
 
-    plan = plan_ecosystem_domain_package_install(manifest)
-    result = install_ecosystem_domain_packages(manifest)
+    plan = plan_ecosystem_domain_package_install(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)
+    result = install_ecosystem_domain_packages(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)
 
     assert plan.identities == (DomainIdentity("kubernetes", "1.0.0"),)
     assert plan.candidates[0].reference.name == "kubernetes"
@@ -585,7 +588,7 @@ def test_ecosystem_registry_domain_package_install_plan_sorts_dependencies_first
     catalog = load_ecosystem_catalog(domain_package_root=domain_root)
     manifest = catalog.registry_manifest()
 
-    plan = plan_ecosystem_domain_package_install(manifest)
+    plan = plan_ecosystem_domain_package_install(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)
 
     assert tuple(reference.identity for reference in manifest.domain_packages) == (
         DomainIdentity("kubernetes", "1.0.0"),
@@ -615,7 +618,11 @@ def test_ecosystem_registry_domain_package_install_plan_reports_cycles_without_p
     manifest = load_ecosystem_catalog(domain_package_root=domain_root).registry_manifest()
 
     with pytest.raises(EcosystemRegistryInstallError, match="dependency cycle in install plan"):
-        plan_ecosystem_domain_package_install(manifest, verify=False)
+        plan_ecosystem_domain_package_install(
+            manifest,
+            verify=False,
+            trust_policy=LOCAL_UNSIGNED_TRUST,
+        )
 
 
 @pytest.mark.unit
@@ -644,7 +651,7 @@ def test_ecosystem_registry_domain_package_install_checks_loaded_manifest_depend
     )
 
     with pytest.raises(EcosystemRegistryInstallError, match="missing dependencies"):
-        plan_ecosystem_domain_package_install(manifest)
+        plan_ecosystem_domain_package_install(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)
 
 
 @pytest.mark.unit
@@ -664,8 +671,8 @@ def test_ecosystem_registry_plans_and_installs_full_ecosystem_artifacts(
     )
     manifest = catalog.registry_manifest()
 
-    plan = plan_ecosystem_install(manifest)
-    result = install_ecosystem(manifest)
+    plan = plan_ecosystem_install(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)
+    result = install_ecosystem(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)
 
     assert plan.domain_packages.identities == (DomainIdentity("kubernetes", "1.0.0"),)
     assert plan.evaluation_datasets[0].dataset.identity.name == "kubernetes-remediation"
@@ -689,6 +696,7 @@ def test_ecosystem_registry_plans_and_installs_full_ecosystem_artifacts(
         install_ecosystem(
             manifest,
             evaluation_dataset_registry=result.evaluation_datasets,
+            trust_policy=LOCAL_UNSIGNED_TRUST,
         )
 
 
@@ -714,7 +722,11 @@ def test_ecosystem_registry_installs_domain_packages_from_relative_paths(
         ),
     )
 
-    result = install_ecosystem_domain_packages(manifest, base_path=tmp_path)
+    result = install_ecosystem_domain_packages(
+        manifest,
+        base_path=tmp_path,
+        trust_policy=LOCAL_UNSIGNED_TRUST,
+    )
 
     assert result.registry.identities() == (DomainIdentity("kubernetes", "1.0.0"),)
 
@@ -811,7 +823,7 @@ def test_ecosystem_registry_install_rejects_failed_signature_verification(
 
 
 @pytest.mark.unit
-def test_ecosystem_registry_install_can_require_signed_registry(
+def test_ecosystem_registry_install_rejects_unsigned_registry_by_default(
     tmp_path: Path,
 ) -> None:
     domain_root = tmp_path / "domains"
@@ -819,10 +831,11 @@ def test_ecosystem_registry_install_can_require_signed_registry(
     unsigned = load_ecosystem_catalog(domain_package_root=domain_root).registry_manifest()
 
     with pytest.raises(EcosystemRegistryInstallError, match="unsigned ecosystem registry"):
-        install_ecosystem_domain_packages(
-            unsigned,
-            trust_policy=EcosystemRegistryTrustPolicy(allow_unsigned=False),
-        )
+        install_ecosystem_domain_packages(unsigned)
+
+    allowed = install_ecosystem_domain_packages(unsigned, trust_policy=LOCAL_UNSIGNED_TRUST)
+
+    assert allowed.registry.identities() == (DomainIdentity("kubernetes", "1.0.0"),)
 
 
 @pytest.mark.unit
@@ -849,7 +862,11 @@ def test_ecosystem_registry_install_refuses_paths_outside_registry_base(
     )
 
     with pytest.raises(EcosystemRegistryInstallError, match="escapes registry base path"):
-        install_ecosystem_domain_packages(manifest, base_path=base_root)
+        install_ecosystem_domain_packages(
+            manifest,
+            base_path=base_root,
+            trust_policy=LOCAL_UNSIGNED_TRUST,
+        )
 
 
 @pytest.mark.unit
@@ -863,7 +880,7 @@ def test_ecosystem_registry_install_refuses_missing_domain_package_resources(
     (domain_root / "kubernetes" / "resources" / "runbook.md").unlink()
 
     with pytest.raises(EcosystemRegistryInstallError, match="local verification failed"):
-        install_ecosystem_domain_packages(manifest)
+        install_ecosystem_domain_packages(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)
 
 
 @pytest.mark.unit
@@ -899,7 +916,7 @@ def test_ecosystem_registry_install_refuses_tampered_domain_manifest(
     )
 
     with pytest.raises(EcosystemRegistryInstallError, match="sha256 mismatch"):
-        install_ecosystem_domain_packages(manifest)
+        install_ecosystem_domain_packages(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)
 
 
 @pytest.mark.unit
@@ -931,7 +948,7 @@ def test_ecosystem_registry_install_refuses_tampered_dataset_manifest(
     )
 
     with pytest.raises(EcosystemRegistryInstallError, match="sha256 mismatch"):
-        plan_ecosystem_install(manifest)
+        plan_ecosystem_install(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)
 
 
 @pytest.mark.unit
@@ -954,7 +971,7 @@ def test_ecosystem_registry_install_refuses_tampered_profile_config(
     profile_path.write_text(json.dumps(loaded, indent=2), encoding="utf-8")
 
     with pytest.raises(EcosystemRegistryInstallError, match="sha256 mismatch"):
-        plan_ecosystem_install(manifest)
+        plan_ecosystem_install(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)
 
 
 @pytest.mark.unit
@@ -979,7 +996,7 @@ def test_ecosystem_registry_install_refuses_identity_mismatch(
     )
 
     with pytest.raises(EcosystemRegistryInstallError, match="identity mismatch"):
-        install_ecosystem_domain_packages(manifest)
+        install_ecosystem_domain_packages(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)
 
 
 @pytest.mark.unit
@@ -1010,7 +1027,7 @@ def test_ecosystem_registry_install_refuses_domain_package_metadata_mismatch(
         EcosystemRegistryInstallError,
         match=r"metadata mismatch:.*entrypoint.*capability_names.*resources",
     ):
-        install_ecosystem_domain_packages(manifest)
+        install_ecosystem_domain_packages(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)
 
 
 @pytest.mark.unit
@@ -1053,7 +1070,7 @@ def test_ecosystem_registry_install_refuses_evaluation_dataset_metadata_mismatch
     )
 
     with pytest.raises(EcosystemRegistryInstallError, match=r"metadata mismatch:.*suites"):
-        plan_ecosystem_install(manifest)
+        plan_ecosystem_install(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)
 
 
 @pytest.mark.unit
@@ -1097,7 +1114,7 @@ def test_ecosystem_registry_install_refuses_profile_metadata_mismatch(
     )
 
     with pytest.raises(EcosystemRegistryInstallError, match=r"metadata mismatch:.*domains"):
-        plan_ecosystem_install(manifest)
+        plan_ecosystem_install(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)
 
 
 @pytest.mark.unit
@@ -1117,12 +1134,23 @@ def test_ecosystem_registry_install_refuses_missing_paths_and_duplicates(
     )
     registry = DomainPackageRegistry()
 
-    install_ecosystem_domain_packages(manifest, registry=registry)
+    install_ecosystem_domain_packages(
+        manifest,
+        registry=registry,
+        trust_policy=LOCAL_UNSIGNED_TRUST,
+    )
 
     with pytest.raises(EcosystemRegistryInstallError, match="no local path"):
-        install_ecosystem_domain_packages(missing_path_manifest)
+        install_ecosystem_domain_packages(
+            missing_path_manifest,
+            trust_policy=LOCAL_UNSIGNED_TRUST,
+        )
     with pytest.raises(EcosystemRegistryInstallError, match="already registered"):
-        install_ecosystem_domain_packages(manifest, registry=registry)
+        install_ecosystem_domain_packages(
+            manifest,
+            registry=registry,
+            trust_policy=LOCAL_UNSIGNED_TRUST,
+        )
     assert registry.identities() == (DomainIdentity("kubernetes", "1.0.0"),)
 
 
@@ -1145,4 +1173,4 @@ def test_ecosystem_registry_install_requires_verified_references_by_default() ->
     )
 
     with pytest.raises(EcosystemRegistryInstallError, match="verification failed"):
-        install_ecosystem_domain_packages(manifest)
+        install_ecosystem_domain_packages(manifest, trust_policy=LOCAL_UNSIGNED_TRUST)

@@ -68,6 +68,22 @@ def test_factory_maps_failed_result_fields_and_error() -> None:
     assert observation.error_code == ErrorCode.TOOL_FAILURE
 
 
+def test_factory_redacts_sensitive_text_from_output_and_error() -> None:
+    factory = ObservationFactory()
+    call = make_call("inspect_logs", "kubectl_logs")
+    result = ToolResult(
+        status=ObservationStatus.FAILED,
+        output=immutable_json({"recent_logs": "Authorization: Bearer log-token"}),
+        error="kubectl stderr contained Bearer error-token",
+        error_code=ErrorCode.TOOL_FAILURE,
+    )
+
+    observation = factory.from_tool_result(task_id=TaskId("task-1"), call=call, result=result)
+
+    assert observation.data == immutable_json({"recent_logs": "Authorization: Bearer [REDACTED]"})
+    assert observation.error == "kubectl stderr contained Bearer [REDACTED]"
+
+
 def test_factory_assigns_fresh_observation_id_and_observed_at() -> None:
     factory = ObservationFactory()
     call = make_call()

@@ -300,10 +300,31 @@ class AgentRuntime:
                     ),
                 )
             if pending is not None and not confirmed:
-                return await self._settle(
+                state.goal.status = GoalStatus.RUNNING
+                mark_current_task(session, TaskStatus.RUNNING)
+                state.termination_reason = None
+                state.pending_action = None
+                await self._actions.release_pending_resource(
                     session,
-                    fail(session, ErrorCode.CONFIRMATION_REJECTED, "user rejected pending action"),
+                    pending,
+                    self._events.emitter_for(session),
                 )
+                recovery_step = await self._plan_recovery_for_pending(
+                    session,
+                    pending,
+                    Failure(
+                        state.current_task.id,
+                        ErrorCode.CONFIRMATION_REJECTED,
+                        classify_failure(ErrorCode.CONFIRMATION_REJECTED),
+                        "user rejected pending action",
+                        pending.capability,
+                        pending.arguments,
+                        pending.target,
+                    ),
+                )
+                if isinstance(recovery_step, Decision):
+                    return await self._continue_controlled(session, control, decision=recovery_step)
+                return recovery_step
             state.goal.status = GoalStatus.RUNNING
             mark_current_task(session, TaskStatus.RUNNING)
             state.termination_reason = None
@@ -662,6 +683,7 @@ class AgentRuntime:
         session: SessionRuntimeState,
         control: _SessionControl,
         *,
+        decision: Decision | None = None,
         pending: PendingAction | None = None,
     ) -> ExecutionResult:
         current = asyncio.current_task()
@@ -670,8 +692,8 @@ class AgentRuntime:
             requested = await self._requested_control_transition(session)
             if requested is not None:
                 return requested
-            if pending is not None:
-                result = await self._drive(session, pending=pending)
+            if pending is not None or decision is not None:
+                result = await self._drive(session, decision=decision, pending=pending)
                 if result is not None:
                     return result
             return await self._loop(session)
@@ -770,9 +792,18 @@ class AgentRuntime:
             data={"status": evaluation.status.value, "evaluator": evaluation.evaluator_name},
         )
         if evaluation.status is EvaluationStatus.FAILED:
-            return await self._settle(
+            return await self._plan_recovery_for_failure(
                 session,
-                fail(session, ErrorCode.EVALUATION_FAILED, evaluation.reason),
+                outcome,
+                Failure(
+                    state.current_task.id,
+                    ErrorCode.EVALUATION_FAILED,
+                    classify_failure(ErrorCode.EVALUATION_FAILED),
+                    evaluation.reason,
+                    outcome.pending.capability,
+                    outcome.pending.arguments,
+                    outcome.pending.target,
+                ),
             )
         if processed.next_task is not None:
             await self._emit(
@@ -800,15 +831,35 @@ class AgentRuntime:
         pending = outcome.pending
         observation = outcome.observation
         error_code = observation.error_code or ErrorCode.TOOL_FAILURE
-        failure = Failure(
-            state.current_task.id,
-            error_code,
-            classify_failure(error_code),
-            observation.error or "tool execution failed",
-            pending.capability,
-            pending.arguments,
-            pending.target,
+        return await self._plan_recovery_for_failure(
+            session,
+            outcome,
+            Failure(
+                state.current_task.id,
+                error_code,
+                classify_failure(error_code),
+                observation.error or "tool execution failed",
+                pending.capability,
+                pending.arguments,
+                pending.target,
+            ),
         )
+
+    async def _plan_recovery_for_failure(
+        self,
+        session: SessionRuntimeState,
+        outcome: ActionObserved,
+        failure: Failure,
+    ) -> ExecutionResult | Decision:
+        return await self._plan_recovery_for_pending(session, outcome.pending, failure)
+
+    async def _plan_recovery_for_pending(
+        self,
+        session: SessionRuntimeState,
+        pending: PendingAction,
+        failure: Failure,
+    ) -> ExecutionResult | Decision:
+        state = session.state
         recovery, key = self._components.recovery_manager.decide(
             failure,
             state.recovery_attempts,
@@ -847,7 +898,7 @@ class AgentRuntime:
                     user_message=f"Recovery requires user input: {failure.reason}",
                 ),
             )
-        return await self._settle(session, fail(session, error_code, failure.reason))
+        return await self._settle(session, fail(session, failure.error_code, failure.reason))
 
     async def _settle(
         self,

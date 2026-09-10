@@ -1095,7 +1095,7 @@ async def test_work_queue_worker_does_not_lease_when_worker_is_draining_or_offli
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_work_queue_worker_does_not_lease_after_worker_registry_expiry() -> None:
+async def test_work_queue_worker_recovers_lost_registry_record_after_expiry() -> None:
     queue = InMemoryWorkQueue()
     registry = InMemoryWorkerRegistry()
     now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -1116,7 +1116,11 @@ async def test_work_queue_worker_does_not_lease_after_worker_registry_expiry() -
     with runtime_primitives(clock=clock):
         result = await worker.run_once()
 
-    assert result.status is WorkerRunStatus.WORKER_INACTIVE
-    assert "expired" in result.reason
-    assert registry.get(WorkerId("worker-a")).status is WorkerStatus.LOST
-    assert queue.queued()[0].status is WorkItemStatus.QUEUED
+    record = registry.get(WorkerId("worker-a"))
+    assert result.status is WorkerRunStatus.COMPLETED
+    assert result.work_item is not None
+    assert record.status is WorkerStatus.ONLINE
+    assert record.registered_at == now
+    assert record.heartbeat_at == current_time
+    assert record.last_error is None
+    assert queue.get(result.work_item.work_item_id).status is WorkItemStatus.COMPLETED

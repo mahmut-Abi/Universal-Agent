@@ -72,6 +72,7 @@ def _dispatch_ecosystem(args: argparse.Namespace, out: TextIO) -> None:
         base_path = cast(str | None, args.base_path)
         verify = not cast(bool, args.no_verify)
         trust_policy = EcosystemRegistryTrustPolicy(
+            allow_unsigned=cast(bool, args.allow_unsigned),
             allow_unverified_signatures=cast(bool, args.allow_unverified_signatures)
         )
         if cast(bool, args.plan_only):

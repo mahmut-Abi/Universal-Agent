@@ -111,14 +111,16 @@ class TestDomain:
 
 
 class MinimalSDKDomain(BaseDomainRuntime):
-    manifest = DomainManifest(
-        "agent.nantian.dev/v1alpha1",
-        "Domain",
-        DomainMetadata("sdk", "1.0.0", "SDK domain"),
-        ("Thing",),
-        ("inspect",),
-        ("criteria",),
-    )
+    @property
+    def manifest(self) -> DomainManifest:
+        return DomainManifest(
+            "agent.nantian.dev/v1alpha1",
+            "Domain",
+            DomainMetadata("sdk", "1.0.0", "SDK domain"),
+            ("Thing",),
+            ("inspect",),
+            ("criteria",),
+        )
 
     def capabilities(self) -> tuple[CapabilityDefinition, ...]:
         return (CapabilityDefinition("inspect", "Inspect", CapabilityCategory.OBSERVATION),)

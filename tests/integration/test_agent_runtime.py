@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from universal_agent import (
@@ -29,7 +31,9 @@ from universal_agent.core import (
     ExecutionStatus,
     GoalStatus,
     JsonMapping,
+    PolicyEffect,
     RuntimeEvent,
+    SideEffect,
     TaskStatus,
     ToolDefinition,
 )
@@ -38,8 +42,9 @@ from universal_agent.domains.kubernetes import KubernetesDomain
 from universal_agent.evaluation import Evaluator
 from universal_agent.evidence import EvidenceExtractor
 from universal_agent.memory import MemoryRecord
-from universal_agent.policy import Policy
-from universal_agent.recovery import RecoveryRule
+from universal_agent.policy import Policy, PolicyRule
+from universal_agent.recovery import FailureCategory, RecoveryRule, RecoveryStrategy
+from universal_agent.runtime.idempotency import IdempotencyKey
 from universal_agent.state import SessionSnapshot
 from universal_agent.tasks import TaskExpander, TaskGraphSnapshot
 from universal_agent.tools import Tool
@@ -88,6 +93,44 @@ class StaticTool:
         return self._output
 
 
+class SequenceTool:
+    def __init__(
+        self,
+        name: str,
+        capability: str,
+        outputs: list[JsonMapping],
+    ) -> None:
+        self.definition = ToolDefinition(name, name, (capability,))
+        self._outputs = iter(outputs)
+        self.calls = 0
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        self.calls += 1
+        return next(self._outputs)
+
+
+class CancellableTool:
+    def __init__(self) -> None:
+        self.definition = ToolDefinition(
+            "slow_mutation_tool",
+            "Slow mutation",
+            ("slow_mutation",),
+            side_effect=SideEffect.REVERSIBLE,
+            timeout_seconds=30.0,
+        )
+        self.started = asyncio.Event()
+        self.cancelled = False
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        self.started.set()
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        return immutable_json({"mutated": True})
+
+
 class CriterionEvaluator:
     def __init__(self, name: str, criterion: str) -> None:
         self.name = name
@@ -117,6 +160,31 @@ class TaskOnlyEvaluator:
             immutable_json({"task_ready": True}),
             task_completed=True,
             goal_completed=False,
+        )
+
+
+class RecoverableEvaluationEvaluator:
+    name = "recoverable-evaluation"
+
+    def evaluate(self, context: EvaluationContext) -> EvaluationResult:
+        valid = context.observation.data.get("valid")
+        if valid is False:
+            return EvaluationResult(
+                EvaluationStatus.FAILED,
+                "verification failed after tool success",
+                self.name,
+                immutable_json(),
+                task_completed=False,
+                goal_completed=False,
+            )
+        complete = valid is True
+        return EvaluationResult(
+            EvaluationStatus.COMPLETED if complete else EvaluationStatus.INCOMPLETE,
+            "verification recovered" if complete else "verification incomplete",
+            self.name,
+            immutable_json({"valid": True}) if complete else immutable_json(),
+            task_completed=complete,
+            goal_completed=complete,
         )
 
 
@@ -234,6 +302,118 @@ class PartiallyExecutableDomain:
         return ()
 
 
+class RecoverableEvaluationDomain:
+    def __init__(self) -> None:
+        self._evaluator = RecoverableEvaluationEvaluator()
+        self.tool = SequenceTool(
+            "verify_tool",
+            "verify",
+            [immutable_json({"valid": False}), immutable_json({"valid": True})],
+        )
+        self.manifest = DomainManifest(
+            "agent.nantian.dev/v1alpha1",
+            "Domain",
+            DomainMetadata("recoverable-evaluation", "1.0.0", "Recoverable evaluation"),
+            ("Thing",),
+            ("verify",),
+            (self._evaluator.name,),
+        )
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        return (CapabilityDefinition("verify", "Verify", CapabilityCategory.OBSERVATION),)
+
+    def tools(self) -> tuple[Tool, ...]:
+        return (self.tool,)
+
+    def policies(self) -> tuple[Policy, ...]:
+        return ()
+
+    def evaluators(self) -> tuple[Evaluator, ...]:
+        return (self._evaluator,)
+
+    def context_providers(self) -> tuple[DomainContextProvider, ...]:
+        return ()
+
+    def evidence_extractors(self) -> tuple[EvidenceExtractor, ...]:
+        return ()
+
+    def world_updaters(self) -> tuple[WorldUpdater, ...]:
+        return ()
+
+    def task_expanders(self) -> tuple[TaskExpander, ...]:
+        return ()
+
+    def recovery_rules(self) -> tuple[RecoveryRule, ...]:
+        return (
+            RecoveryRule(
+                "retry-failed-evaluation",
+                (FailureCategory.EVALUATION_FAILED,),
+                RecoveryStrategy.RETRY_ACTION,
+                max_attempts=1,
+            ),
+        )
+
+    def memories(self) -> tuple[MemoryRecord, ...]:
+        return ()
+
+
+class CancellableMutationDomain:
+    def __init__(self) -> None:
+        self.tool = CancellableTool()
+        self._evaluator = CriterionEvaluator("mutation-evaluator", "mutated")
+        self.manifest = DomainManifest(
+            "agent.nantian.dev/v1alpha1",
+            "Domain",
+            DomainMetadata("cancellable", "1.0.0", "Cancellable mutation"),
+            ("Thing",),
+            ("slow_mutation",),
+            (self._evaluator.name,),
+        )
+
+    def capabilities(self) -> tuple[CapabilityDefinition, ...]:
+        return (
+            CapabilityDefinition(
+                "slow_mutation",
+                "Slow mutation",
+                CapabilityCategory.MUTATION,
+            ),
+        )
+
+    def tools(self) -> tuple[Tool, ...]:
+        return (self.tool,)
+
+    def policies(self) -> tuple[Policy, ...]:
+        return (
+            PolicyRule(
+                "allow-slow-mutation",
+                effect=PolicyEffect.ALLOW,
+                reason="test mutation is explicitly allowed",
+                capabilities=("slow_mutation",),
+            ),
+        )
+
+    def evaluators(self) -> tuple[Evaluator, ...]:
+        return (self._evaluator,)
+
+    def context_providers(self) -> tuple[DomainContextProvider, ...]:
+        return ()
+
+    def evidence_extractors(self) -> tuple[EvidenceExtractor, ...]:
+        return ()
+
+    def world_updaters(self) -> tuple[WorldUpdater, ...]:
+        return ()
+
+    def task_expanders(self) -> tuple[TaskExpander, ...]:
+        return ()
+
+    def recovery_rules(self) -> tuple[RecoveryRule, ...]:
+        return ()
+
+    def memories(self) -> tuple[MemoryRecord, ...]:
+        return ()
+
+
 def execute_probe() -> Decision:
     return Decision(
         type=DecisionType.EXECUTE,
@@ -312,6 +492,55 @@ async def test_runtime_commits_state_events_through_store_seam() -> None:
         "StateUpdated",
         "StateUpdated",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_cancel_running_session_stops_active_tool_and_settles_once() -> None:
+    domain = CancellableMutationDomain()
+    components = RuntimeBuilder().build(DomainLoader().load(domain))
+    events = InMemoryEventSink()
+    store = InMemoryStateStore()
+    runtime = AgentRuntime(
+        model=ScriptedModelAdapter(
+            [
+                Decision(
+                    DecisionType.EXECUTE,
+                    "start cancellable mutation",
+                    capability="slow_mutation",
+                    target="resource/example",
+                    expected_observations=("mutated",),
+                ),
+            ]
+        ),
+        state_store=store,
+        components=components,
+        event_sink=events,
+    )
+    run_task = asyncio.create_task(
+        runtime.run(
+            Goal("Cancel a running mutation", (SuccessCriterion("mutated", True),)),
+            Task("Run mutation", ("mutated",)),
+        )
+    )
+    await asyncio.wait_for(domain.tool.started.wait(), timeout=1.0)
+    snapshots = await store.list_sessions()
+    session_id = snapshots[0].state.session_id
+
+    cancelled = await runtime.cancel(session_id, reason="operator cancelled running session")
+    result = await run_task
+    state = await store.load(session_id)
+    resolved_event = next(event for event in events.events if event.type == "CapabilityResolved")
+
+    assert cancelled.status is ExecutionStatus.CANCELLED
+    assert result.status is ExecutionStatus.CANCELLED
+    assert state.goal.status is GoalStatus.CANCELLED
+    assert state.current_task.status is TaskStatus.CANCELLED
+    assert domain.tool.cancelled is True
+    assert not runtime._actions.idempotency_store.seen(
+        IdempotencyKey(str(resolved_event.data["idempotency_key"]))
+    )
+    assert [event.type for event in events.events].count("GoalCancelled") == 1
 
 
 @pytest.mark.asyncio
@@ -533,6 +762,42 @@ async def test_finish_requires_goal_completed_evaluation_flag() -> None:
     assert result.error_code is ErrorCode.INVALID_STATE
     assert any(event.type == "EvaluationCompleted" for event in events.events)
     assert any(e.type == "GoalFailed" for e in events.events)
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_failed_evaluation_uses_recovery_before_failing_goal() -> None:
+    domain = RecoverableEvaluationDomain()
+    components = RuntimeBuilder().build(DomainLoader().load(domain))
+    events = InMemoryEventSink()
+    runtime = AgentRuntime(
+        model=ScriptedModelAdapter(
+            [
+                Decision(
+                    DecisionType.EXECUTE,
+                    "Verify the condition",
+                    capability="verify",
+                    expected_observations=("valid",),
+                ),
+                finish(),
+            ]
+        ),
+        state_store=InMemoryStateStore(),
+        components=components,
+        event_sink=events,
+    )
+
+    result = await runtime.run(
+        Goal("Recover failed verification", (SuccessCriterion("valid", True),)),
+        Task("Verify", ("valid",)),
+    )
+    event_types = [event.type for event in events.events]
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert domain.tool.calls == 2
+    assert event_types.count("EvaluationCompleted") == 2
+    assert "RecoveryPlanned" in event_types
+    assert "GoalFailed" not in event_types
 
 
 @pytest.mark.asyncio

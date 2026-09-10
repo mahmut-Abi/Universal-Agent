@@ -95,12 +95,12 @@ class EcosystemRegistryTrustPolicy:
     """Trust policy for local registry install planning.
 
     The local P7 registry foundation has no built-in cryptographic verifier. A
-    registry that declares signature metadata is rejected by default unless a
-    caller supplies an explicit signature verifier or opts into unverified local
-    trust for trusted registries.
+    Registry installs are fail-closed by default: unsigned registries and
+    registries that declare signature metadata without verification are rejected
+    unless a caller opts into local trust for a known trusted registry.
     """
 
-    allow_unsigned: bool = True
+    allow_unsigned: bool = False
     allow_unverified_signatures: bool = False
 
 

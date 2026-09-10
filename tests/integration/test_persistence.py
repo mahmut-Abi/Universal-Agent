@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
+import threading
 from pathlib import Path
 
 import pytest
@@ -36,7 +38,7 @@ from universal_agent.core import (
 )
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.persistence import encode_runtime_event, encode_session_snapshot
-from universal_agent.state import SessionVersionConflictError, session_from_state
+from universal_agent.state import SessionSnapshot, SessionVersionConflictError, session_from_state
 
 
 class PersistentRemediationBackend:
@@ -143,6 +145,57 @@ async def test_persistent_session_stores_reject_stale_snapshot_versions(
     with pytest.raises(SessionVersionConflictError, match="session version conflict"):
         await store.save_session(second)
     latest = await store.load_session(snapshot.state.session_id)
+    assert latest.version == 1
+    assert latest.state.iteration == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_file_session_store_serializes_version_check_and_write(tmp_path: Path) -> None:
+    class SlowWriteFileSessionStore(FileSessionStore):
+        def __init__(self, root: Path) -> None:
+            super().__init__(root)
+            self.pause_writes = False
+            self.entered_write = threading.Event()
+            self.continue_write = threading.Event()
+
+        def _write_snapshot(self, path: Path, snapshot: SessionSnapshot) -> None:
+            if self.pause_writes:
+                self.entered_write.set()
+                assert self.continue_write.wait(timeout=1)
+            super()._write_snapshot(path, snapshot)
+
+    root = tmp_path / "file-store"
+    first_store = SlowWriteFileSessionStore(root)
+    second_store = FileSessionStore(root)
+    snapshot = session_from_state(
+        goal_state(
+            Goal("Persist version", (SuccessCriterion("healthy", True),)),
+            Task("Inspect", ("healthy",)),
+        )
+    )
+    await first_store.create_session(snapshot)
+    first = await first_store.load_session(snapshot.state.session_id)
+    second = await second_store.load_session(snapshot.state.session_id)
+    first.state.iteration = 1
+    second.state.iteration = 2
+    first_store.pause_writes = True
+
+    first_save = asyncio.create_task(
+        asyncio.to_thread(lambda: asyncio.run(first_store.save_session(first)))
+    )
+    await asyncio.to_thread(first_store.entered_write.wait, 1)
+    second_save = asyncio.create_task(
+        asyncio.to_thread(lambda: asyncio.run(second_store.save_session(second)))
+    )
+
+    await asyncio.sleep(0.05)
+    first_store.continue_write.set()
+    await first_save
+    with pytest.raises(SessionVersionConflictError, match="session version conflict"):
+        await second_save
+
+    latest = await first_store.load_session(snapshot.state.session_id)
     assert latest.version == 1
     assert latest.state.iteration == 1
 

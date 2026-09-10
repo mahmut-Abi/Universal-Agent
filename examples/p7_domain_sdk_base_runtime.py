@@ -21,14 +21,16 @@ class InspectTool:
 
 
 class WidgetDomain(BaseDomainRuntime):
-    manifest = DomainManifest(
-        "agent.nantian.dev/v1alpha1",
-        "Domain",
-        DomainMetadata("widget", "1.0.0", "Widget inspection Domain"),
-        ("Widget",),
-        ("inspect_widget",),
-        ("criteria",),
-    )
+    @property
+    def manifest(self) -> DomainManifest:
+        return DomainManifest(
+            "agent.nantian.dev/v1alpha1",
+            "Domain",
+            DomainMetadata("widget", "1.0.0", "Widget inspection Domain"),
+            ("Widget",),
+            ("inspect_widget",),
+            ("criteria",),
+        )
 
     def capabilities(self) -> tuple[CapabilityDefinition, ...]:
         return (

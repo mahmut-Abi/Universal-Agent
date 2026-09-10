@@ -2537,12 +2537,12 @@ async def test_cli_ecosystem_export_writes_registry_manifest(tmp_path: Path) -> 
         stdout=registry_verify_output,
     )
     install_status = await run_cli(
-        ["ecosystem", "install", str(output_path)],
+        ["ecosystem", "install", str(output_path), "--allow-unsigned"],
         service=service,
         stdout=install_output,
     )
     install_plan_status = await run_cli(
-        ["ecosystem", "install", str(output_path), "--plan-only"],
+        ["ecosystem", "install", str(output_path), "--plan-only", "--allow-unsigned"],
         service=service,
         stdout=install_plan_output,
     )

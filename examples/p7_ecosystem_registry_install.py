@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from universal_agent import (
+    EcosystemRegistryTrustPolicy,
     FileEcosystemRegistryStore,
     install_ecosystem,
     load_ecosystem_catalog,
@@ -116,8 +117,9 @@ def main() -> None:
             )
         )
         index = registry_store.index("ops-ecosystem", "1.0.0")
-        plan = plan_ecosystem_install(index)
-        result = install_ecosystem(index)
+        local_unsigned_trust = EcosystemRegistryTrustPolicy(allow_unsigned=True)
+        plan = plan_ecosystem_install(index, trust_policy=local_unsigned_trust)
+        result = install_ecosystem(index, trust_policy=local_unsigned_trust)
 
         print(f"planned_packages={len(plan.domain_packages.candidates)}")
         print(f"planned_resources={len(plan.domain_packages.candidates[0].reference.resources)}")

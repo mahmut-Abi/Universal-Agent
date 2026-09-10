@@ -361,6 +361,35 @@ async def test_confirmation_holds_resource_lock_until_rejection() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.behavior
+async def test_confirmation_rejection_can_enter_recovery_without_terminal_failure() -> None:
+    runtime, _, events, components, tool = build_runtime(
+        PolicyEffect.REQUIRE_CONFIRMATION,
+        recovery_rules=(
+            RecoveryRule(
+                "ask-user-after-rejection",
+                (FailureCategory.PERMISSION_DENIED,),
+                RecoveryStrategy.ASK_USER,
+                max_attempts=1,
+                priority=5,
+            ),
+        ),
+    )
+    waiting = await runtime.run(*goal_task())
+
+    recovered = await runtime.resume(waiting.session_id, confirmed=False)
+    event_types = [event.type for event in events.events]
+
+    assert recovered.status is ExecutionStatus.WAITING
+    assert recovered.error_code is None
+    assert components.resource_locks.active() == ()
+    assert tool.calls == 0
+    assert "ResourceLockReleased" in event_types
+    assert "RecoveryPlanned" in event_types
+    assert "GoalFailed" not in event_types
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_confirmed_mutation_reuses_and_releases_resource_lock() -> None:
     runtime, _, events, components, tool = build_runtime(PolicyEffect.REQUIRE_CONFIRMATION)
     waiting = await runtime.run(*goal_task())
