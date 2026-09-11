@@ -45,6 +45,12 @@ def test_kubernetes_production_contract_uses_structured_payloads_for_preflight_c
     assert report["failed_check_count"] == 2
     assert report["warning_check_count"] == 1
     assert checks["model_probe_scope"]["status"] == "ok"
+    assert checks["finish_contract"]["status"] == "ok"
+    assert checks["finish_contract"]["details"] == {
+        "verified": False,
+        "reason": "probe only requests inspect_workload",
+    }
+    assert "explicitly unverified" in str(checks["finish_contract"]["message"])
     assert checks["preflight_failures"]["details"] == {"checks": ["model_secret"]}
     assert checks["preflight_warnings"]["details"] == {"checks": ["cluster_inspection"]}
     assert checks["runtime_submission"]["status"] == "skipped"
@@ -68,6 +74,7 @@ def test_kubernetes_production_contract_payloads_keep_malformed_probe_tolerant()
 
     assert report["status"] == "failed"
     assert checks["model_probe"]["details"] == {"capability": ""}
+    assert checks["finish_contract"]["status"] == "ok"
     assert checks["model_probe_scope"]["message"] == (
         "model probe decision did not start with inspect_workload"
     )

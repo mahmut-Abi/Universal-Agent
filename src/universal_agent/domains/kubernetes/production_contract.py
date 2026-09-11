@@ -153,6 +153,7 @@ def _model_probe_checks(
                 "skipped",
                 "model probe scope cannot be verified without a probe decision",
             ),
+            _finish_contract_unverified_check(),
         )
 
     operation_payload = _payload(_OperationPayload, operation)
@@ -170,6 +171,7 @@ def _model_probe_checks(
                 "skipped",
                 "model probe scope cannot be trusted after probe failure",
             ),
+            _finish_contract_unverified_check(),
         )
 
     decision = _payload(_DecisionPayload, probe.decision)
@@ -188,6 +190,16 @@ def _model_probe_checks(
             if scope_error is None
             else scope_error,
         ),
+        _finish_contract_unverified_check(),
+    )
+
+
+def _finish_contract_unverified_check() -> KubernetesProductionContractCheck:
+    return KubernetesProductionContractCheck(
+        "finish_contract",
+        "ok",
+        "finish decision contract explicitly unverified by the execute-only model probe",
+        immutable_json({"verified": False, "reason": "probe only requests inspect_workload"}),
     )
 
 
@@ -313,7 +325,8 @@ def _completion_verification_check(
         )
 
     satisfied = session.satisfied_criteria
-    healthy = satisfied.get("healthy") is True
+    healthy_value = satisfied.get("healthy")
+    healthy = isinstance(healthy_value, bool) and healthy_value
     resource_matches = satisfied.get("resource") == operation.workload
     namespace = operation.namespace
     namespace_matches = not namespace or satisfied.get("namespace") == namespace
