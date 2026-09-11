@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from collections.abc import Awaitable
 
 import pytest
@@ -110,13 +111,15 @@ async def test_external_cancellation_propagates() -> None:
         return 1
 
     group = CancellableTaskGroup[int]()
+    coros = [work() for _ in range(3)]
 
-    pending = [asyncio.create_task(group.run([work() for _ in range(3)], limit=2))]
+    pending = [asyncio.create_task(group.run(coros, limit=2))]
     await asyncio.sleep(0.01)
     pending[0].cancel()
 
     with pytest.raises(asyncio.CancelledError):
         await pending[0]
+    assert all(inspect.getcoroutinestate(coro) == "CORO_CLOSED" for coro in coros)
 
 
 @pytest.mark.unit
@@ -126,8 +129,11 @@ async def test_invalid_limit_rejected() -> None:
         return 0
 
     group = CancellableTaskGroup[int]()
+    coros = [noop()]
+
     with pytest.raises(ValueError):
-        await group.run([noop() for _ in range(1)], limit=0)
+        await group.run(coros, limit=0)
+    assert all(inspect.getcoroutinestate(coro) == "CORO_CLOSED" for coro in coros)
 
 
 def test_concurrent_result_dataclass() -> None:
