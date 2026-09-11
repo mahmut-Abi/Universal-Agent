@@ -216,7 +216,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - It performs init, doctor, run, session list, and session show.
   - README commands match the script commands.
 
-### [ ] UA-P1-002 — Add live-like Kubernetes kind/minikube contract test
+### [x] UA-P1-002 — Add live-like Kubernetes kind/minikube contract test
 
 - Priority: P1
 - Area: Kubernetes / Testing
@@ -650,7 +650,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 ## Sprint 3 — Kubernetes / Model Reliability
 
-- [ ] UA-P1-002 — Add live-like Kubernetes kind/minikube contract test
+- [x] UA-P1-002 — Add live-like Kubernetes kind/minikube contract test
 - [x] UA-P1-004 — Re-confirm or fix Kubernetes evidence claim granularity collision
 - [ ] UA-P1-005 — Normalize or cheaply recover invalid model `finish` decisions
 - [ ] UA-P1-006 — Extend model probe to cover `finish` contract
@@ -694,4 +694,5 @@ Add entries here when items are completed.
 2026-09-11 Sprint 1 completed: UA-P01-001/002/003/004 and UA-TEST-001/002. Evidence: `uv run ruff check src tests`; `uv run pytest tests/integration/test_cli.py tests/integration/test_cli_agentd_client.py tests/unit/test_security_secrets.py -q`; `uv run pytest tests/integration/test_p0_golden_path.py tests/integration/test_facade_golden_path.py -q`; clean HOME smoke for init/doctor/config/profile/run/session list/show/explain. Main files: README.md, docs/product.md, src/universal_agent_cli/{defaults.py,init.py,parser.py,text_views.py}, src/universal_agent/agentd/__main__.py, tests/integration/test_p0_golden_path.py, tests/unit/test_p0_config_and_views.py.
 2026-09-11 Sprint 2 completed: UA-P01-005/006/007/008 and UA-P1-001. Evidence: `scripts/demo-local.sh` clean HOME/workspace smoke; `agent session show` Summary/What happened; `agent session explain` Error/Reason/Try; `agent doctor` Next guidance; repairable CLI errors include machine-readable reason/try. Main files: src/universal_agent_cli/{agentd.py,doctor.py,io.py,session.py,text_views.py}, scripts/demo-local.sh, README.md, docs/revision/README.md.
 2026-09-11 UA-P1-004 completed: Kubernetes pod evidence now records pod identity as `pod.resource`, preventing pod-level facts from overwriting workload-level `resource` criteria. Evidence: `uv run ruff check src/universal_agent/domains/kubernetes/evidence.py tests/unit/test_kubernetes_evidence.py tests/integration/test_kubernetes_remediation.py`; `uv run pytest tests/unit/test_kubernetes_evidence.py tests/integration/test_kubernetes_remediation.py -q`. Main files: src/universal_agent/domains/kubernetes/evidence.py, tests/unit/test_kubernetes_evidence.py, tests/integration/test_kubernetes_remediation.py.
+2026-09-11 UA-P1-002 completed: added opt-in live-like kind/minikube contract coverage that provisions an unhealthy zero-replica Deployment in a temporary namespace, runs the kubectl-backed Kubernetes flow with the scripted model in production mode, and verifies the policy confirmation boundary; skips cleanly unless explicitly enabled against a kind/minikube context. Evidence: `uv run ruff check tests/live/test_kubernetes_kind_contract.py`; `uv run pytest tests/live/test_kubernetes_kind_contract.py -q` (clean skip without opt-in). Main file: tests/live/test_kubernetes_kind_contract.py.
 ```
