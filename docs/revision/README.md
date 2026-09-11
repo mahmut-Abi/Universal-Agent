@@ -458,7 +458,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - First screen mentions CLI, Web, and agentd roles plainly.
   - README commands are verified by demo or tests.
 
-### [ ] UA-DOC-002 — Maintain `docs/RUNTIME_CONTRACT.md` as architecture boundary reference
+### [x] UA-DOC-002 — Maintain `docs/RUNTIME_CONTRACT.md` as architecture boundary reference
 
 - Priority: P1
 - Area: Docs / Runtime
@@ -704,4 +704,5 @@ Add entries here when items are completed.
 2026-09-11 UA-TEST-004 completed: expanded secret-safety coverage for config text/JSON, doctor text, session show/events, live artifact writer, and CLI error rendering; `_write_error` now redacts secret-shaped text before rendering `message`/`reason`/`text`. Evidence: `uv run ruff check src/universal_agent_cli/io.py tests/unit/test_security_secrets.py tests/integration/test_cli.py tests/unit/test_kubernetes_live_contract.py`; `uv run pytest tests/unit/test_security_secrets.py tests/unit/test_kubernetes_live_contract.py tests/integration/test_cli.py -q`. Main files: src/universal_agent_cli/io.py, tests/unit/test_security_secrets.py, tests/integration/test_cli.py.
 2026-09-11 UA-TEST-005 completed: documented that `mypy` is the authoritative repository type checker and pyright/basedpyright findings are advisory unless explicitly added as a CI gate, preventing stale editor/lens findings from blocking release when mypy passes. Evidence: docs/developer-guide.md Quality Gates section; CI still runs `python -m mypy`. Main files: docs/developer-guide.md, docs/revision/README.md.
 2026-09-11 UA-DOC-001 completed: README first screen is user-oriented with Quick Start before CLI/configuration/profiles/sessions/domains/policy/web/agentd and architecture; Quick Start aligns with `scripts/demo-local.sh` and Golden Path tests. Evidence: README section-order scan and prior `scripts/demo-local.sh` / Golden Path test evidence. Main files: README.md, docs/revision/README.md.
+2026-09-11 UA-DOC-002 completed: verified `docs/RUNTIME_CONTRACT.md` documents Goal/Task/Decision/Action/Observation/Evidence/Policy/Evaluation/Session/Domain/Profile ownership and invariants, and README links CLI/API/Web/agentd users back to that contract. Evidence: `docs/RUNTIME_CONTRACT.md` scan and repository reference grep. Main files: docs/RUNTIME_CONTRACT.md, README.md, docs/revision/README.md.
 ```
