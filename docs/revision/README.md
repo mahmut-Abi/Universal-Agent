@@ -469,7 +469,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - CLI/API/Web/agentd all point to the same runtime contract.
   - Contract is updated when public runtime semantics change.
 
-### [ ] UA-DOC-003 — Split docs by reader type
+### [x] UA-DOC-003 — Split docs by reader type
 
 - Priority: P2
 - Area: Docs / Information Architecture
@@ -706,4 +706,5 @@ Add entries here when items are completed.
 2026-09-11 UA-DOC-001 completed: README first screen is user-oriented with Quick Start before CLI/configuration/profiles/sessions/domains/policy/web/agentd and architecture; Quick Start aligns with `scripts/demo-local.sh` and Golden Path tests. Evidence: README section-order scan and prior `scripts/demo-local.sh` / Golden Path test evidence. Main files: README.md, docs/revision/README.md.
 2026-09-11 UA-DOC-002 completed: verified `docs/RUNTIME_CONTRACT.md` documents Goal/Task/Decision/Action/Observation/Evidence/Policy/Evaluation/Session/Domain/Profile ownership and invariants, and README links CLI/API/Web/agentd users back to that contract. Evidence: `docs/RUNTIME_CONTRACT.md` scan and repository reference grep. Main files: docs/RUNTIME_CONTRACT.md, README.md, docs/revision/README.md.
 2026-09-11 UA-DOC-004 completed: verified model-provider docs explain `json_schema`, `json_object`, `prompt_json`, OpenAI-compatible endpoint caveats, model-probe scope, and fallback settings such as `prompt_json`, headers, and timeout. Evidence: grep across docs/runtime-operator-guide.md, docs/kubernetes-production-run-spec.md, docs/kubernetes-production-slice-spec.md, docs/kubernetes-live-operator-runbook.md. Main files: docs/runtime-operator-guide.md, docs/kubernetes-production-run-spec.md, docs/kubernetes-production-slice-spec.md, docs/kubernetes-live-operator-runbook.md, docs/revision/README.md.
+2026-09-11 UA-DOC-003 completed: `docs/index.md` now routes readers by New Users/Golden Path, Operators/Production-Like Runs, Runtime/Domain Developers, and Advanced/Deferred Surfaces while keeping P4/P6/P7 discoverable but outside the Golden Path. Evidence: docs/index.md reader map. Main files: docs/index.md, docs/revision/README.md.
 ```

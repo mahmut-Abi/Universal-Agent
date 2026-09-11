@@ -31,17 +31,42 @@ or automatic external package installation.
 
 ## Documentation Map
 
-- [Architecture Map](architecture-map.md): module ownership and runtime seams.
-- [Developer Guide](developer-guide.md): setup, tests, examples, and contribution workflow.
-- [Domain SDK](domain-sdk.md): Domain authoring interfaces, package metadata and validation.
-- [Runtime Operator Guide](runtime-operator-guide.md): running the local CLI/agentd/runtime surfaces.
+### New Users / Golden Path
+
+Start here when you want to run the product locally before learning internals:
+
+- [README](../README.md): clone -> install -> init -> doctor -> run -> session.
+- [Product Mindset](product.md): product vocabulary, default Profile, and CLI entry decisions.
+- [Runtime Operator Guide](runtime-operator-guide.md): local CLI and agentd runtime surfaces.
+- [Container Image](container-image.md): containerized local runtime smoke path.
+
+### Operators / Production-Like Runs
+
+Use these when validating live or live-like operations:
+
 - [Kubernetes Live Operator Runbook](kubernetes-live-operator-runbook.md): production-style Kubernetes profile, model probe, preflight, run, confirmation and inspection flow.
 - [Kubernetes Production Run Spec](kubernetes-production-run-spec.md): current production-first Kubernetes operator slice.
 - [Kubernetes Production Slice Spec](kubernetes-production-slice-spec.md): Chat Completions and preflight slice history.
+- [Kubernetes Production Readiness Plan](kubernetes-production-readiness-plan.md): gated live proof and readiness checklist.
+
+### Runtime / Domain Developers
+
+Use these when changing Kernel, Domain, SDK, or test behavior:
+
+- [Runtime Contract](RUNTIME_CONTRACT.md): concept ownership, policy/evidence/evaluation boundaries, and invariants.
+- [Architecture Map](architecture-map.md): module ownership and runtime seams.
+- [Developer Guide](developer-guide.md): setup, tests, examples, and contribution workflow.
+- [Domain SDK](domain-sdk.md): Domain authoring interfaces, package metadata and validation.
 - [Dependency Adoption Plan](dependency-adoption-plan.md): third-party library introduction plan, tiers, and roadmap.
+
+### Advanced / Deferred Surfaces
+
+P4/P6/P7 foundations are discoverable here, but they are not required for the
+Golden Path:
+
 - [Revision Notes](revision/): dated status snapshots and implementation audits.
-- [Remaining TODO](revision/2026-08-31-remaining-todo.md): current incomplete
-  architecture items, blockers and completed local foundation work.
+- [Remaining TODO](revision/2026-08-31-remaining-todo.md): incomplete architecture items, blockers and completed local foundation work.
+- Advanced implemented foundations include Multi-Agent contracts, distributed local queues/workers, ecosystem registries, evaluation datasets, TUI, and Web Console views; treat them as advanced until the P0/P1 product path is stable.
 
 ## Primary Commands
 
