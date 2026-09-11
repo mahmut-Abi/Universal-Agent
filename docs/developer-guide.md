@@ -30,6 +30,11 @@ The CI workflow in `.github/workflows/ci.yml` runs the same formatting, lint,
 type-checking and test gates on pull requests and `main` pushes, plus a
 container image build gate for the generic runtime Dockerfile.
 
+`mypy` is the authoritative type checker for this repository. `pyright` or
+`basedpyright` findings are advisory unless a future CI workflow explicitly adds
+one of them as a configured gate. Do not treat stale editor/lens pyright output
+as a release blocker when `python -m mypy` passes.
+
 ## Development Rules
 
 - Read `AGENTS.md` and the architecture design before changing runtime behavior.
