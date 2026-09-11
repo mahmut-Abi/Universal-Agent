@@ -42,6 +42,9 @@ jobs:
       - name: Test
         run: python -m pytest -q
 
+      - name: Report test behavior/contract/unit ratio
+        run: python scripts/report-test-ratio.py
+
   container:
     name: Container image build
     runs-on: ubuntu-latest
