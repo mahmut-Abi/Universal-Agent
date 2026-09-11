@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -18,11 +20,25 @@ from universal_agent.security import (
     resolve_secret_value,
     scan_for_secrets,
 )
+from universal_agent_cli.io import _write_error
 
 
 class _DebugValue:
     def __str__(self) -> str:
         return "debug-value"
+
+
+@pytest.mark.unit
+def test_cli_error_renderer_redacts_secret_shaped_text() -> None:
+    output = StringIO()
+
+    _write_error(output, "bad_request", "failed with Authorization: Bearer secret-token")
+    payload = json.loads(output.getvalue())
+    error = payload["error"]
+
+    assert error["message"] == "failed with Authorization: Bearer <redacted>"
+    assert "secret-token" not in output.getvalue()
+    assert "Try:" in error["text"]
 
 
 @pytest.mark.unit

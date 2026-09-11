@@ -15,6 +15,7 @@ from universal_agent.core import (
     write_json,
 )
 from universal_agent.core.config_validation import parse_json_value
+from universal_agent.security import redact_sensitive_value
 
 
 class CliExit(Exception):
@@ -75,16 +76,17 @@ def _write_text(out: TextIO, payload: str) -> None:
 
 
 def _write_error(out: TextIO, code: str, message: str) -> None:
-    hint = _repair_hint(code, message)
+    safe_message = str(redact_sensitive_value("error", message, replacement="<redacted>"))
+    hint = _repair_hint(code, safe_message)
     _write_json(
         out,
         {
             "error": {
                 "code": code,
-                "message": message,
-                "reason": message,
+                "message": safe_message,
+                "reason": safe_message,
                 "try": hint,
-                "text": f"Error: {code}\nReason: {message}\nTry: {hint}",
+                "text": f"Error: {code}\nReason: {safe_message}\nTry: {hint}",
             }
         },
     )

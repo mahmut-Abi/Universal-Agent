@@ -4491,6 +4491,111 @@ async def test_cli_session_events_rejects_invalid_wait_poll_interval() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.behavior
+async def test_cli_outputs_do_not_leak_config_or_session_secret_values(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret-value")
+    profile_path = tmp_path / "profile.json"
+    init_output = StringIO()
+    config_text_output = StringIO()
+    config_json_output = StringIO()
+    doctor_text_output = StringIO()
+    run_output = StringIO()
+    show_output = StringIO()
+    events_output = StringIO()
+
+    assert (
+        await run_cli(
+            [
+                "init",
+                "--output-format",
+                "json",
+                "--output",
+                str(profile_path),
+                "--model-provider",
+                "openai_chat_completions",
+                "--model-name",
+                "gpt-runtime",
+                "--model-api-key-env",
+                "OPENAI_API_KEY",
+            ],
+            stdout=init_output,
+        )
+        == 0
+    )
+    assert (
+        await run_cli(
+            ["--profile-config", str(profile_path), "config"],
+            stdout=config_text_output,
+        )
+        == 0
+    )
+    assert (
+        await run_cli(
+            ["--profile-config", str(profile_path), "config", "show"],
+            stdout=config_json_output,
+        )
+        == 0
+    )
+    assert (
+        await run_cli(
+            ["--profile-config", str(profile_path), "doctor", "--fail-on", "never"],
+            stdout=doctor_text_output,
+        )
+        == 0
+    )
+
+    service, _ = build_cli_service(
+        [
+            Decision(
+                DecisionType.EXECUTE,
+                "Inspect workload with a secret-shaped extra argument",
+                capability="inspect_workload",
+                target="deployment/example",
+                arguments=immutable_json({"name": "example", "api_token": "secret-token"}),
+                expected_observations=("healthy",),
+            ),
+            finish(),
+        ]
+    )
+    assert (
+        await run_cli(
+            ["run", "production-operator", "Verify workload health", "--output", "json"],
+            service=service,
+            stdout=run_output,
+        )
+        == 0
+    )
+    run_payload = read_json(run_output)
+    session_id = run_payload["result"]["session_id"]
+    assert isinstance(session_id, str)
+    assert (
+        await run_cli(["session", "show", session_id], service=service, stdout=show_output)
+        == 0
+    )
+    assert (
+        await run_cli(["session", "events", session_id], service=service, stdout=events_output)
+        == 0
+    )
+
+    combined = "\n".join(
+        [
+            init_output.getvalue(),
+            config_text_output.getvalue(),
+            config_json_output.getvalue(),
+            doctor_text_output.getvalue(),
+            run_output.getvalue(),
+            show_output.getvalue(),
+            events_output.getvalue(),
+        ]
+    )
+    assert "sk-secret-value" not in combined
+    assert "secret-token" not in combined
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_cli_session_list_supports_cursor_and_limit() -> None:
     service, _ = build_cli_service(
         [
