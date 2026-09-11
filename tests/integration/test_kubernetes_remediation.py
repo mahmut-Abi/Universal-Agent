@@ -105,6 +105,31 @@ class RemediationBackend:
         )
 
 
+class HealthyPodsBackend(RemediationBackend):
+    async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
+        self.inspect_calls.append(capability)
+        if capability != "inspect_workload":
+            raise AssertionError(f"unexpected inspection capability: {capability}")
+        return immutable_json(
+            {
+                "resource": "deployment/example",
+                "healthy": True,
+                "desired_replicas": 1,
+                "ready_replicas": 1,
+                "pods": [
+                    {
+                        "resource": "pod/example-123",
+                        "namespace": "default",
+                        "name": "example-123",
+                        "phase": "Running",
+                        "ready": True,
+                        "resource_version": "rv-pod-after",
+                    }
+                ],
+            }
+        )
+
+
 class DirectRootCauseBackend(RemediationBackend):
     async def inspect(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         self.inspect_calls.append(capability)
@@ -291,6 +316,37 @@ async def test_remediation_completes_only_after_fresh_verification() -> None:
     assert enriched.data["argument_names"] == ("current_replicas", "resource_version")
     assert any(t == "GoalCompleted" for t in event_types)
     assert "PolicyChecked" in event_types
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_pod_resource_claim_does_not_block_scoped_workload_completion() -> None:
+    backend = HealthyPodsBackend()
+    runtime, store, events = build_runtime(
+        backend,
+        [
+            inspect_decision("inspect_workload", "healthy", "resource"),
+            Decision(DecisionType.FINISH, "Health verified"),
+        ],
+    )
+
+    result = await runtime.run(*scoped_goal_task())
+    snapshot = await store.load_session(result.session_id)
+    event_types = [event.type for event in events.events]
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert snapshot.state.satisfied_criteria["resource"] == "deployment/example"
+    assert any(
+        evidence.subject == "pod/example-123"
+        and evidence.claim == "pod.resource"
+        and evidence.value == "pod/example-123"
+        for evidence in snapshot.evidence
+    )
+    assert not any(
+        evidence.subject == "pod/example-123" and evidence.claim == "resource"
+        for evidence in snapshot.evidence
+    )
+    assert "GoalCompleted" in event_types
 
 
 @pytest.mark.asyncio

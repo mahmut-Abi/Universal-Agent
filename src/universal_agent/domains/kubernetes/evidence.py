@@ -55,7 +55,8 @@ def _pod_evidence(
         pod_resources.append(pod_resource)
         evidence.append(_evidence(context, pod_resource, "kind", "Pod"))
         for key, value in pod.items():
-            evidence.append(_evidence(context, pod_resource, key, value))
+            claim = "pod.resource" if key == "resource" else key
+            evidence.append(_evidence(context, pod_resource, claim, value))
 
     if pod_resources:
         evidence.append(_evidence(context, workload_subject, "relation:owns", pod_resources))

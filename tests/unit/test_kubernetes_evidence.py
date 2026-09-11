@@ -73,6 +73,13 @@ def test_kubernetes_workload_observation_projects_pod_world_facts() -> None:
     pod = snapshot.entity_for("pod/api-123")
 
     assert ("deployment/api", "relation:owns") in {(item.subject, item.claim) for item in extracted}
+    assert any(
+        item.subject == "pod/api-123"
+        and item.claim == "pod.resource"
+        and item.value == "pod/api-123"
+        for item in extracted
+    )
+    assert ("pod/api-123", "resource") not in {(item.subject, item.claim) for item in extracted}
     assert deployment.outgoing_relations[0].target == EntityId("pod/api-123")
     assert pod is not None
     assert pod.kind == "Pod"
