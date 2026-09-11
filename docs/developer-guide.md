@@ -112,7 +112,7 @@ Examples are organized by roadmap slice. Useful entry points:
 - Runtime loop semantics: `src/universal_agent/runtime/`.
 - Application projections: `src/universal_agent/service/`.
 - HTTP route behavior: `src/universal_agent/agentd/`.
-- CLI commands: `src/universal_agent/cli.py`.
+- CLI commands: `src/universal_agent_cli/` (entry `agent` / `ua`).
 - Read-only Web UI: `src/universal_agent/web.py`.
 - Read-only TUI: `src/universal_agent/tui.py`.
 - Domain metadata/package behavior: `src/universal_agent/domain/` or

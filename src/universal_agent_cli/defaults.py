@@ -4,6 +4,8 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 
+from universal_agent.profile import default_profile_config_path
+
 AGENT_CONFIG_DIR_ENV = "AGENT_CONFIG_DIR"
 AGENT_DATA_DIR_ENV = "AGENT_DATA_DIR"
 DEFAULT_AGENT_DATA_DIR = ".universal-agent"
@@ -32,10 +34,10 @@ __all__ = [
 
 
 def default_init_output_path(environ: Mapping[str, str] | None = None) -> str:
-    config_dir = _optional_env_path(AGENT_CONFIG_DIR_ENV, environ)
-    if config_dir is None:
-        return DEFAULT_PROFILE_CONFIG_NAME
-    return str(config_dir / DEFAULT_PROFILE_CONFIG_NAME)
+    """Golden Path default: ./universal-agent/profile.json, else AGENT_CONFIG_DIR,
+    else ~/.universal-agent/profile.json (shared with the kernel profile module)."""
+
+    return str(default_profile_config_path(environ))
 
 
 def default_runtime_data_dir(environ: Mapping[str, str] | None = None) -> str:

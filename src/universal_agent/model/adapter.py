@@ -76,3 +76,8 @@ class ScriptedModelAdapter:
 
     def model_usage(self) -> ModelUsage | None:
         return self._last_usage
+
+
+# P0 Golden Path alias: `FakeModel` names the deterministic offline model used by
+# tests, doctor and the default profile (no real LLM required).
+FakeModel = ScriptedModelAdapter

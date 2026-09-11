@@ -103,10 +103,7 @@ def test_redact_sensitive_mapping_redacts_bearer_and_jwt_text() -> None:
     )
 
     assert redacted == {
-        "recent_logs": (
-            "Authorization: Bearer <redacted>\n"
-            "standalone jwt <redacted>"
-        )
+        "recent_logs": ("Authorization: Bearer <redacted>\nstandalone jwt <redacted>")
     }
 
 

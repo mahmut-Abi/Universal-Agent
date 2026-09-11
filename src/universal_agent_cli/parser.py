@@ -12,9 +12,25 @@ from universal_agent_cli.defaults import (
     default_workers_path,
 )
 
+GOLDEN_PATH_COMMANDS = (
+    "init",
+    "run",
+    "session",
+    "config",
+    "profile",
+    "doctor",
+)
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="agent")
+
+def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog=prog or "agent",
+        description=(
+            "Universal Agent CLI (also installed as `ua`). "
+            "Golden path: init -> doctor -> run -> session. "
+            "All other commands are advanced/developer commands."
+        ),
+    )
     parser.add_argument(
         "--profile-config",
         help="Load an Agent Profile JSON config before dispatching the command.",
@@ -30,6 +46,271 @@ def build_parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
+    init = commands.add_parser(
+        "init",
+        help="Create the local profile config (first-time setup; idempotent).",
+    )
+    init.add_argument(
+        "--output",
+        default=default_init_output_path(),
+        help="Profile config file to write (default: universal-agent/profile.json in cwd).",
+    )
+    init.add_argument(
+        "--output-format",
+        choices=("text", "json"),
+        default="text",
+        help="Human summary (text, default) or machine JSON.",
+    )
+    init.add_argument(
+        "--profile",
+        default="default",
+        help="Profile name to generate (default: default).",
+    )
+    init.add_argument("--environment", default="local")
+    init.add_argument("--store-backend", choices=("memory", "file", "sqlite"), default="file")
+    init.add_argument("--store-path", default=default_store_path())
+    init.add_argument(
+        "--distributed-queue-backend",
+        choices=("memory", "file", "sqlite"),
+        default="memory",
+    )
+    init.add_argument("--distributed-queue-path", default=default_work_queue_path())
+    init.add_argument(
+        "--distributed-locks-backend", choices=("memory", "file", "sqlite"), default="memory"
+    )
+    init.add_argument("--distributed-locks-path", default=default_distributed_locks_path())
+    init.add_argument(
+        "--distributed-workers-backend",
+        choices=("memory", "file", "sqlite"),
+        default="memory",
+    )
+    init.add_argument("--distributed-workers-path", default=default_workers_path())
+    init.add_argument("--distributed-terminal-retention-seconds", type=float)
+    init.add_argument(
+        "--domain-backend",
+        choices=("fake", "kubectl", "kubernetes_api"),
+        default="fake",
+    )
+    init.add_argument("--kubectl-namespace", default="default")
+    init.add_argument("--kubectl-context")
+    init.add_argument("--kubectl-kubeconfig")
+    init.add_argument("--kubectl-timeout-seconds", type=float, default=10.0)
+    init.add_argument("--kubernetes-api-server")
+    init.add_argument("--kubernetes-api-namespace", default="default")
+    init.add_argument("--kubernetes-api-token-env")
+    init.add_argument("--kubernetes-api-token-file")
+    init.add_argument("--kubernetes-api-token-secret", default="kubernetes_api_token")
+    init.add_argument("--kubernetes-api-timeout-seconds", type=float, default=10.0)
+    init.add_argument(
+        "--model-provider",
+        choices=("scripted", "json_http", "openai_chat_completions", "openai_responses"),
+        default="scripted",
+    )
+    init.add_argument("--model-name", default="scripted")
+    init.add_argument("--model-endpoint")
+    init.add_argument("--model-api-key-env")
+    init.add_argument("--model-api-key-file")
+    init.add_argument("--model-api-key-secret", default="model_api_key")
+    init.add_argument("--model-timeout-seconds", type=float, default=30.0)
+    init.add_argument(
+        "--model-response-format",
+        choices=("json_schema", "json_object", "prompt_json"),
+        help=(
+            "Response format for openai_chat_completions profiles. "
+            "Use prompt_json for legacy-compatible providers without response_format support."
+        ),
+    )
+    init.add_argument("--model-header", action="append", default=[])
+    init.add_argument("--force", action="store_true")
+
+    run = commands.add_parser(
+        "run",
+        help="Run one Agent goal and print the session summary (creates a Session).",
+    )
+    run.add_argument(
+        "profile",
+        nargs="?",
+        default=None,
+        help="Optional profile name positional (prefer --profile).",
+    )
+    run.add_argument("goal", help="Goal description text for the Agent.")
+    run.add_argument(
+        "--profile",
+        dest="profile_option",
+        default=None,
+        help="Profile to run (default: the service's primary profile).",
+    )
+    run.add_argument(
+        "--output",
+        choices=("text", "json"),
+        default="text",
+        help="Human-readable summary (text, default) or machine JSON.",
+    )
+    run.add_argument("--task")
+    run.add_argument(
+        "--compile-goal",
+        action="store_true",
+        help="Compile the goal description into the initial runtime task graph.",
+    )
+    run.add_argument(
+        "--success",
+        action="append",
+        default=[],
+        help="Goal success criterion as KEY=JSON. Repeat for multiple criteria.",
+    )
+
+    session = commands.add_parser(
+        "session",
+        help="List, inspect, resume or cancel persisted Agent sessions.",
+    )
+    session_commands = session.add_subparsers(dest="session_command", required=True)
+
+    list_sessions = session_commands.add_parser(
+        "list",
+        help="List recent sessions (text by default; --output json for machines).",
+    )
+    list_sessions.add_argument("--after")
+    list_sessions.add_argument("--limit", type=int)
+    list_sessions.add_argument(
+        "--output",
+        choices=("text", "json"),
+        default="text",
+        help="Human table (text, default) or machine JSON.",
+    )
+
+    show = session_commands.add_parser(
+        "show",
+        help="Show one session: status, goal, event timeline, evidence and action counts.",
+    )
+    show.add_argument("session_id")
+    show.add_argument(
+        "--output",
+        choices=("text", "json"),
+        default="text",
+        help="Human report (text, default) or machine JSON.",
+    )
+
+    diagnostics = session_commands.add_parser("diagnostics")
+    diagnostics.add_argument("session_id")
+
+    evidence = session_commands.add_parser("evidence")
+    evidence.add_argument("session_id")
+
+    world = session_commands.add_parser("world")
+    world.add_argument("session_id")
+    world.add_argument("--entity")
+    world.add_argument("--relation")
+
+    events = session_commands.add_parser("events")
+    events.add_argument("session_id")
+    events.add_argument("--after")
+    events.add_argument("--limit", type=int)
+    events.add_argument("--format", choices=("json", "sse"), default="json")
+    events.add_argument("--wait", action="store_true")
+    events.add_argument("--timeout-seconds", type=float, default=10.0)
+    events.add_argument("--poll-interval-seconds", type=float, default=0.25)
+
+    audit = session_commands.add_parser("audit")
+    audit.add_argument("session_id")
+    audit.add_argument("--integrity", action="store_true")
+
+    cost = session_commands.add_parser("cost")
+    cost.add_argument("session_id")
+
+    logs = session_commands.add_parser("logs")
+    logs.add_argument("session_id")
+
+    traces = session_commands.add_parser("traces")
+    traces.add_argument("session_id")
+    traces.add_argument("--format", choices=("runtime", "otlp"), default="runtime")
+
+    pause = session_commands.add_parser("pause", help="Move a running session into waiting.")
+    pause.add_argument("session_id")
+    pause.add_argument("--reason", default="session paused from CLI")
+    _add_output_argument(pause)
+
+    resume = session_commands.add_parser(
+        "resume", help="Resume a waiting/paused session (--confirmed true approves an action)."
+    )
+    resume.add_argument("session_id")
+    resume.add_argument("--confirmed", choices=("true", "false"))
+    _add_output_argument(resume)
+
+    cancel = session_commands.add_parser("cancel", help="Cancel a non-terminal session.")
+    cancel.add_argument("session_id")
+    cancel.add_argument("--reason", default="session cancelled from CLI")
+    _add_output_argument(cancel)
+
+    config = commands.add_parser(
+        "config",
+        help="Show the active configuration (model, profile, runtime, secrets, domains).",
+    )
+    config_commands = config.add_subparsers(dest="config_command", required=False)
+    config_show = config_commands.add_parser(
+        "show",
+        help="Print the full machine-readable config JSON (advanced).",
+    )
+    config_show.add_argument(
+        "--output",
+        choices=("text", "json"),
+        default="json",
+        help="Output format for `config show` (json default; text for humans).",
+    )
+    config_validate = config_commands.add_parser("validate")
+    config_validate.add_argument(
+        "--skip-secret-resolution",
+        action="store_true",
+        help="Validate config shape without checking env/file secret availability.",
+    )
+
+    profile = commands.add_parser(
+        "profile",
+        help="List available profiles or show one profile's model/domains/policy.",
+    )
+    profile_commands = profile.add_subparsers(dest="profile_command", required=True)
+    profile_list = profile_commands.add_parser(
+        "list",
+        help="List profiles (text by default; --output json for machines).",
+    )
+    profile_list.add_argument(
+        "--output",
+        choices=("text", "json"),
+        default="text",
+        help="Name list (text, default) or machine JSON.",
+    )
+    profile_show = profile_commands.add_parser(
+        "show",
+        help="Show one profile: model, domains, policy, capabilities.",
+    )
+    profile_show.add_argument("profile")
+    profile_show.add_argument(
+        "--output",
+        choices=("text", "json"),
+        default="text",
+        help="Human report (text, default) or machine JSON.",
+    )
+    profile_verify = profile_commands.add_parser("verify")
+    profile_verify.add_argument("--profile-dir", required=True)
+
+    doctor = commands.add_parser(
+        "doctor",
+        help=(
+            "Check environment, config, model, runtime, profiles, domains and policy; print fixes."
+        ),
+    )
+    doctor.add_argument(
+        "--output",
+        choices=("text", "json"),
+        default="text",
+        help="Human-readable report (text, default) or machine JSON.",
+    )
+    doctor.add_argument(
+        "--fail-on",
+        choices=("never", "error", "warn"),
+        default="error",
+        help="Exit with status 1 when Doctor status reaches the selected severity.",
+    )
+
     commands.add_parser("version")
     commands.add_parser("health")
     commands.add_parser("ready")
@@ -39,13 +320,6 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("logs")
     traces = commands.add_parser("traces")
     traces.add_argument("--format", choices=("runtime", "otlp"), default="runtime")
-    doctor = commands.add_parser("doctor")
-    doctor.add_argument(
-        "--fail-on",
-        choices=("never", "error", "warn"),
-        default="never",
-        help="Exit with status 1 when Doctor status reaches the selected severity.",
-    )
     audit = commands.add_parser("audit")
     audit.add_argument("--integrity", action="store_true")
     commands.add_parser("multi-agent")
@@ -150,76 +424,8 @@ def build_parser() -> argparse.ArgumentParser:
     distributed_lock_release.add_argument("lease_id")
     distributed_lock_release.add_argument("--owner-id", required=True)
 
-    init = commands.add_parser("init")
-    init.add_argument("--output", default=default_init_output_path())
-    init.add_argument("--profile", default=LOCAL_PROFILE_NAME)
-    init.add_argument("--environment", default="local")
-    init.add_argument("--store-backend", choices=("memory", "file", "sqlite"), default="file")
-    init.add_argument("--store-path", default=default_store_path())
-    init.add_argument(
-        "--distributed-queue-backend",
-        choices=("memory", "file", "sqlite"),
-        default="memory",
-    )
-    init.add_argument("--distributed-queue-path", default=default_work_queue_path())
-    init.add_argument(
-        "--distributed-locks-backend", choices=("memory", "file", "sqlite"), default="memory"
-    )
-    init.add_argument("--distributed-locks-path", default=default_distributed_locks_path())
-    init.add_argument(
-        "--distributed-workers-backend",
-        choices=("memory", "file", "sqlite"),
-        default="memory",
-    )
-    init.add_argument("--distributed-workers-path", default=default_workers_path())
-    init.add_argument("--distributed-terminal-retention-seconds", type=float)
-    init.add_argument(
-        "--domain-backend",
-        choices=("fake", "kubectl", "kubernetes_api"),
-        default="fake",
-    )
-    init.add_argument("--kubectl-namespace", default="default")
-    init.add_argument("--kubectl-context")
-    init.add_argument("--kubectl-kubeconfig")
-    init.add_argument("--kubectl-timeout-seconds", type=float, default=10.0)
-    init.add_argument("--kubernetes-api-server")
-    init.add_argument("--kubernetes-api-namespace", default="default")
-    init.add_argument("--kubernetes-api-token-env")
-    init.add_argument("--kubernetes-api-token-file")
-    init.add_argument("--kubernetes-api-token-secret", default="kubernetes_api_token")
-    init.add_argument("--kubernetes-api-timeout-seconds", type=float, default=10.0)
-    init.add_argument(
-        "--model-provider",
-        choices=("scripted", "json_http", "openai_chat_completions", "openai_responses"),
-        default="scripted",
-    )
-    init.add_argument("--model-name", default="scripted")
-    init.add_argument("--model-endpoint")
-    init.add_argument("--model-api-key-env")
-    init.add_argument("--model-api-key-file")
-    init.add_argument("--model-api-key-secret", default="model_api_key")
-    init.add_argument("--model-timeout-seconds", type=float, default=30.0)
-    init.add_argument(
-        "--model-response-format",
-        choices=("json_schema", "json_object", "prompt_json"),
-        help=(
-            "Response format for openai_chat_completions profiles. "
-            "Use prompt_json for legacy-compatible providers without response_format support."
-        ),
-    )
-    init.add_argument("--model-header", action="append", default=[])
-    init.add_argument("--force", action="store_true")
-
-    config = commands.add_parser("config")
-    config_commands = config.add_subparsers(dest="config_command", required=True)
-    config_commands.add_parser("show")
-    config_validate = config_commands.add_parser("validate")
-    config_validate.add_argument(
-        "--skip-secret-resolution",
-        action="store_true",
-        help="Validate config shape without checking env/file secret availability.",
-    )
-
+    # Golden path commands first, so `agent --help` reads top-down:
+    # init -> run -> session -> config -> profile -> doctor.
     serve = commands.add_parser("serve")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
@@ -228,22 +434,6 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--read-only-auth-token")
     serve.add_argument("--read-only-auth-token-env")
     serve.add_argument("--evaluation-report-dir")
-
-    run = commands.add_parser("run")
-    run.add_argument("profile")
-    run.add_argument("goal")
-    run.add_argument("--task")
-    run.add_argument(
-        "--compile-goal",
-        action="store_true",
-        help="Compile the goal description into the initial runtime task graph.",
-    )
-    run.add_argument(
-        "--success",
-        action="append",
-        default=[],
-        help="Goal success criterion as KEY=JSON. Repeat for multiple criteria.",
-    )
 
     add_kubernetes_command(commands)
 
@@ -425,14 +615,6 @@ def build_parser() -> argparse.ArgumentParser:
     domain_package_scaffold.add_argument("--runtime-stub", action="store_true")
     domain_package_scaffold.add_argument("--force", action="store_true")
 
-    profile = commands.add_parser("profile")
-    profile_commands = profile.add_subparsers(dest="profile_command", required=True)
-    profile_commands.add_parser("list")
-    profile_show = profile_commands.add_parser("show")
-    profile_show.add_argument("profile")
-    profile_verify = profile_commands.add_parser("verify")
-    profile_verify.add_argument("--profile-dir", required=True)
-
     capabilities = commands.add_parser("capabilities")
     capabilities_commands = capabilities.add_subparsers(
         dest="capabilities_command",
@@ -452,7 +634,7 @@ def build_parser() -> argparse.ArgumentParser:
     evaluators_commands = evaluators.add_subparsers(dest="evaluators_command", required=True)
     evaluators_commands.add_parser("list")
 
-    chat = commands.add_parser("chat", help="Interactive conversation with the runtime")
+    chat = commands.add_parser("chat", help="(advanced) Interactive conversation with the runtime")
     chat.add_argument("--profile", default=LOCAL_PROFILE_NAME)
     chat.add_argument(
         "--show-events",
@@ -478,63 +660,18 @@ def build_parser() -> argparse.ArgumentParser:
     memory_delete.add_argument("memory_id")
     memory_sub.add_parser("list", help="List memory records")
 
-    session = commands.add_parser("session")
-    session_commands = session.add_subparsers(dest="session_command", required=True)
-
-    list_sessions = session_commands.add_parser("list")
-    list_sessions.add_argument("--after")
-    list_sessions.add_argument("--limit", type=int)
-
-    show = session_commands.add_parser("show")
-    show.add_argument("session_id")
-
-    diagnostics = session_commands.add_parser("diagnostics")
-    diagnostics.add_argument("session_id")
-
-    evidence = session_commands.add_parser("evidence")
-    evidence.add_argument("session_id")
-
-    world = session_commands.add_parser("world")
-    world.add_argument("session_id")
-    world.add_argument("--entity")
-    world.add_argument("--relation")
-
-    events = session_commands.add_parser("events")
-    events.add_argument("session_id")
-    events.add_argument("--after")
-    events.add_argument("--limit", type=int)
-    events.add_argument("--format", choices=("json", "sse"), default="json")
-    events.add_argument("--wait", action="store_true")
-    events.add_argument("--timeout-seconds", type=float, default=10.0)
-    events.add_argument("--poll-interval-seconds", type=float, default=0.25)
-
-    audit = session_commands.add_parser("audit")
-    audit.add_argument("session_id")
-    audit.add_argument("--integrity", action="store_true")
-
-    cost = session_commands.add_parser("cost")
-    cost.add_argument("session_id")
-
-    logs = session_commands.add_parser("logs")
-    logs.add_argument("session_id")
-
-    traces = session_commands.add_parser("traces")
-    traces.add_argument("session_id")
-    traces.add_argument("--format", choices=("runtime", "otlp"), default="runtime")
-
-    pause = session_commands.add_parser("pause")
-    pause.add_argument("session_id")
-    pause.add_argument("--reason", default="session paused from CLI")
-
-    resume = session_commands.add_parser("resume")
-    resume.add_argument("session_id")
-    resume.add_argument("--confirmed", choices=("true", "false"))
-
-    cancel = session_commands.add_parser("cancel")
-    cancel.add_argument("session_id")
-    cancel.add_argument("--reason", default="session cancelled from CLI")
-
     return parser
+
+
+def _add_output_argument(command: argparse.ArgumentParser, *, default: str = "json") -> None:
+    """Standard `--output text|json` flag for session lifecycle commands."""
+
+    command.add_argument(
+        "--output",
+        choices=("text", "json"),
+        default=default,
+        help="Human summary (text) or machine JSON (default: json).",
+    )
 
 
 def _add_evaluation_selector_arguments(command: argparse.ArgumentParser) -> None:

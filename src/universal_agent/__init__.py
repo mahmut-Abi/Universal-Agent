@@ -170,6 +170,7 @@ from universal_agent.evaluation.dataset import (
     verify_evaluation_dataset,
     verify_evaluation_dataset_registry,
 )
+from universal_agent.facade import Agent, AgentConfigurationError
 from universal_agent.host import (
     DomainConfig,
     ModelConfig,
@@ -184,6 +185,7 @@ from universal_agent.host import (
     build_configured_model_adapter,
 )
 from universal_agent.model import (
+    FakeModel,
     HttpxJsonHttpTransport,
     JsonHttpModelAdapter,
     JsonHttpModelError,
@@ -366,7 +368,9 @@ __all__ = [
     "AGENT_TASK_API_VERSION",
     "ActionReconcileContext",
     "ActionReconciler",
+    "Agent",
     "AgentActionProposal",
+    "AgentConfigurationError",
     "AgentConflictResolver",
     "AgentDelegationBatchResult",
     "AgentDelegationBatchStatus",
@@ -497,6 +501,7 @@ __all__ = [
     "EvidenceView",
     "ExecutionResult",
     "ExecutionStatus",
+    "FakeModel",
     "FileDelegationLedger",
     "FileDistributedLockRegistry",
     "FileEcosystemRegistryStore",

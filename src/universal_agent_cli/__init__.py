@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+import time
 from collections.abc import Sequence
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -13,6 +14,7 @@ from universal_agent.agentd.representations import (
     config_body,
     domain_body,
     evaluator_body,
+    event_batch_body,
     memory_body,
     policy_body,
     runtime_run_body,
@@ -37,8 +39,9 @@ from universal_agent.domains.kubernetes.cli import (
 from universal_agent.domains.kubernetes.cli import (
     build_configured_service as build_kubernetes_configured_service,
 )
-from universal_agent.domains.kubernetes.cli import (
-    build_default_service as build_kubernetes_default_service,
+from universal_agent.domains.local.cli_runtime import (
+    build_local_profile_service,
+    build_local_service,
 )
 from universal_agent.ecosystem import (
     EcosystemRegistryNotFoundError,
@@ -48,7 +51,11 @@ from universal_agent.evaluation.dataset import EvaluationDatasetNotFoundError
 from universal_agent.evaluation.dispatch import DispatchExit
 from universal_agent.host.runtime import RuntimeHost, build_configured_model_adapter
 from universal_agent.memory import MemoryKind, MemoryNotFoundError
-from universal_agent.profile import ProfileConfig, ProfileConfigNotFoundError
+from universal_agent.profile import (
+    ProfileConfig,
+    ProfileConfigNotFoundError,
+    default_profile_config_path,
+)
 from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
 from universal_agent.state import StateNotFoundError
@@ -62,6 +69,7 @@ from universal_agent_cli.agentd import (
 from universal_agent_cli.catalog_commands import _dispatch_domain_packages, _dispatch_profile
 from universal_agent_cli.config import validate_profile_config_file
 from universal_agent_cli.distributed import _dispatch_distributed
+from universal_agent_cli.doctor import run_doctor_command
 from universal_agent_cli.ecosystem import _dispatch_ecosystem
 from universal_agent_cli.evaluation import _dispatch_eval
 from universal_agent_cli.init import _dispatch_init
@@ -76,12 +84,18 @@ from universal_agent_cli.observability import _dispatch_observability
 from universal_agent_cli.parser import build_parser
 from universal_agent_cli.serve import ServerRunner, _dispatch_serve
 from universal_agent_cli.session import _dispatch_session
+from universal_agent_cli.text_views import (
+    render_config_text,
+    render_run_text,
+)
 from universal_agent_tui.tui import build_tui_snapshot, render_tui_snapshot
 from universal_agent_tui.tui_app import RuntimeTuiApp, service_tui_actions
 
 
 def build_default_service() -> RuntimeService:
-    return build_kubernetes_default_service()
+    """Golden Path default: the domain-neutral Local workspace profile."""
+
+    return build_local_service()
 
 
 def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
@@ -97,6 +111,9 @@ def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
             profile=profile,
             secret_provider=secret_provider,
         ).service
+    configured_domains = profile.runtime.configured_domains()
+    if configured_domains and configured_domains[0].name == "local":
+        return build_local_profile_service(profile_config_path)
     return build_kubernetes_configured_service(
         profile_config_path,
         model_adapter_builder=build_configured_model_adapter,
@@ -116,13 +133,45 @@ async def run_cli(
     server_runner: ServerRunner | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
+    prog: str | None = None,
 ) -> int:
-    parser = build_parser()
+    parser = build_parser(prog)
     args = parser.parse_args(list(argv) if argv is not None else None)
     out = stdout or sys.stdout
     err = stderr or sys.stderr
 
     try:
+        is_production_run = (
+            cast(str, args.command) == "run"
+            and service is None
+            and cast(str | None, args.api_url) is None
+        )
+        if is_production_run:
+            # Golden-path production run: no injected service, no agentd.
+            # Spawn the embedded runtime and drive its HTTP API.
+            from universal_agent_cli.embedded import (
+                EmbeddedRuntimeError,
+                launch_embedded_runtime,
+            )
+
+            try:
+                embedded = launch_embedded_runtime(cast(str | None, args.profile_config))
+            except EmbeddedRuntimeError as exc:
+                _write_error(
+                    err,
+                    "embedded_runtime_start_failed",
+                    f"{exc} — check --profile-config, or run `agent init` / `agent doctor`.",
+                )
+                return 1
+            try:
+                async with AgentdClient(
+                    embedded.base_url,
+                    bearer_token=_agentd_api_token(args),
+                ) as embedded_client:
+                    await dispatch_agentd_commands(args, out, embedded_client)
+            finally:
+                embedded.shutdown()
+            return 0
         if cast(str | None, args.api_url) is not None:
             if not command_supports_agentd(args):
                 raise ValueError(f"command does not support --api-url: {cast(str, args.command)}")
@@ -135,15 +184,30 @@ async def run_cli(
             # Test/embedded-injection path: drive the kernel service directly.
             await _dispatch(args, service, out, server_runner=server_runner)
             return 0
+        if cast(str, args.command) == "doctor":
+            # Production doctor: local preflight first, then the embedded
+            # runtime — the same initialization path `agent run` uses.
+            return await run_doctor_command(args, out)
         if command_supports_agentd(args):
             # Production path without an injected runtime: serve the runtime
             # in an isolated subprocess and talk to it over its HTTP API.
-            from universal_agent_cli.embedded import launch_embedded_runtime
-
-            embedded = launch_embedded_runtime(
-                cast(str | None, args.profile_config),
-                probe_only=is_kubernetes_probe_service_command(args),
+            from universal_agent_cli.embedded import (
+                EmbeddedRuntimeError,
+                launch_embedded_runtime,
             )
+
+            try:
+                embedded = launch_embedded_runtime(
+                    cast(str | None, args.profile_config),
+                    probe_only=is_kubernetes_probe_service_command(args),
+                )
+            except EmbeddedRuntimeError as exc:
+                _write_error(
+                    err,
+                    "embedded_runtime_start_failed",
+                    f"{exc} — check --profile-config, or run `agent init` / `agent doctor`.",
+                )
+                return 1
             try:
                 async with AgentdClient(
                     embedded.base_url,
@@ -185,7 +249,9 @@ async def run_cli(
 
 def main(argv: Sequence[str] | None = None) -> int:
     try:
-        return asyncio.run(run_cli(argv))
+        script = Path(sys.argv[0]).stem
+        prog = script if script in {"agent", "ua"} else None
+        return asyncio.run(run_cli(argv, prog=prog))
     except KeyboardInterrupt:
         return 130
 
@@ -338,11 +404,10 @@ async def _dispatch_run(
     service: RuntimeService,
     out: TextIO,
 ) -> None:
-    profile = cast(str, args.profile)
-    if not service.accepts_profile(profile):
-        raise ValueError(f"unknown profile: {profile}")
+    profile = _resolve_run_profile(args, service)
     criteria = _success_criteria(cast(list[str], args.success))
     goal = Goal(cast(str, args.goal), criteria)
+    started = time.monotonic()
     if cast(bool, args.compile_goal):
         if cast(str | None, args.task) is not None:
             raise ValueError("--task cannot be used with --compile-goal")
@@ -350,7 +415,40 @@ async def _dispatch_run(
     else:
         task = Task(cast(str | None, args.task) or "Run goal", tuple(item.key for item in criteria))
         run = await service.run_goal(goal, task)
-    _write_json(out, runtime_run_body(run))
+    duration_seconds = time.monotonic() - started
+    body = runtime_run_body(run)
+    if cast(str, args.output) == "json":
+        _write_json(out, body)
+        return
+    events_body = event_batch_body(await service.stream_events(run.result.session_id, limit=500))
+    _write_text(
+        out,
+        render_run_text(
+            body,
+            duration_seconds=duration_seconds,
+            events_body=events_body,
+            profile=profile,
+        ),
+    )
+
+
+def _resolve_run_profile(args: argparse.Namespace, service: RuntimeService) -> str | None:
+    """Resolve the run profile: --profile flag > positional > service primary."""
+
+    flag = cast(str | None, getattr(args, "profile_option", None))
+    positional = cast(str | None, getattr(args, "profile", None))
+    if flag is not None and positional is not None and flag != positional:
+        raise ValueError(
+            "run accepts one profile: use --profile or the positional argument, not both"
+        )
+    selected = flag if flag is not None else positional
+    if selected is not None:
+        error = service.profile_selection_error(selected)
+        if error is not None:
+            raise ValueError(f"unknown profile: {selected}")
+        return selected
+    profiles = service.profiles()
+    return profiles[0].name if profiles else None
 
 
 async def _dispatch_chat(
@@ -422,11 +520,56 @@ def _dispatch_config(
     service: RuntimeService,
     out: TextIO,
 ) -> None:
-    command = cast(str, args.config_command)
+    command = cast(str | None, args.config_command)
+    profile_config_path = _config_scope_path(args)
+    if command is None:
+        # Golden path: bare `agent config` shows the effective configuration as
+        # human-readable text (never secrets).
+        _write_text(
+            out,
+            render_config_text(
+                config_body(service.config()),
+                profile_config_path=profile_config_path,
+                config_dir=_config_settings_dir(args),
+            ),
+        )
+        return
     if command == "show":
-        _write_json(out, config_body(service.config()))
+        body = config_body(service.config())
+        if cast(str, getattr(args, "output", "json")) == "text":
+            _write_text(
+                out,
+                render_config_text(
+                    body,
+                    profile_config_path=profile_config_path,
+                    config_dir=_config_settings_dir(args),
+                ),
+            )
+            return
+        _write_json(out, body)
         return
     raise ValueError(f"unknown config command: {command}")
+
+
+def _config_scope_path(args: argparse.Namespace) -> str | None:
+    """Where the profile config came from: explicit flag, discovery, or None."""
+
+    explicit = cast(str | None, args.profile_config)
+    if explicit is not None:
+        return explicit
+    discovered = default_profile_config_path()
+    return str(discovered) if discovered.is_file() else None
+
+
+def _config_settings_dir(args: argparse.Namespace) -> str | None:
+    """The `agent init` settings directory, when it exists."""
+
+    scope = _config_scope_path(args)
+    if scope is None:
+        return None
+    config_dir = Path(scope).expanduser().parent
+    settings = config_dir / "config.json"
+    return str(config_dir) if settings.is_file() else None
 
 
 def _package_version() -> str:

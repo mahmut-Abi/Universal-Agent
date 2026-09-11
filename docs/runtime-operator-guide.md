@@ -4,36 +4,40 @@ This guide covers the current local operator surfaces: CLI, agentd route
 adapter, RuntimeService projections, read-only TUI/Web views and local
 coordination primitives.
 
+> **New to the project?** The Golden Path is `agent init` → `agent doctor` →
+> `agent run "goal"` → `agent session list` (see the README Quick Start).
+> This guide covers the full operator surface, including advanced commands.
+
 ## CLI
 
-Use the local CLI through the installed console script or the module entry point.
-In this repository, tests and examples use:
+Use the local CLI through the installed console script (`agent`, alias `ua`) or
+the module entry point. In this repository, tests and examples use:
 
 ```bash
-.venv/bin/python -m universal_agent.cli health
+agent health
 ```
 
 Frequently used commands:
 
 ```bash
-.venv/bin/python -m universal_agent.cli ready
-.venv/bin/python -m universal_agent.cli --profile-config profile.json config validate
-.venv/bin/python -m universal_agent.cli config show
-.venv/bin/python -m universal_agent.cli capabilities list   # includes required_arguments and argument_schema
-.venv/bin/python -m universal_agent.cli tools list
-.venv/bin/python -m universal_agent.cli policies list
-.venv/bin/python -m universal_agent.cli profiles list
-.venv/bin/python -m universal_agent.cli session list
+agent ready
+agent --profile-config profile.json config validate
+agent config show
+agent capabilities list   # includes required_arguments and argument_schema
+agent tools list
+agent policies list
+agent profiles list
+agent session list
 ```
 
 `agent init` can generate either environment-backed or file-backed secret
 references:
 
 ```bash
-.venv/bin/python -m universal_agent.cli init --model-provider json_http --model-endpoint https://model-bridge.example/decide --model-api-key-file /run/secrets/model-api-key
-.venv/bin/python -m universal_agent.cli init --domain-backend kubectl --kubectl-namespace prod --kubectl-context prod-cluster --environment production --model-provider openai_chat_completions --model-name gpt-runtime --model-api-key-env OPENAI_API_KEY
-.venv/bin/python -m universal_agent.cli init --model-provider openai_responses --model-name gpt-runtime --model-api-key-env OPENAI_API_KEY
-.venv/bin/python -m universal_agent.cli init --domain-backend kubernetes_api --kubernetes-api-server https://cluster.example.test --kubernetes-api-token-file /run/secrets/kubernetes-token
+agent init --model-provider json_http --model-endpoint https://model-bridge.example/decide --model-api-key-file /run/secrets/model-api-key
+agent init --domain-backend kubectl --kubectl-namespace prod --kubectl-context prod-cluster --environment production --model-provider openai_chat_completions --model-name gpt-runtime --model-api-key-env OPENAI_API_KEY
+agent init --model-provider openai_responses --model-name gpt-runtime --model-api-key-env OPENAI_API_KEY
+agent init --domain-backend kubernetes_api --kubernetes-api-server https://cluster.example.test --kubernetes-api-token-file /run/secrets/kubernetes-token
 ```
 
 When `AGENT_CONFIG_DIR` or `AGENT_DATA_DIR` is set, `agent init` uses those
@@ -64,7 +68,7 @@ Decisions that try to finish, mutate, or inspect a different workload fail befor
 cluster preflight.
 
 ```bash
-.venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes model-probe production-operator --workload deployment/api --namespace prod
+agent --profile-config profile.json kubernetes model-probe production-operator --workload deployment/api --namespace prod
 ```
 
 Use `kubernetes check` as the normal production pre-run gate. It runs
@@ -74,12 +78,12 @@ whether the model probe, preflight checks and non-blocking warnings are
 production-ready.
 
 ```bash
-.venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes check production-operator --workload deployment/api --namespace prod
+agent --profile-config profile.json kubernetes check production-operator --workload deployment/api --namespace prod
 ```
 
 ```bash
-.venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes preflight --workload deployment/api --namespace prod
-.venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes preflight --skip-cluster
+agent --profile-config profile.json kubernetes preflight --workload deployment/api --namespace prod
+agent --profile-config profile.json kubernetes preflight --skip-cluster
 ```
 
 Use `kubernetes run` for the first production-oriented Kubernetes flow. It runs
@@ -94,16 +98,16 @@ requested scope during the Runtime run, deterministic Kubernetes policy denies
 it before tool execution.
 
 ```bash
-.venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes run production-operator --workload deployment/api --namespace prod
-.venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes run production-operator --workload deployment/api --namespace prod --skip-model-probe
-.venv/bin/python -m universal_agent.cli --profile-config profile.json kubernetes run production-operator --workload deployment/api --namespace prod --skip-preflight
+agent --profile-config profile.json kubernetes run production-operator --workload deployment/api --namespace prod
+agent --profile-config profile.json kubernetes run production-operator --workload deployment/api --namespace prod --skip-model-probe
+agent --profile-config profile.json kubernetes run production-operator --workload deployment/api --namespace prod --skip-preflight
 ```
 
 In `production`, policy-gated `scale_workload` decisions return `waiting` until
 the pending action is reviewed and explicitly confirmed:
 
 ```bash
-.venv/bin/python -m universal_agent.cli --profile-config profile.json session resume <session-id> --confirmed true
+agent --profile-config profile.json session resume <session-id> --confirmed true
 ```
 
 `agent run` defaults to the historical `healthy=true` success criterion. Use
@@ -112,17 +116,17 @@ the flag for multiple required criteria; `distributed schedule-goal` accepts the
 same option.
 
 ```bash
-.venv/bin/python -m universal_agent.cli run local-kubernetes "Verify workload resource identity" --success 'resource="deployment/example"'
-.venv/bin/python -m universal_agent.cli distributed schedule-goal local-kubernetes "Verify workload resource identity" --success 'resource="deployment/example"'
+agent run local-kubernetes "Verify workload resource identity" --success 'resource="deployment/example"'
+agent distributed schedule-goal local-kubernetes "Verify workload resource identity" --success 'resource="deployment/example"'
 ```
 
 Session event reads support cursor semantics:
 
 ```bash
-.venv/bin/python -m universal_agent.cli session events <session-id> --limit 20
-.venv/bin/python -m universal_agent.cli session events <session-id> --after <event-id>
-.venv/bin/python -m universal_agent.cli session events <session-id> --format sse
-.venv/bin/python -m universal_agent.cli session events <session-id> --after <event-id> --wait
+agent session events <session-id> --limit 20
+agent session events <session-id> --after <event-id>
+agent session events <session-id> --format sse
+agent session events <session-id> --after <event-id> --wait
 ```
 
 `--wait` is bounded polling, not an infinite push stream. The default timeout is
@@ -329,13 +333,13 @@ Runtime operations are event-derived:
 Run:
 
 ```bash
-.venv/bin/python -m universal_agent.cli metrics
-.venv/bin/python -m universal_agent.cli metrics --format prometheus
-.venv/bin/python -m universal_agent.cli config show
-.venv/bin/python -m universal_agent.cli doctor
-.venv/bin/python -m universal_agent.cli doctor --fail-on error
-.venv/bin/python -m universal_agent.cli doctor --fail-on warn
-.venv/bin/python -m universal_agent.cli repair state-events --dry-run
+agent metrics
+agent metrics --format prometheus
+agent config show
+agent doctor
+agent doctor --fail-on error
+agent doctor --fail-on warn
+agent repair state-events --dry-run
 ```
 
 `config show`, TUI/Web settings and `/v1/config` include `state_event_commit`
@@ -370,12 +374,12 @@ networked high-availability control plane.
 Useful inspection and maintenance commands:
 
 ```bash
-.venv/bin/python -m universal_agent.cli distributed snapshot
-.venv/bin/python -m universal_agent.cli distributed health
-.venv/bin/python -m universal_agent.cli distributed expire
-.venv/bin/python -m universal_agent.cli distributed prune-terminal --before 2026-01-01T00:00:01+00:00
-.venv/bin/python -m universal_agent.cli init --output .tmp/retention-profile.json --distributed-terminal-retention-seconds 86400 --force
-.venv/bin/python -m universal_agent.cli --profile-config .tmp/retention-profile.json distributed prune-terminal
+agent distributed snapshot
+agent distributed health
+agent distributed expire
+agent distributed prune-terminal --before 2026-01-01T00:00:01+00:00
+agent init --output .tmp/retention-profile.json --distributed-terminal-retention-seconds 86400 --force
+agent --profile-config .tmp/retention-profile.json distributed prune-terminal
 ```
 
 These distributed commands also support `--api-url` for operating against a
@@ -384,21 +388,21 @@ running `agentd` Runtime API instead of assembling a local service.
 Useful scheduling and worker commands:
 
 ```bash
-.venv/bin/python -m universal_agent.cli distributed schedule-session session-1 --priority 5 --max-attempts 2
-.venv/bin/python -m universal_agent.cli distributed schedule-goal local-kubernetes "Verify workload health" --success healthy=true
-.venv/bin/python -m universal_agent.cli distributed schedule-pending-actions --confirmed true
-.venv/bin/python -m universal_agent.cli distributed worker-register worker-a --capability agent_session
-.venv/bin/python -m universal_agent.cli distributed worker-run-once worker-a
-.venv/bin/python -m universal_agent.cli distributed worker-run worker-a --max-items 5
+agent distributed schedule-session session-1 --priority 5 --max-attempts 2
+agent distributed schedule-goal local-kubernetes "Verify workload health" --success healthy=true
+agent distributed schedule-pending-actions --confirmed true
+agent distributed worker-register worker-a --capability agent_session
+agent distributed worker-run-once worker-a
+agent distributed worker-run worker-a --max-items 5
 ```
 
 Useful lock and cancellation commands:
 
 ```bash
-.venv/bin/python -m universal_agent.cli distributed lock-acquire session/session-1 --owner-id worker-a
-.venv/bin/python -m universal_agent.cli distributed lock-heartbeat lock-lease-1 --owner-id worker-a
-.venv/bin/python -m universal_agent.cli distributed lock-release lock-lease-1 --owner-id worker-a
-.venv/bin/python -m universal_agent.cli distributed cancel work-1 --reason "operator cancelled queued work"
+agent distributed lock-acquire session/session-1 --owner-id worker-a
+agent distributed lock-heartbeat lock-lease-1 --owner-id worker-a
+agent distributed lock-release lock-lease-1 --owner-id worker-a
+agent distributed cancel work-1 --reason "operator cancelled queued work"
 ```
 
 ## Ecosystem Metadata
@@ -416,7 +420,7 @@ you want the scaffold command to write starter Python Domain code for later
 explicit activation checks:
 
 ```bash
-.venv/bin/python -m universal_agent.cli domain-packages scaffold ai-ops --description "AI ops domain" --output .tmp/ai-ops-domain --capability inspect_incident --tool incident_api_get --evaluator incident_status --resource resources/runbook.md --resource schemas/incident.json --runtime-stub
+agent domain-packages scaffold ai-ops --description "AI ops domain" --output .tmp/ai-ops-domain --capability inspect_incident --tool incident_api_get --evaluator incident_status --resource resources/runbook.md --resource schemas/incident.json --runtime-stub
 ```
 
 They do not import Domain entrypoints, install external dependencies or activate
@@ -427,7 +431,7 @@ returning an activated Domain. CLI/CI callers can run the same explicit check
 without changing install semantics:
 
 ```bash
-.venv/bin/python -m universal_agent.cli domain-packages load-runtime .tmp/ai-ops-domain
+agent domain-packages load-runtime .tmp/ai-ops-domain
 ```
 
 CLI install refuses signature metadata by default unless the operator explicitly

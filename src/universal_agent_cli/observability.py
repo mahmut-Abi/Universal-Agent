@@ -16,13 +16,32 @@ from universal_agent.agentd.representations import (
     state_event_repair_body,
     trace_spans_body,
 )
+from universal_agent.operations.views import DoctorReportView
 from universal_agent.service import RuntimeService
+from universal_agent_cli.doctor import (
+    CHECK_ERROR,
+    CHECK_OK,
+    DoctorCheck,
+    render_doctor_checks,
+)
 from universal_agent_cli.io import (
     CliExit,
     _doctor_should_fail,
     _write_json,
     _write_text,
 )
+
+
+def _doctor_checks_view(report: DoctorReportView) -> list[DoctorCheck]:
+    return [
+        DoctorCheck(
+            "Runtime",
+            check.name,
+            CHECK_OK if check.status == "ok" else CHECK_ERROR,
+            check.message,
+        )
+        for check in report.checks
+    ]
 
 
 async def _dispatch_observability(
@@ -57,7 +76,11 @@ async def _dispatch_observability(
         return
     if command == "doctor":
         report = await service.doctor()
-        _write_json(out, doctor_body(report))
+        if cast(str, args.output) == "text":
+            checks_view = _doctor_checks_view(report)
+            _write_text(out, render_doctor_checks(checks_view, status=report.status))
+        else:
+            _write_json(out, doctor_body(report))
         if _doctor_should_fail(report.status, cast(str, args.fail_on)):
             raise CliExit(1)
         return

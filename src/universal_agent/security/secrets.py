@@ -51,9 +51,7 @@ _BEARER_TEXT_PATTERN = re.compile(
     r"\b((?:bearer|basic)\s+)([A-Za-z0-9._~+/\-]+=*)",
     re.IGNORECASE,
 )
-_JWT_TEXT_PATTERN = re.compile(
-    r"\b(eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})\b"
-)
+_JWT_TEXT_PATTERN = re.compile(r"\b(eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})\b")
 
 
 @dataclass(frozen=True, slots=True)

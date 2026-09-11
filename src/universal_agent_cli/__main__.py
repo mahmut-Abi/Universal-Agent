@@ -1,4 +1,4 @@
-"""Module entry point for ``python -m universal_agent.cli``."""
+"""Module entry point for ``python -m universal_agent_cli``."""
 
 from universal_agent_cli import main
 

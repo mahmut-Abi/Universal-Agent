@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 from collections.abc import Mapping
 from typing import TextIO, cast
 
@@ -24,6 +25,14 @@ from universal_agent_cli.io import (
     _success_criteria,
     _write_json,
     _write_text,
+)
+from universal_agent_cli.text_views import (
+    render_config_text,
+    render_profile_list_text,
+    render_profile_show_text,
+    render_run_text,
+    render_session_list_text,
+    render_session_show_text,
 )
 from universal_agent_tui.tui_remote import (
     agentd_event_watcher,
@@ -356,7 +365,7 @@ def command_supports_agentd(args: argparse.Namespace) -> bool:
     if command == "repair":
         return cast(str, args.repair_command) == "state-events"
     if command == "config":
-        return cast(str, args.config_command) == "show"
+        return cast(str | None, args.config_command) in (None, "show")
     if command == "profile":
         return cast(str, args.profile_command) in {"list", "show"}
     if command == "domain-packages":
@@ -407,11 +416,34 @@ async def _dispatch_remote_config(
     out: TextIO,
     client: AgentdClient,
 ) -> None:
-    config_command = cast(str, args.config_command)
-    if config_command == "show":
-        _write_json(out, await client.get_json("/v1/config"))
+    config_command = cast(str | None, args.config_command)
+    if config_command in (None, "show"):
+        body = await client.get_json("/v1/config")
+        output = cast(str, getattr(args, "output", "json"))
+        # Bare `agent config` defaults to text; `config show` defaults to JSON.
+        wants_text = config_command is None or output == "text"
+        if wants_text:
+            _write_text(
+                out,
+                render_config_text(
+                    body,
+                    profile_config_path=_remote_config_scope_path(args),
+                ),
+            )
+            return
+        _write_json(out, body)
         return
     raise ValueError(f"unknown config command: {config_command}")
+
+
+def _remote_config_scope_path(args: argparse.Namespace) -> str | None:
+    from universal_agent.profile import default_profile_config_path
+
+    explicit = cast(str | None, args.profile_config)
+    if explicit is not None:
+        return explicit
+    discovered = default_profile_config_path()
+    return str(discovered) if discovered.is_file() else None
 
 
 async def _dispatch_remote_repair(
@@ -668,13 +700,17 @@ async def _dispatch_remote_run(
     client: AgentdClient,
 ) -> None:
     criteria = _success_criteria(cast(list[str], args.success))
+    # The profile is optional in Golden Path runs; the runtime selects its
+    # primary profile when the body omits it.
+    profile = await _resolve_remote_run_profile(args, client)
     body: dict[str, JsonValue] = {
-        "profile": cast(str, args.profile),
         "goal": {
             "description": cast(str, args.goal),
             "success_criteria": _success_criteria_body(criteria),
         },
     }
+    if profile is not None:
+        body["profile"] = profile
     if cast(bool, args.compile_goal):
         if cast(str | None, args.task) is not None:
             raise ValueError("--task cannot be used with --compile-goal")
@@ -684,7 +720,63 @@ async def _dispatch_remote_run(
             "description": cast(str | None, args.task) or "Run goal",
             "required_criteria": [item.key for item in criteria],
         }
-    _write_json(out, await client.post_json("/v1/sessions", body=body))
+    started = time.monotonic()
+    payload = await client.post_json("/v1/sessions", body=body)
+    duration_seconds = time.monotonic() - started
+    if cast(str, args.output) == "text":
+        events_body = await _remote_run_events(payload, client)
+        _write_text(
+            out,
+            render_run_text(
+                payload,
+                duration_seconds=duration_seconds,
+                events_body=events_body,
+                profile=profile,
+            ),
+        )
+        return
+    _write_json(out, payload)
+
+
+async def _remote_run_events(
+    run_payload: Mapping[str, JsonValue],
+    client: AgentdClient,
+) -> dict[str, JsonValue] | None:
+    result = run_payload.get("result")
+    if not isinstance(result, Mapping):
+        return None
+    session_id = result.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    batch = await client.get_json(
+        f"/v1/sessions/{quote_path_segment(session_id)}/events",
+        query={"limit": 500},
+    )
+    return dict(batch)
+
+
+async def _resolve_remote_run_profile(
+    args: argparse.Namespace,
+    client: AgentdClient,
+) -> str | None:
+    flag = cast(str | None, getattr(args, "profile_option", None))
+    positional = cast(str | None, getattr(args, "profile", None))
+    if flag is not None and positional is not None and flag != positional:
+        raise ValueError(
+            "run accepts one profile: use --profile or the positional argument, not both"
+        )
+    selected = flag if flag is not None else positional
+    if selected is not None:
+        return selected
+    if not cast(bool, getattr(args, "resolve_default_profile", True)):
+        return None
+    catalog = await client.get_json("/v1/profiles")
+    profiles = catalog.get("profiles")
+    if isinstance(profiles, list):
+        for item in profiles:
+            if isinstance(item, Mapping) and item.get("name"):
+                return str(item["name"])
+    return None
 
 
 async def _dispatch_remote_list_command(
@@ -707,11 +799,19 @@ async def _dispatch_remote_profile(
 ) -> None:
     profile_command = cast(str, args.profile_command)
     if profile_command == "list":
-        _write_json(out, await client.get_json("/v1/profiles"))
+        body = await client.get_json("/v1/profiles")
+        if cast(str, getattr(args, "output", "json")) == "text":
+            _write_text(out, render_profile_list_text(body))
+            return
+        _write_json(out, body)
         return
     if profile_command == "show":
         profile = quote_path_segment(cast(str, args.profile))
-        _write_json(out, await client.get_json(f"/v1/profiles/{profile}"))
+        body = await client.get_json(f"/v1/profiles/{profile}")
+        if cast(str, getattr(args, "output", "json")) == "text":
+            _write_text(out, render_profile_show_text(body))
+            return
+        _write_json(out, body)
         return
     raise ValueError("profile command does not support --api-url: " + profile_command)
 
@@ -751,16 +851,17 @@ async def _dispatch_remote_session(
 ) -> None:
     session_command = cast(str, args.session_command)
     if session_command == "list":
-        _write_json(
-            out,
-            await client.get_json(
-                "/v1/sessions",
-                query={
-                    "after": cast(str | None, args.after),
-                    "limit": cast(int | None, args.limit),
-                },
-            ),
+        body = await client.get_json(
+            "/v1/sessions",
+            query={
+                "after": cast(str | None, args.after),
+                "limit": cast(int | None, args.limit),
+            },
         )
+        if cast(str, args.output) == "text":
+            _write_text(out, render_session_list_text(body))
+            return
+        _write_json(out, body)
         return
     if session_command == "show":
         await _write_remote_session_json(args, out, client, "")
@@ -834,7 +935,15 @@ async def _write_remote_session_json(
     path = f"/v1/sessions/{session_id}"
     if suffix:
         path += f"/{suffix}"
-    _write_json(out, await client.get_json(path, query=query))
+    payload = await client.get_json(path, query=query)
+    if suffix == "" and cast(str, getattr(args, "output", "json")) == "text":
+        events = await client.get_json(
+            f"/v1/sessions/{session_id}/events",
+            query={"limit": 500},
+        )
+        _write_text(out, render_session_show_text(payload, events))
+        return
+    _write_json(out, payload)
 
 
 async def _dispatch_remote_session_events(
@@ -912,7 +1021,29 @@ async def _post_remote_session_action(
     body: Mapping[str, JsonValue],
 ) -> None:
     session_id = quote_path_segment(cast(str, args.session_id))
-    _write_json(out, await client.post_json(f"/v1/sessions/{session_id}/{action}", body=body))
+    payload = await client.post_json(f"/v1/sessions/{session_id}/{action}", body=body)
+    if cast(str, getattr(args, "output", "json")) == "text":
+        result = payload.get("result")
+        if isinstance(result, Mapping):
+            status = str(result.get("status", ""))
+            reason = str(result.get("reason") or "")
+            error_code = result.get("error_code")
+            lines = [f"Session: {result.get('session_id', '')}", f"Status: {status}"]
+            if reason:
+                lines.append(f"Reason: {reason}")
+            if status == "failed" and error_code == "invalid_state":
+                lines.append(
+                    "Try: `agent session list` — the session already reached a "
+                    "terminal state and cannot change further."
+                )
+            elif status == "waiting":
+                lines.append(
+                    f"Try: `agent session resume {args.session_id} --confirmed true` "
+                    "to approve the pending action."
+                )
+            _write_text(out, "\n".join(lines) + "\n")
+            return
+    _write_json(out, payload)
 
 
 def _success_criteria_body(criteria: tuple[SuccessCriterion, ...]) -> list[JsonValue]:

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TextIO, cast
 
 from universal_agent.agentd.representations import domain_package_body, profile_body
-from universal_agent.core import immutable_json
+from universal_agent.core import JsonValue, immutable_json
 from universal_agent.domain import (
     DomainPackageCompatibility,
     DomainPackageRuntimeActivation,
@@ -20,7 +20,8 @@ from universal_agent.profile import (
     load_profile_catalog,
 )
 from universal_agent.service import RuntimeService
-from universal_agent_cli.io import _parse_domain_identity, _write_json
+from universal_agent_cli.io import _parse_domain_identity, _write_json, _write_text
+from universal_agent_cli.text_views import render_profile_list_text, render_profile_show_text
 
 
 def _dispatch_profile(
@@ -30,13 +31,23 @@ def _dispatch_profile(
 ) -> None:
     command = cast(str, args.profile_command)
     if command == "list":
-        _write_json(out, {"profiles": [profile_body(item) for item in service.profiles()]})
+        body: dict[str, JsonValue] = {
+            "profiles": [profile_body(item) for item in service.profiles()]
+        }
+        if cast(str, args.output) == "text":
+            _write_text(out, render_profile_list_text(body))
+            return
+        _write_json(out, body)
         return
     if command == "show":
         profile = cast(str, args.profile)
         if not service.accepts_profile(profile):
             raise ValueError(f"unknown profile: {profile}")
-        _write_json(out, profile_body(service.profile(profile)))
+        show_body = profile_body(service.profile(profile))
+        if cast(str, args.output) == "text":
+            _write_text(out, render_profile_show_text(show_body))
+            return
+        _write_json(out, show_body)
         return
     if command == "verify":
         catalog = load_profile_catalog(cast(str, args.profile_dir))

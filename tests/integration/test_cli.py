@@ -502,6 +502,8 @@ async def test_cli_init_writes_parseable_profile_config(tmp_path: Path) -> None:
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--profile",
@@ -521,6 +523,8 @@ async def test_cli_init_writes_parseable_profile_config(tmp_path: Path) -> None:
         "status": "created",
         "profile": "production-operator",
         "path": str(profile_path),
+        "config": str(tmp_path / "config.json"),
+        "data_dir": str(tmp_path),
     }
     assert profile.name == "production-operator"
     assert profile.domain == DomainConfig("kubernetes", "0.2.0")
@@ -538,6 +542,8 @@ async def test_cli_init_can_write_sqlite_profile_config(tmp_path: Path) -> None:
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--store-backend",
@@ -570,6 +576,8 @@ async def test_cli_init_uses_container_runtime_dirs_from_environment(
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--distributed-queue-backend",
             "file",
             "--distributed-locks-backend",
@@ -605,6 +613,8 @@ async def test_cli_init_can_write_file_backed_distributed_queue_config(tmp_path:
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--store-path",
@@ -646,6 +656,8 @@ async def test_cli_init_can_write_sqlite_backed_distributed_locks_config(tmp_pat
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--distributed-locks-backend",
@@ -671,6 +683,8 @@ async def test_cli_init_can_write_sqlite_backed_distributed_queue_config(tmp_pat
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--distributed-queue-backend",
@@ -696,6 +710,8 @@ async def test_cli_init_can_write_sqlite_backed_distributed_workers_config(tmp_p
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--distributed-workers-backend",
@@ -720,6 +736,8 @@ async def test_cli_init_can_write_memory_profile_config(tmp_path: Path) -> None:
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--store-backend",
@@ -742,6 +760,8 @@ async def test_cli_init_can_write_kubectl_domain_backend_config(tmp_path: Path) 
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--domain-backend",
@@ -779,6 +799,8 @@ async def test_cli_init_can_write_kubernetes_api_domain_backend_config(tmp_path:
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--domain-backend",
@@ -822,6 +844,8 @@ async def test_cli_init_can_write_kubernetes_api_file_secret_config(tmp_path: Pa
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--domain-backend",
@@ -856,6 +880,8 @@ async def test_cli_init_rejects_kubernetes_api_backend_without_server(
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--domain-backend",
@@ -880,6 +906,8 @@ async def test_cli_init_can_write_json_http_model_config(tmp_path: Path) -> None
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--model-provider",
@@ -924,6 +952,8 @@ async def test_cli_init_can_write_json_http_model_file_secret_config(tmp_path: P
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--model-provider",
@@ -960,6 +990,8 @@ async def test_cli_config_validate_reports_profile_and_available_secrets(
     init_status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--model-provider",
@@ -983,7 +1015,7 @@ async def test_cli_config_validate_reports_profile_and_available_secrets(
     assert init_status == 0
     assert status == 0
     assert payload["status"] == "ok"
-    assert payload["profile"]["name"] == "local-kubernetes"
+    assert payload["profile"]["name"] == "default"
     assert payload["runtime"]["model"]["provider"] == "json_http"
     assert payload["runtime"]["store"]["backend"] == "file"
     assert payload["secrets"] == {
@@ -1005,6 +1037,8 @@ async def test_cli_config_validate_fails_on_missing_required_secret(tmp_path: Pa
     init_status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--model-provider",
@@ -1042,6 +1076,8 @@ async def test_cli_config_validate_can_skip_secret_resolution(tmp_path: Path) ->
     init_status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--model-provider",
@@ -1095,6 +1131,8 @@ async def test_cli_init_can_write_openai_chat_completions_kubectl_profile(
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--environment",
@@ -1157,6 +1195,8 @@ async def test_cli_init_can_write_openai_chat_prompt_json_model_config(tmp_path:
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--model-provider",
@@ -1189,6 +1229,8 @@ async def test_cli_init_can_write_openai_responses_model_config(tmp_path: Path) 
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--model-provider",
@@ -1228,6 +1270,8 @@ async def test_cli_init_openai_responses_requires_model_name(tmp_path: Path) -> 
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--model-provider",
@@ -1255,6 +1299,8 @@ async def test_cli_init_openai_responses_requires_api_key_secret(tmp_path: Path)
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--model-provider",
@@ -1282,6 +1328,8 @@ async def test_cli_init_rejects_secret_env_and_file_together(tmp_path: Path) -> 
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--model-provider",
@@ -1315,6 +1363,8 @@ async def test_cli_init_rejects_invalid_model_header(tmp_path: Path) -> None:
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--model-provider",
@@ -1338,21 +1388,22 @@ async def test_cli_init_rejects_invalid_model_header(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_cli_init_rejects_existing_profile_without_force(tmp_path: Path) -> None:
+async def test_cli_init_reuses_existing_profile_without_force(tmp_path: Path) -> None:
+    """Golden Path: `agent init` is idempotent; reruns reuse the existing config."""
+
     output = StringIO()
-    error = StringIO()
     profile_path = tmp_path / "profile.json"
-    profile_path.write_text("{}", encoding="utf-8")
+    profile_path.write_text('{"placeholder": true}', encoding="utf-8")
 
     status = await run_cli(
-        ["init", "--output", str(profile_path)],
+        ["init", "--output-format", "json", "--output", str(profile_path)],
         stdout=output,
-        stderr=error,
     )
+    payload = read_json(output)
 
-    assert status == 2
-    assert output.getvalue() == ""
-    assert f"profile config already exists: {profile_path}" in error.getvalue()
+    assert status == 0
+    assert payload["status"] == "reused"
+    assert json.loads(profile_path.read_text(encoding="utf-8")) == {"placeholder": True}
 
 
 @pytest.mark.asyncio
@@ -1365,6 +1416,8 @@ async def test_cli_init_force_overwrites_existing_profile(tmp_path: Path) -> Non
     status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--profile",
@@ -1395,6 +1448,8 @@ async def test_cli_profile_config_drives_run_and_persisted_session_reads(tmp_pat
     init_status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--profile",
@@ -1415,6 +1470,8 @@ async def test_cli_profile_config_drives_run_and_persisted_session_reads(tmp_pat
             "run",
             "configured-operator",
             "Verify configured workload health",
+            "--output",
+            "json",
         ],
         stdout=run_output,
     )
@@ -1425,7 +1482,7 @@ async def test_cli_profile_config_drives_run_and_persisted_session_reads(tmp_pat
     assert isinstance(session_id, str)
 
     list_status = await run_cli(
-        ["--profile-config", str(profile_path), "session", "list"],
+        ["--profile-config", str(profile_path), "session", "list", "--output", "json"],
         stdout=list_output,
     )
     config_status = await run_cli(
@@ -1462,6 +1519,8 @@ async def test_cli_config_show_exposes_kubectl_domain_backend_config(tmp_path: P
     await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--domain-backend",
@@ -1509,6 +1568,8 @@ async def test_cli_config_show_exposes_kubernetes_api_backend_without_secret_val
     await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--domain-backend",
@@ -1625,7 +1686,13 @@ async def test_cli_run_submits_goal_through_service() -> None:
     output = StringIO()
 
     status = await run_cli(
-        ["run", "production-operator", "Verify workload health"],
+        [
+            "run",
+            "production-operator",
+            "Verify workload health",
+            "--output",
+            "json",
+        ],
         service=service,
         stdout=output,
     )
@@ -1650,6 +1717,8 @@ async def test_cli_run_accepts_custom_success_criteria() -> None:
             "Verify workload resource identity",
             "--success",
             'resource="deployment/example"',
+            "--output",
+            "json",
         ],
         service=service,
         stdout=output,
@@ -1676,6 +1745,8 @@ async def test_cli_run_can_compile_goal_into_task_graph() -> None:
             "production-operator",
             "Verify workload health",
             "--compile-goal",
+            "--output",
+            "json",
         ],
         service=service,
         stdout=output,
@@ -1804,6 +1875,8 @@ async def test_cli_kubernetes_model_probe_rejects_out_of_scope_workload(
     init_status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--profile",
@@ -1854,6 +1927,8 @@ async def test_cli_kubernetes_model_probe_reports_missing_model_secret(
     init_status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--profile",
@@ -1946,6 +2021,8 @@ async def test_cli_kubernetes_check_stops_before_preflight_when_model_probe_fail
     init_status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--profile",
@@ -2287,6 +2364,8 @@ async def test_cli_kubernetes_run_stops_before_preflight_when_model_probe_fails(
     init_status = await run_cli(
         [
             "init",
+            "--output-format",
+            "json",
             "--output",
             str(profile_path),
             "--profile",
@@ -2330,7 +2409,13 @@ async def test_cli_tui_renders_runtime_service_snapshot() -> None:
     tui_output = StringIO()
 
     run_status = await run_cli(
-        ["run", "production-operator", "Verify workload health"],
+        [
+            "run",
+            "production-operator",
+            "Verify workload health",
+            "--output",
+            "json",
+        ],
         service=service,
         stdout=run_output,
     )
@@ -2833,7 +2918,13 @@ async def test_cli_session_diagnostics_renders_evidence_and_world_facts() -> Non
     neighborhood_output = StringIO()
 
     run_status = await run_cli(
-        ["run", "production-operator", "Verify workload health"],
+        [
+            "run",
+            "production-operator",
+            "Verify workload health",
+            "--output",
+            "json",
+        ],
         service=service,
         stdout=run_output,
     )
@@ -2915,7 +3006,13 @@ async def test_cli_run_rejects_unknown_profile() -> None:
     error = StringIO()
 
     status = await run_cli(
-        ["run", "missing-profile", "Verify workload health"],
+        [
+            "run",
+            "missing-profile",
+            "Verify workload health",
+            "--output",
+            "json",
+        ],
         service=service,
         stdout=output,
         stderr=error,
@@ -2958,7 +3055,7 @@ async def test_cli_profile_show_exposes_one_profile() -> None:
     output = StringIO()
 
     status = await run_cli(
-        ["profile", "show", "production-operator"],
+        ["profile", "show", "production-operator", "--output", "json"],
         service=service,
         stdout=output,
     )
@@ -4067,12 +4164,20 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
     resume_output = StringIO()
 
     list_status = await run_cli(
-        ["session", "list"],
+        ["session", "list", "--output", "json"],
         service=service,
         stdout=list_output,
     )
     pause_status = await run_cli(
-        ["session", "pause", session_id, "--reason", "operator paused from test"],
+        [
+            "session",
+            "pause",
+            session_id,
+            "--reason",
+            "operator paused from test",
+            "--output",
+            "json",
+        ],
         service=service,
         stdout=pause_output,
     )
@@ -4097,7 +4202,9 @@ async def test_cli_controls_waiting_session_lifecycle_through_service() -> None:
         stdout=sse_events_output,
     )
     resume_status = await run_cli(
-        ["session", "resume", session_id], service=service, stdout=resume_output
+        ["session", "resume", session_id, "--output", "json"],
+        service=service,
+        stdout=resume_output,
     )
 
     list_payload = read_json(list_output)
@@ -4278,7 +4385,7 @@ async def test_cli_session_list_supports_cursor_and_limit() -> None:
     second_output = StringIO()
 
     first_status = await run_cli(
-        ["session", "list", "--limit", "2"],
+        ["session", "list", "--limit", "2", "--output", "json"],
         service=service,
         stdout=first_output,
     )
@@ -4288,7 +4395,7 @@ async def test_cli_session_list_supports_cursor_and_limit() -> None:
     cursor = first_payload["next_cursor"]
     assert isinstance(cursor, str)
     second_status = await run_cli(
-        ["session", "list", "--after", cursor, "--limit", "2"],
+        ["session", "list", "--after", cursor, "--limit", "2", "--output", "json"],
         service=service,
         stdout=second_output,
     )
@@ -4359,7 +4466,9 @@ async def test_cli_exposes_operations_commands_through_service() -> None:
         service=service,
         stdout=otlp_traces_output,
     )
-    doctor_status = await run_cli(["doctor"], service=service, stdout=doctor_output)
+    doctor_status = await run_cli(
+        ["doctor", "--output", "json"], service=service, stdout=doctor_output
+    )
     audit_status = await run_cli(["audit"], service=service, stdout=audit_output)
     audit_integrity_status = await run_cli(
         ["audit", "--integrity"],
@@ -4511,7 +4620,7 @@ async def test_cli_doctor_can_fail_on_warning_status() -> None:
     )
 
     status = await run_cli(
-        ["doctor", "--fail-on", "warn"],
+        ["doctor", "--fail-on", "warn", "--output", "json"],
         service=cast(RuntimeService, service),
         stdout=output,
     )
@@ -4530,7 +4639,7 @@ async def test_cli_doctor_fail_on_error_keeps_warning_status_successful() -> Non
     )
 
     status = await run_cli(
-        ["doctor", "--fail-on", "error"],
+        ["doctor", "--fail-on", "error", "--output", "json"],
         service=cast(RuntimeService, service),
         stdout=output,
     )
@@ -4548,7 +4657,7 @@ async def test_cli_doctor_can_fail_on_error_status() -> None:
     )
 
     status = await run_cli(
-        ["doctor", "--fail-on", "error"],
+        ["doctor", "--fail-on", "error", "--output", "json"],
         service=cast(RuntimeService, service),
         stdout=output,
     )

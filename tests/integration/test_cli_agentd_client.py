@@ -163,6 +163,8 @@ async def test_cli_api_url_runs_goal_and_reads_remote_session() -> None:
                 "healthy=true",
                 "--success",
                 'resource="deployment/example"',
+                "--output",
+                "json",
             ],
             stdout=run_output,
         )
@@ -170,7 +172,7 @@ async def test_cli_api_url_runs_goal_and_reads_remote_session() -> None:
         result = object_value(run_payload["result"])
         session_id = str(result["session_id"])
         session_status = await run_cli(
-            ["--api-url", base_url, "session", "show", session_id],
+            ["--api-url", base_url, "session", "show", session_id, "--output", "json"],
             stdout=session_output,
         )
         events_status = await run_cli(
@@ -260,7 +262,7 @@ async def test_cli_api_url_forwards_distributed_goal_to_remote_worker() -> None:
             stdout=worker_output,
         )
         sessions_status = await run_cli(
-            ["--api-url", base_url, "session", "list"],
+            ["--api-url", base_url, "session", "list", "--output", "json"],
             stdout=sessions_output,
         )
 

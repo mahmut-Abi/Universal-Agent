@@ -9,6 +9,7 @@ __pycache__/
 .pytest_cache/
 
 .universal-agent/
+universal-agent/
 .tmp/
 build/
 dist/

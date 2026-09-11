@@ -17,7 +17,13 @@ from universal_agent.model.http import (
     StdlibJsonHttpTransport,
 )
 
+# P0 Golden Path alias: `FakeModel` names the deterministic offline model used
+# by tests, doctor and the default profile (no real LLM required).
+FakeModel = ScriptedModelAdapter
+
+
 __all__ = [
+    "FakeModel",
     "HttpxJsonHttpTransport",
     "JsonHttpModelAdapter",
     "JsonHttpModelError",

@@ -103,7 +103,7 @@ For the initial production path:
 - A profile can be generated with:
 
   ```bash
-  python -m universal_agent.cli init \
+  agent init \
     --domain-backend kubectl \
     --model-provider openai_chat_completions \
     --model-name <model> \
@@ -120,7 +120,7 @@ For the initial production path:
 - A configured profile can be preflighted with:
 
   ```bash
-  python -m universal_agent.cli --profile-config profile.json \
+  agent --profile-config profile.json \
     kubernetes preflight --workload deployment/api --namespace prod
   ```
 

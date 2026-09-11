@@ -18,6 +18,8 @@ from os import getpid
 from pathlib import Path
 from uuid import uuid4
 
+from universal_agent.profile import default_profile_config_path
+
 
 class EmbeddedRuntimeError(RuntimeError):
     """Raised when the embedded agentd subprocess fails to start."""
@@ -53,8 +55,23 @@ def launch_embedded_runtime(
     probe_only: bool = False,
     timeout_seconds: float = 20.0,
 ) -> EmbeddedRuntime:
-    """Spawn the kernel's agentd server and wait for its bound port."""
+    """Spawn the kernel's agentd server and wait for its bound port.
 
+    With no explicit profile config the launcher applies the standard profile
+    discovery (``./universal-agent/profile.json``, then the user-level config
+    created by ``agent init``), so Golden Path commands use the same
+    initialized configuration without extra flags.
+    """
+
+    if profile_config is None:
+        discovered = default_profile_config_path()
+        if discovered.is_file():
+            profile_config = str(discovered)
+    if profile_config is not None and not Path(profile_config).is_file():
+        raise EmbeddedRuntimeError(
+            f"profile config not found: {profile_config} "
+            "(run `agent init` first or fix --profile-config)"
+        )
     port_file = Path(tempfile.gettempdir()) / (
         f"universal-agent-agentd-{getpid()}-{uuid4().hex}.port"
     )

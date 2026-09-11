@@ -1,693 +1,260 @@
-# Universal Agent Runtime Platform
+# Universal-Agent
 
-A typed Universal Agent Kernel and Runtime with pluggable Domain Runtimes.
+**Universal-Agent is a typed Agent Runtime: one universal Agent kernel + pluggable
+Domain Runtimes, with runtime-owned state, policy-enforced actions, evidence-based
+verification and persistent sessions.**
 
-The long-term architecture is defined in
-`universal-agent-runtime-domain-runtime-design.md`. The current implementation is a typed runtime
-with fixture-backed Kubernetes remediation plus opt-in `kubectl` and Kubernetes HTTP API backends,
-a P3 Multi-Domain composition foundation with a read-only Observability/Prometheus metrics domain,
-and the first P3.5 productization foundation: a stable
-in-process Runtime API, immutable Session read models, cursor-readable Events, explicit
-pause/resume/cancel lifecycle controls, a framework-free `agentd` route adapter, a standard-library
-HTTP bridge, a local CLI adapter, local file-backed session/event persistence, the first P3.6
-operations surface with cost tracking and OpenTelemetry-shaped trace span projections, a P3.7
-Evaluation Harness / Replay foundation, an interactive live TUI dashboard (with a
-`--static` one-shot snapshot mode) and Web Console snapshots
-foundations, the first P6 local scheduler, queue, worker registry, worker, lock, snapshot, health,
-and coordinator primitives, and the first P7 Domain Package registry metadata plus SDK scaffold,
-Evaluation Dataset catalog, Profile Catalog and unified Ecosystem Catalog foundations, plus the first
-P4 Multi-Agent task contract, registry, delegation and conflict-resolution foundation. The v3.0
-design document also defines later productization layers such as production database persistence,
-long-lived event delivery, OpenTelemetry exporters, deeper Multi-Agent orchestration, distributed
-runtime, and ecosystem packaging.
+Why: most "agents" are a prompt loop. Universal-Agent makes the Runtime — not the
+LLM — own state, control flow, policy, evidence and completion, so an Agent can
+act on real infrastructure (Kubernetes today, more Domains later) reliably and
+safely.
 
-The runtime also has a generic container image entrypoint for local or Kubernetes-hosted `agentd`
-serving. See `docs/container-image.md` for build, Profile config, auth-token and Kubernetes
-deployment examples.
+**The CLI is `agent`** (also installed as the short alias `ua`). Everything below
+works with either name.
 
-## Architectural boundaries
+- **CLI** — run an Agent and inspect sessions from your terminal.
+- **Web** — read-only observation/management UI over the same Runtime API (agentd
+  `/console/*` pages). It is not a second Runtime.
+- **agentd** — the long-running Runtime server for server/API/multi-user
+  deployments. Personal use never needs it.
 
-- The model proposes structured capability decisions; it never selects concrete tools or owns state.
-- The Runtime controls validation, capability resolution, policy checks, confirmation, execution,
-  observation processing, task expansion, recovery budgets, evaluation, and completion.
-- An Observation is not automatically a fact. Domain extractors produce Evidence with provenance;
-  World Model updates and Evaluators decide what that Evidence supports.
-- Tool success is not task success. A Domain evaluator must complete the current task, and all required
-  tasks must finish before a model `finish` proposal can complete a goal.
-- Every normal and recovered capability passes deterministic resolution and policy enforcement.
-  Mutation capabilities without an explicit allow policy are denied by default.
-- Domain code supplies manifests, capabilities, tools, policies, evaluators, context providers,
-  Evidence extractors, World updaters, Task expanders, and Recovery rules. The Kernel contains no
-  domain-name branches.
-- Multi-domain collaboration is intended to be handled by Domain Composition inside one Runtime and
-  one Shared World Model. Multi-Agent orchestration is a later, optional execution boundary for
-  independent goals, state, permissions, lifecycles, or isolation requirements; it is not the default
-  way to route between Domains.
-- Applications should consume a stable Runtime API or SDK boundary. Future `agentd`, CLI, TUI, and
-  Web clients must not manipulate Kernel internals directly.
-- A session lives in its store, not in a Runtime instance. Everything needed to continue — task graph,
-  Evidence, recovery budget, pending confirmation, activated Domain composition — is saved as a
-  `SessionSnapshot`, so a rebuilt Runtime resumes from the snapshot instead of from shared objects.
-- The World Model is never a second source of truth. It is replayed from Evidence through the Domain's
-  World updaters, which is why recovery cannot silently invent facts.
+Architecture details live further down (after the Golden Path); the normative
+design is [`universal-agent-runtime-domain-runtime-design.md`](universal-agent-runtime-domain-runtime-design.md)
+and the core concept contract is [`docs/RUNTIME_CONTRACT.md`](docs/RUNTIME_CONTRACT.md).
 
-## Runtime flow
+## Quick Start (Golden Path)
+
+Requires Python **3.12+**.
+
+```bash
+git clone <repo>
+cd Universal-Agent
+
+# 1. Install
+uv sync
+
+# 2. First-time setup — creates universal-agent/profile.json + config.json
+uv run ua init
+
+# 3. Check your environment/config/model/runtime (prints fixes when something is off)
+uv run ua doctor
+
+# 4. Run your first Agent task
+uv run ua run "Analyze the demo workload"
+
+# 5. Find your Session and see what happened
+uv run ua session list
+uv run ua session show <session-id>
+```
+
+That's the whole Golden Path: `install → init → doctor → run → session`.
+No `agentd`, no web server, no worker, no scheduler and **no API key** are needed
+for the default offline profile — it uses a deterministic built-in model
+(`scripted` / `FakeModel`) and the fake Kubernetes backend, so you can verify
+everything locally. Session state is persisted (file store) and survives restarts.
+
+Status output of `run` looks like:
 
 ```text
-Goal -> Context -> Decision(capability) -> Capability Resolver -> Policy -> Tool
-  -> Observation -> Evidence -> World Model -> Task Expansion -> Evaluator -> State
+Agent started
+Session: session-7d1e…
+Goal: Analyze the demo workload
+
+Agent completed
+
+Status: success
+Session: session-7d1e…
+Duration: 0.42s
+Steps: 3
+Tool calls: 2
+Evidence: 4
+```
+
+## CLI
+
+One main entry point: `agent` (= `ua`). Golden Path commands come first in
+`agent --help`; everything else is an advanced/developer command and stays out of
+the Golden Path.
+
+```text
+agent init        Create the local profile config (idempotent; --force resets with backups)
+agent doctor      Environment/config/model/runtime/profiles/domains/policy checks + fixes
+agent run GOAL    Run one goal; prints the session summary (creates a Session)
+agent session     list | show | resume | cancel (+ events/evidence/diagnostics/…)
+agent config      Show the active configuration (secrets are never printed)
+agent profile     list | show — available Agent profiles
+
+Advanced: serve, kubernetes, chat, tui, eval, ecosystem, distributed,
+          domain-packages, memory, policies, evaluators, audit, repair, …
+```
+
+Common flags:
+
+```bash
+agent run "goal" --profile default          # explicit profile (positional profile also works)
+agent run "goal" --output json              # machine-readable output (text is the default)
+agent session list --output json
+agent session show <id> --output json       # same payloads the API returns
+agent doctor --output json --fail-on error  # exit 1 on failures (default for doctor)
+agent --api-url http://host:8765 run "..."  # thin-client mode against a running agentd
+```
+
+## Configuration
+
+`agent init` writes one small config tree (project-local by default):
+
+```text
+universal-agent/
+  config.json     human-readable settings: profile, model, policy mode, runtime, domains
+  profile.json    the AgentProfile the Runtime loads (model provider/name, store, secrets refs)
+```
+
+- Where is my **model** configured? → `profile.json` → `runtime.model`
+  (`provider`, `name`, optional `api_key_secret` reference).
+- Where is my **Profile** configured? → `profile.json` (name, domains, runtime).
+- Where is my **Policy** configured? → Domain-declared `PolicyRule`s (enforced by
+  the Runtime); `config.json` records the policy mode (`safe`).
+- Where is my **Domain** configured? → `profile.json` → `domain` / `domains`
+  (backend: `fake` | `kubectl` | `kubernetes_api` + settings).
+
+Config discovery: `$AGENT_CONFIG_DIR/profile.json` (container convention) →
+`./universal-agent/profile.json` (project) → `~/.universal-agent/profile.json`
+(user home). `agent config show` prints the effective Runtime configuration as
+JSON; **secret values are never written to config or printed** — only
+environment/file secret *references* and whether they resolve.
+
+Re-running `agent init` is safe (idempotent, `status=reused`); use `--force` to
+reset (previous files are kept as `*.bak`).
+
+Connecting a real model:
+
+```bash
+uv run ua init --force \
+  --model-provider openai_chat_completions \
+  --model-name gpt-4o-mini \
+  --model-api-key-env OPENAI_API_KEY
+```
+
+Connecting a real cluster:
+
+```bash
+uv run ua init --force --domain-backend kubectl --kubectl-context my-cluster
+```
+
+## Profiles
+
+A Profile is the Agent's work identity: which Domains it acts on, which model it
+uses, which stores and limits the Runtime gets. `agent init` creates the generic
+`default` profile; `local-kubernetes` remains for the Kubernetes operator flow.
+
+```bash
+agent profile list
+agent profile show default
+```
+
+## Sessions
+
+Every `agent run` creates a persistent Session — task graph, decisions, tool
+calls, observations, evidence and evaluations. Sessions live in the configured
+store (file-backed by default under the data dir, SQLite/memory optional via
+`agent init --store-backend …`) and survive process restarts.
+
+```bash
+agent session list              # SESSION / STATUS / CREATED / GOAL
+agent session show <id>         # status, goal, event timeline, evidence + action counts
+agent session resume <id> --confirmed true   # approve a policy-held pending action
+agent session cancel <id> --reason "…"
+agent session events|evidence|world|diagnostics|audit|cost <id>   # advanced
+```
+
+A `waiting` session means the Runtime is holding a mutation for human
+confirmation (Policy = REQUIRE_CONFIRMATION). Resume it with `--confirmed true`;
+without confirmation the action never executes.
+
+## Domains
+
+A Domain is the world an Agent can operate on: ontology, capabilities, tools,
+policies, evaluators. The first serious Domain is Kubernetes
+(`inspect_workload`, `inspect_pod`, `inspect_logs`, policy-gated
+`scale_workload`, health verification and recovery). A read-only Observability
+(Prometheus) Domain and a Domain Package SDK for authoring more are included.
+Domains compose inside one Runtime and one shared World Model — adding a Domain
+never requires Kernel changes.
+
+## Policy
+
+Policy is enforced by the Runtime, not by prompts. Capabilities carry
+category/risk metadata; `PolicyRule`s map them to ALLOW / REQUIRE_CONFIRMATION /
+DENY. Mutations without an explicit allow rule are denied by default; a denied
+action never reaches a tool; confirmation-required actions pause the Session
+until a human resumes it. The LLM cannot bypass this boundary (see
+`docs/RUNTIME_CONTRACT.md`, and `tests/integration/test_facade_golden_path.py`
+for the executable proof).
+
+## Web
+
+The Web Console is a read-only observation/management UI served by `agentd`
+(`/console`, `/console/sessions/{id}`, evidence/world explorers, doctor, …). It
+talks to the same Runtime API as the CLI — it is not a separate Agent runtime.
+Point your browser at an `agentd` deployment; the CLI remains the fastest way to
+run Agents.
+
+## Server / agentd
+
+- **Personal use**: `agent run …` — an embedded Runtime is spawned per command;
+  you never start a server by hand.
+- **Server use**: run `agentd` (or `agent serve`) to expose the Runtime API
+  (REST + SSE), the Web Console, pause/resume/cancel and multi-user access.
+  The CLI can act as its thin client via `--api-url http://host:8765`. Container
+  images and Kubernetes deployment examples: `docs/container-image.md`,
+  `docker compose up --build`.
+
+## Architecture
+
+```text
+Goal → Context → Decision(capability) → Capability Resolver → Policy → Tool
+  → Observation → Evidence → World Model → Task Expansion → Evaluator → State
                          ^                                      |
                          +-------- bounded Recovery <-----------+
 ```
 
-Recovery is classified and budgeted. Retries and alternative capabilities receive new action IDs and
-return through Capability Resolution and Policy; Recovery never calls a Tool directly. Unknown or
-exhausted failures stop deterministically. The loop is bounded iteration rather than recursion, so a
-misconfigured Domain can exhaust the step budget but can never grow the Python stack.
-
-## Container deployment
-
-`docker compose up --build` starts `agentd` with persistent volumes for `/data` (runtime state)
-and `/config` (profile). The container bootstraps a file-backed profile on first start via
-`agent init` and serves it on port 8765; the CLI and `agent tui --api-url http://localhost:8765`
-then act as thin clients of the containerized runtime.
-
-## Session recovery
-
-`resume(session_id, confirmed=...)` is a rebuild, not a continuation: load the snapshot, verify the
-activated Domain name and version, rehydrate the task graph, replay Evidence into a fresh World Model,
-re-resolve the tool, re-check policy, and only then execute. A Domain mismatch or a drifted tool
-resolution is refused rather than replayed against the wrong Domain.
-
-Recovery attempts are persisted with the snapshot, so restarting mid-recovery continues the existing
-budget instead of handing the session a fresh set of retries.
-
-`RuntimeBuilder` gives each build its own in-memory Evidence store and World Model by default; store
-factories can be injected when two runtimes should genuinely share one backend. The default isolation
-is what makes cross-runtime tests exercise the snapshot rather than object identity.
-
-## Runtime API
-
-`RuntimeAPI` is the current application-facing execution interface. It wraps the Kernel-facing
-`AgentRuntime` with stable read models:
-
-- `run_goal(goal, task)` executes a goal and returns both the `ExecutionResult` and a `SessionView`.
-- `pause_session(session_id, reason=...)` moves a non-terminal session into an explicit waiting state.
-- `resume_session(session_id, confirmed=...)` resumes either a waiting confirmation or a paused
-  session through the same runtime-controlled path as `AgentRuntime.resume`.
-- `cancel_session(session_id, reason=...)` cancels a non-terminal session, clears any pending action,
-  and returns a cancelled run plus the latest session projection.
-- `get_session(session_id)` loads an immutable projection of the latest `SessionSnapshot`.
-- `get_session_diagnostics(session_id)` returns a stable session diagnostics read model with
-  traceable Evidence projections for Session Explorer consumers.
-- `list_sessions()` returns recent `SessionSummaryView` projections without exposing stored
-  snapshots to applications.
-- `stream_sessions(after_session_id=..., limit=...)` returns a cursor batch of session summaries.
-- `list_events(session_id)` returns immutable event projections filtered to one session.
-- `stream_events(session_id, after_event_id=..., limit=...)` returns a cursor batch for CLI/Web/SSE
-  consumers.
-- `state_event_commit()` reports whether the configured runtime path can commit session state and
-  runtime events through one store seam, including `file_journal` and `sqlite_transaction`
-  strategies.
-
-This remains usable in-process, while the Starlette ASGI + uvicorn bridge now wraps the same
-`AgentdApp` route adapter for local `agentd` hosting. SSE-formatted event batches now share the same
-cursor semantics as JSON event reads, and agentd/CLI consumers can request bounded wait polling
-for newly appended events; production database persistence and long-lived push delivery are later
-P3.5 work built on this interface, not replacements for it.
-
-`RuntimeService` is the first framework-free `agentd` foundation. It delegates execution, session and
-event reads to `RuntimeAPI`, and adds service-level health, readiness, Domain, Capability and Tool
-catalog views, including capability-level required arguments and argument schemas derived from the default resolved Tool, plus a typed runtime configuration projection for HTTP and CLI adapters. It does not
-access Kernel internals directly. `RuntimeHost` is the typed application assembly boundary for Runtime
-Configuration: it validates the configured Domain identity, resolves environment-backed and
-file-backed secret references into non-value availability reports, builds memory or file-backed stores, applies runtime
-limits/environment, optionally builds a configured model adapter from non-secret model metadata
-and secret-reference names, can activate configured Domain packages from
-`RuntimeConfig.domain_package_paths`, optionally binds an application-level Agent Profile, and exposes
-both `RuntimeAPI` and `RuntimeService` without teaching applications Kernel internals.
-`UniversalAgentRuntime` is the first embedding SDK facade over `RuntimeService`, with public
-SDK input/result types for goal submission, lifecycle control, session reads and event reads. See
-`examples/p3_5_runtime_api.py`, `examples/p3_5_runtime_service.py`,
-`examples/p3_5_runtime_sdk.py`, `examples/p3_5_runtime_config.py`,
-`examples/p3_5_cli_config.py`, and `examples/p3_5_cli_event_stream.py` for minimal
-application-facing usage.
-
-`AgentdApp` is the framework-free route adapter foundation for `agentd`. It accepts small
-`HttpRequest` objects and returns JSON-safe `HttpResponse` objects for `GET /health`, `GET /ready`,
-catalog routes, cursor session listing via `GET /v1/sessions`, route-level goal submission via
-`POST /v1/sessions`, session/event reads, Profile catalog/detail reads via `GET /v1/profiles`,
-Policy/Evaluator/Memory catalog reads via `GET /v1/policies`, `GET /v1/evaluators` and `GET /v1/memory`, configuration reads via `GET /v1/config`, confirmation resume via
-`POST /v1/sessions/{id}/resume`, explicit pause via `POST /v1/sessions/{id}/pause`, cancellation via
-`POST /v1/sessions/{id}/cancel`, operations reads via `/v1/metrics`,
-`/v1/metrics/prometheus`, `/v1/cost`, `/v1/logs`, `/v1/traces`, `/v1/traces/otlp`,
-`/v1/doctor`, `POST /v1/doctor/state-events/repair` for dry-run or confirmed state/event
-consistency repair, and `/v1/audit`, per-session audit/cost/log/trace
-reads including `/v1/sessions/{id}/traces/otlp`, `GET /v1/sessions/{id}/diagnostics` for
-session/evidence/world fact inspection, dedicated `GET /v1/sessions/{id}/evidence` and
-`GET /v1/sessions/{id}/world` explorer routes, and cursor session/event reads with `after` / `limit`
-query parameters. `GET /v1/sessions/{id}/events/stream`
-returns the same cursor batch as `text/event-stream` frames for SSE clients, and accepts bounded
-`wait=true` long-polling parameters for clients that want to hold the connection until new events
-appear; timed-out empty batches return an SSE heartbeat comment plus the current cursor instead of
-an empty response. `GET /console` returns a
-read-only HTML Web Console snapshot, `GET /console/sessions` returns a focused Sessions list,
-and `GET /console/sessions/{id}` returns a focused Session Detail page;
-`GET /console/evidence`, `/world`, `/console/sessions/{id}/evidence` and
-`/console/sessions/{id}/world` return focused Evidence and World Model Explorer pages,
-`GET /console/domains/{name}/{version}` returns a read-only Domain
-Manager detail page, `GET /console/domain-packages/{name}/{version}` returns a read-only Domain
-Package detail page, `GET /console/domains`, `/domain-packages`, `/capabilities`, `/tools`, `/policies`,
-`/evaluators` and `/memory` return focused Runtime catalog pages, `GET /console/profiles`
-returns a read-only Profile Catalog page,
-`GET /console/doctor` returns a read-only Runtime Doctor page with Doctor checks,
-operational diagnostics and runtime settings,
-`GET /console/distributed` returns a read-only local Distributed Runtime page with
-coordination health, work queue, worker and lock projections,
-`GET /console/evaluations` returns the persisted Evaluation Console when `AgentdApp` is configured
-with a report directory, and `GET /console/settings` returns Runtime settings built from the same
-RuntimeService projections. `AgentdAuthPolicy` can optionally require `Authorization: Bearer ...`
-for all non-health routes while leaving `GET /health` and `GET /ready` public for local probes;
-separate read-only bearer tokens may access `GET` routes but receive `403` for mutating requests.
-`AgentdHttpServer` is the Starlette ASGI + uvicorn bridge for this adapter: it owns
-socket/body/header translation only and does not touch Runtime internals.
-
-`agent` is the first local CLI adapter. It exposes version, health/readiness, Domain/Profile/
-Capability/Tool/Policy/Evaluator/Memory catalogs, `config show`, and session
-list/show/diagnostics/evidence/world/events/pause/resume/cancel commands through `RuntimeService`, with cursor flags, bounded `--wait` polling and optional SSE text output for session event reads. It
-can also load an
-`agent init` Profile JSON through `--profile-config` and assemble the service through
-`RuntimeHost`, so generated memory/file/SQLite store settings are used by subsequent CLI commands.
-It also exposes operations commands for metrics, cost, logs, traces, doctor, audit and
-`agent repair state-events --dry-run` / `--confirmed true` projections;
-`--api-url` thin-client mode forwards supported Runtime, session, catalog, repair and distributed
-commands — plus the interactive TUI dashboard — to a running `agentd` instance instead of
-assembling a local service.
-`agent metrics --format prometheus` emits Prometheus text exposition, while
-`agent traces --format otlp` and `agent session traces <id> --format otlp` emit OTLP
-JSON-compatible trace payloads from the same event-derived span projection. `agent serve` starts the
-ASGI-backed `AgentdHttpServer` around the same service and accepts `--auth-token` /
-`--auth-token-env` plus `--read-only-auth-token` / `--read-only-auth-token-env` to enable the same
-optional bearer-token protection without requiring secrets in the process command line.
-`agent serve --evaluation-report-dir` also wires persisted reports into `/console/evaluations`;
-`agent eval run` executes the
-local or file-backed evaluation suite through `EvaluationRunner`, and `agent eval compare` compares
-persisted golden reports for CLI/CI regression checks. `agent eval replay` records and checks
-deterministic golden replay recordings through the same suite selector. `agent eval list`,
-`agent eval run` and `agent eval replay` support `--suite-file` plus kind/tag subset filters, and
-all eval gate commands support `--fail-on-fail` to preserve JSON output while returning a non-zero
-process status. `agent eval console` renders a deterministic read-only HTML Evaluation Console from
-persisted reports, and `agent eval console --format text` renders the same persisted report
-projection for terminal/CI logs. `agent tui` opens an interactive Textual dashboard: session navigation, a selected-session detail
-pane with recent event tailing, operator actions (pause, cancel, resume and confirm-or-reject for
-policy-held pending actions) and automatic snapshot refresh. `agent tui --static` renders a
-deterministic RuntimeService snapshot covering health, readiness, metrics, catalogs, sessions,
-selected session details, recent events and audit records, and `agent tui --api-url` runs the same
-dashboard against a remote `agentd` instance as a thin client. `agent chat` opens an interactive
-conversation where each line becomes a goal run on the runtime. The CLI does not access Kernel
-internals directly.
-
-`EvaluationHarness` is the first P3.7 behavior evaluation foundation. It runs explicit
-`EvaluationScenario` objects through a RuntimeService-like interface, then verifies observable
-Session, Event, Metrics and Audit projections. `EvaluationSuite` and
-`EvaluationScenarioSelector` make scenario, regression, policy and recovery subsets first-class
-contracts for local CI-style runs. `EvaluationQualityGate` evaluates suite-level pass rates,
-completion rates, action success and tool failure rates, recovery budgets, execution duration
-budgets, intervention rates, resource lock safety, action efficiency and model budget thresholds after execution.
-`EvaluationRunner` composes suite execution, quality gates and optional
-`EvaluationReportStore` persistence into one reusable application-facing module.
-`compare_evaluation_reports` compares stable suite recordings for golden report regression checks.
-`replay_execution` reconstructs execution history from recorded runtime events without calling a
-model, tool or Domain backend.
-`DeterministicReplayHarness` records a stable trace from those projections and replays later runs
-against it while ignoring dynamic IDs and timestamps.
-`FileReplayRecordingStore` persists those traces as JSON golden recordings for local regression tests.
-`DeterministicRuntimeMode` supplies mock clock and ID primitives for tests that need stable recorded
-events from the Runtime itself.
-The harnesses are intentionally outside the Kernel: Domain `Evaluator`s still decide task/goal
-semantics during execution, while the Harness decides whether a completed scenario satisfies
-regression, policy, recovery, token/cost budget and replay expectations. See
-`examples/p3_7_evaluation_harness.py`, `examples/p3_7_evaluation_runner.py`,
-`examples/p3_7_execution_replay.py`, `examples/p3_7_replay.py` and
-`examples/p3_7_deterministic_mode.py`.
-
-`AgentProfile` is the first application-level Profile foundation. A Profile declares a selectable
-runtime identity — name, version, Domain identity and Runtime Configuration — for future CLI/agentd
-entry points. Profile selection is intentionally single-Runtime: agentd accepts only Profiles whose
-configured Domains match the already assembled RuntimeService. It is not a new Kernel, not a Domain
-implementation, not a multi-Runtime router, and not a routing Agent.
-
-`FileSessionStore` / `FileEventStore` and `SQLiteSessionStore` / `SQLiteEventStore` are local
-persistence adapters for P3.5 recovery tests and embedded deployments. They persist and list
-`SessionSnapshot` documents and runtime events behind the same `SessionStore` and
-`EventSink/EventReader` seams used by in-memory stores. `FileRuntimeStore` adds a local
-write-ahead commit journal for file-backed state/event commits, while `SQLiteRuntimeStore` commits
-the same state/event pair in one SQLite transaction. Session snapshots carry a store-managed
-version, and memory/file/SQLite session stores reject stale snapshot saves instead of allowing silent
-overwrites. `RuntimeAPI.state_event_commit`, `RuntimeService.config`, CLI/agentd config output,
-TUI/Web settings and Doctor checks expose the active commit strategy so persistent deployments can
-detect accidental split state/event wiring. These adapters are local persistence backends for
-`RuntimeHost` configuration, not event-sourcing models or production migration systems.
-
-## Current scope
-
-- P0: typed state, model/tool boundaries, observations, events, and the asynchronous loop.
-- P1: Domain Manifest/Runtime, capability-first resolution, policy allow/confirm/deny, evaluator
-  boundaries, context compilation, and a read-only Kubernetes Domain skeleton.
-- P2: session-local World Model, Evidence provenance, Fact/Entity/Relation projection from
-  Evidence, deterministic dynamic Task expansion, relevant World/Evidence context, bounded
-  Recovery, cross-domain `relation:same_as` identity canonicalization, configurable fact merge
-  policy, and bounded relation graph traversal.
-- P2.1: a rebuildable session aggregate — `SessionSnapshot`, a serializable task graph, Evidence
-  export/replace, World replay, non-recursive Recovery, and a Runtime split into action, transition,
-  session, and processing collaborators.
-- P3.1: advisory Memory — a three-stage `retrieve → filter → compile` pipeline, Domain-declared
-  prior knowledge (Semantic/Procedural/Preference), runtime-written Episodic records at terminal
-  transitions, and a dedicated context budget. Memory is advisory only: it never becomes Evidence,
-  never updates the World Model, never enters the evaluator, and never alone completes a Task or
-  Goal. It is excluded from `SessionSnapshot` so the World stays replayable from Evidence alone.
-- P3.2: Kubernetes remediation — policy-gated `scale_workload`, deterministic confirmation,
-  capability-scoped timeout recovery, dynamic remediation tasks, fresh health verification, and
-  optional `KubectlBackend` / `KubernetesApiBackend` adapters for real `kubectl` or Kubernetes HTTP
-  API inspection/mutation behind the existing injected backend protocols plus explicit Profile/CLI
-  opt-in. A Domain-owned action argument provider can enrich scale mutations with observed
-  `current_replicas` and `resource_version` guards before policy/tool execution. Mutation receipts
-  never substitute for verification evidence. Selector-backed workload observations now project
-  matching Pods into first-class Evidence/World facts plus workload-to-Pod relations, so downstream
-  model context can identify the failing Pod without Kernel-specific Kubernetes branches.
-- P3.5 foundation: in-process `RuntimeAPI`, immutable `SessionView` / `RuntimeEventView`
-  projections, lightweight cursor-aware `SessionSummaryView` listing, cursor-aware `EventReader`,
-  `RuntimeSessionBatch` / `RuntimeEventBatch`, action idempotency metadata (`idempotency_key`,
-  `parameters_hash`, `attempt`) carried through pending-action views, events and persistence,
-  explicit `UNKNOWN_EXECUTION` observations for uncertain tool outcomes, deterministic Tool argument
-  schema validation for scalar and nested object/array arguments, runtime-owned Decision input-contract
-  validation before policy/action execution, plus `DecisionValidated` / `DecisionRejected` events
-  and derived decision validation/rejection metrics,
-  runtime-owned resource locking and optimistic resource version checks for side-effecting actions
-  (`resource_key`, optional `resource_version`, conflict detection, version check/update events
-  and lock lifecycle events), and
-  integration tests covering run/list/get/events plus explicit pause, non-confirmation resume,
-  confirmation resume and cancellation.
-  `RuntimeService` now adds framework-free `agentd` foundation metadata: health, readiness, domains,
-  capabilities, tools, delegated execution, runnable examples, an `AgentdApp` route adapter for
-  HTTP-shaped goal submission, cursor session listing, JSON and SSE-formatted session/event reads,
-  pause/resume/cancel routes, runtime configuration reads with redacted sensitive environment values
-  plus env/file secret-reference availability metadata that never includes secret values, Profile catalog reads, an
-  ASGI-backed `AgentdHttpServer` bridge, file-backed session/event stores for local recovery,
-  a local CLI adapter, and typed `RuntimeConfig` / `RuntimeHost` / `AgentProfile` assembly for
-  environment, secret references, limits, memory/file/SQLite store backends,
-  Domain identity validation, multi-Domain composition activation, and CLI loading of generated
-  Profile config files through `RuntimeHost`. `UniversalAgentRuntime` adds the first public
-  embedding SDK facade with SDK-owned goal/task/result contracts over `RuntimeService`.
-  `JsonHttpModelAdapter` adds an `httpx`-backed
-  provider bridge for HTTP endpoints that accept compiled runtime context JSON, including structured
-  goal success criteria, current task required criteria, and capability-level input contracts derived
-  from deterministic tool resolution, then return structured `Decision` JSON plus optional
-  token/cost usage. `OpenAIChatCompletionsModelAdapter` adds an OpenAI SDK-backed
-  Chat Completions path for OpenAI-compatible `/v1/chat/completions` deployments, and
-  `OpenAIResponsesModelAdapter` adds an OpenAI SDK-backed Responses provider path. Both
-  request structured `Decision` JSON and still validate the decoded decision locally before the
-  Runtime acts. Kubernetes `check`, `run`, and `evidence` responses now include deterministic
-  production review payloads covering model probe, preflight, runtime submission, verification
-  evidence and confirmation-boundary status; `kubernetes evidence --submit-run` is the explicit
-  operator command for proving the full live runtime boundary without weakening policy or
-  confirmation requirements.
-- P3.6/P3.7 foundation: event-derived `metrics`, Prometheus metrics text export, `cost`, `logs`,
-  `traces`, OTLP trace export, `doctor` and `audit` projections exposed through RuntimeService,
-  agentd-shaped routes and CLI commands, plus optional
-  `ModelUsageRecorded` events from model adapters. A shared security redaction projection keeps
-  sensitive keyed values out of config, log and trace surfaces while preserving public token metrics.
-  Runtime metrics now expose both counts and maturity rates for goal completion, current task
-  success, action success, tool failures, policy denials, recovery, human intervention and
-  verification success.
-  Structured log projections preserve runtime identifiers, event types, severity and redacted event
-  data for CLI/agentd consumers. Trace span projections derive session/action trees plus decision,
-  model usage, policy, observation, resource lock, resource conflict and evaluation phase spans from
-  the same event stream with redacted attributes for OpenTelemetry-shaped consumers, and the OTLP
-  adapter projects those spans through official OTLP protobuf schema types while preserving the
-  existing JSON endpoint contract. Resource lock metrics and doctor checks report
-  acquired/released locks, conflicts and active locks derived from runtime
-  events; Doctor also validates state/event consistency by detecting orphan events and terminal
-  sessions missing matching terminal events. The Evaluation Harness can assert status, error
-  codes, events, Evidence claims, executed capabilities, audit coverage, policy denials, recovery plans, criteria,
-  resource lock conflicts, active resource locks, action counts, iteration budgets, execution duration
-  budgets and model token/cost budgets for behavior scenarios.
-  Evaluation suites classify scenarios by kind and tags so regression, policy and recovery subsets
-  can be selected without changing Kernel code. File-backed suite configs load those same typed
-  scenario contracts plus optional quality gates from JSON for local CI runs, and quality gates turn suite metrics into CI-ready
-  pass/fail checks. `EvaluationRunner` packages suite execution, gate evaluation and optional
-  stable report persistence behind one interface for future CLI/CI adapters. Stable evaluation
-  report recordings preserve scenario kind/tags and Evidence claim summaries, so comparisons can
-  detect suite, scenario, gate, evidence and metric drift. Scenario, suite, report and replay keys
-  are validated up front so persisted recordings cannot be silently ambiguous. The local CLI exposes these through
-  `agent eval run` and `agent eval compare` without adding Kernel-specific evaluation branches.
-  Execution replay can reconstruct decisions, actions, observations, evidence references and
-  terminal status from recorded Runtime events without re-executing side effects.
-  Deterministic Replay can record stable behavior traces and detect later drift in event shape,
-  actions, policy effects, audit entries and metrics without depending on runtime-generated IDs.
-  `DeterministicRuntimeMode` can also install stable runtime ID and clock primitives while building
-  golden fixtures.
-  Replay recordings can be encoded as versioned JSON and saved through `FileReplayRecordingStore`
-  for golden regression fixtures.
-- Evaluation Console foundation: `build_evaluation_console_snapshot` loads persisted evaluation
-  reports, `render_evaluation_console` produces deterministic read-only HTML, and
-  `render_evaluation_console_text` produces a terminal-friendly report projection for CLI/CI logs
-  without coupling report visualization to Kernel or RuntimeService internals.
-- Session Explorer foundation: `RuntimeService.session_explorer` rebuilds read-only world facts from
-  persisted Evidence through Domain world updaters and exposes combined diagnostics plus dedicated
-  Evidence and World Model Explorer routes through agentd/CLI.
-- TUI foundation: `build_tui_snapshot` consumes RuntimeService projections and `render_tui_snapshot`
-  produces a deterministic text view for CLI/operator use, including Domain Package/Profile/Capability/Tool/Policy/Evaluator/Memory
-  catalogs, including Domain Package resource metadata, plus selected-session Evidence and World Facts without touching Kernel internals.
-- Web Console foundation: `build_web_console_snapshot` consumes the shared console snapshot builder
-  and `render_web_console` / `render_web_sessions` / `render_web_session_detail` /
-  `render_web_evidence_explorer` /
-  `render_web_world_model_explorer` / `render_web_domain_detail` /
-  `render_web_domain_package_detail` /
-  `render_web_catalog` / `render_web_profile_catalog` / `render_web_doctor` /
-  `render_web_distributed` / `render_web_settings` produce
-  deterministic read-only HTML for `AgentdApp`, including
-  Domain Package/Profile/Domain/Capability/Tool/Policy/Evaluator/Memory catalogs, including Domain Package resource metadata, plus focused Session Detail,
-  Evidence, World Model, Domain Manager, Domain Package detail, Profile Catalog, Runtime Doctor,
-  Distributed Runtime, Evaluation Console and Settings views
-  without a web framework dependency or Kernel access.
-- P6 Distributed Runtime foundation: `WorkScheduler` maps session/task/action identity into stable local
-  work kinds and idempotency keys; `InMemoryWorkQueue`, `FileWorkQueue` and `SQLiteWorkQueue` provide typed `WorkItem`, `WorkerLease` and
-  status contracts for local scheduler/worker adapters, including priority ordering, idempotent enqueue,
-  lease acquisition, heartbeat renewal, retry-aware failure, cancellation, lease expiry and
-  terminal item pruning for local retention maintenance; `WorkQueueWorker`
-  consumes those leases through per-kind handlers, leases only declared work kinds by default, can
-  register/heartbeat through `InMemoryWorkerRegistry`, renews queue and worker leases while async
-  handlers run, stops leasing when draining/offline/lost, and maps handler completion, retry, failure
-  and cancellation back into queue state; `InMemoryDistributedLockRegistry` and
-  `FileDistributedLockRegistry` add leased lock acquisition, heartbeat, conflict rejection, expiry,
-  release and local file-backed lock state for host rebuilds; `InMemoryWorkerRegistry` and
-  `FileWorkerRegistry` track worker registration, heartbeat, draining, offline, lost states and
-  local file-backed worker registry state for host rebuilds; `DistributedRuntimeCoordinator` exposes session, goal, task and confirmed pending-action scheduling, worker lifecycle, lock lifecycle, snapshot, health, expiry sweep, terminal work pruning and work-item cancellation over the queue, lock and worker primitives without changing AgentRuntime semantics; `RuntimeService.distributed_schedule_pending_actions` can sweep Runtime-owned waiting sessions and idempotently enqueue already-confirmed pending Actions; distributed session, task and action worker handlers acquire a session-scoped execution lock before resuming Runtime state; `RuntimeService.distributed_run_worker_once` and bounded `distributed_run_worker_until_idle` provide local queue → worker → RuntimeAPI paths for existing non-confirmation waiting sessions, matching current Tasks, confirmed pending Actions and newly scheduled Goals; `build_distributed_runtime_snapshot` aggregates queue, lock and worker state into a read-only local coordination view; `build_distributed_health_report` projects that snapshot into HA-oriented checks for worker capacity, backlog, lease freshness, leased-work owners and worker registry health, plus deterministic maintenance recommendations for capacity gaps, backlog, expired leases and orphaned leased work.
-  `RuntimeConfig.distributed_queue`, `RuntimeConfig.distributed_locks` and
-  `RuntimeConfig.distributed_workers` let `RuntimeHost` assemble in-memory coordination primitives,
-  local file-backed queue/lock/worker adapters, or SQLite-backed queue/lock/worker adapters for CLI/agentd deployments
-  that need coordination state to survive host rebuilds.
-- P7 Domain Package foundation: `DomainPackageManifest` defines package metadata for independently
-  packaged Domain runtimes, including entrypoint, resources, dependencies, required tools,
-  compatibility and security metadata. `DomainPackageRegistry` can validate, install and discover
-  package manifests without importing Domain code or mutating Kernel runtime state.
-  `DomainPackageRegistry.verify()` and `agent domain-packages verify` expose dependency-closure
-  checks for local package metadata so CLI/CI can catch missing package dependencies before
-  activation; `agent domain-packages verify --local-paths` additionally re-checks local package
-  root, manifest integrity and declared resource existence when callers need to detect path drift.
-  `BaseDomainRuntime` provides a lightweight Domain SDK base class with default empty optional
-  hooks while keeping manifest/capability/tool/evaluator contracts explicit; `DomainRuntimeSpec` and
-  `build_domain_runtime` add a declarative SDK adapter for package authors who want the manifest
-  capability/evaluator references derived from the concrete runtime declarations. See
-  `examples/p7_domain_sdk_base_runtime.py` and `examples/p7_domain_sdk_runtime_spec.py`.
-  `load_domain_package_runtime` is the explicit SDK activation seam for importing a package
-  entrypoint, validating it through `DomainLoader`, and rejecting identity/capability/tool/evaluator
-  drift between package metadata and runtime code; registry install/discovery still never imports
-  Domain code. `agent domain-packages load-runtime <path>` exposes the same explicit runtime
-  activation check for CLI/CI without changing metadata-only install semantics.
-  Domain package entrypoints may accept `DomainRuntimeLoadContext` when they need Profile backend
-  settings, environment metadata or secret resolution, and `RuntimeHost.from_configured_domain_packages`
-  can assemble a Runtime from `RuntimeConfig.domain_package_paths` without application code importing
-  concrete Domain modules.
-  `DomainPackageScaffoldSpec`, `domain_package_scaffold_spec_from_runtime_spec` and
-  `scaffold_domain_package` provide the first Domain SDK surface for generating a standard package
-  layout and validated manifest from typed metadata, including package-local resource parents for
-  runbooks, schemas, templates, tests and other declarative assets, without importing Domain code
-  during metadata-only package work. Runtime stub generation is explicit opt-in and still requires
-  `load_domain_package_runtime` for activation.
-- P7 Evaluation Dataset foundation: `EvaluationDatasetManifest` groups reusable evaluation suite
-  files into discoverable datasets with Domain, tag, suite and author metadata. `EvaluationDatasetRegistry`
-  validates referenced suite configs and lists or retrieves datasets without executing scenarios or
-  coupling dataset cataloging to RuntimeService internals. `EvaluationDatasetRegistry.verify()` and
-  `agent eval datasets --verify` re-check local dataset manifests and suite files for CLI/CI without
-  running evaluation scenarios.
-- P7 Profile Catalog foundation: `ProfileCatalog` discovers `profile.json` and `*.profile.json`
-  files, validates them through `ProfileConfig`, preserves source paths and exposes a `ProfileRegistry`
-  view for application adapters without changing RuntimeHost configuration semantics.
-- P7 Ecosystem Catalog foundation: `EcosystemCatalog` composes Domain Package, Evaluation Dataset
-  and Profile catalogs into one local read-only index with counts and typed entries. It remains a
-  metadata surface only: it does not activate Domains, run scenarios or assemble RuntimeHost objects.
-  `EcosystemCatalog.verify()` adds an ecosystem integrity check for missing Profile Domain,
-  Evaluation Dataset Domain and Domain Package dependency references. `EcosystemRegistryManifest`
-  exports the discovered package, dataset and Profile references as a stable local registry manifest
-  with Domain package compatibility/security metadata, a read-only query index, file-backed registry
-  store, local Domain Package install plan and full ecosystem install plan/result that validates
-  referenced package manifests, evaluation datasets and Profile configs before registering metadata;
-  install planning rejects sha256 drift, identity mismatch and registry metadata mismatch across
-  Domain Package, Evaluation Dataset and Profile artifacts for CLI/CI and future package-registry
-  adapters, including Domain package entrypoint and package-local resource metadata. Local install
-  planning also refuses registry manifests that declare signature metadata by
-  default unless programmatic callers provide an `EcosystemRegistrySignatureVerifier`; CLI users can
-  still opt in with `--allow-unverified-signatures` only for trusted local registries.
-  `agent ecosystem install` now exposes that full
-  package/dataset/Profile metadata install surface from registry manifests.
-- P4 Multi-Agent foundation: `AgentTaskRequest` / `AgentTaskResult` define the structured
-  Agent-to-Agent contract with explicit constraints, expected output, Evidence IDs, result status and
-  strict payload encode/decode helpers. `AgentRegistry` distinguishes Profile templates from running
-  Agent instances, round-trips registry snapshots as structured payloads, and filters eligible
-  instances by read-only, allowed-profile and permission constraints; `AgentOrchestrator` delegates
-  only through registered executors, marks instances busy
-  while they run, and enforces parent
-  child-count, delegation-depth, duration and reported-cost limits. `RuntimeAgentExecutor` projects child runtime
-  `ModelUsageRecorded` events into the structured `AgentTaskResult` usage contract so `max_cost`
-  can be checked by the parent orchestrator. The orchestrator can now snapshot and restore delegation
-  child counts and depth state, so resumed Multi-Agent coordination keeps the same deterministic limits.
-  It can also execute a dependency-aware batch with structured
-  spec/result payload helpers, running ready child tasks concurrently while rejecting downstream
-  tasks whose dependencies fail. `RuntimeAgentExecutor` adapts a target `RuntimeAPI` without creating
-  a second Agent loop or bypassing the target Runtime's policy/evaluation path.
-  `AgentConflictResolver` resolves structured action proposals by policy, read-only constraints,
-  side effect, risk and explicit priority, and requires review for equal-rank conflicts instead of
-  using last-result-wins. `AgentResultMerger` then combines child
-  `AgentTaskResult` objects and conflict resolutions into a read-only merge report with deduplicated
-  Evidence IDs, missing/failed/waiting task classification and configurable completion policy without
-  inventing new Evidence or updating the World Model. `MultiAgentMergeEvaluator` adds deterministic
-  checks for merge status, required Evidence IDs, completed task IDs and missing/waiting/failed/review
-  counts. Conflict resolutions, merge reports and Multi-Agent evaluation reports now provide strict
-  payload encode/decode helpers for persistence, replay and future registry handoff without re-running
-  child Agents. `RuntimeService.multi_agent`, `GET /v1/multi-agent`, `agent multi-agent`, the TUI
-  snapshot and `/console/multi-agent` expose this registry/delegation state as a read-only
-  application projection. This is a foundation for optional Multi-Agent execution, not a replacement
-  for Domain Composition.
-
-The Kubernetes Domain uses injected backends. Most tests and examples use fake or fixture-backed
-backends; no real cluster is accessed unless a caller explicitly wires `KubectlBackend` or
-`KubernetesApiBackend`. `KubectlBackend` implements the same `KubernetesBackend` /
-`KubernetesMutationBackend` protocols with subprocess-backed `kubectl` calls. `KubernetesApiBackend`
-implements those protocols through Kubernetes HTTP API requests with an injectable transport and
-optional bearer-token secret resolution at the CLI/host boundary. See
-`examples/p3_2_kubectl_backend.py` and `examples/p3_2_kubernetes_api_backend.py` for the adapter
-shapes. For Deployment-like workloads with `spec.selector.matchLabels`, both real backends include
-selector labels plus matching Pod summaries in `inspect_workload` observations, allowing
-CrashLoopBackOff and container readiness evidence to surface before a separate Pod inspection is
-chosen. The production `kubernetes run` entrypoint keeps `healthy=true` as a Goal-level criterion
-and uses scope-only initial Task criteria, so unhealthy workloads can advance into diagnosis and
-policy-gated remediation instead of looping on the first inspection. `agent kubernetes evidence`
-collects the same production model/preflight/contract review without submitting a Runtime session by
-default, and `--submit-run` explicitly adds the Runtime-owned remediation boundary for live evidence
-collection. Profile configs can now opt in with `domain.backend = "kubectl"` or
-`domain.backend = "kubernetes_api"` and backend-specific settings; the local CLI writes those forms
-with `agent init --domain-backend kubectl` or `agent init --domain-backend kubernetes_api` and still
-runs the full operator loop (preflight, model probe, inspection, pod diagnostics, scale remediation
-and fresh verification) against the targeted cluster when `agent kubernetes run` is invoked with a
-real kubeconfig-backed context. The kubernetes flow has been verified end-to-end against a live
-cluster: workload inspection, unhealthy-workload detection, pod diagnostics, scale remediation and
-fresh health verification all execute through the real Kubernetes API.
-defaults to the fake backend. The read-only `KubernetesDomain` remains available, while `KubernetesRemediationDomain` adds the policy-gated mutation path. Multi-domain operation now
-has a conservative `DomainManager` / `DomainComposition` foundation: Domain identities,
-capabilities and tools are validated before activation, Domain Loader rejects empty evaluator sets,
-Observation processing routes Evidence extraction, World updating, Task expansion and evaluation
-by the executed action's Domain, Profiles may declare ordered Domain sets, and snapshots persist
-the activated composition for safe resume.
-Cross-domain World Model reasoning,
-production database migration systems, packaging, marketplace behavior, optional Multi-Agent Runtime, and
-production-grade Kubernetes remediation defaults remain outside P3.2. Persistence includes in-memory stores plus local file-backed and SQLite-backed session/event adapters with
-snapshot isolation; event sourcing and schema migration are not included.
-
-## Roadmap alignment
-
-The design roadmap now separates semantic runtime maturity from productization:
-
-- P0-P3: core Agent semantics, Domain Runtime, World/Evidence/Recovery, Memory, Multi-Domain, and
-  Agent Profiles.
-- P3.5: Runtime Productization — Runtime API, Session API, `agentd`, CLI, Event Stream, Persistence,
-  Resume / Pause / Cancel, and Runtime Configuration.
-- P3.6-P3.7: Operations and Evaluation — OpenTelemetry, metrics, audit, cost tracking, runtime
-  doctor, evaluation suites, quality gates, replay, and deterministic test mode.
-- P4: Multi-Agent foundation — structured Agent Task / Result contracts, Agent Profile vs Instance
-  registry, lifecycle status transitions, delegation limits, dependency-aware batch delegation,
-  conflict resolution, result/evidence merge, merge evaluation, and a RuntimeAPI executor adapter.
-- P5: Read-only TUI/Web application views for runtime, session, evidence, world, domain and settings inspection.
-- P6: Distributed Runtime foundations — typed local Scheduler, Work Queue, Worker Registry, Worker Lease, capability-aware Worker handler
-  execution, scheduled Goal execution, current Task resume, leased lock, Runtime Snapshot, Health Report, Coordinator, Heartbeat, retry, cancellation and lease expiry primitives.
-- P7: Ecosystem packaging and registry work.
-
-For the latest remaining TODO snapshot, see
-[`docs/revision/2026-08-31-remaining-todo.md`](docs/revision/2026-08-31-remaining-todo.md).
-For the latest dated implementation assessment, current limitations, verification snapshot, and
-recommended next steps, see [`docs/revision/2026-08-26-project-status.md`](docs/revision/2026-08-26-project-status.md).
-The current Kubernetes-first production slice spec is
-[`docs/kubernetes-production-slice-spec.md`](docs/kubernetes-production-slice-spec.md).
-Previous snapshots remain at [`docs/revision/2026-08-24-project-status.md`](docs/revision/2026-08-24-project-status.md)
-and [`docs/revision/2026-08-23-project-status.md`](docs/revision/2026-08-23-project-status.md).
+- The model proposes structured decisions; the Runtime owns state, control flow,
+  policy, retries and completion. The LLM is a component, not the runtime.
+- An Observation is not a fact until a Domain extractor turns it into Evidence;
+  the World Model is replayed from Evidence; only Evaluators complete tasks/goals.
+- Recovery is classified and budgeted and re-enters resolution + Policy.
+- Concept-by-concept contract (who creates/calls, lifecycle, persistence,
+  policy bypass): [`docs/RUNTIME_CONTRACT.md`](docs/RUNTIME_CONTRACT.md).
+- Layered design target: `universal-agent-runtime-domain-runtime-design.md`.
 
 ## Development
 
-Python 3.12 or newer is required.
+Python 3.12+ with [uv](https://docs.astral.sh/uv/) (CI installs with pip via
+`pip install -e '.[dev]'`; both work):
 
 ```bash
-.venv/bin/python -m pip install -e '.[dev]'
-.venv/bin/python -m ruff format --check src tests examples
-.venv/bin/python -m ruff check .
-.venv/bin/python -m mypy
-.venv/bin/python -m pytest -q
-.venv/bin/python examples/p0_agent_loop.py
-.venv/bin/python examples/p1_kubernetes_domain.py
-.venv/bin/python examples/p2_evidence_recovery.py
-.venv/bin/python examples/p2_world_entities_relations.py
-.venv/bin/python examples/p3_memory.py
-.venv/bin/python examples/p3_multi_domain_evaluator_routing.py
-.venv/bin/python examples/p3_2_kubernetes_remediation.py
-.venv/bin/python examples/p3_2_kubernetes_pod_evidence.py
-.venv/bin/python examples/p3_2_kubectl_backend.py
-.venv/bin/python examples/p3_2_kubernetes_api_backend.py
-.venv/bin/python examples/p3_5_runtime_api.py
-.venv/bin/python examples/p3_5_runtime_service.py
-.venv/bin/python examples/p3_5_runtime_sdk.py
-.venv/bin/python examples/p3_5_json_http_model_adapter.py
-.venv/bin/python examples/p3_5_openai_chat_completions_model.py
-.venv/bin/python examples/p3_5_openai_responses_model.py
-.venv/bin/python examples/p3_5_kubernetes_model_probe.py
-.venv/bin/python examples/p3_5_kubernetes_check.py
-.venv/bin/python examples/p3_5_kubernetes_production_run.py
-.venv/bin/python examples/p3_5_agentd_routes.py
-.venv/bin/python examples/p3_5_agentd_auth.py
-.venv/bin/python examples/p3_5_persistence.py
-.venv/bin/python examples/p3_5_sqlite_persistence.py
-.venv/bin/python examples/p3_5_runtime_config.py
-.venv/bin/python examples/p3_5_cli_config.py
-.venv/bin/python examples/p3_5_cli_profile_config.py
-.venv/bin/python examples/p3_5_cli_event_stream.py
-.venv/bin/python examples/p3_5_cli_run.py
-.venv/bin/python examples/p3_6_cost_tracking.py
-.venv/bin/python examples/p3_6_state_event_commit.py
-.venv/bin/python examples/p3_6_secret_redaction.py
-.venv/bin/python examples/p3_6_structured_logs.py
-.venv/bin/python examples/p3_6_traces.py
-.venv/bin/python examples/p3_7_evaluation_harness.py
-.venv/bin/python examples/p3_7_evaluation_runner.py
-.venv/bin/python examples/p3_7_execution_replay.py
-.venv/bin/python examples/p3_7_replay.py
-.venv/bin/python examples/p3_7_cli_replay.py
-.venv/bin/python examples/p3_7_cli_artifacts.py
-.venv/bin/python examples/p3_7_cli_quality_gates.py
-.venv/bin/python examples/p3_7_suite_file.py
-.venv/bin/python examples/p3_7_deterministic_mode.py
-.venv/bin/python examples/p4_multi_agent_contract.py
-.venv/bin/python examples/p4_multi_agent_batch_delegation.py
-.venv/bin/python examples/p4_multi_agent_timeout.py
-.venv/bin/python examples/p4_multi_agent_cost_limit.py
-.venv/bin/python examples/p4_multi_agent_lifecycle.py
-.venv/bin/python examples/p4_multi_agent_registry_snapshot.py
-.venv/bin/python examples/p4_multi_agent_runtime_service_projection.py
-.venv/bin/python examples/p4_multi_agent_conflict_resolution.py
-.venv/bin/python examples/p4_multi_agent_result_merge.py
-.venv/bin/python examples/p4_multi_agent_evaluation.py
-.venv/bin/python examples/p5_evaluation_console.py
-.venv/bin/python examples/p5_tui.py
-.venv/bin/python examples/p5_web_console.py
-.venv/bin/python examples/p5_session_diagnostics.py
-.venv/bin/python examples/p6_distributed_queue.py
-.venv/bin/python examples/p6_file_work_queue.py
-.venv/bin/python examples/p6_distributed_worker.py
-.venv/bin/python examples/p6_capability_aware_worker.py
-.venv/bin/python examples/p6_runtime_service_worker.py
-.venv/bin/python examples/p6_runtime_service_worker_batch.py
-.venv/bin/python examples/p6_distributed_scheduler.py
-.venv/bin/python examples/p6_distributed_lock.py
-.venv/bin/python examples/p6_file_distributed_locks.py
-.venv/bin/python examples/p6_worker_registry.py
-.venv/bin/python examples/p6_file_worker_registry.py
-.venv/bin/python examples/p6_distributed_snapshot.py
-.venv/bin/python examples/p6_distributed_health.py
-.venv/bin/python examples/p6_distributed_coordinator.py
-.venv/bin/python examples/p6_distributed_cancel.py
-.venv/bin/python examples/p6_distributed_prune.py
-.venv/bin/python examples/p6_distributed_schedule.py
-.venv/bin/python examples/p6_distributed_action.py
-.venv/bin/python examples/p6_distributed_pending_actions.py
-.venv/bin/python examples/p6_runtime_host_file_queue.py
-.venv/bin/python examples/p6_runtime_host_sqlite_queue.py
-.venv/bin/python examples/p6_runtime_host_sqlite_locks.py
-.venv/bin/python examples/p6_runtime_host_sqlite_workers.py
-.venv/bin/python examples/p6_runtime_host_file_coordination.py
-.venv/bin/python examples/p6_worker_lifecycle.py
-.venv/bin/python examples/p6_distributed_lock_lifecycle.py
-.venv/bin/python examples/p7_domain_package_registry.py
-.venv/bin/python examples/p7_domain_package_scaffold.py
-.venv/bin/python examples/p7_domain_sdk_base_runtime.py
-.venv/bin/python examples/p7_domain_sdk_runtime_spec.py
-.venv/bin/python examples/p7_evaluation_dataset.py
-.venv/bin/python -m universal_agent.cli eval datasets --dataset-dir .tmp/evaluation-datasets --verify
-.venv/bin/python examples/p7_profile_catalog.py
-.venv/bin/python examples/p7_ecosystem_catalog.py
-.venv/bin/python examples/p7_ecosystem_registry_manifest.py
-.venv/bin/python examples/p7_ecosystem_registry_store.py
-.venv/bin/python examples/p7_ecosystem_registry_install.py
-.venv/bin/python examples/p7_ecosystem_registry_trust_policy.py
-.venv/bin/python examples/p7_ecosystem_registry_signature_verifier.py
-.venv/bin/python -m universal_agent.cli ecosystem store list --store-dir .tmp/ecosystem-registries
-.venv/bin/python -m universal_agent.cli ready
-.venv/bin/python -m universal_agent.cli distributed health
-.venv/bin/python -m universal_agent.cli distributed snapshot
-.venv/bin/python -m universal_agent.cli distributed expire
-.venv/bin/python -m universal_agent.cli distributed prune-terminal --before 2026-01-01T00:00:01+00:00
-.venv/bin/python -m universal_agent.cli init --output .tmp/retention-profile.json --distributed-terminal-retention-seconds 86400 --force
-.venv/bin/python -m universal_agent.cli --profile-config .tmp/retention-profile.json distributed prune-terminal
-.venv/bin/python -m universal_agent.cli distributed schedule-session session-1 --priority 5 --max-attempts 2
-.venv/bin/python -m universal_agent.cli distributed schedule-action session-1 task-1 action-1 --confirmed true --priority 5
-.venv/bin/python -m universal_agent.cli distributed schedule-pending-actions --confirmed true --priority 5
-.venv/bin/python -m universal_agent.cli distributed worker-register worker-a --capability agent_session
-.venv/bin/python -m universal_agent.cli distributed worker-heartbeat worker-a
-.venv/bin/python -m universal_agent.cli distributed worker-run-once worker-a
-.venv/bin/python -m universal_agent.cli distributed worker-run worker-a --max-items 5
-.venv/bin/python -m universal_agent.cli distributed worker-drain worker-a --reason "finish current lease"
-.venv/bin/python -m universal_agent.cli distributed worker-offline worker-a --reason "shutdown complete"
-.venv/bin/python -m universal_agent.cli distributed lock-acquire session/session-1 --owner-id worker-a
-.venv/bin/python -m universal_agent.cli distributed lock-heartbeat lock-lease-1 --owner-id worker-a
-.venv/bin/python -m universal_agent.cli distributed lock-release lock-lease-1 --owner-id worker-a
-.venv/bin/python -m universal_agent.cli distributed cancel work-1 --reason "operator cancelled queued work"
-.venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-profile.json --store-backend sqlite --store-path .tmp/runtime.sqlite3 --force
-.venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-profile.json config show
-.venv/bin/python -m universal_agent.cli init --output .tmp/kubectl-profile.json --domain-backend kubectl --kubectl-namespace prod --kubectl-context prod-cluster --force
-.venv/bin/python -m universal_agent.cli --profile-config .tmp/kubectl-profile.json config show
-.venv/bin/python -m universal_agent.cli init --output .tmp/kubernetes-api-profile.json --domain-backend kubernetes_api --kubernetes-api-server https://cluster.example.test --kubernetes-api-token-env KUBERNETES_API_TOKEN --force
-.venv/bin/python -m universal_agent.cli init --output .tmp/kubernetes-api-file-profile.json --domain-backend kubernetes_api --kubernetes-api-server https://cluster.example.test --kubernetes-api-token-file /run/secrets/kubernetes-token --force
-.venv/bin/python -m universal_agent.cli --profile-config .tmp/kubernetes-api-profile.json config show
-.venv/bin/python -m universal_agent.cli init --output .tmp/file-queue-profile.json --distributed-queue-backend file --distributed-queue-path .tmp/work-queue.json --force
-.venv/bin/python -m universal_agent.cli --profile-config .tmp/file-queue-profile.json config show
-.venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-locks-profile.json --distributed-locks-backend sqlite --distributed-locks-path .tmp/distributed-locks.sqlite3 --force
-.venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-locks-profile.json config show
-.venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-queue-profile.json --distributed-queue-backend sqlite --distributed-queue-path .tmp/work-queue.sqlite3 --force
-.venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-queue-profile.json config show
-.venv/bin/python -m universal_agent.cli init --output .tmp/sqlite-workers-profile.json --distributed-workers-backend sqlite --distributed-workers-path .tmp/workers.sqlite3 --force
-.venv/bin/python -m universal_agent.cli --profile-config .tmp/sqlite-workers-profile.json config show
-.venv/bin/python -m universal_agent.cli eval list local-kubernetes --kind policy --tag kubernetes
-.venv/bin/python -m universal_agent.cli eval run local-kubernetes --kind regression --tag smoke --report-dir .tmp/eval-reports --fail-on-fail
-.venv/bin/python -m universal_agent.cli eval reports --report-dir .tmp/eval-reports
-.venv/bin/python -m universal_agent.cli eval console --report-dir .tmp/eval-reports --format text
-.venv/bin/python -m universal_agent.cli serve --port 8765 --evaluation-report-dir .tmp/eval-reports
-.venv/bin/python -m universal_agent.cli eval replay local-kubernetes --recording-dir .tmp/replay-recordings --kind regression --update
-.venv/bin/python -m universal_agent.cli eval recordings --recording-dir .tmp/replay-recordings
-.venv/bin/python -m universal_agent.cli eval replay local-kubernetes --recording-dir .tmp/replay-recordings --kind regression --fail-on-fail
+uv sync --extra dev
+uv run ruff format --check src tests examples
+uv run ruff check .
+uv run mypy
+uv run pytest -q
 ```
 
-`mypy` runs in strict mode over `src`, `tests` and `examples`, and passes with no `type: ignore`
-anywhere in the repository: the Domain extension points are `Protocol`s, so a Domain is recognised by
-shape and its implementations are checked structurally rather than through inheritance. Tests and
-examples are held to the same standard deliberately — an unannotated fake Domain would be exactly the
-place where a broken extension point could hide.
+Key test suites for the Golden Path:
 
-`ruff format --check` is scoped to the source directories because newer Ruff releases also reformat
-fenced code blocks inside the design Markdown, which is not part of the Python formatting contract.
+- `tests/integration/test_p0_golden_path.py` — init → config → doctor → run →
+  session list/show end-to-end through the embedded runtime (no API keys).
+- `tests/integration/test_facade_golden_path.py` — `Agent` facade, policy denial
+  before tool execution, confirmation pause + rebuilt-runtime resume.
+- `tests/unit/test_p0_config_and_views.py` — config discovery, `init`
+  idempotency/backups, doctor rendering, human text views (secret masking).
+
+Further reading: `docs/` (developer guide, operator guide, Domain SDK,
+container image), `docs/product.md` (product vocabulary and entry-point
+decisions), `examples/` (per-milestone runnable examples).
+
+## Roadmap
+
+Implemented layers and the remaining roadmap (P0 productization, P3.5+ runtime
+productization, operations, evaluation, optional multi-agent, distributed runtime,
+ecosystem) are tracked in `docs/revision/` and the design document.

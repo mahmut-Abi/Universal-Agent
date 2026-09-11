@@ -44,7 +44,7 @@ export KUBERNETES_API_TOKEN='<kubernetes-bearer-token>'
 For a `kubectl` backed run:
 
 ```bash
-.venv/bin/python -m universal_agent.cli init \
+agent init \
   --output .universal-agent/kubernetes-production-profile.json \
   --profile production-operator \
   --environment production \
@@ -78,7 +78,7 @@ Notes:
 For a direct Kubernetes HTTP API backend:
 
 ```bash
-.venv/bin/python -m universal_agent.cli init \
+agent init \
   --output .universal-agent/kubernetes-api-production-profile.json \
   --profile production-operator \
   --environment production \
@@ -101,7 +101,7 @@ Confirm the Runtime can read the profile and that secrets are available without
 printing secret values:
 
 ```bash
-.venv/bin/python -m universal_agent.cli \
+agent \
   --profile-config .universal-agent/kubernetes-production-profile.json \
   config show
 ```
@@ -120,7 +120,7 @@ Run the model-only gate first. This contacts the model provider but executes no
 Kubernetes tool.
 
 ```bash
-.venv/bin/python -m universal_agent.cli \
+agent \
   --profile-config .universal-agent/kubernetes-production-profile.json \
   kubernetes model-probe production-operator \
   --workload deployment/api \
@@ -201,7 +201,7 @@ Run the combined production gate. It runs model probe first, then read-only
 Kubernetes preflight only if the model contract is valid.
 
 ```bash
-.venv/bin/python -m universal_agent.cli \
+agent \
   --profile-config .universal-agent/kubernetes-production-profile.json \
   kubernetes check production-operator \
   --workload deployment/api \
@@ -227,7 +227,7 @@ Run the scoped remediation goal. By default, this repeats model probe and
 Kubernetes preflight before submitting a Runtime session.
 
 ```bash
-.venv/bin/python -m universal_agent.cli \
+agent \
   --profile-config .universal-agent/kubernetes-production-profile.json \
   kubernetes run production-operator \
   --workload deployment/api \
@@ -264,7 +264,7 @@ contract, and runtime-boundary evidence in a production-review shape. Without
 `--submit-run`, it performs only the model probe and read-only preflight.
 
 ```bash
-.venv/bin/python -m universal_agent.cli \
+agent \
   --profile-config .universal-agent/kubernetes-production-profile.json \
   kubernetes evidence production-operator \
   --workload deployment/api \
@@ -282,7 +282,7 @@ Expected pre-run evidence output:
 Add `--submit-run` only when intentionally proving the full Runtime boundary:
 
 ```bash
-.venv/bin/python -m universal_agent.cli \
+agent \
   --profile-config .universal-agent/kubernetes-production-profile.json \
   kubernetes evidence production-operator \
   --workload deployment/api \
@@ -304,7 +304,7 @@ only if the target resource, namespace, replica count, and policy reason are
 acceptable.
 
 ```bash
-.venv/bin/python -m universal_agent.cli \
+agent \
   --profile-config .universal-agent/kubernetes-production-profile.json \
   session resume <session-id> \
   --confirmed true
@@ -319,23 +319,23 @@ fresh state, updates evidence/world state, and evaluates completion. A successfu
 Use these commands after a completed, waiting, or failed run:
 
 ```bash
-.venv/bin/python -m universal_agent.cli \
+agent \
   --profile-config .universal-agent/kubernetes-production-profile.json \
   session show <session-id>
 
-.venv/bin/python -m universal_agent.cli \
+agent \
   --profile-config .universal-agent/kubernetes-production-profile.json \
   session diagnostics <session-id>
 
-.venv/bin/python -m universal_agent.cli \
+agent \
   --profile-config .universal-agent/kubernetes-production-profile.json \
   session evidence <session-id>
 
-.venv/bin/python -m universal_agent.cli \
+agent \
   --profile-config .universal-agent/kubernetes-production-profile.json \
   session world <session-id>
 
-.venv/bin/python -m universal_agent.cli \
+agent \
   --profile-config .universal-agent/kubernetes-production-profile.json \
   session events <session-id> --limit 50
 ```

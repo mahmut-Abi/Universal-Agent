@@ -1,3 +1,16 @@
+"""`agent init` — first-time Golden Path setup.
+
+Creates a local, human-readable configuration tree:
+
+    universal-agent/
+      config.json     machine- and human-readable agent-level settings
+      profile.json    AgentProfile config consumed by the runtime
+
+`init` is idempotent: without `--force` an existing tree is reused (missing
+files are filled in). `--force` rewrites the files and keeps `.bak` backups of
+overwritten ones.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -8,157 +21,215 @@ from universal_agent.core import write_json_file
 from universal_agent.domains.kubernetes.cli import (
     profile_domain_config as kubernetes_profile_domain_config,
 )
-from universal_agent_cli.io import _parse_key_value_options, _write_json
+from universal_agent.domains.local.cli_runtime import local_domain_config
+from universal_agent_cli.io import _parse_key_value_options, _write_json, _write_text
+
+DEFAULT_ENVIRONMENT = "local"
+DEFAULT_MAX_ITERATIONS = 20
+DEFAULT_MAX_RECOVERY_STEPS = 8
 
 
 def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
     output = Path(cast(str, args.output))
-    if output.exists() and not cast(bool, args.force):
-        raise ValueError(f"profile config already exists: {output}")
-    output.parent.mkdir(parents=True, exist_ok=True)
+    config_dir = output.parent
+    config_path = config_dir / "config.json"
+    force = cast(bool, args.force)
+    reuse = output.exists() and not force
+    if config_path.exists() and not force:
+        reuse = True
+    backups: list[str] = []
+    if force:
+        backups.extend(_backup_existing((output, config_path)))
+    config_dir.mkdir(parents=True, exist_ok=True)
     profile_name = cast(str, args.profile)
-    payload = _profile_config_payload(
+
+    runtime_payload = _runtime_payload(args)
+    domain_payload = cast(dict[str, object], runtime_payload["domain"])
+    profile_payload = _profile_config_payload(
         profile_name=profile_name,
         environment=cast(str, args.environment),
-        store_backend=cast(str, args.store_backend),
-        store_path=cast(str, args.store_path),
-        distributed_queue_backend=cast(str, args.distributed_queue_backend),
-        distributed_queue_path=cast(str, args.distributed_queue_path),
-        distributed_locks_backend=cast(str, args.distributed_locks_backend),
-        distributed_locks_path=cast(str, args.distributed_locks_path),
-        distributed_workers_backend=cast(str, args.distributed_workers_backend),
-        distributed_workers_path=cast(str, args.distributed_workers_path),
-        distributed_terminal_retention_seconds=cast(
-            float | None, args.distributed_terminal_retention_seconds
-        ),
-        domain_backend=cast(str, args.domain_backend),
-        kubectl_namespace=cast(str, args.kubectl_namespace),
-        kubectl_context=cast(str | None, args.kubectl_context),
-        kubectl_kubeconfig=cast(str | None, args.kubectl_kubeconfig),
-        kubectl_timeout_seconds=cast(float, args.kubectl_timeout_seconds),
-        kubernetes_api_server=cast(str | None, args.kubernetes_api_server),
-        kubernetes_api_namespace=cast(str, args.kubernetes_api_namespace),
-        kubernetes_api_token_env=cast(str | None, args.kubernetes_api_token_env),
-        kubernetes_api_token_file=cast(str | None, args.kubernetes_api_token_file),
-        kubernetes_api_token_secret=cast(str, args.kubernetes_api_token_secret),
-        kubernetes_api_timeout_seconds=cast(float, args.kubernetes_api_timeout_seconds),
-        model_provider=cast(str, args.model_provider),
-        model_name=cast(str, args.model_name),
-        model_endpoint=cast(str | None, args.model_endpoint),
-        model_api_key_env=cast(str | None, args.model_api_key_env),
-        model_api_key_file=cast(str | None, args.model_api_key_file),
-        model_api_key_secret=cast(str, args.model_api_key_secret),
-        model_timeout_seconds=cast(float, args.model_timeout_seconds),
-        model_response_format=cast(str | None, args.model_response_format),
-        model_headers=_parse_key_value_options(cast(list[str], args.model_header), "model-header"),
+        runtime_payload=runtime_payload,
+        domain_payload=domain_payload,
     )
-    write_json_file(output, payload, indent=True)
-    _write_json(out, {"status": "created", "profile": profile_name, "path": str(output)})
+    if not output.exists() or force:
+        write_json_file(output, profile_payload, indent=True)
+    if not config_path.exists() or force:
+        write_json_file(config_path, _user_config_payload(args), indent=True)
+
+    payload: dict[str, object] = {
+        "status": "reused" if reuse else "created",
+        "profile": profile_name,
+        "path": str(output),
+        "config": str(config_path),
+        "data_dir": str(_runtime_data_dir(args)),
+    }
+    if backups:
+        payload["backups"] = backups
+    if cast(str, args.output_format) == "json":
+        _write_json(out, payload)
+        return
+    _write_text(
+        out,
+        "Universal Agent setup complete.\n"
+        f"  Profile config : {payload['path']}\n"
+        f"  Settings       : {payload['config']}\n"
+        f"  Profile        : {profile_name}\n"
+        f"  Model          : {cast(str, args.model_provider)} / {cast(str, args.model_name)}\n"
+        f"  Data dir       : {payload['data_dir']}\n"
+        'Next: `agent doctor` then `agent run "your goal"`.\n',
+    )
+
+
+def _backup_existing(paths: tuple[Path, ...]) -> list[str]:
+    backups: list[str] = []
+    for path in paths:
+        if path.exists():
+            backup = path.with_suffix(path.suffix + ".bak")
+            backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+            backups.append(str(backup))
+    return backups
+
+
+def _runtime_data_dir(args: argparse.Namespace) -> Path:
+    store_path = Path(cast(str, args.store_path))
+    if cast(str, args.store_backend) == "memory":
+        return Path(cast(str, args.output)).parent
+    return store_path.parent
+
+
+def _user_config_payload(args: argparse.Namespace) -> dict[str, object]:
+    domain_name = _resolved_domain_name(cast(str, args.domain_backend))
+    return {
+        "environment": cast(str, args.environment),
+        "data_dir": str(_runtime_data_dir(args)),
+        "profile": cast(str, args.profile),
+        "model": {
+            "provider": cast(str, args.model_provider),
+            "name": cast(str, args.model_name),
+        },
+        "policy": {"mode": "safe"},
+        "runtime": {
+            "max_steps": DEFAULT_MAX_ITERATIONS,
+            "max_recovery_steps": DEFAULT_MAX_RECOVERY_STEPS,
+            "store_backend": cast(str, args.store_backend),
+        },
+        "domains": {
+            domain_name: {
+                "enabled": True,
+                "backend": cast(str, args.domain_backend),
+            }
+        },
+    }
+
+
+def _resolved_domain_name(domain_backend: str) -> str:
+    """`fake` (default) selects the domain-neutral local domain; real
+    Kubernetes backends opt into the kubernetes domain."""
+
+    return "kubernetes" if domain_backend in {"kubectl", "kubernetes_api"} else "local"
+
+
+def _runtime_payload(args: argparse.Namespace) -> dict[str, object]:
+    model_secret_source = _single_secret_source(
+        "--model-api-key",
+        env_key=cast(str | None, args.model_api_key_env),
+        file_path=cast(str | None, args.model_api_key_file),
+    )
+    kubernetes_api_token_source = _single_secret_source(
+        "--kubernetes-api-token",
+        env_key=cast(str | None, args.kubernetes_api_token_env),
+        file_path=cast(str | None, args.kubernetes_api_token_file),
+    )
+    domain = (
+        kubernetes_profile_domain_config(
+            domain_backend=cast(str, args.domain_backend),
+            kubectl_namespace=cast(str, args.kubectl_namespace),
+            kubectl_context=cast(str | None, args.kubectl_context),
+            kubectl_kubeconfig=cast(str | None, args.kubectl_kubeconfig),
+            kubectl_timeout_seconds=cast(float, args.kubectl_timeout_seconds),
+            kubernetes_api_server=cast(str | None, args.kubernetes_api_server),
+            kubernetes_api_namespace=cast(str, args.kubernetes_api_namespace),
+            kubernetes_api_token_secret=cast(str | None, args.kubernetes_api_token_secret),
+            kubernetes_api_timeout_seconds=cast(float, args.kubernetes_api_timeout_seconds),
+        )
+        if cast(str, args.domain_backend) in {"kubectl", "kubernetes_api"}
+        else local_domain_config()
+    )
+    model_secret_name = cast(str, args.model_api_key_secret)
+    store: dict[str, str] = {"backend": cast(str, args.store_backend)}
+    if cast(str, args.store_backend) != "memory":
+        store["path"] = cast(str, args.store_path)
+    distributed_queue: dict[str, str] = {"backend": cast(str, args.distributed_queue_backend)}
+    if cast(str, args.distributed_queue_backend) != "memory":
+        distributed_queue["path"] = cast(str, args.distributed_queue_path)
+    distributed_locks: dict[str, str] = {"backend": cast(str, args.distributed_locks_backend)}
+    if cast(str, args.distributed_locks_backend) != "memory":
+        distributed_locks["path"] = cast(str, args.distributed_locks_path)
+    distributed_workers: dict[str, str] = {"backend": cast(str, args.distributed_workers_backend)}
+    if cast(str, args.distributed_workers_backend) != "memory":
+        distributed_workers["path"] = cast(str, args.distributed_workers_path)
+    runtime: dict[str, object] = {
+        "environment": {"environment": cast(str, args.environment)},
+        "model": _profile_model_config(
+            model_provider=cast(str, args.model_provider),
+            model_name=cast(str, args.model_name),
+            model_endpoint=cast(str | None, args.model_endpoint),
+            model_api_key_source=model_secret_source,
+            model_api_key_secret=model_secret_name,
+            model_timeout_seconds=cast(float, args.model_timeout_seconds),
+            model_response_format=cast(str | None, args.model_response_format),
+            model_headers=_parse_key_value_options(
+                cast(list[str], args.model_header),
+                "model-header",
+            ),
+        ),
+        "store": store,
+        "distributed_queue": distributed_queue,
+        "distributed_locks": distributed_locks,
+        "distributed_workers": distributed_workers,
+        "limits": {
+            "max_iterations": DEFAULT_MAX_ITERATIONS,
+            "max_recovery_steps": DEFAULT_MAX_RECOVERY_STEPS,
+        },
+        "domain": domain,
+    }
+    if cast(float | None, args.distributed_terminal_retention_seconds) is not None:
+        runtime["distributed_terminal_retention_seconds"] = cast(
+            float, args.distributed_terminal_retention_seconds
+        )
+    secrets: dict[str, dict[str, object]] = {}
+    if model_secret_source is not None:
+        _add_secret(secrets, model_secret_name, model_secret_source)
+    if kubernetes_api_token_source is not None:
+        _add_secret(
+            secrets,
+            cast(str, args.kubernetes_api_token_secret),
+            kubernetes_api_token_source,
+        )
+    if secrets:
+        runtime["secrets"] = secrets
+    return runtime
 
 
 def _profile_config_payload(
     *,
     profile_name: str,
     environment: str,
-    store_backend: str,
-    store_path: str,
-    distributed_queue_backend: str,
-    distributed_queue_path: str,
-    distributed_locks_backend: str,
-    distributed_locks_path: str,
-    distributed_workers_backend: str,
-    distributed_workers_path: str,
-    distributed_terminal_retention_seconds: float | None,
-    domain_backend: str,
-    kubectl_namespace: str,
-    kubectl_context: str | None,
-    kubectl_kubeconfig: str | None,
-    kubectl_timeout_seconds: float,
-    kubernetes_api_server: str | None,
-    kubernetes_api_namespace: str,
-    kubernetes_api_token_env: str | None,
-    kubernetes_api_token_file: str | None,
-    kubernetes_api_token_secret: str,
-    kubernetes_api_timeout_seconds: float,
-    model_provider: str,
-    model_name: str,
-    model_endpoint: str | None,
-    model_api_key_env: str | None,
-    model_api_key_file: str | None,
-    model_api_key_secret: str,
-    model_timeout_seconds: float,
-    model_response_format: str | None,
-    model_headers: dict[str, str],
+    runtime_payload: dict[str, object],
+    domain_payload: dict[str, object],
 ) -> dict[str, object]:
-    model_secret_source = _single_secret_source(
-        "--model-api-key",
-        env_key=model_api_key_env,
-        file_path=model_api_key_file,
+    domain_name = str(domain_payload.get("name", "local"))
+    description = (
+        "Generic local Agent profile created by `agent init`."
+        if domain_name == "local"
+        else "Kubernetes Agent profile created by `agent init`."
     )
-    kubernetes_api_token_source = _single_secret_source(
-        "--kubernetes-api-token",
-        env_key=kubernetes_api_token_env,
-        file_path=kubernetes_api_token_file,
-    )
-    domain = kubernetes_profile_domain_config(
-        domain_backend=domain_backend,
-        kubectl_namespace=kubectl_namespace,
-        kubectl_context=kubectl_context,
-        kubectl_kubeconfig=kubectl_kubeconfig,
-        kubectl_timeout_seconds=kubectl_timeout_seconds,
-        kubernetes_api_server=kubernetes_api_server,
-        kubernetes_api_namespace=kubernetes_api_namespace,
-        kubernetes_api_token_secret=(
-            kubernetes_api_token_secret if kubernetes_api_token_source is not None else None
-        ),
-        kubernetes_api_timeout_seconds=kubernetes_api_timeout_seconds,
-    )
-    store: dict[str, str] = {"backend": store_backend}
-    if store_backend != "memory":
-        store["path"] = store_path
-    distributed_queue: dict[str, str] = {"backend": distributed_queue_backend}
-    if distributed_queue_backend != "memory":
-        distributed_queue["path"] = distributed_queue_path
-    distributed_locks: dict[str, str] = {"backend": distributed_locks_backend}
-    if distributed_locks_backend != "memory":
-        distributed_locks["path"] = distributed_locks_path
-    distributed_workers: dict[str, str] = {"backend": distributed_workers_backend}
-    if distributed_workers_backend != "memory":
-        distributed_workers["path"] = distributed_workers_path
-    runtime: dict[str, object] = {
-        "environment": {"environment": environment},
-        "model": _profile_model_config(
-            model_provider=model_provider,
-            model_name=model_name,
-            model_endpoint=model_endpoint,
-            model_api_key_source=model_secret_source,
-            model_api_key_secret=model_api_key_secret,
-            model_timeout_seconds=model_timeout_seconds,
-            model_response_format=model_response_format,
-            model_headers=model_headers,
-        ),
-        "store": store,
-        "distributed_queue": distributed_queue,
-        "distributed_locks": distributed_locks,
-        "distributed_workers": distributed_workers,
-        "limits": {"max_iterations": 20, "max_recovery_steps": 8},
-        "domain": domain,
-    }
-    secrets: dict[str, dict[str, object]] = {}
-    if model_secret_source is not None:
-        _add_secret(secrets, model_api_key_secret, model_secret_source)
-    if kubernetes_api_token_source is not None:
-        _add_secret(secrets, kubernetes_api_token_secret, kubernetes_api_token_source)
-    if secrets:
-        runtime["secrets"] = secrets
-    if distributed_terminal_retention_seconds is not None:
-        runtime["distributed_terminal_retention_seconds"] = distributed_terminal_retention_seconds
     return {
         "name": profile_name,
         "version": "0.1.0",
-        "description": "Local Kubernetes profile",
-        "domain": domain,
-        "runtime": runtime,
+        "description": description,
+        "domain": domain_payload,
+        "runtime": runtime_payload,
     }
 
 

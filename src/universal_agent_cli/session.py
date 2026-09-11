@@ -30,6 +30,10 @@ from universal_agent_cli.io import (
     _write_json,
     _write_text,
 )
+from universal_agent_cli.text_views import (
+    render_session_list_text,
+    render_session_show_text,
+)
 
 
 async def _dispatch_session(
@@ -41,19 +45,25 @@ async def _dispatch_session(
     if command == "list":
         after = cast(str | None, args.after)
         limit = cast(int | None, args.limit)
-        _write_json(
-            out,
-            session_batch_body(
-                await service.stream_sessions(
-                    after_session_id=None if after is None else SessionId(after),
-                    limit=limit,
-                )
-            ),
+        body = session_batch_body(
+            await service.stream_sessions(
+                after_session_id=None if after is None else SessionId(after),
+                limit=limit,
+            )
         )
+        if cast(str, args.output) == "text":
+            _write_text(out, render_session_list_text(body))
+            return
+        _write_json(out, body)
         return
     if command == "show":
         session_id = SessionId(cast(str, args.session_id))
-        _write_json(out, session_body(await service.get_session(session_id)))
+        body = session_body(await service.get_session(session_id))
+        if cast(str, args.output) == "text":
+            events_body = event_batch_body(await service.stream_events(session_id, limit=500))
+            _write_text(out, render_session_show_text(body, events_body))
+            return
+        _write_json(out, body)
         return
     if command == "diagnostics":
         session_id = SessionId(cast(str, args.session_id))

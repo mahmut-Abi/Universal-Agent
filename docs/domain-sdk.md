@@ -130,9 +130,9 @@ Useful local commands:
 ```bash
 .venv/bin/python examples/p7_domain_sdk_base_runtime.py
 .venv/bin/python examples/p7_domain_sdk_runtime_spec.py
-.venv/bin/python -m universal_agent.cli domain-packages scaffold widget --description "Widget Domain" --output .tmp/widget-domain --capability inspect_widget --tool inspect_widget --evaluator criteria --runtime-stub
-.venv/bin/python -m universal_agent.cli domain-packages verify --local-paths
-.venv/bin/python -m universal_agent.cli domain-packages load-runtime .tmp/widget-domain
+agent domain-packages scaffold widget --description "Widget Domain" --output .tmp/widget-domain --capability inspect_widget --tool inspect_widget --evaluator criteria --runtime-stub
+agent domain-packages verify --local-paths
+agent domain-packages load-runtime .tmp/widget-domain
 ```
 
 Run these quality gates before committing Domain SDK changes:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +24,28 @@ if TYPE_CHECKING:
 
 PROFILE_CONFIG_FILE = "profile.json"
 PROFILE_CONFIG_SUFFIX = ".profile.json"
+
+
+def default_profile_config_path(environ: Mapping[str, str] | None = None) -> Path:
+    """Project-local profile config first, then the user-level one.
+
+    The Golden Path writes ``./universal-agent/profile.json`` by default; the
+    user-level fallback keeps the container convention (``AGENT_CONFIG_DIR`` or
+    ``~/.universal-agent``).
+    """
+
+    if environ is None:
+        environ = os.environ
+    config_dir = environ.get("AGENT_CONFIG_DIR", "").strip()
+    if config_dir:
+        return Path(config_dir) / PROFILE_CONFIG_FILE
+    local = Path("universal-agent") / PROFILE_CONFIG_FILE
+    if local.is_file():
+        return local
+    home = environ.get("HOME", "").strip()
+    if home:
+        return Path(home) / ".universal-agent" / PROFILE_CONFIG_FILE
+    return Path(".universal-agent") / PROFILE_CONFIG_FILE
 
 
 class _ProfileConfigPayload(ConfigPayload):

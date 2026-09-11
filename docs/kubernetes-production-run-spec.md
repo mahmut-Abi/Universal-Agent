@@ -43,7 +43,7 @@ That makes first production use too easy to mis-shape:
 This slice adds a Kubernetes-specific operator entry point:
 
 ```bash
-python -m universal_agent.cli --profile-config profile.json \
+agent --profile-config profile.json \
   kubernetes run production-operator \
   --workload deployment/api \
   --namespace prod
@@ -136,7 +136,7 @@ Tests target these public interfaces:
 - A Kubernetes profile can run:
 
   ```bash
-  python -m universal_agent.cli --profile-config profile.json \
+  agent --profile-config profile.json \
     kubernetes model-probe production-operator \
     --workload deployment/api \
     --namespace prod
@@ -147,7 +147,7 @@ Tests target these public interfaces:
 - A Kubernetes profile can run:
 
   ```bash
-  python -m universal_agent.cli --profile-config profile.json \
+  agent --profile-config profile.json \
     kubernetes check production-operator \
     --workload deployment/api \
     --namespace prod
@@ -158,7 +158,7 @@ Tests target these public interfaces:
 - A Kubernetes profile can run:
 
   ```bash
-  python -m universal_agent.cli --profile-config profile.json \
+  agent --profile-config profile.json \
     kubernetes run production-operator \
     --workload deployment/api \
     --namespace prod

@@ -37,6 +37,7 @@ dependencies = [
 
 [project.scripts]
 agent = "universal_agent_cli:main"
+ua = "universal_agent_cli:main"
 
 [project.optional-dependencies]
 dev = [
