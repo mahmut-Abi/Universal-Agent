@@ -283,7 +283,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - On budget expiry, Runtime commits a waiting/paused boundary state that can be resumed or recovered.
   - Tests cover budget expiry without external process kill.
 
-### [ ] UA-P1-008 — Add human-readable confirmation banner
+### [x] UA-P1-008 — Add human-readable confirmation banner
 
 - Priority: P1
 - Area: Policy / CLI / Kubernetes
@@ -655,7 +655,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 - [x] UA-P1-005 — Normalize or cheaply recover invalid model `finish` decisions
 - [x] UA-P1-006 — Extend model probe to cover `finish` contract
 - [x] UA-P1-007 — Add CLI wall-clock budget and clean boundary stop
-- [ ] UA-P1-008 — Add human-readable confirmation banner
+- [x] UA-P1-008 — Add human-readable confirmation banner
 - [x] UA-P1-009 — Add model provider presets and better probe failure advice
 
 ## Sprint 4 — Maintenance Reduction
