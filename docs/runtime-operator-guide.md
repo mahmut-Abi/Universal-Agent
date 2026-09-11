@@ -226,7 +226,23 @@ omitted. Custom endpoints may use either a provider base URL or the full
 `/v1/chat/completions` URL. The default response format is `json_schema`; use
 `json_object` for providers that support JSON mode but not schemas, and
 `prompt_json` for legacy OpenAI-compatible providers that reject the
-`response_format` request field.
+`response_format` request field. Some compatible endpoints accept a
+`response_format` field but do not enforce the schema; in that case, prefer
+`prompt_json`, increase `--model-timeout-seconds`, and pass provider-required
+headers with `--model-header KEY=VALUE` before re-running
+`agent kubernetes model-probe`.
+
+`agent init --model-provider-preset` provides conservative Chat Completions
+starting points without hardcoding provider endpoints. Pass `--model-endpoint`
+for the provider's compatible endpoint and an API-key env/file reference:
+
+```bash
+agent init --model-provider-preset 360zhinao \
+  --model-endpoint https://provider.example/v1/chat/completions \
+  --model-api-key-env OPENAI_API_KEY
+agent init --model-provider-preset deepseek --model-endpoint https://provider.example/v1/chat/completions --model-api-key-env OPENAI_API_KEY
+agent init --model-provider-preset moonshot --model-endpoint https://provider.example/v1/chat/completions --model-api-key-env OPENAI_API_KEY
+```
 
 ```json
 {

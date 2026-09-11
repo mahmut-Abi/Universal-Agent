@@ -294,7 +294,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - JSON output remains available for machines.
   - Tests cover at least a scale-workload confirmation prompt.
 
-### [ ] UA-P1-009 — Add model provider presets and better probe failure advice
+### [x] UA-P1-009 — Add model provider presets and better probe failure advice
 
 - Priority: P1
 - Area: CLI / Model Config
@@ -656,7 +656,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 - [x] UA-P1-006 — Extend model probe to cover `finish` contract
 - [x] UA-P1-007 — Add CLI wall-clock budget and clean boundary stop
 - [ ] UA-P1-008 — Add human-readable confirmation banner
-- [ ] UA-P1-009 — Add model provider presets and better probe failure advice
+- [x] UA-P1-009 — Add model provider presets and better probe failure advice
 
 ## Sprint 4 — Maintenance Reduction
 
@@ -699,4 +699,5 @@ Add entries here when items are completed.
 2026-09-11 UA-P1-006 completed: production contract reports `finish_contract` explicitly unverified for the execute-only Kubernetes model probe instead of implying full finish-decision coverage; provider finish quirks are handled by UA-P1-005 normalization. Evidence: `uv run ruff check src/universal_agent/domains/kubernetes/production_contract.py tests/unit/test_kubernetes_production_contract_payloads.py tests/integration/test_kubernetes_production_contract.py`; `uv run pytest tests/unit/test_kubernetes_production_contract_payloads.py tests/integration/test_kubernetes_production_contract.py -q`. Main files: src/universal_agent/domains/kubernetes/production_contract.py, tests/unit/test_kubernetes_production_contract_payloads.py.
 2026-09-11 UA-P1-007 completed: added `agent run --timeout-seconds` wall-clock budget wiring through CLI, agentd submission, RuntimeService/RuntimeAPI, and AgentRuntime; expired budgets pause at the next clean runtime decision boundary instead of relying on external process kills. Evidence: `uv run ruff check src/universal_agent/runtime/agent.py src/universal_agent/runtime/api.py src/universal_agent/service/runtime.py src/universal_agent/agentd/http.py src/universal_agent/agentd/_routes_session.py src/universal_agent_cli/parser.py src/universal_agent_cli/__init__.py src/universal_agent_cli/agentd.py tests/integration/test_agent_runtime.py tests/integration/test_cli.py tests/unit/test_agentd_http_config.py`; `uv run mypy src/universal_agent/runtime/agent.py src/universal_agent/runtime/api.py src/universal_agent/service/runtime.py src/universal_agent/agentd/http.py src/universal_agent/agentd/_routes_session.py src/universal_agent_cli/__init__.py src/universal_agent_cli/agentd.py`; `uv run pytest tests/integration/test_agent_runtime.py tests/integration/test_cli.py tests/unit/test_agentd_http_config.py -q`. Main files: src/universal_agent/runtime/agent.py, src/universal_agent/runtime/api.py, src/universal_agent/service/runtime.py, src/universal_agent/agentd/http.py, src/universal_agent/agentd/_routes_session.py, src/universal_agent_cli/{parser.py,__init__.py,agentd.py}, tests/integration/{test_agent_runtime.py,test_cli.py}, tests/unit/test_agentd_http_config.py.
 2026-09-11 UA-P1-008 confirmation banner evidence strengthened: `agent run` text now renders pending scale confirmations with target, before/after replicas, reason, guarded-mutation risk, and exact resume command while JSON surfaces remain unchanged. Evidence: `uv run ruff check src/universal_agent_cli/text_views.py tests/unit/test_p0_config_and_views.py tests/integration/test_cli.py`; `uv run pytest tests/unit/test_p0_config_and_views.py tests/integration/test_cli.py -q`. Main files: src/universal_agent_cli/text_views.py, tests/unit/test_p0_config_and_views.py, tests/integration/test_cli.py.
+2026-09-11 UA-P1-009 completed: added `agent init --model-provider-preset {360zhinao,deepseek,moonshot}` conservative Chat Completions defaults, richer Kubernetes model-probe `next_step.try` guidance for credentials/response-format/headers/timeouts, and OpenAI-compatible endpoint caveat docs. Evidence: `uv run ruff check src/universal_agent_cli/init.py src/universal_agent_cli/parser.py src/universal_agent/domains/kubernetes/cli_reports.py tests/integration/test_cli.py`; `uv run pytest tests/integration/test_cli.py -q`. Main files: src/universal_agent_cli/{init.py,parser.py}, src/universal_agent/domains/kubernetes/cli_reports.py, docs/runtime-operator-guide.md, tests/integration/test_cli.py.
 ```

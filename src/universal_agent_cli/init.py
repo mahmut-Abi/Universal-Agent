@@ -14,6 +14,7 @@ overwritten ones.
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO, cast
 
@@ -28,6 +29,59 @@ from universal_agent_cli.io import _parse_key_value_options, _write_json, _write
 DEFAULT_ENVIRONMENT = "local"
 DEFAULT_MAX_ITERATIONS = 20
 DEFAULT_MAX_RECOVERY_STEPS = 8
+
+
+@dataclass(frozen=True, slots=True)
+class ModelProviderPreset:
+    provider: str
+    model_name: str
+    response_format: str | None
+    timeout_seconds: float
+
+
+MODEL_PROVIDER_PRESETS: dict[str, ModelProviderPreset] = {
+    "360zhinao": ModelProviderPreset(
+        "openai_chat_completions",
+        "glm-5.3-flash",
+        "prompt_json",
+        180.0,
+    ),
+    "deepseek": ModelProviderPreset(
+        "openai_chat_completions",
+        "deepseek-chat",
+        "json_object",
+        120.0,
+    ),
+    "moonshot": ModelProviderPreset(
+        "openai_chat_completions",
+        "moonshot-v1-8k",
+        "json_object",
+        120.0,
+    ),
+}
+
+
+def _resolved_model_settings(args: argparse.Namespace) -> ModelProviderPreset:
+    preset_name = cast(str | None, getattr(args, "model_provider_preset", None))
+    provider = cast(str, args.model_provider)
+    model_name = cast(str, args.model_name)
+    response_format = cast(str | None, args.model_response_format)
+    timeout_seconds = cast(float, args.model_timeout_seconds)
+    if preset_name is None:
+        return ModelProviderPreset(provider, model_name, response_format, timeout_seconds)
+    preset = MODEL_PROVIDER_PRESETS[preset_name]
+    if provider != "scripted" and provider != preset.provider:
+        raise ValueError("--model-provider conflicts with --model-provider-preset")
+    if model_name != "scripted" and model_name != preset.model_name:
+        raise ValueError("--model-name conflicts with --model-provider-preset")
+    if response_format is not None and response_format != preset.response_format:
+        raise ValueError("--model-response-format conflicts with --model-provider-preset")
+    return ModelProviderPreset(
+        preset.provider,
+        preset.model_name if model_name == "scripted" else model_name,
+        preset.response_format if response_format is None else response_format,
+        timeout_seconds if timeout_seconds != 30.0 else preset.timeout_seconds,
+    )
 
 
 def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
@@ -69,13 +123,14 @@ def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
     if cast(str, args.output_format) == "json":
         _write_json(out, payload)
         return
+    model_settings = _resolved_model_settings(args)
     _write_text(
         out,
         "Universal Agent setup complete.\n"
         f"  Profile config : {payload['path']}\n"
         f"  Settings       : {payload['config']}\n"
         f"  Profile        : {profile_name}\n"
-        f"  Model          : {cast(str, args.model_provider)} / {cast(str, args.model_name)}\n"
+        f"  Model          : {model_settings.provider} / {model_settings.model_name}\n"
         f"  Data dir       : {payload['data_dir']}\n"
         'Next: `agent doctor` then `agent run "your goal"`.\n',
     )
@@ -109,13 +164,14 @@ def _runtime_data_dir(args: argparse.Namespace) -> Path:
 
 def _user_config_payload(args: argparse.Namespace) -> dict[str, object]:
     domain_name = _resolved_domain_name(cast(str, args.domain_backend))
+    model_settings = _resolved_model_settings(args)
     return {
         "environment": cast(str, args.environment),
         "data_dir": str(_runtime_data_dir(args)),
         "profile": cast(str, args.profile),
         "model": {
-            "provider": cast(str, args.model_provider),
-            "name": cast(str, args.model_name),
+            "provider": model_settings.provider,
+            "name": model_settings.model_name,
         },
         "policy": {"mode": "safe"},
         "runtime": {
@@ -140,6 +196,7 @@ def _resolved_domain_name(domain_backend: str) -> str:
 
 
 def _runtime_payload(args: argparse.Namespace) -> dict[str, object]:
+    model_settings = _resolved_model_settings(args)
     model_secret_source = _single_secret_source(
         "--model-api-key",
         env_key=cast(str | None, args.model_api_key_env),
@@ -181,13 +238,13 @@ def _runtime_payload(args: argparse.Namespace) -> dict[str, object]:
     runtime: dict[str, object] = {
         "environment": {"environment": cast(str, args.environment)},
         "model": _profile_model_config(
-            model_provider=cast(str, args.model_provider),
-            model_name=cast(str, args.model_name),
+            model_provider=model_settings.provider,
+            model_name=model_settings.model_name,
             model_endpoint=cast(str | None, args.model_endpoint),
             model_api_key_source=model_secret_source,
             model_api_key_secret=model_secret_name,
-            model_timeout_seconds=cast(float, args.model_timeout_seconds),
-            model_response_format=cast(str | None, args.model_response_format),
+            model_timeout_seconds=model_settings.timeout_seconds,
+            model_response_format=model_settings.response_format,
             model_headers=_parse_key_value_options(
                 cast(list[str], args.model_header),
                 "model-header",

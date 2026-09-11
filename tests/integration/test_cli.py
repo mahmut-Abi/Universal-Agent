@@ -1143,6 +1143,72 @@ async def test_cli_run_rejects_non_positive_timeout() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.unit
+async def test_cli_init_model_provider_preset_writes_provider_defaults(tmp_path: Path) -> None:
+    output = StringIO()
+    profile_path = tmp_path / "preset-profile.json"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output-format",
+            "json",
+            "--output",
+            str(profile_path),
+            "--model-provider-preset",
+            "360zhinao",
+            "--model-api-key-env",
+            "OPENAI_API_KEY",
+            "--model-endpoint",
+            "https://provider.example/v1/chat/completions",
+        ],
+        stdout=output,
+    )
+    profile = ProfileConfig.from_json_file(profile_path).to_profile()
+
+    assert status == 0
+    assert profile.runtime.model == ModelConfig.openai_chat_completions(
+        name="glm-5.3-flash",
+        endpoint="https://provider.example/v1/chat/completions",
+        api_key_secret="model_api_key",
+        timeout_seconds=180.0,
+        response_format="prompt_json",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_cli_init_model_provider_preset_rejects_conflicting_format(
+    tmp_path: Path,
+) -> None:
+    output = StringIO()
+    error = StringIO()
+    profile_path = tmp_path / "preset-profile.json"
+
+    status = await run_cli(
+        [
+            "init",
+            "--output-format",
+            "json",
+            "--output",
+            str(profile_path),
+            "--model-provider-preset",
+            "360zhinao",
+            "--model-response-format",
+            "json_schema",
+            "--model-api-key-env",
+            "OPENAI_API_KEY",
+        ],
+        stdout=output,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert output.getvalue() == ""
+    assert "--model-response-format conflicts with --model-provider-preset" in error.getvalue()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_can_write_openai_chat_completions_kubectl_profile(
     tmp_path: Path,
 ) -> None:
@@ -1993,6 +2059,9 @@ async def test_cli_kubernetes_model_probe_reports_missing_model_secret(
     assert payload["error"]["type"] == "ValueError"
     assert "requires resolved api_key_secret" in payload["error"]["message"]
     assert payload["next_step"]["type"] == "fix_model_provider"
+    assert any("API key" in item for item in payload["next_step"]["try"])
+    assert any("model-timeout-seconds" in item for item in payload["next_step"]["try"])
+    assert any("model-response-format" in item for item in payload["next_step"]["try"])
 
 
 @pytest.mark.asyncio

@@ -153,6 +153,11 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
         choices=("scripted", "json_http", "openai_chat_completions", "openai_responses"),
         default="scripted",
     )
+    first_day.add_argument(
+        "--model-provider-preset",
+        choices=("360zhinao", "deepseek", "moonshot"),
+        help="Apply provider/model/response-format/timeout defaults for a known provider.",
+    )
     first_day.add_argument("--model-name", default="scripted")
     first_day.add_argument("--model-api-key-env")
     advanced_model.add_argument("--model-endpoint")

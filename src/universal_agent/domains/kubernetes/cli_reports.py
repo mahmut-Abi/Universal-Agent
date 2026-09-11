@@ -289,13 +289,7 @@ async def kubernetes_model_probe_report(
                     "type": exc.__class__.__name__,
                     "message": str(exc),
                 },
-                "next_step": {
-                    "type": "fix_model_provider",
-                    "message": (
-                        "Fix the profile model provider, credentials, response_format, "
-                        "or returned Decision JSON before running Kubernetes remediation."
-                    ),
-                },
+                "next_step": _model_probe_failure_next_step(exc),
             }
         )
     return immutable_json(
@@ -311,6 +305,40 @@ async def kubernetes_model_probe_report(
             },
         }
     )
+
+
+def _model_probe_failure_next_step(exc: Exception) -> dict[str, JsonValue]:
+    message = str(exc)
+    suggestions: list[JsonValue] = [
+        "Verify the configured model endpoint and API key secret resolve.",
+        (
+            "For OpenAI-compatible Chat Completions providers, try "
+            "`--model-response-format prompt_json`."
+        ),
+        "Increase `--model-timeout-seconds` for slow reasoning models.",
+        (
+            "Use `--model-header KEY=VALUE` for provider-required organization "
+            "or compatibility headers."
+        ),
+    ]
+    lowered = message.lower()
+    if "response_format" in lowered or "json" in lowered or "schema" in lowered:
+        suggestions.insert(
+            0,
+            "Switch response format: json_schema -> json_object -> prompt_json, then re-run probe.",
+        )
+    if "timeout" in lowered:
+        suggestions.insert(0, "Increase `--model-timeout-seconds` and retry the probe.")
+    if "api key" in lowered or "secret" in lowered or "credential" in lowered:
+        suggestions.insert(0, "Set the API key env/file secret declared in the profile.")
+    return {
+        "type": "fix_model_provider",
+        "message": (
+            "Fix the profile model provider, credentials, response_format, headers, timeout, "
+            "or returned Decision JSON before running Kubernetes remediation."
+        ),
+        "try": suggestions,
+    }
 
 
 async def kubernetes_check_report(
