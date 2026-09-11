@@ -39,7 +39,7 @@ from universal_agent.core import (
     new_action_id,
     to_json_value,
 )
-from universal_agent.domain import ActionArgumentContext, RuntimeComponents
+from universal_agent.domain import ActionArgumentContext, ActionReconcileContext, RuntimeComponents
 from universal_agent.observation import ObservationFactory
 from universal_agent.runtime.idempotency import (
     IdempotencyKey,
@@ -293,6 +293,32 @@ class ActionExecutor:
         sandbox_result = await self._check_sandbox(capability, tool, pending, emit)
         if sandbox_result is not None:
             return sandbox_result
+        idempotency_key = IdempotencyKey(pending.idempotency_key)
+        if tool.definition.side_effect is not SideEffect.NONE and self.idempotency_store.seen(
+            idempotency_key
+        ):
+            state.pending_action = None
+            lock = await self._acquire_resource_lock(session, pending, emit)
+            if isinstance(lock, ActionRejected):
+                return lock
+            try:
+                await emit(
+                    "IdempotencyChecked",
+                    pending.action_id,
+                    {
+                        "matched": True,
+                        "parameters_hash": pending.parameters_hash,
+                    },
+                )
+                return await self._reconcile_required(
+                    session,
+                    pending,
+                    capability,
+                    tool.definition,
+                    emit,
+                )
+            finally:
+                await asyncio.shield(self._release_resource_lock(lock, emit))
         version_check = await self._check_resource_version(pending, emit)
         if isinstance(version_check, ActionRejected):
             return version_check
@@ -306,11 +332,11 @@ class ActionExecutor:
         lock = await self._acquire_resource_lock(session, pending, emit)
         if isinstance(lock, ActionRejected):
             return lock
-        idempotency_key = IdempotencyKey(pending.idempotency_key)
         idempotency_recorded = False
         try:
-            # Record only after deterministic preconditions and resource locking
-            # have passed. A rejected action must not poison later retries.
+            # Record only after resource locking has passed. Rejections that
+            # happen after recording must forget the record so retries are not
+            # poisoned by local preconditions that never reached the tool.
             if tool.definition.side_effect is not SideEffect.NONE:
                 idempotency_recorded = self.idempotency_store.record(idempotency_key)
                 await emit(
@@ -325,6 +351,8 @@ class ActionExecutor:
                     return await self._reconcile_required(
                         session,
                         pending,
+                        capability,
+                        tool.definition,
                         emit,
                     )
             observed = await self._invoke(session, pending, emit)
@@ -397,9 +425,14 @@ class ActionExecutor:
         self,
         session: SessionRuntimeState,
         pending: PendingAction,
+        capability: CapabilityDefinition,
+        tool: ToolDefinition,
         emit: EmitFn,
     ) -> ActionObserved:
         state = session.state
+        reconciled = await self._reconcile_action(session, pending, capability, tool, emit)
+        if reconciled is not None:
+            return reconciled
         message = (
             "side-effecting action already has an execution record; "
             "reconcile action outcome before retry"
@@ -436,6 +469,83 @@ class ActionExecutor:
         state.observations.append(observation)
         await _emit_observation_received(observation, emit)
         return ActionObserved(pending, observation)
+
+    async def _reconcile_action(
+        self,
+        session: SessionRuntimeState,
+        pending: PendingAction,
+        capability: CapabilityDefinition,
+        tool: ToolDefinition,
+        emit: EmitFn,
+    ) -> ActionObserved | None:
+        state = session.state
+        reconcilers = self.components.action_reconcilers_for_domain(
+            _pending_domain_identity(pending)
+        )
+        if not reconcilers:
+            return None
+        current_resource_version = (
+            self.components.resource_versions.current(pending.resource_key)
+            if pending.resource_key
+            else None
+        )
+        context = ActionReconcileContext(
+            session_id=state.session_id,
+            goal=state.goal,
+            task=state.current_task,
+            pending=pending,
+            capability=capability,
+            tool=tool,
+            world=session.world(),
+            current_resource_version=current_resource_version,
+        )
+        for reconciler in reconcilers:
+            if (
+                reconciler.capability_names
+                and pending.capability not in reconciler.capability_names
+            ):
+                continue
+            try:
+                result = await reconciler.reconcile(context)
+            except Exception as exc:
+                await emit(
+                    "ActionReconcileFailed",
+                    pending.action_id,
+                    {
+                        "capability": pending.capability,
+                        "tool_name": pending.tool_name,
+                        "reconciler": reconciler.name,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    },
+                )
+                continue
+            if result is None:
+                continue
+            await emit(
+                "ActionReconciled",
+                pending.action_id,
+                {
+                    "capability": pending.capability,
+                    "tool_name": pending.tool_name,
+                    "reconciler": reconciler.name,
+                    "status": result.status.value,
+                    "error_code": None if result.error_code is None else result.error_code.value,
+                    "resource_key": pending.resource_key,
+                    "resource_version": pending.resource_version,
+                    "current_resource_version": current_resource_version,
+                },
+            )
+            if result.status is ObservationStatus.SUCCEEDED:
+                await self._update_resource_version(pending, result.output, emit)
+            observation = self._observations.from_tool_result(
+                task_id=state.current_task.id,
+                call=_tool_call(pending),
+                result=result,
+            )
+            state.observations.append(observation)
+            await _emit_observation_received(observation, emit)
+            return ActionObserved(pending, observation)
+        return None
 
     async def _check_sandbox(
         self,
@@ -662,6 +772,12 @@ def _tool_call(pending: PendingAction) -> ToolCall:
         resource_key=pending.resource_key,
         resource_version=pending.resource_version,
     )
+
+
+def _pending_domain_identity(pending: PendingAction) -> DomainIdentity | None:
+    if pending.domain_name and pending.domain_version:
+        return DomainIdentity(pending.domain_name, pending.domain_version)
+    return None
 
 
 def _action_parameters_hash(decision: Decision) -> str:

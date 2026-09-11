@@ -33,6 +33,8 @@ from universal_agent.domain.package import (
 from universal_agent.domain.runtime import (
     ActionArgumentContext,
     ActionArgumentProvider,
+    ActionReconcileContext,
+    ActionReconciler,
     ActiveDomain,
     BaseDomainRuntime,
     DeclarativeDomainRuntime,
@@ -48,6 +50,8 @@ from universal_agent.domain.runtime import (
 __all__ = [
     "ActionArgumentContext",
     "ActionArgumentProvider",
+    "ActionReconcileContext",
+    "ActionReconciler",
     "ActiveDomain",
     "AmbiguousDomainError",
     "AmbiguousDomainPackageError",

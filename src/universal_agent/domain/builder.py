@@ -9,6 +9,7 @@ from universal_agent.coordination import ResourceLockRegistry, ResourceVersionRe
 from universal_agent.core import DomainIdentity
 from universal_agent.domain.runtime import (
     ActionArgumentProvider,
+    ActionReconciler,
     ActiveDomain,
     DomainComposition,
 )
@@ -76,6 +77,7 @@ class RuntimeComponents:
     evidence_extractors: tuple[EvidenceExtractor, ...]
     task_expanders: tuple[TaskExpander, ...]
     action_argument_providers: tuple[ActionArgumentProvider, ...]
+    action_reconcilers: tuple[ActionReconciler, ...]
     evaluator_names: tuple[str, ...]
     memory_scope: str | None
     memory_store: MemoryStore
@@ -124,6 +126,14 @@ class RuntimeComponents:
         if identity is None:
             return self.action_argument_providers
         return self.domain_composition.action_argument_providers_for(identity)
+
+    def action_reconcilers_for_domain(
+        self,
+        identity: DomainIdentity | None,
+    ) -> tuple[ActionReconciler, ...]:
+        if identity is None:
+            return self.action_reconcilers
+        return self.domain_composition.action_reconcilers_for(identity)
 
 
 class RuntimeBuilder:
@@ -199,6 +209,7 @@ class RuntimeBuilder:
             evidence_extractors=composition.evidence_extractors(),
             task_expanders=composition.task_expanders(),
             action_argument_providers=composition.action_argument_providers(),
+            action_reconcilers=composition.action_reconcilers(),
             evaluator_names=composition.evaluator_names(),
             memory_scope=composition.scope,
             memory_store=memory_store,

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from universal_agent import (
+    ActionReconcileContext,
     DomainLoader,
     DomainPackageCompatibility,
     DomainPackageRegistry,
@@ -19,7 +20,9 @@ from universal_agent.core import (
     CapabilityCategory,
     CapabilityDefinition,
     JsonMapping,
+    ObservationStatus,
     ToolDefinition,
+    ToolResult,
     write_json_file,
 )
 from universal_agent.evaluation import CriteriaEvaluator
@@ -48,6 +51,27 @@ class UnknownCapabilityTool:
         return immutable_json({"healthy": True})
 
 
+class InspectWidgetReconciler:
+    name = "inspect-widget-reconciler"
+    capability_names = ("inspect_widget",)
+
+    async def reconcile(self, context: ActionReconcileContext) -> ToolResult | None:
+        if context.pending.capability != "inspect_widget":
+            return None
+        return ToolResult(
+            ObservationStatus.SUCCEEDED,
+            immutable_json({"name": context.pending.arguments.get("name"), "healthy": True}),
+        )
+
+
+class UnknownCapabilityReconciler:
+    name = "unknown-widget-reconciler"
+    capability_names = ("unknown_capability",)
+
+    async def reconcile(self, context: ActionReconcileContext) -> ToolResult | None:
+        return None
+
+
 def inspect_capability() -> CapabilityDefinition:
     return CapabilityDefinition(
         "inspect_widget",
@@ -66,6 +90,7 @@ def test_domain_runtime_spec_builds_loader_compatible_runtime() -> None:
         capabilities=(inspect_capability(),),
         tools=(InspectWidgetTool(),),
         evaluators=(CriteriaEvaluator(),),
+        action_reconcilers=(InspectWidgetReconciler(),),
     )
 
     active = DomainLoader().load(build_domain_runtime(spec))
@@ -79,6 +104,7 @@ def test_domain_runtime_spec_builds_loader_compatible_runtime() -> None:
     assert active.manifest.capability_names == ("inspect_widget",)
     assert active.manifest.evaluator_names == ("criteria",)
     assert active.tools[0].definition.required_arguments == ("name",)
+    assert active.action_reconcilers[0].name == "inspect-widget-reconciler"
 
 
 @pytest.mark.unit
@@ -108,6 +134,24 @@ def test_domain_runtime_spec_still_uses_loader_for_cross_reference_validation() 
     )
 
     with pytest.raises(DomainValidationError, match="references unknown capabilities"):
+        DomainLoader().load(runtime)
+
+
+@pytest.mark.unit
+def test_domain_loader_rejects_action_reconcilers_for_unknown_capabilities() -> None:
+    runtime = build_domain_runtime(
+        DomainRuntimeSpec(
+            name="widget",
+            version="1.0.0",
+            description="Widget inspection Domain",
+            capabilities=(inspect_capability(),),
+            tools=(InspectWidgetTool(),),
+            evaluators=(CriteriaEvaluator(),),
+            action_reconcilers=(UnknownCapabilityReconciler(),),
+        )
+    )
+
+    with pytest.raises(DomainValidationError, match=r"action reconciler .*unknown capabilities"):
         DomainLoader().load(runtime)
 
 

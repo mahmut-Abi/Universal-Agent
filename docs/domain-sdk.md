@@ -5,9 +5,9 @@ modifying the Kernel.
 
 Domain code owns domain-specific ontology, capabilities, tools, policies,
 evaluators, context providers, Evidence extractors, World updaters, task
-expanders, recovery rules and prior memory. The Kernel only consumes those
-objects through the `DomainRuntime` interface and validates them through
-`DomainLoader`.
+expanders, recovery rules, action reconcilers and prior memory. The Kernel only
+consumes those objects through the `DomainRuntime` interface and validates them
+through `DomainLoader`.
 
 ## Authoring Options
 
@@ -47,7 +47,15 @@ active = DomainLoader().load(runtime)
 
 `DomainRuntimeSpec` derives manifest capability and evaluator names from the
 concrete runtime objects. `DomainLoader` still performs cross-reference
-validation, including tool capability references and evaluator registration.
+validation, including tool capability references, evaluator registration and
+action reconciler capability references.
+
+Domains may declare action reconcilers for side-effecting capabilities. A
+reconciler receives an `ActionReconcileContext` after the Runtime finds an
+existing idempotency record for the same session/task/action parameters. It
+should observe the external resource and return a `ToolResult` only when it can
+determine the already-dispatched action outcome; returning `None` leaves the
+Runtime in the conservative `ActionReconcileRequired` path.
 
 ## Package Metadata
 
@@ -141,5 +149,7 @@ Run these quality gates before committing Domain SDK changes:
 - Domain SDK helpers must not add domain-specific branches to Kernel code.
 - Package registry install/discovery remains metadata-only.
 - Runtime activation must go through `DomainLoader`.
+- Action reconcilers may observe existing effects, but must not perform new
+  mutations while reconciling a duplicate idempotency record.
 - Tool success is not task success; Domain evaluators still decide completion.
 - Evidence and World Model updates remain runtime-owned and replayable.

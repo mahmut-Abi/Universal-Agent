@@ -31,13 +31,15 @@ from universal_agent.core import (
     EvaluationStatus,
     ExecutionStatus,
     JsonMapping,
+    ObservationStatus,
     PolicyEffect,
     SessionId,
     SideEffect,
     TaskId,
     ToolDefinition,
+    ToolResult,
 )
-from universal_agent.domain import RuntimeComponents
+from universal_agent.domain import ActionReconcileContext, RuntimeComponents
 from universal_agent.evaluation import Evaluator
 from universal_agent.evidence import EvidenceExtractor
 from universal_agent.memory import MemoryRecord
@@ -85,6 +87,19 @@ class AlwaysDuplicateIdempotencyStore:
         pass
 
 
+class ResourceVersionReconciler:
+    name = "resource-version-reconciler"
+    capability_names = ("change_setting",)
+
+    async def reconcile(self, context: ActionReconcileContext) -> ToolResult | None:
+        if context.current_resource_version != "rv-2":
+            return None
+        return ToolResult(
+            status=ObservationStatus.SUCCEEDED,
+            output=immutable_json({"changed": True, "resource_version": "rv-2"}),
+        )
+
+
 class LockedMutationEvaluator:
     name = "locked-mutation-evaluator"
 
@@ -113,10 +128,12 @@ class LockedMutationDomain:
         tool: LockedMutationTool,
         effect: PolicyEffect,
         recovery_rules: tuple[RecoveryRule, ...] = (),
+        action_reconcilers: tuple[object, ...] = (),
     ) -> None:
         self._tool = tool
         self._effect = effect
         self._recovery_rules = recovery_rules
+        self._action_reconcilers = action_reconcilers
 
     @property
     def manifest(self) -> DomainManifest:
@@ -169,6 +186,9 @@ class LockedMutationDomain:
     def recovery_rules(self) -> tuple[RecoveryRule, ...]:
         return self._recovery_rules
 
+    def action_reconcilers(self) -> tuple[object, ...]:
+        return self._action_reconcilers
+
     def memories(self) -> tuple[MemoryRecord, ...]:
         return ()
 
@@ -189,12 +209,20 @@ def build_runtime(
     *,
     tool: LockedMutationTool | None = None,
     recovery_rules: tuple[RecoveryRule, ...] = (),
+    action_reconcilers: tuple[object, ...] = (),
 ) -> tuple[
     AgentRuntime, InMemoryStateStore, InMemoryEventSink, RuntimeComponents, LockedMutationTool
 ]:
     tool = tool or LockedMutationTool()
     components = RuntimeBuilder().build(
-        DomainLoader().load(LockedMutationDomain(tool, effect, recovery_rules))
+        DomainLoader().load(
+            LockedMutationDomain(
+                tool,
+                effect,
+                recovery_rules,
+                action_reconcilers,
+            )
+        )
     )
     store = InMemoryStateStore()
     events = InMemoryEventSink()
@@ -284,6 +312,27 @@ async def test_duplicate_idempotency_record_requires_reconcile_without_reexecuti
     assert observation.data["status"] == "unknown"
     assert observation.data["error_code"] == ErrorCode.UNKNOWN_EXECUTION.value
     assert "reconcile" in str(observation.data["error"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_duplicate_idempotency_record_reconciles_observed_success() -> None:
+    runtime, _, events, components, tool = build_runtime(
+        PolicyEffect.ALLOW,
+        action_reconcilers=(ResourceVersionReconciler(),),
+    )
+    runtime._actions.idempotency_store = AlwaysDuplicateIdempotencyStore()
+    components.resource_versions.set_current("setting/example", "rv-2")
+
+    result = await runtime.run(*goal_task())
+    event_types = [event.type for event in events.events]
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert tool.calls == 0
+    assert "ActionStarted" not in event_types
+    assert "ActionReconciled" in event_types
+    assert "ActionReconcileRequired" not in event_types
+    assert components.resource_versions.current("setting/example") == "rv-2"
 
 
 @pytest.mark.asyncio

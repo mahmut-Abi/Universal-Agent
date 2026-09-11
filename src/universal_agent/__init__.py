@@ -67,6 +67,8 @@ from universal_agent.distributed import (
     build_distributed_runtime_snapshot,
 )
 from universal_agent.domain import (
+    ActionReconcileContext,
+    ActionReconciler,
     AmbiguousDomainPackageError,
     BaseDomainRuntime,
     DeclarativeDomainRuntime,
@@ -362,6 +364,8 @@ from universal_agent.tools import Tool
 
 __all__ = [
     "AGENT_TASK_API_VERSION",
+    "ActionReconcileContext",
+    "ActionReconciler",
     "AgentActionProposal",
     "AgentConflictResolver",
     "AgentDelegationBatchResult",

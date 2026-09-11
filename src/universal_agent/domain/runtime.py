@@ -18,9 +18,11 @@ from universal_agent.core import (
     DomainMetadata,
     Goal,
     JsonMapping,
+    PendingAction,
     SessionId,
     Task,
     ToolDefinition,
+    ToolResult,
     immutable_json,
     read_json_file,
 )
@@ -62,6 +64,28 @@ class ActionArgumentProvider(Protocol):
     def capability_names(self) -> tuple[str, ...]: ...
 
     def provide(self, context: ActionArgumentContext) -> JsonMapping: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ActionReconcileContext:
+    session_id: SessionId
+    goal: Goal
+    task: Task
+    pending: PendingAction
+    capability: CapabilityDefinition
+    tool: ToolDefinition
+    world: WorldSnapshot
+    current_resource_version: str | None = None
+
+
+class ActionReconciler(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def capability_names(self) -> tuple[str, ...]: ...
+
+    async def reconcile(self, context: ActionReconcileContext) -> ToolResult | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +172,9 @@ class BaseDomainRuntime:
     def action_argument_providers(self) -> tuple[ActionArgumentProvider, ...]:
         return ()
 
+    def action_reconcilers(self) -> tuple[ActionReconciler, ...]:
+        return ()
+
     def memories(self) -> tuple[MemoryRecord, ...]:
         return ()
 
@@ -165,6 +192,7 @@ class ActiveDomain:
     task_expanders: tuple[TaskExpander, ...]
     recovery_rules: tuple[RecoveryRule, ...]
     action_argument_providers: tuple[ActionArgumentProvider, ...]
+    action_reconcilers: tuple[ActionReconciler, ...]
     memories: tuple[MemoryRecord, ...]
 
     @property
@@ -257,6 +285,16 @@ class DomainComposition:
     ) -> tuple[ActionArgumentProvider, ...]:
         domain = self.domain_for(identity)
         return () if domain is None else domain.action_argument_providers
+
+    def action_reconcilers(self) -> tuple[ActionReconciler, ...]:
+        return tuple(item for domain in self.domains for item in domain.action_reconcilers)
+
+    def action_reconcilers_for(
+        self,
+        identity: DomainIdentity,
+    ) -> tuple[ActionReconciler, ...]:
+        domain = self.domain_for(identity)
+        return () if domain is None else domain.action_reconcilers
 
     def recovery_rules(self) -> tuple[RecoveryRule, ...]:
         return tuple(item for domain in self.domains for item in domain.recovery_rules)
@@ -390,6 +428,7 @@ class DomainRuntimeSpec:
     task_expanders: tuple[TaskExpander, ...] = ()
     recovery_rules: tuple[RecoveryRule, ...] = ()
     action_argument_providers: tuple[ActionArgumentProvider, ...] = ()
+    action_reconcilers: tuple[ActionReconciler, ...] = ()
     memories: tuple[MemoryRecord, ...] = ()
 
     def __post_init__(self) -> None:
@@ -438,6 +477,10 @@ class DomainRuntimeSpec:
         _validate_domain_spec_names(
             "action_argument_providers",
             tuple(provider.name for provider in self.action_argument_providers),
+        )
+        _validate_domain_spec_names(
+            "action_reconcilers",
+            tuple(reconciler.name for reconciler in self.action_reconcilers),
         )
         _validate_domain_spec_names(
             "memories",
@@ -516,6 +559,9 @@ class DeclarativeDomainRuntime(BaseDomainRuntime):
     def action_argument_providers(self) -> tuple[ActionArgumentProvider, ...]:
         return self._spec.action_argument_providers
 
+    def action_reconcilers(self) -> tuple[ActionReconciler, ...]:
+        return self._spec.action_reconcilers
+
     def memories(self) -> tuple[MemoryRecord, ...]:
         return self._spec.memories
 
@@ -572,6 +618,7 @@ class DomainLoader:
         expanders = domain.task_expanders()
         recovery_rules = domain.recovery_rules()
         action_argument_providers = _action_argument_providers(domain)
+        action_reconcilers = _action_reconcilers(domain)
         memories = domain.memories()
         self._validate(
             manifest,
@@ -581,6 +628,7 @@ class DomainLoader:
             expanders,
             recovery_rules,
             action_argument_providers,
+            action_reconcilers,
             memories,
         )
         return ActiveDomain(
@@ -595,6 +643,7 @@ class DomainLoader:
             expanders,
             recovery_rules,
             action_argument_providers,
+            action_reconcilers,
             memories,
         )
 
@@ -607,6 +656,7 @@ class DomainLoader:
         expanders: tuple[TaskExpander, ...],
         recovery_rules: tuple[RecoveryRule, ...],
         action_argument_providers: tuple[ActionArgumentProvider, ...],
+        action_reconcilers: tuple[ActionReconciler, ...],
         memories: tuple[MemoryRecord, ...],
     ) -> None:
         if manifest.api_version != "agent.nantian.dev/v1alpha1" or manifest.kind != "Domain":
@@ -646,6 +696,13 @@ class DomainLoader:
                 raise DomainValidationError(
                     f"action argument provider {provider.name} references unknown "
                     f"capabilities: {names}"
+                )
+        for reconciler in action_reconcilers:
+            unknown = set(reconciler.capability_names) - capability_names
+            if unknown:
+                names = ", ".join(sorted(unknown))
+                raise DomainValidationError(
+                    f"action reconciler {reconciler.name} references unknown capabilities: {names}"
                 )
         for rule in recovery_rules:
             if (
@@ -700,3 +757,12 @@ def _action_argument_providers(domain: DomainRuntime) -> tuple[ActionArgumentPro
     if not callable(method):
         raise DomainValidationError("domain action_argument_providers must be callable")
     return tuple(cast(tuple[ActionArgumentProvider, ...], method()))
+
+
+def _action_reconcilers(domain: DomainRuntime) -> tuple[ActionReconciler, ...]:
+    method = getattr(domain, "action_reconcilers", None)
+    if method is None:
+        return ()
+    if not callable(method):
+        raise DomainValidationError("domain action_reconcilers must be callable")
+    return tuple(cast(tuple[ActionReconciler, ...], method()))
