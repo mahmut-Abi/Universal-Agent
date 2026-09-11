@@ -200,6 +200,11 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
         help="Compile the goal description into the initial runtime task graph.",
     )
     run.add_argument(
+        "--timeout-seconds",
+        type=float,
+        help="Pause at the next clean runtime boundary after this wall-clock budget expires.",
+    )
+    run.add_argument(
         "--success",
         action="append",
         default=[],

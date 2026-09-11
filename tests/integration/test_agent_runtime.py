@@ -109,6 +109,18 @@ class SequenceTool:
         return next(self._outputs)
 
 
+class SlowDecisionAdapter:
+    def __init__(self, decision: Decision, *, delay_seconds: float = 0.02) -> None:
+        self._decision = decision
+        self._delay_seconds = delay_seconds
+        self.contexts: list[object] = []
+
+    async def decide(self, context: object) -> Decision:
+        self.contexts.append(context)
+        await asyncio.sleep(self._delay_seconds)
+        return self._decision
+
+
 class CancellableTool:
     def __init__(self) -> None:
         self.definition = ToolDefinition(
@@ -706,6 +718,34 @@ async def test_normal_loop_requires_evaluator_before_finish() -> None:
     assert started.data["attempt"] == resolved.data["attempt"]
     assert started.data["parameters_hash"] == resolved.data["parameters_hash"]
     assert started.data["idempotency_key"] == resolved.data["idempotency_key"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_wall_clock_budget_pauses_at_decision_boundary() -> None:
+    backend = FakeKubernetesBackend([True])
+    active = DomainLoader().load(KubernetesDomain(backend))
+    components = RuntimeBuilder().build(active)
+    events = InMemoryEventSink()
+    store = InMemoryStateStore()
+    runtime = AgentRuntime(
+        model=SlowDecisionAdapter(execute_probe()),
+        state_store=store,
+        components=components,
+        event_sink=events,
+    )
+
+    result = await runtime.run(*health_goal_and_task(), timeout_seconds=0.001)
+    snapshot = await store.load_session(result.session_id)
+    event_types = [event.type for event in events.events]
+
+    assert result.status is ExecutionStatus.WAITING
+    assert result.reason == "wall-clock budget expired; session paused at runtime boundary"
+    assert snapshot.state.goal.status is GoalStatus.WAITING
+    assert backend.calls == 0
+    assert "DecisionGenerated" in event_types
+    assert "SessionPaused" in event_types
+    assert "ActionStarted" not in event_types
 
 
 @pytest.mark.asyncio

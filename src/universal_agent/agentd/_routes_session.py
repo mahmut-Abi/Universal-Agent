@@ -110,10 +110,17 @@ class SessionRouteHandlers:
                 if profile_error is not None:
                     return bad_request(profile_error)
             if submission.compile_goal:
-                run = await self._service.run_compiled_goal(submission.goal)
+                run = await self._service.run_compiled_goal(
+                    submission.goal,
+                    timeout_seconds=submission.timeout_seconds,
+                )
             else:
                 assert submission.task is not None
-                run = await self._service.run_goal(submission.goal, submission.task)
+                run = await self._service.run_goal(
+                    submission.goal,
+                    submission.task,
+                    timeout_seconds=submission.timeout_seconds,
+                )
             return json_response(runtime_run_body(run), status_code=201)
 
         session_id = SessionId(route.path_params["session_id"])

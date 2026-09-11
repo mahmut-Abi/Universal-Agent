@@ -205,12 +205,14 @@ class RuntimeAPI:
         *,
         initial_state: JsonMapping | None = None,
         read_only: bool = False,
+        timeout_seconds: float | None = None,
     ) -> RuntimeRun:
         result = await self._runtime.run(
             goal,
             task,
             initial_state=initial_state,
             read_only=read_only,
+            timeout_seconds=timeout_seconds,
         )
         return RuntimeRun(result, await self.get_session(result.session_id))
 
@@ -220,11 +222,13 @@ class RuntimeAPI:
         *,
         initial_state: JsonMapping | None = None,
         read_only: bool = False,
+        timeout_seconds: float | None = None,
     ) -> RuntimeRun:
         result = await self._runtime.run_compiled(
             goal,
             initial_state=initial_state,
             read_only=read_only,
+            timeout_seconds=timeout_seconds,
         )
         return RuntimeRun(result, await self.get_session(result.session_id))
 

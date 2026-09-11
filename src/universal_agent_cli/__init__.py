@@ -413,14 +413,15 @@ async def _dispatch_run(
     profile = _resolve_run_profile(args, service)
     criteria = _success_criteria(cast(list[str], args.success))
     goal = Goal(cast(str, args.goal), criteria)
+    timeout_seconds = _run_timeout_seconds(args)
     started = time.monotonic()
     if cast(bool, args.compile_goal):
         if cast(str | None, args.task) is not None:
             raise ValueError("--task cannot be used with --compile-goal")
-        run = await service.run_compiled_goal(goal)
+        run = await service.run_compiled_goal(goal, timeout_seconds=timeout_seconds)
     else:
         task = Task(cast(str | None, args.task) or "Run goal", tuple(item.key for item in criteria))
-        run = await service.run_goal(goal, task)
+        run = await service.run_goal(goal, task, timeout_seconds=timeout_seconds)
     duration_seconds = time.monotonic() - started
     body = runtime_run_body(run)
     if cast(str, args.output) == "json":
@@ -436,6 +437,15 @@ async def _dispatch_run(
             profile=profile,
         ),
     )
+
+
+def _run_timeout_seconds(args: argparse.Namespace) -> float | None:
+    value = cast(float | None, getattr(args, "timeout_seconds", None))
+    if value is None:
+        return None
+    if value <= 0:
+        raise ValueError("--timeout-seconds must be greater than 0")
+    return value
 
 
 def _resolve_run_profile(args: argparse.Namespace, service: RuntimeService) -> str | None:

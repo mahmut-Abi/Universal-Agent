@@ -746,6 +746,11 @@ async def _dispatch_remote_run(
             "description": cast(str | None, args.task) or "Run goal",
             "required_criteria": [item.key for item in criteria],
         }
+    timeout_seconds = cast(float | None, getattr(args, "timeout_seconds", None))
+    if timeout_seconds is not None:
+        if timeout_seconds <= 0:
+            raise ValueError("--timeout-seconds must be greater than 0")
+        body["timeout_seconds"] = timeout_seconds
     started = time.monotonic()
     payload = await client.post_json("/v1/sessions", body=body)
     duration_seconds = time.monotonic() - started

@@ -272,7 +272,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - Contract report marks `finish_contract` verified or explicitly unverified.
   - Docs explain provider limitations.
 
-### [ ] UA-P1-007 — Add CLI wall-clock budget and clean boundary stop
+### [x] UA-P1-007 — Add CLI wall-clock budget and clean boundary stop
 
 - Priority: P1
 - Area: CLI / Runtime / Recovery
@@ -654,7 +654,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 - [x] UA-P1-004 — Re-confirm or fix Kubernetes evidence claim granularity collision
 - [x] UA-P1-005 — Normalize or cheaply recover invalid model `finish` decisions
 - [x] UA-P1-006 — Extend model probe to cover `finish` contract
-- [ ] UA-P1-007 — Add CLI wall-clock budget and clean boundary stop
+- [x] UA-P1-007 — Add CLI wall-clock budget and clean boundary stop
 - [ ] UA-P1-008 — Add human-readable confirmation banner
 - [ ] UA-P1-009 — Add model provider presets and better probe failure advice
 
@@ -697,4 +697,5 @@ Add entries here when items are completed.
 2026-09-11 UA-P1-002 completed: added opt-in live-like kind/minikube contract coverage that provisions unhealthy zero-replica Deployments in temporary namespaces, verifies the production policy confirmation boundary, and includes a staging path that applies bounded remediation and asserts fresh `completion_verification=ok`; skips cleanly unless explicitly enabled against a kind/minikube context. Evidence: `uv run ruff check tests/live/test_kubernetes_kind_contract.py`; `uv run pytest tests/live/test_kubernetes_kind_contract.py -q` (clean skip without opt-in). Main file: tests/live/test_kubernetes_kind_contract.py.
 2026-09-11 UA-P1-005 completed: added shared deterministic normalization for FINISH decisions that echo action fields at the provider decision-codec seam plus a runtime-side guard for direct/custom adapters, preserving strict validation for other decision types and keeping completion gated by evaluator state. Evidence: `uv run ruff check src/universal_agent/model/decision_codec.py src/universal_agent/runtime/decision.py src/universal_agent/runtime/agent.py tests/unit/test_model_http.py tests/integration/test_agent_runtime.py`; `uv run pytest tests/unit/test_model_http.py tests/integration/test_agent_runtime.py -q`. Main files: src/universal_agent/model/decision_codec.py, src/universal_agent/runtime/decision.py, src/universal_agent/runtime/agent.py, tests/unit/test_model_http.py, tests/integration/test_agent_runtime.py.
 2026-09-11 UA-P1-006 completed: production contract reports `finish_contract` explicitly unverified for the execute-only Kubernetes model probe instead of implying full finish-decision coverage; provider finish quirks are handled by UA-P1-005 normalization. Evidence: `uv run ruff check src/universal_agent/domains/kubernetes/production_contract.py tests/unit/test_kubernetes_production_contract_payloads.py tests/integration/test_kubernetes_production_contract.py`; `uv run pytest tests/unit/test_kubernetes_production_contract_payloads.py tests/integration/test_kubernetes_production_contract.py -q`. Main files: src/universal_agent/domains/kubernetes/production_contract.py, tests/unit/test_kubernetes_production_contract_payloads.py.
+2026-09-11 UA-P1-007 completed: added `agent run --timeout-seconds` wall-clock budget wiring through CLI, agentd submission, RuntimeService/RuntimeAPI, and AgentRuntime; expired budgets pause at the next clean runtime decision boundary instead of relying on external process kills. Evidence: `uv run ruff check src/universal_agent/runtime/agent.py src/universal_agent/runtime/api.py src/universal_agent/service/runtime.py src/universal_agent/agentd/http.py src/universal_agent/agentd/_routes_session.py src/universal_agent_cli/parser.py src/universal_agent_cli/__init__.py src/universal_agent_cli/agentd.py tests/integration/test_agent_runtime.py tests/integration/test_cli.py tests/unit/test_agentd_http_config.py`; `uv run mypy src/universal_agent/runtime/agent.py src/universal_agent/runtime/api.py src/universal_agent/service/runtime.py src/universal_agent/agentd/http.py src/universal_agent/agentd/_routes_session.py src/universal_agent_cli/__init__.py src/universal_agent_cli/agentd.py`; `uv run pytest tests/integration/test_agent_runtime.py tests/integration/test_cli.py tests/unit/test_agentd_http_config.py -q`. Main files: src/universal_agent/runtime/agent.py, src/universal_agent/runtime/api.py, src/universal_agent/service/runtime.py, src/universal_agent/agentd/http.py, src/universal_agent/agentd/_routes_session.py, src/universal_agent_cli/{parser.py,__init__.py,agentd.py}, tests/integration/{test_agent_runtime.py,test_cli.py}, tests/unit/test_agentd_http_config.py.
 ```

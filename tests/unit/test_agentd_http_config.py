@@ -5,6 +5,8 @@ from typing import cast
 import pytest
 
 from universal_agent.agentd import AgentdAuthPolicy, AgentdServerConfig
+from universal_agent.agentd.http import parse_goal_submission
+from universal_agent.core import immutable_json
 
 
 @pytest.mark.unit
@@ -39,3 +41,37 @@ def test_agentd_auth_policy_validates_tokens_and_public_paths() -> None:
         AgentdAuthPolicy(public_paths=("health",))
     with pytest.raises(ValueError, match="agentd public paths must be absolute non-empty paths"):
         AgentdAuthPolicy(public_paths=cast(tuple[str, ...], (1,)))
+
+
+@pytest.mark.unit
+def test_parse_goal_submission_preserves_timeout_seconds() -> None:
+    submission = parse_goal_submission(
+        immutable_json(
+            {
+                "goal": {
+                    "description": "Verify workload health",
+                    "success_criteria": [{"key": "healthy", "expected": True}],
+                },
+                "task": {"description": "Inspect workload", "required_criteria": ["healthy"]},
+                "timeout_seconds": 1.5,
+            }
+        )
+    )
+
+    assert submission.timeout_seconds == 1.5
+
+
+def test_parse_goal_submission_rejects_non_positive_timeout_seconds() -> None:
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        parse_goal_submission(
+            immutable_json(
+                {
+                    "goal": {
+                        "description": "Verify workload health",
+                        "success_criteria": [{"key": "healthy", "expected": True}],
+                    },
+                    "task": {"description": "Inspect workload", "required_criteria": []},
+                    "timeout_seconds": 0,
+                }
+            )
+        )

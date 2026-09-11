@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -165,6 +166,7 @@ class AgentRuntime:
         *,
         initial_state: JsonMapping | None = None,
         read_only: bool = False,
+        timeout_seconds: float | None = None,
     ) -> ExecutionResult:
         if self._goal_compiler is not None:
             compilation = await self._goal_compiler.compile(goal)
@@ -173,8 +175,15 @@ class AgentRuntime:
                 compilation,
                 initial_state=initial_state,
                 read_only=read_only,
+                timeout_seconds=timeout_seconds,
             )
-        return await self._start_run(goal, task, initial_state=initial_state, read_only=read_only)
+        return await self._start_run(
+            goal,
+            task,
+            initial_state=initial_state,
+            read_only=read_only,
+            timeout_seconds=timeout_seconds,
+        )
 
     async def run_compiled(
         self,
@@ -182,6 +191,7 @@ class AgentRuntime:
         *,
         initial_state: JsonMapping | None = None,
         read_only: bool = False,
+        timeout_seconds: float | None = None,
     ) -> ExecutionResult:
         compilation = await DefaultGoalCompiler().compile(goal)
         return await self._run_compilation(
@@ -189,6 +199,7 @@ class AgentRuntime:
             compilation,
             initial_state=initial_state,
             read_only=read_only,
+            timeout_seconds=timeout_seconds,
         )
 
     async def _run_compilation(
@@ -198,6 +209,7 @@ class AgentRuntime:
         *,
         initial_state: JsonMapping | None,
         read_only: bool,
+        timeout_seconds: float | None,
     ) -> ExecutionResult:
         tasks = TaskManager.from_specs(compilation.initial_tasks)
         return await self._start_run(
@@ -207,6 +219,7 @@ class AgentRuntime:
             read_only=read_only,
             tasks=tasks,
             compilation=compilation,
+            timeout_seconds=timeout_seconds,
         )
 
     async def _start_run(
@@ -218,6 +231,7 @@ class AgentRuntime:
         read_only: bool = False,
         tasks: TaskManager | None = None,
         compilation: GoalCompilation | None = None,
+        timeout_seconds: float | None = None,
     ) -> ExecutionResult:
         state = AgentState(
             session_id=new_session_id(),
@@ -266,7 +280,8 @@ class AgentRuntime:
             session,
             self._events.runtime_event(state, "StateUpdated"),
         )
-        return await self._run_controlled(session)
+        deadline = None if timeout_seconds is None else time.monotonic() + timeout_seconds
+        return await self._run_controlled(session, deadline=deadline)
 
     async def resume(
         self,
@@ -412,9 +427,17 @@ class AgentRuntime:
             )
         return await self._settle(session, cancel_transition(session, reason))
 
-    async def _loop(self, session: SessionRuntimeState) -> ExecutionResult:
+    async def _loop(
+        self,
+        session: SessionRuntimeState,
+        *,
+        deadline: float | None = None,
+    ) -> ExecutionResult:
         state = session.state
         while state.iteration < self._max_iterations:
+            budget_pause = await self._pause_if_budget_expired(session, deadline)
+            if budget_pause is not None:
+                return budget_pause
             requested = await self._requested_control_transition(session)
             if requested is not None:
                 return requested
@@ -494,6 +517,9 @@ class AgentRuntime:
                             f"token limit reached: {current} >= {limit}",
                         ),
                     )
+            budget_pause = await self._pause_if_budget_expired(session, deadline)
+            if budget_pause is not None:
+                return budget_pause
             decision = normalize_runtime_decision(decision)
             try:
                 decision.validate()
@@ -553,6 +579,22 @@ class AgentRuntime:
                 session,
                 ErrorCode.ITERATION_LIMIT,
                 f"maximum iterations reached: {self._max_iterations}",
+            ),
+        )
+
+    async def _pause_if_budget_expired(
+        self,
+        session: SessionRuntimeState,
+        deadline: float | None,
+    ) -> ExecutionResult | None:
+        if deadline is None or time.monotonic() < deadline:
+            return None
+        return await self._settle(
+            session,
+            pause_transition(
+                session,
+                "wall-clock budget expired; session paused at runtime boundary",
+                event_type="SessionPaused",
             ),
         )
 
@@ -674,10 +716,15 @@ class AgentRuntime:
             self._session_controls[session_id] = control
         return control
 
-    async def _run_controlled(self, session: SessionRuntimeState) -> ExecutionResult:
+    async def _run_controlled(
+        self,
+        session: SessionRuntimeState,
+        *,
+        deadline: float | None = None,
+    ) -> ExecutionResult:
         control = self._control_for(session.state.session_id)
         async with control.lock:
-            return await self._continue_controlled(session, control)
+            return await self._continue_controlled(session, control, deadline=deadline)
 
     async def _continue_controlled(
         self,
@@ -686,6 +733,7 @@ class AgentRuntime:
         *,
         decision: Decision | None = None,
         pending: PendingAction | None = None,
+        deadline: float | None = None,
     ) -> ExecutionResult:
         current = asyncio.current_task()
         control.active_task = current
@@ -697,7 +745,7 @@ class AgentRuntime:
                 result = await self._drive(session, decision=decision, pending=pending)
                 if result is not None:
                     return result
-            return await self._loop(session)
+            return await self._loop(session, deadline=deadline)
         except asyncio.CancelledError:
             if control.cancel_requested:
                 return await self._settle(

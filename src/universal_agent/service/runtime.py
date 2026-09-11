@@ -483,12 +483,14 @@ class RuntimeService:
         *,
         initial_state: JsonMapping | None = None,
         read_only: bool = False,
+        timeout_seconds: float | None = None,
     ) -> RuntimeRun:
         return await self._runtime_api.run_goal(
             goal,
             task,
             initial_state=initial_state,
             read_only=read_only,
+            timeout_seconds=timeout_seconds,
         )
 
     async def run_compiled_goal(
@@ -497,11 +499,13 @@ class RuntimeService:
         *,
         initial_state: JsonMapping | None = None,
         read_only: bool = False,
+        timeout_seconds: float | None = None,
     ) -> RuntimeRun:
         return await self._runtime_api.run_compiled_goal(
             goal,
             initial_state=initial_state,
             read_only=read_only,
+            timeout_seconds=timeout_seconds,
         )
 
     async def resume_session(

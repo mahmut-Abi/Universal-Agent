@@ -62,6 +62,7 @@ class GoalSubmission:
     task: Task | None
     profile_name: str | None = None
     compile_goal: bool = False
+    timeout_seconds: float | None = None
 
 
 class _SuccessCriterionPayload(ConfigPayload):
@@ -84,6 +85,7 @@ class _GoalSubmissionPayload(ConfigPayload):
     task: _TaskPayload | None = None
     profile: PydanticNonEmptyString | None = None
     compile_goal: bool = False
+    timeout_seconds: float | None = Field(default=None, gt=0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,11 +247,11 @@ def parse_goal_submission(body: JsonMapping) -> GoalSubmission:
     if payload.compile_goal:
         if task_payload is not None:
             raise ValueError("task must be omitted when compile_goal is true")
-        return GoalSubmission(goal, None, payload.profile, True)
+        return GoalSubmission(goal, None, payload.profile, True, payload.timeout_seconds)
     if task_payload is None:
         raise ValueError("task is required")
     task = Task(task_payload.description, tuple(task_payload.required_criteria))
-    return GoalSubmission(goal, task, payload.profile, False)
+    return GoalSubmission(goal, task, payload.profile, False, payload.timeout_seconds)
 
 
 def _parse_goal_submission_payload(body: JsonMapping) -> _GoalSubmissionPayload:

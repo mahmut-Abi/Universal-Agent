@@ -1122,6 +1122,27 @@ async def test_cli_config_validate_requires_profile_config() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.unit
+async def test_cli_run_rejects_non_positive_timeout() -> None:
+    output = StringIO()
+    error = StringIO()
+
+    status = await run_cli(
+        ["run", "production-operator", "Verify workload health", "--timeout-seconds", "0"],
+        service=build_cli_service([])[0],
+        stdout=output,
+        stderr=error,
+    )
+    payload = read_json(error)
+
+    assert status == 2
+    assert output.getvalue() == ""
+    assert payload["error"]["code"] == "bad_request"
+    assert "--timeout-seconds must be greater than 0" in payload["error"]["message"]
+    assert payload["error"]["try"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
 async def test_cli_init_can_write_openai_chat_completions_kubectl_profile(
     tmp_path: Path,
 ) -> None:
