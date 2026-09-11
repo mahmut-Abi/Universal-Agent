@@ -87,14 +87,48 @@ def render_run_text(
     if status == "failed":
         lines.append(f"Reason: {reason}")
     if status == "waiting" and isinstance(pending_action, dict):
-        capability = str(pending_action.get("capability") or "action")
-        lines.append(f"Pending: {capability} requires human confirmation")
-        lines.append(f"Next: agent session resume {session_id} --confirmed true")
+        lines.extend(_confirmation_banner_lines(pending_action, session_id, reason))
     elif status == "waiting":
         lines.append("Next: agent session resume " + session_id)
     if status == "failed":
         lines.append("Next: agent doctor")
     return "\n".join(lines) + "\n"
+
+
+def _confirmation_banner_lines(
+    pending_action: JsonMapping,
+    session_id: str,
+    reason: str,
+) -> list[str]:
+    capability = str(pending_action.get("capability") or "action")
+    target = str(pending_action.get("target") or "target")
+    arguments = pending_action.get("arguments")
+    argument_map = arguments if isinstance(arguments, dict) else {}
+    before = _first_present(argument_map, ("current_replicas", "previous_replicas"))
+    after = _first_present(argument_map, ("replicas", "desired_replicas"))
+    lines = [
+        "Confirmation Required",
+        f"Pending: {capability}",
+        f"Target: {target}",
+    ]
+    if before or after:
+        lines.append(f"Before/after: {before or '?'} -> {after or '?'}")
+    lines.extend(
+        [
+            f"Reason: {reason or 'runtime policy requires explicit confirmation'}",
+            "Risk: guarded mutation; Runtime policy paused before execution",
+            f"Resume: agent session resume {session_id} --confirmed true",
+        ]
+    )
+    return lines
+
+
+def _first_present(values: JsonMapping, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = values.get(key)
+        if value is not None:
+            return str(value)
+    return ""
 
 
 def render_session_list_text(batch_body: JsonMapping) -> str:
@@ -155,8 +189,10 @@ def render_session_show_text(
         lines.append(f"  Terminal reason: {termination}")
     pending = session_body.get("pending_action")
     if isinstance(pending, dict):
-        capability = str(pending.get("capability") or "action")
-        lines.append(f"  Pending: {capability} requires human confirmation")
+        lines.extend(
+            f"  {line}"
+            for line in _confirmation_banner_lines(pending, session_id, termination)
+        )
     lines.extend(["", "What happened"])
     if raw_status == "completed":
         summary = termination or "success criteria satisfied"
@@ -172,7 +208,7 @@ def render_session_show_text(
     if events:
         lines.append("  Raw timeline: agent session events " + session_id)
     if isinstance(pending, dict):
-        lines.append(f"  Next: agent session resume {session_id} --confirmed true")
+        pass
     elif raw_status in {"failed", "waiting"}:
         lines.append(f"  Next: agent session explain {session_id}")
     return "\n".join(lines) + "\n"

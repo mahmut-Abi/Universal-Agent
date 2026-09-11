@@ -210,7 +210,11 @@ def test_render_run_text_masks_nothing_but_shows_counts_and_next_steps() -> None
         },
         "session": {
             "goal_description": "restart deployment",
-            "pending_action": {"capability": "scale_workload"},
+            "pending_action": {
+                "capability": "scale_workload",
+                "target": "deployment/api",
+                "arguments": {"current_replicas": 3, "replicas": 2},
+            },
         },
     }
     events_body: dict[str, JsonValue] = {
@@ -230,7 +234,13 @@ def test_render_run_text_masks_nothing_but_shows_counts_and_next_steps() -> None
     assert "Steps: 3" in rendered
     assert "Tool calls: 2" in rendered
     assert "Evidence: 1" in rendered
-    assert "agent session resume session-1 --confirmed true" in rendered
+    assert "Confirmation Required" in rendered
+    assert "Pending: scale_workload" in rendered
+    assert "Target: deployment/api" in rendered
+    assert "Before/after: 3 -> 2" in rendered
+    assert "Reason: waiting for confirmation" in rendered
+    assert "Risk: guarded mutation" in rendered
+    assert "Resume: agent session resume session-1 --confirmed true" in rendered
 
 
 def test_render_run_text_reports_failed_status() -> None:

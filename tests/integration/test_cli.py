@@ -2152,6 +2152,36 @@ async def test_cli_kubernetes_run_submits_production_workload_goal() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_cli_run_text_renders_scale_confirmation_banner() -> None:
+    service, backend = build_cli_service(
+        [inspect_workload(), scale_workload(namespace="default")],
+        backend=UnhealthyCliBackend(),
+        environment="production",
+    )
+    output = StringIO()
+
+    status = await run_cli(
+        ["run", "production-operator", "Verify workload health"],
+        service=service,
+        stdout=output,
+    )
+    rendered = output.getvalue()
+
+    assert status == 0
+    assert "Status: waiting" in rendered
+    assert "Confirmation Required" in rendered
+    assert "Pending: scale_workload" in rendered
+    assert "Target: deployment/example" in rendered
+    assert "Before/after: 3 -> 3" in rendered
+    assert "Reason: production workload scaling requires confirmation" in rendered
+    assert "Risk: guarded mutation" in rendered
+    assert "Resume: agent session resume" in rendered
+    assert "--confirmed true" in rendered
+    assert backend.mutation_calls == 0
+
+
+@pytest.mark.asyncio
 @pytest.mark.contract
 async def test_cli_kubernetes_run_unhealthy_workload_reaches_confirmation() -> None:
     service, backend = build_cli_service(
