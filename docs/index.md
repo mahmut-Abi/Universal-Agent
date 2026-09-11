@@ -58,6 +58,7 @@ Use these when changing Kernel, Domain, SDK, or test behavior:
 - [Developer Guide](developer-guide.md): setup, tests, examples, and contribution workflow.
 - [Domain SDK](domain-sdk.md): Domain authoring interfaces, package metadata and validation.
 - [Dependency Adoption Plan](dependency-adoption-plan.md): third-party library introduction plan, tiers, and roadmap.
+- [Security Production Decisions](security-production-decisions.md): deferred AuthN/AuthZ, tenancy, secret-provider, audit-storage, and package-trust decisions.
 
 ### Advanced / Deferred Surfaces
 

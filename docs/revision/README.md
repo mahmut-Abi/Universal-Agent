@@ -491,7 +491,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - Model probe docs explain what is verified and what is not.
   - Recommended fallback settings are documented.
 
-### [ ] UA-DOC-005 — Add security production decision document
+### [x] UA-DOC-005 — Add security production decision document
 
 - Priority: P3
 - Area: Docs / Security / Production
@@ -668,7 +668,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 ## Sprint 5 — Production Decisions
 
-- [ ] UA-DOC-005 — Add security production decision document
+- [x] UA-DOC-005 — Add security production decision document
 - [ ] UA-PROD-001 — Execute Postgres adapter and outbox against chosen topology
 - [ ] UA-PROD-002 — Select broker and implement event signal adapter
 - [ ] UA-PROD-003 — Define and implement enterprise AuthN/AuthZ and tenant boundaries
@@ -707,4 +707,5 @@ Add entries here when items are completed.
 2026-09-11 UA-DOC-002 completed: verified `docs/RUNTIME_CONTRACT.md` documents Goal/Task/Decision/Action/Observation/Evidence/Policy/Evaluation/Session/Domain/Profile ownership and invariants, and README links CLI/API/Web/agentd users back to that contract. Evidence: `docs/RUNTIME_CONTRACT.md` scan and repository reference grep. Main files: docs/RUNTIME_CONTRACT.md, README.md, docs/revision/README.md.
 2026-09-11 UA-DOC-004 completed: verified model-provider docs explain `json_schema`, `json_object`, `prompt_json`, OpenAI-compatible endpoint caveats, model-probe scope, and fallback settings such as `prompt_json`, headers, and timeout. Evidence: grep across docs/runtime-operator-guide.md, docs/kubernetes-production-run-spec.md, docs/kubernetes-production-slice-spec.md, docs/kubernetes-live-operator-runbook.md. Main files: docs/runtime-operator-guide.md, docs/kubernetes-production-run-spec.md, docs/kubernetes-production-slice-spec.md, docs/kubernetes-live-operator-runbook.md, docs/revision/README.md.
 2026-09-11 UA-DOC-003 completed: `docs/index.md` now routes readers by New Users/Golden Path, Operators/Production-Like Runs, Runtime/Domain Developers, and Advanced/Deferred Surfaces while keeping P4/P6/P7 discoverable but outside the Golden Path. Evidence: docs/index.md reader map. Main files: docs/index.md, docs/revision/README.md.
+2026-09-11 UA-DOC-005 completed: added `docs/security-production-decisions.md` with explicit selected/default/deferred statuses for identity provider, tenant model, authorization, secret provider, audit storage, and package trust; linked it from docs/index.md. Evidence: markdown validation via write/edit hooks. Main files: docs/security-production-decisions.md, docs/index.md, docs/revision/README.md.
 ```
