@@ -8,6 +8,7 @@ identical text without owning a second projection layer.
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 from universal_agent.core import JsonMapping, JsonValue
 
@@ -131,38 +132,150 @@ def render_session_show_text(
 ) -> str:
     events = [item for item in _events_of(events_body) if isinstance(item, dict)]
     session_id = str(session_body.get("session_id", ""))
-    goal_status = STATUS_LABELS.get(
-        str(session_body.get("goal_status", "")),
-        str(session_body.get("goal_status", "")),
-    )
+    raw_status = str(session_body.get("goal_status", ""))
+    goal_status = STATUS_LABELS.get(raw_status, raw_status)
+    goal = str(session_body.get("goal_description") or "")
+    task = str(session_body.get("current_task_description") or "")
+    task_status = str(session_body.get("current_task_status") or "")
+    domain = f"{session_body.get('domain_name', '')}@{session_body.get('domain_version', '')}"
+    evidence_count = _count_event_types(events_body, "EvidenceRecorded")
+    action_count = _count_event_types(events_body, "ActionStarted")
+    termination = str(session_body.get("termination_reason") or "")
     lines = [
-        f"Session: {session_id}",
-        f"Status: {goal_status}",
-        f"Goal: {session_body.get('goal_description', '')}",
-        (
-            f"Task: {session_body.get('current_task_description', '')} "
-            f"({session_body.get('current_task_status', '')})"
-        ),
-        f"Domains: {session_body.get('domain_name', '')}@{session_body.get('domain_version', '')}",
-        "",
-        "Timeline:",
+        "Summary",
+        f"  Session: {session_id}",
+        f"  Status: {goal_status}",
+        f"  Goal: {goal}",
+        f"  Task: {task} ({task_status})",
+        f"  Domains: {domain}",
+        f"  Evidence: {evidence_count}",
+        f"  Actions: {action_count}",
     ]
-    for event in events:
-        occurred = _short_time(str(event.get("occurred_at", "")))
-        event_type = str(event.get("type", ""))
-        detail = _event_detail(event)
-        lines.append(f"{occurred}  {event_type}{detail}")
-    lines.append("")
-    lines.append(f"Evidence: {_count_event_types(events_body, 'EvidenceRecorded')}")
-    lines.append(f"Actions: {_count_event_types(events_body, 'ActionStarted')}")
+    if termination:
+        lines.append(f"  Terminal reason: {termination}")
     pending = session_body.get("pending_action")
     if isinstance(pending, dict):
         capability = str(pending.get("capability") or "action")
-        lines.append(f"Pending: {capability} requires human confirmation")
-        lines.append(f"Next: agent session resume {session_id} --confirmed true")
-    if str(session_body.get("termination_reason") or ""):
-        lines.append(f"Termination: {session_body.get('termination_reason')}")
+        lines.append(f"  Pending: {capability} requires human confirmation")
+    lines.extend(["", "What happened"])
+    if raw_status == "completed":
+        summary = termination or "success criteria satisfied"
+        lines.append(f"  The Agent completed the goal: {summary}.")
+    elif raw_status == "waiting":
+        lines.append("  The Agent stopped at a safe waiting point before continuing.")
+    elif raw_status == "failed":
+        lines.append(f"  The Agent failed: {termination or 'see session explain for details'}.")
+    elif raw_status == "cancelled":
+        lines.append("  The session was cancelled before completion.")
+    else:
+        lines.append("  The session is still in progress or has an unknown status.")
+    if events:
+        lines.append("  Raw timeline: agent session events " + session_id)
+    if isinstance(pending, dict):
+        lines.append(f"  Next: agent session resume {session_id} --confirmed true")
+    elif raw_status in {"failed", "waiting"}:
+        lines.append(f"  Next: agent session explain {session_id}")
     return "\n".join(lines) + "\n"
+
+
+def render_session_explain_text(
+    session_body: JsonMapping,
+    events_body: JsonMapping | None = None,
+) -> str:
+    session_id = str(session_body.get("session_id", ""))
+    raw_status = str(session_body.get("goal_status", ""))
+    pending = session_body.get("pending_action")
+    termination = str(session_body.get("termination_reason") or "")
+    events = [item for item in _events_of(events_body) if isinstance(item, dict)]
+    reason, fix = _explain_session_reason(raw_status, termination, pending, events)
+    return (
+        "\n".join(
+            [
+                "Error",
+                f"  {reason[0]}",
+                "Reason",
+                f"  {reason[1]}",
+                "Try",
+                f"  {fix}",
+                f"Session: {session_id}",
+            ]
+        )
+        + "\n"
+    )
+
+
+def render_session_not_found_explain_text(session_id: str) -> str:
+    return (
+        "\n".join(
+            [
+                "Error",
+                "  Session not found",
+                "Reason",
+                f"  No persisted session exists with id {session_id} in the active store.",
+                "Try",
+                (
+                    "  Run `agent session list` or pass the same --profile-config used for "
+                    "`agent run`."
+                ),
+                f"Session: {session_id}",
+            ]
+        )
+        + "\n"
+    )
+
+
+def _explain_session_reason(
+    raw_status: str,
+    termination: str,
+    pending: JsonValue,
+    events: list[dict[str, JsonValue]],
+) -> tuple[tuple[str, str], str]:
+    lower = termination.lower()
+    if isinstance(pending, dict) or "confirmation" in lower or raw_status == "waiting":
+        return (
+            ("Confirmation required", "Runtime policy paused before a guarded action."),
+            "Review the pending action, then run `agent session resume <id> --confirmed true`.",
+        )
+    if raw_status not in {"failed", "waiting"}:
+        return (
+            (
+                "Session is not waiting",
+                "This session has no failure or pending confirmation to explain.",
+            ),
+            "Use `agent session show <id>` or `agent session events <id>` for details.",
+        )
+    event_text = " ".join(str(event.get("data", "")) for event in events).lower() + " " + lower
+    if "api key" in event_text or "credential" in event_text or "secret" in event_text:
+        return (
+            (
+                "Missing model credentials",
+                "The configured model needs a secret that is unavailable.",
+            ),
+            "Set the required environment variable or re-run `agent init` with a scripted profile.",
+        )
+    if "invalid finish" in event_text or "finish decision" in event_text:
+        return (
+            (
+                "Invalid finish decision",
+                "The model proposed a finish decision the Runtime rejected.",
+            ),
+            "Inspect `agent session events <id>` and retry with a stricter model/profile config.",
+        )
+    evaluation_incomplete = "incomplete" in event_text or "did not complete" in event_text
+    if "evaluation" in event_text and evaluation_incomplete:
+        return (
+            ("Evaluator did not complete", "Tool output did not satisfy the Runtime evaluator."),
+            "Inspect `agent session evidence <id>` and adjust the goal success criteria.",
+        )
+    if "tool" in event_text or "domain" in event_text or "actioncompleted" in event_text:
+        return (
+            ("Domain/tool failure", "A domain capability or tool failed during execution."),
+            "Inspect `agent session events <id>` and run `agent doctor` to verify dependencies.",
+        )
+    return (
+        ("Session needs attention", termination or "The Runtime stopped before completion."),
+        "Run `agent session events <id>` for the timeline, then `agent doctor`.",
+    )
 
 
 def _event_detail(event: JsonMapping) -> str:
@@ -194,7 +307,20 @@ def render_profile_list_text(profiles_body: JsonMapping) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_profile_show_text(profile_body: JsonMapping) -> str:
+def render_profile_show_text(
+    profile_body: JsonMapping,
+    *,
+    runtime_body: JsonMapping | None = None,
+    policies_body: JsonMapping | None = None,
+) -> str:
+    runtime = runtime_body if isinstance(runtime_body, dict) else {}
+    model = runtime.get("model")
+    model_map = model if isinstance(model, dict) else {}
+    store = runtime.get("store")
+    store_map = store if isinstance(store, dict) else {}
+    limits = runtime.get("limits")
+    limits_map = limits if isinstance(limits, dict) else {}
+    policies = policies_body.get("policies") if isinstance(policies_body, dict) else None
     lines = [
         f"Profile: {profile_body.get('name', '')}",
         f"Version: {profile_body.get('version', '')}",
@@ -202,6 +328,15 @@ def render_profile_show_text(profile_body: JsonMapping) -> str:
     description = str(profile_body.get("description") or "")
     if description:
         lines.append(f"Description: {description}")
+    if model_map:
+        lines.extend(
+            [
+                "",
+                "Model",
+                f"  Provider: {model_map.get('provider', '')}",
+                f"  Model: {model_map.get('name', '')}",
+            ]
+        )
     domains = profile_body.get("domains")
     if not isinstance(domains, list) or not domains:
         domains = (
@@ -220,8 +355,29 @@ def render_profile_show_text(profile_body: JsonMapping) -> str:
         if isinstance(item, dict)
     ]
     lines.append("")
-    lines.append("Domains:")
+    lines.append("Domains")
     lines.extend(f"  {name}" for name in domain_names if name)
+    lines.append("")
+    lines.append("Policy")
+    if isinstance(policies, list) and policies:
+        lines.extend(
+            f"  {item.get('name', '')}: {item.get('effect', item.get('policy_type', ''))}"
+            for item in policies
+            if isinstance(item, dict)
+        )
+    else:
+        lines.append("  safe runtime policy")
+    if runtime:
+        store_path = _resolved_store_path(store_map.get("path"))
+        lines.extend(
+            [
+                "",
+                "Runtime",
+                f"  Max steps: {limits_map.get('max_iterations', '')}",
+                f"  Store: {store_map.get('backend', '')}"
+                + (f" at {store_path}" if store_path else ""),
+            ]
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -230,6 +386,8 @@ def render_config_text(
     *,
     profile_config_path: str | None = None,
     config_dir: str | None = None,
+    active_profile: str | None = None,
+    policies_body: JsonMapping | None = None,
 ) -> str:
     model = config_body.get("model")
     model_map = model if isinstance(model, dict) else {}
@@ -239,9 +397,14 @@ def render_config_text(
     limits_map = limits if isinstance(limits, dict) else {}
     domains = config_body.get("domains")
     secrets = config_body.get("secrets")
+    policies = policies_body.get("policies") if isinstance(policies_body, dict) else None
+    store_path = _resolved_store_path(store_map.get("path"))
 
     lines = [
         "Universal Agent Configuration",
+        "",
+        "Agent",
+        f"  Active profile: {active_profile or '(default discovery)'}",
         "",
         "Model",
         f"  Provider: {model_map.get('provider', '')}",
@@ -257,9 +420,18 @@ def render_config_text(
             "Runtime",
             f"  Max steps: {limits_map.get('max_iterations', '')}",
             f"  Store: {store_map.get('backend', '')}"
-            + (f" at {store_map.get('path')}" if store_map.get("path") else ""),
+            + (f" at {store_path}" if store_path else ""),
         ]
     )
+    lines.extend(["", "Policy"])
+    if isinstance(policies, list) and policies:
+        for item in policies:
+            if not isinstance(item, dict):
+                continue
+            effect = item.get("effect") or item.get("policy_type") or "policy"
+            lines.append(f"  {item.get('name', '')}: {effect}")
+    else:
+        lines.append("  safe runtime policy")
     lines.extend(["", "Domains"])
     if isinstance(domains, list):
         for item in domains:
@@ -268,7 +440,7 @@ def render_config_text(
             backend = f" ({item['backend']})" if item.get("backend") else ""
             primary = "*" if item.get("primary") else " "
             lines.append(f"  {primary} {item.get('name', '')}@{item.get('version', '')}{backend}")
-    lines.extend(["", "Secrets"])
+    lines.extend(["", "Credential status"])
     if isinstance(secrets, list) and secrets:
         for item in secrets:
             if not isinstance(item, dict):
@@ -284,8 +456,20 @@ def render_config_text(
         [
             "",
             "Config:",
-            f"  {profile_config_path or '(in-memory default; run `agent init`)'}",
-            *([f"  {config_dir}/config.json"] if config_dir else []),
+            f"  Profile config: {profile_config_path or '(in-memory default; run `agent init`)'}",
+            *([f"  Settings: {config_dir}/config.json"] if config_dir else []),
+            "",
+            "Discovery order:",
+            "  1. --profile-config",
+            "  2. $AGENT_CONFIG_DIR/profile.json",
+            "  3. ./universal-agent/profile.json",
+            "  4. ~/.universal-agent/profile.json",
         ]
     )
     return "\n".join(lines) + "\n"
+
+
+def _resolved_store_path(value: object) -> str:
+    if not value:
+        return ""
+    return str(Path(str(value)).expanduser().resolve())

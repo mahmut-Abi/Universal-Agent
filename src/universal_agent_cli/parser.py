@@ -6,7 +6,6 @@ from universal_agent.domains.kubernetes.cli import LOCAL_PROFILE_NAME, add_kuber
 from universal_agent.evaluation.harness import EvaluationScenarioKind
 from universal_agent_cli.defaults import (
     default_distributed_locks_path,
-    default_init_output_path,
     default_store_path,
     default_work_queue_path,
     default_workers_path,
@@ -25,11 +24,25 @@ GOLDEN_PATH_COMMANDS = (
 def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog or "agent",
+        usage="%(prog)s [options] {init,doctor,run,session,config,profile|advanced...}",
         description=(
             "Universal Agent CLI (also installed as `ua`). "
             "Golden path: init -> doctor -> run -> session. "
             "All other commands are advanced/developer commands."
         ),
+        epilog=(
+            "Golden Path commands:\n"
+            "  init      Create ./universal-agent/profile.json + config.json\n"
+            "  doctor    Check config/model/runtime and print fixes\n"
+            "  run       Run one Agent goal and create a Session\n"
+            "  session   list | show | explain | resume | cancel\n"
+            "  config    Show active config without secret values\n"
+            "  profile   list | show configured profiles\n\n"
+            "Advanced / experimental commands remain available: serve, kubernetes, "
+            "tui, eval, ecosystem, distributed, domain-packages, memory, policies, "
+            "evaluators, audit, repair, and observability commands."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--profile-config",
@@ -44,75 +57,109 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
         "--api-token-env",
         help="Environment variable containing the bearer token for --api-url requests.",
     )
-    commands = parser.add_subparsers(dest="command", required=True)
+    commands = parser.add_subparsers(
+        dest="command",
+        required=True,
+        metavar="{init,doctor,run,session,config,profile|advanced...}",
+    )
 
     init = commands.add_parser(
         "init",
+        usage=(
+            "%(prog)s [--output PATH] [--global] [--profile NAME] "
+            "[--model-provider PROVIDER] [--model-name NAME] "
+            "[--model-api-key-env ENV] [--force] [advanced options]"
+        ),
+        description=(
+            "First-time setup. Creates ./universal-agent/profile.json and "
+            "./universal-agent/config.json by default; use --global for ~/.universal-agent/."
+        ),
         help="Create the local profile config (first-time setup; idempotent).",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    init.add_argument(
+    first_day = init.add_argument_group("First-day options")
+    advanced_runtime = init.add_argument_group("Advanced: runtime/store options")
+    advanced_distributed = init.add_argument_group("Advanced: distributed runtime options")
+    advanced_domain = init.add_argument_group("Advanced: Kubernetes/domain backend options")
+    advanced_model = init.add_argument_group("Advanced: model transport options")
+    first_day.add_argument(
         "--output",
-        default=default_init_output_path(),
+        default=None,
         help="Profile config file to write (default: universal-agent/profile.json in cwd).",
     )
-    init.add_argument(
+    first_day.add_argument(
+        "--global",
+        dest="global_config",
+        action="store_true",
+        help=(
+            "Write user-level config to ~/.universal-agent/profile.json instead of "
+            "./universal-agent/."
+        ),
+    )
+    first_day.add_argument(
         "--output-format",
         choices=("text", "json"),
         default="text",
         help="Human summary (text, default) or machine JSON.",
     )
-    init.add_argument(
+    first_day.add_argument(
         "--profile",
         default="default",
         help="Profile name to generate (default: default).",
     )
-    init.add_argument("--environment", default="local")
-    init.add_argument("--store-backend", choices=("memory", "file", "sqlite"), default="file")
-    init.add_argument("--store-path", default=default_store_path())
-    init.add_argument(
+    advanced_runtime.add_argument("--environment", default="local")
+    advanced_runtime.add_argument(
+        "--store-backend",
+        choices=("memory", "file", "sqlite"),
+        default="file",
+    )
+    advanced_runtime.add_argument("--store-path", default=default_store_path())
+    advanced_distributed.add_argument(
         "--distributed-queue-backend",
         choices=("memory", "file", "sqlite"),
         default="memory",
     )
-    init.add_argument("--distributed-queue-path", default=default_work_queue_path())
-    init.add_argument(
+    advanced_distributed.add_argument("--distributed-queue-path", default=default_work_queue_path())
+    advanced_distributed.add_argument(
         "--distributed-locks-backend", choices=("memory", "file", "sqlite"), default="memory"
     )
-    init.add_argument("--distributed-locks-path", default=default_distributed_locks_path())
-    init.add_argument(
+    advanced_distributed.add_argument(
+        "--distributed-locks-path", default=default_distributed_locks_path()
+    )
+    advanced_distributed.add_argument(
         "--distributed-workers-backend",
         choices=("memory", "file", "sqlite"),
         default="memory",
     )
-    init.add_argument("--distributed-workers-path", default=default_workers_path())
-    init.add_argument("--distributed-terminal-retention-seconds", type=float)
-    init.add_argument(
+    advanced_distributed.add_argument("--distributed-workers-path", default=default_workers_path())
+    advanced_distributed.add_argument("--distributed-terminal-retention-seconds", type=float)
+    advanced_domain.add_argument(
         "--domain-backend",
         choices=("fake", "kubectl", "kubernetes_api"),
         default="fake",
     )
-    init.add_argument("--kubectl-namespace", default="default")
-    init.add_argument("--kubectl-context")
-    init.add_argument("--kubectl-kubeconfig")
-    init.add_argument("--kubectl-timeout-seconds", type=float, default=10.0)
-    init.add_argument("--kubernetes-api-server")
-    init.add_argument("--kubernetes-api-namespace", default="default")
-    init.add_argument("--kubernetes-api-token-env")
-    init.add_argument("--kubernetes-api-token-file")
-    init.add_argument("--kubernetes-api-token-secret", default="kubernetes_api_token")
-    init.add_argument("--kubernetes-api-timeout-seconds", type=float, default=10.0)
-    init.add_argument(
+    advanced_domain.add_argument("--kubectl-namespace", default="default")
+    advanced_domain.add_argument("--kubectl-context")
+    advanced_domain.add_argument("--kubectl-kubeconfig")
+    advanced_domain.add_argument("--kubectl-timeout-seconds", type=float, default=10.0)
+    advanced_domain.add_argument("--kubernetes-api-server")
+    advanced_domain.add_argument("--kubernetes-api-namespace", default="default")
+    advanced_domain.add_argument("--kubernetes-api-token-env")
+    advanced_domain.add_argument("--kubernetes-api-token-file")
+    advanced_domain.add_argument("--kubernetes-api-token-secret", default="kubernetes_api_token")
+    advanced_domain.add_argument("--kubernetes-api-timeout-seconds", type=float, default=10.0)
+    first_day.add_argument(
         "--model-provider",
         choices=("scripted", "json_http", "openai_chat_completions", "openai_responses"),
         default="scripted",
     )
-    init.add_argument("--model-name", default="scripted")
-    init.add_argument("--model-endpoint")
-    init.add_argument("--model-api-key-env")
-    init.add_argument("--model-api-key-file")
-    init.add_argument("--model-api-key-secret", default="model_api_key")
-    init.add_argument("--model-timeout-seconds", type=float, default=30.0)
-    init.add_argument(
+    first_day.add_argument("--model-name", default="scripted")
+    first_day.add_argument("--model-api-key-env")
+    advanced_model.add_argument("--model-endpoint")
+    advanced_model.add_argument("--model-api-key-file")
+    advanced_model.add_argument("--model-api-key-secret", default="model_api_key")
+    advanced_model.add_argument("--model-timeout-seconds", type=float, default=30.0)
+    advanced_model.add_argument(
         "--model-response-format",
         choices=("json_schema", "json_object", "prompt_json"),
         help=(
@@ -120,8 +167,8 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
             "Use prompt_json for legacy-compatible providers without response_format support."
         ),
     )
-    init.add_argument("--model-header", action="append", default=[])
-    init.add_argument("--force", action="store_true")
+    advanced_model.add_argument("--model-header", action="append", default=[])
+    first_day.add_argument("--force", action="store_true")
 
     run = commands.add_parser(
         "run",
@@ -188,6 +235,18 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
         choices=("text", "json"),
         default="text",
         help="Human report (text, default) or machine JSON.",
+    )
+
+    explain = session_commands.add_parser(
+        "explain",
+        help="Explain a failed or waiting session with Error / Reason / Try guidance.",
+    )
+    explain.add_argument("session_id")
+    explain.add_argument(
+        "--output",
+        choices=("text", "json"),
+        default="text",
+        help="Human guidance (text, default) or machine JSON.",
     )
 
     diagnostics = session_commands.add_parser("diagnostics")

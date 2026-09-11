@@ -20,8 +20,12 @@ from universal_agent_cli.doctor import (
 from universal_agent_cli.text_views import (
     render_config_text,
     render_profile_list_text,
+    render_profile_show_text,
     render_run_text,
+    render_session_explain_text,
     render_session_list_text,
+    render_session_not_found_explain_text,
+    render_session_show_text,
 )
 
 pytestmark = pytest.mark.unit
@@ -59,16 +63,28 @@ def test_default_profile_config_path_honors_agent_config_dir(tmp_path: Path) -> 
     assert resolved == tmp_path / "profile.json"
 
 
-def test_default_init_output_matches_kernel_discovery(
+def test_default_init_output_is_project_local_by_default(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from universal_agent_cli.defaults import default_init_output_path
+    from universal_agent_cli.defaults import default_init_output_path, global_init_output_path
 
     monkeypatch.delenv("AGENT_CONFIG_DIR", raising=False)
     monkeypatch.chdir(tmp_path)
     environ = {"HOME": str(tmp_path / "home")}
-    assert Path(default_init_output_path(environ)) == default_profile_config_path(environ)
+
+    assert Path(default_init_output_path(environ)) == Path("universal-agent") / "profile.json"
+    assert Path(global_init_output_path(environ)) == (
+        tmp_path / "home" / ".universal-agent" / "profile.json"
+    )
+
+
+def test_default_init_output_honors_agent_config_dir(tmp_path: Path) -> None:
+    from universal_agent_cli.defaults import default_init_output_path
+
+    assert Path(default_init_output_path({"AGENT_CONFIG_DIR": str(tmp_path)})) == (
+        tmp_path / "profile.json"
+    )
 
 
 @pytest.mark.asyncio
@@ -154,7 +170,7 @@ async def test_init_writes_readable_config_json(tmp_path: Path) -> None:
     assert config["profile"] == "default"
     assert config["model"] == {"provider": "scripted", "name": "scripted"}
     assert config["policy"] == {"mode": "safe"}
-    assert config["domains"]["kubernetes"] == {"enabled": True, "backend": "fake"}
+    assert config["domains"]["local"] == {"enabled": True, "backend": "fake"}
     assert config["runtime"]["max_steps"] == 20
 
 
@@ -283,11 +299,97 @@ def test_render_config_text_never_shows_secret_values() -> None:
         "secrets": [{"key": "OPENAI_API_KEY", "available": True}],
     }
 
-    rendered = render_config_text(body, profile_config_path="/cfg/profile.json")
+    rendered = render_config_text(
+        body,
+        profile_config_path="/cfg/profile.json",
+        config_dir="/cfg",
+        active_profile="default",
+        policies_body={"policies": [{"name": "safe-mode", "effect": "allow"}]},
+    )
 
+    assert "Active profile: default" in rendered
     assert "Provider: openai_chat_completions" in rendered
     assert "API key secret: model_key" in rendered
+    assert "Store: file at " in rendered
+    assert rendered.endswith("~/.universal-agent/profile.json\n")
+    assert "Policy" in rendered and "safe-mode" in rendered
     assert "OPENAI_API_KEY: configured" in rendered
+    assert "Discovery order" in rendered
     assert "sk-" not in rendered
     assert "secret-value" not in rendered
     assert "/cfg/profile.json" in rendered
+
+
+def test_render_profile_show_text_includes_runtime_and_policy() -> None:
+    rendered = render_profile_show_text(
+        {
+            "name": "default",
+            "version": "0.1.0",
+            "description": "Local profile",
+            "domains": [{"name": "local", "version": "0.1.0"}],
+        },
+        runtime_body={
+            "model": {"provider": "scripted", "name": "scripted"},
+            "store": {"backend": "file", "path": "/tmp/store"},
+            "limits": {"max_iterations": 20},
+        },
+        policies_body={"policies": [{"name": "local-read-only", "effect": "allow"}]},
+    )
+
+    assert "Profile: default" in rendered
+    assert "Model" in rendered and "Provider: scripted" in rendered
+    assert "local@0.1.0" in rendered
+    assert "Policy" in rendered and "local-read-only" in rendered
+    assert "Runtime" in rendered and "Max steps: 20" in rendered
+
+
+def test_render_session_show_text_is_human_first() -> None:
+    rendered = render_session_show_text(
+        {
+            "session_id": "session-1",
+            "goal_status": "completed",
+            "goal_description": "Hello",
+            "current_task_description": "Run goal",
+            "current_task_status": "completed",
+            "domain_name": "local",
+            "domain_version": "0.1.0",
+            "termination_reason": "workspace inspection satisfied",
+        },
+        {
+            "events": [
+                {"type": "ActionStarted", "occurred_at": "2026-01-01T00:00:00+00:00"},
+                {"type": "EvidenceRecorded", "occurred_at": "2026-01-01T00:00:01+00:00"},
+            ]
+        },
+    )
+
+    assert rendered.startswith("Summary\n")
+    assert "What happened" in rendered
+    assert "Timeline:" not in rendered
+    assert "Raw timeline: agent session events session-1" in rendered
+    assert "Evidence: 1" in rendered
+    assert "Actions: 1" in rendered
+
+
+def test_render_session_explain_text_covers_common_cases() -> None:
+    waiting = render_session_explain_text(
+        {
+            "session_id": "session-1",
+            "goal_status": "waiting",
+            "pending_action": {"capability": "scale_workload"},
+        }
+    )
+    missing = render_session_explain_text(
+        {
+            "session_id": "session-2",
+            "goal_status": "failed",
+            "termination_reason": "API key missing",
+        }
+    )
+    completed = render_session_explain_text({"session_id": "session-3", "goal_status": "completed"})
+    not_found = render_session_not_found_explain_text("missing")
+
+    assert "Error" in waiting and "Confirmation required" in waiting and "Try" in waiting
+    assert "Missing model credentials" in missing
+    assert "Session is not waiting" in completed
+    assert "Session not found" in not_found

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import time
 from collections.abc import Mapping
+from pathlib import Path
 from typing import TextIO, cast
 
 from universal_agent.core import (
@@ -31,7 +32,9 @@ from universal_agent_cli.text_views import (
     render_profile_list_text,
     render_profile_show_text,
     render_run_text,
+    render_session_explain_text,
     render_session_list_text,
+    render_session_not_found_explain_text,
     render_session_show_text,
 )
 from universal_agent_tui.tui_remote import (
@@ -428,12 +431,35 @@ async def _dispatch_remote_config(
                 render_config_text(
                     body,
                     profile_config_path=_remote_config_scope_path(args),
+                    config_dir=_remote_config_settings_dir(args),
+                    active_profile=_remote_primary_profile_name(
+                        await client.get_json("/v1/profiles")
+                    ),
+                    policies_body=await client.get_json("/v1/policies"),
                 ),
             )
             return
         _write_json(out, body)
         return
     raise ValueError(f"unknown config command: {config_command}")
+
+
+def _remote_primary_profile_name(profiles_body: JsonMapping) -> str | None:
+    profiles = profiles_body.get("profiles")
+    if not isinstance(profiles, list):
+        return None
+    for item in profiles:
+        if isinstance(item, dict) and item.get("name"):
+            return str(item["name"])
+    return None
+
+
+def _remote_config_settings_dir(args: argparse.Namespace) -> str | None:
+    scope = _remote_config_scope_path(args)
+    if scope is None:
+        return None
+    path = Path(scope).expanduser().parent
+    return str(path) if path.joinpath("config.json").is_file() else None
 
 
 def _remote_config_scope_path(args: argparse.Namespace) -> str | None:
@@ -809,7 +835,14 @@ async def _dispatch_remote_profile(
         profile = quote_path_segment(cast(str, args.profile))
         body = await client.get_json(f"/v1/profiles/{profile}")
         if cast(str, getattr(args, "output", "json")) == "text":
-            _write_text(out, render_profile_show_text(body))
+            _write_text(
+                out,
+                render_profile_show_text(
+                    body,
+                    runtime_body=await client.get_json("/v1/config"),
+                    policies_body=await client.get_json("/v1/policies"),
+                ),
+            )
             return
         _write_json(out, body)
         return
@@ -866,6 +899,9 @@ async def _dispatch_remote_session(
     if session_command == "show":
         await _write_remote_session_json(args, out, client, "")
         return
+    if session_command == "explain":
+        await _write_remote_session_explain(args, out, client)
+        return
     if session_command == "diagnostics":
         await _write_remote_session_json(args, out, client, "diagnostics")
         return
@@ -921,6 +957,46 @@ async def _dispatch_remote_session(
         )
         return
     raise ValueError(f"unknown session command: {session_command}")
+
+
+async def _write_remote_session_explain(
+    args: argparse.Namespace,
+    out: TextIO,
+    client: AgentdClient,
+) -> None:
+    session_id = quote_path_segment(cast(str, args.session_id))
+    try:
+        payload = await client.get_json(f"/v1/sessions/{session_id}")
+        events = await client.get_json(
+            f"/v1/sessions/{session_id}/events",
+            query={"limit": 500},
+        )
+    except Exception:
+        if cast(str, args.output) == "text":
+            _write_text(out, render_session_not_found_explain_text(cast(str, args.session_id)))
+            return
+        _write_json(
+            out,
+            {
+                "error": "session_not_found",
+                "reason": f"No persisted session exists with id {args.session_id}.",
+                "try": "Run `agent session list` or pass the same --profile-config.",
+                "session_id": cast(str, args.session_id),
+            },
+        )
+        return
+    if cast(str, args.output) == "text":
+        _write_text(out, render_session_explain_text(payload, events))
+        return
+    _write_json(
+        out,
+        {
+            "session_id": cast(str, args.session_id),
+            "status": payload.get("goal_status"),
+            "termination_reason": payload.get("termination_reason"),
+            "pending_action": payload.get("pending_action"),
+        },
+    )
 
 
 async def _write_remote_session_json(

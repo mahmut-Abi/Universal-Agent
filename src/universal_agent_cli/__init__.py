@@ -92,6 +92,11 @@ from universal_agent_tui.tui import build_tui_snapshot, render_tui_snapshot
 from universal_agent_tui.tui_app import RuntimeTuiApp, service_tui_actions
 
 
+def _primary_profile_name(service: RuntimeService) -> str | None:
+    profiles = service.profiles()
+    return profiles[0].name if profiles else None
+
+
 def build_default_service() -> RuntimeService:
     """Golden Path default: the domain-neutral Local workspace profile."""
 
@@ -200,6 +205,7 @@ async def run_cli(
                 embedded = launch_embedded_runtime(
                     cast(str | None, args.profile_config),
                     probe_only=is_kubernetes_probe_service_command(args),
+                    kubernetes_default=cast(str, args.command) == "kubernetes",
                 )
             except EmbeddedRuntimeError as exc:
                 _write_error(
@@ -531,6 +537,8 @@ def _dispatch_config(
                 config_body(service.config()),
                 profile_config_path=profile_config_path,
                 config_dir=_config_settings_dir(args),
+                active_profile=_primary_profile_name(service),
+                policies_body={"policies": [policy_body(item) for item in service.policies()]},
             ),
         )
         return
@@ -543,6 +551,8 @@ def _dispatch_config(
                     body,
                     profile_config_path=profile_config_path,
                     config_dir=_config_settings_dir(args),
+                    active_profile=_primary_profile_name(service),
+                    policies_body={"policies": [policy_body(item) for item in service.policies()]},
                 ),
             )
             return

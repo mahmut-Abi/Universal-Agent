@@ -4,7 +4,12 @@ import argparse
 from pathlib import Path
 from typing import TextIO, cast
 
-from universal_agent.agentd.representations import domain_package_body, profile_body
+from universal_agent.agentd.representations import (
+    config_body,
+    domain_package_body,
+    policy_body,
+    profile_body,
+)
 from universal_agent.core import JsonValue, immutable_json
 from universal_agent.domain import (
     DomainPackageCompatibility,
@@ -45,7 +50,14 @@ def _dispatch_profile(
             raise ValueError(f"unknown profile: {profile}")
         show_body = profile_body(service.profile(profile))
         if cast(str, args.output) == "text":
-            _write_text(out, render_profile_show_text(show_body))
+            _write_text(
+                out,
+                render_profile_show_text(
+                    show_body,
+                    runtime_body=config_body(service.config()),
+                    policies_body={"policies": [policy_body(item) for item in service.policies()]},
+                ),
+            )
             return
         _write_json(out, show_body)
         return

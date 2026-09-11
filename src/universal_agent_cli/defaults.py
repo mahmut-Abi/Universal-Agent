@@ -4,8 +4,6 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 
-from universal_agent.profile import default_profile_config_path
-
 AGENT_CONFIG_DIR_ENV = "AGENT_CONFIG_DIR"
 AGENT_DATA_DIR_ENV = "AGENT_DATA_DIR"
 DEFAULT_AGENT_DATA_DIR = ".universal-agent"
@@ -30,14 +28,34 @@ __all__ = [
     "default_store_path",
     "default_work_queue_path",
     "default_workers_path",
+    "global_init_output_path",
 ]
 
 
 def default_init_output_path(environ: Mapping[str, str] | None = None) -> str:
-    """Golden Path default: ./universal-agent/profile.json, else AGENT_CONFIG_DIR,
-    else ~/.universal-agent/profile.json (shared with the kernel profile module)."""
+    """Golden Path init target: AGENT_CONFIG_DIR/profile.json, else
+    ./universal-agent/profile.json.
 
-    return str(default_profile_config_path(environ))
+    Runtime discovery may fall back to ``~/.universal-agent/profile.json`` for
+    existing user-level configs, but ``agent init`` itself creates project-local
+    config unless the caller explicitly opts into global config.
+    """
+
+    env = environ or os.environ
+    config_dir = env.get(AGENT_CONFIG_DIR_ENV, "").strip()
+    if config_dir:
+        return str(Path(config_dir) / DEFAULT_PROFILE_CONFIG_NAME)
+    return str(Path("universal-agent") / DEFAULT_PROFILE_CONFIG_NAME)
+
+
+def global_init_output_path(environ: Mapping[str, str] | None = None) -> str:
+    """Explicit user-level init target used by ``agent init --global``."""
+
+    env = environ or os.environ
+    home = env.get("HOME", "").strip()
+    if home:
+        return str(Path(home) / ".universal-agent" / DEFAULT_PROFILE_CONFIG_NAME)
+    return str(Path(".universal-agent") / DEFAULT_PROFILE_CONFIG_NAME)
 
 
 def default_runtime_data_dir(environ: Mapping[str, str] | None = None) -> str:

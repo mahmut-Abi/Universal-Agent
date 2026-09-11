@@ -22,6 +22,7 @@ from universal_agent.domains.kubernetes.cli import (
     profile_domain_config as kubernetes_profile_domain_config,
 )
 from universal_agent.domains.local.cli_runtime import local_domain_config
+from universal_agent_cli.defaults import default_init_output_path, global_init_output_path
 from universal_agent_cli.io import _parse_key_value_options, _write_json, _write_text
 
 DEFAULT_ENVIRONMENT = "local"
@@ -30,7 +31,7 @@ DEFAULT_MAX_RECOVERY_STEPS = 8
 
 
 def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
-    output = Path(cast(str, args.output))
+    output = _init_output_path(args)
     config_dir = output.parent
     config_path = config_dir / "config.json"
     force = cast(bool, args.force)
@@ -80,6 +81,15 @@ def _dispatch_init(args: argparse.Namespace, out: TextIO) -> None:
     )
 
 
+def _init_output_path(args: argparse.Namespace) -> Path:
+    explicit = cast(str | None, args.output)
+    if explicit is not None:
+        return Path(explicit)
+    if cast(bool, args.global_config):
+        return Path(global_init_output_path())
+    return Path(default_init_output_path())
+
+
 def _backup_existing(paths: tuple[Path, ...]) -> list[str]:
     backups: list[str] = []
     for path in paths:
@@ -93,7 +103,7 @@ def _backup_existing(paths: tuple[Path, ...]) -> list[str]:
 def _runtime_data_dir(args: argparse.Namespace) -> Path:
     store_path = Path(cast(str, args.store_path))
     if cast(str, args.store_backend) == "memory":
-        return Path(cast(str, args.output)).parent
+        return _init_output_path(args).parent
     return store_path.parent
 
 

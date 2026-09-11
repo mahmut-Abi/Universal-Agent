@@ -76,7 +76,7 @@ P0 标准要求用户能回答"我从哪里启动/配置/排查"。各概念必�
   - `universal-agent/config.json`：用户可读的 agent 级设置（environment/profile/model/policy/runtime/domains）。
 - 发现阶段（`default_profile_config_path`）：`$AGENT_CONFIG_DIR/profile.json`（容器约定）→ `./universal-agent/profile.json`（项目）→ `~/.universal-agent/profile.json`（用户级）。
 - 语义：`ua init` 幂等 —— 已存在且无 `--force` 时 reuse（不破坏现有配置，返回 `status=reused`）；`--force` 重写并保留 `.bak` 备份。
-- store 默认 `file`，位于 `~/.universal-agent/store`（未显式指定时），保证 Session 跨进程可查。
+- store 默认 `file`，位于 `./.universal-agent/store`（未显式指定时），保证同一工作区内 Session 跨进程可查；`agent config` 以绝对路径展示解析后位置。
 
 ### D5：人读输出默认、机器 JSON 可选
 

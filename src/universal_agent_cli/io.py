@@ -75,7 +75,40 @@ def _write_text(out: TextIO, payload: str) -> None:
 
 
 def _write_error(out: TextIO, code: str, message: str) -> None:
-    _write_json(out, {"error": {"code": code, "message": message}})
+    hint = _repair_hint(code, message)
+    _write_json(
+        out,
+        {
+            "error": {
+                "code": code,
+                "message": message,
+                "reason": message,
+                "try": hint,
+                "text": f"Error: {code}\nReason: {message}\nTry: {hint}",
+            }
+        },
+    )
+
+
+def _repair_hint(code: str, message: str) -> str:
+    lower = f"{code} {message}".lower()
+    if "profile config not found" in lower:
+        return "Run `agent init` or pass the same --profile-config used for setup."
+    if "unknown profile" in lower or "profile not found" in lower:
+        return "Run `agent profile list` and retry with one of the listed profiles."
+    if "api key" in lower or "credential" in lower or "secret" in lower:
+        return "Set the required environment variable or re-run `agent init` with a scripted model."
+    if "agentd" in lower or "api-url" in lower or "connection" in lower:
+        return "Start agentd, check --api-url/--api-token, or omit --api-url for embedded mode."
+    if "policy" in lower or "confirmed" in lower or "confirmation" in lower:
+        return "Review the pending action and retry with the explicit confirmation flag."
+    if "domain" in lower or "backend" in lower or "kubernetes" in lower:
+        return "Run `agent doctor` and verify the selected profile/domain backend configuration."
+    if "tool" in lower:
+        return "Run `agent doctor`, then inspect `agent session events <id>` for tool details."
+    if "session not found" in lower:
+        return "Run `agent session list` and retry with an existing session id."
+    return "Run `agent doctor`; for details retry with --output json where supported."
 
 
 def _doctor_should_fail(status: str, fail_on: str) -> bool:

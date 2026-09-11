@@ -5,27 +5,59 @@ runtime (no injected service, no real LLM):
 
     init -> config -> doctor -> run -> session list -> session show
 
-The default profile uses the deterministic FakeModel (``ScriptedModelAdapter``)
-and the fake Kubernetes backend, so CI never needs API keys or a cluster.
+The default profile uses the deterministic local WorkspaceDecisionAdapter and the
+read-only local workspace domain, so CI never needs API keys or a cluster.
 """
 
 from __future__ import annotations
 
 import json
+import subprocess
 from io import StringIO
 from pathlib import Path
 
 import pytest
 
 from universal_agent_cli import run_cli
+from universal_agent_cli.parser import build_parser
 
-pytestmark = [pytest.mark.integration]
+
+async def _capture_cli(argv: list[str]) -> tuple[int, str, str]:
+    out = StringIO()
+    err = StringIO()
+    status = await run_cli(argv, stdout=out, stderr=err)
+    return status, out.getvalue(), err.getvalue()
 
 
 def _read_json(buffer: StringIO) -> dict[str, object]:
     loaded = json.loads(buffer.getvalue())
     assert isinstance(loaded, dict)
     return loaded
+
+
+def test_cli_help_prioritizes_golden_path_and_labels_advanced() -> None:
+    help_text = build_parser("agent").format_help()
+    init_index = help_text.index("init")
+    doctor_index = help_text.index("doctor")
+    expected_usage = "usage: agent [options] {init,doctor,run,session,config,profile|advanced...}"
+    assert expected_usage in help_text
+    assert "Golden Path commands:" in help_text
+    assert "Advanced / experimental commands remain available" in help_text
+    assert init_index < doctor_index
+
+
+def test_init_help_groups_first_day_and_advanced_options() -> None:
+    result = subprocess.run(
+        ["uv", "run", "ua", "init", "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    help_text = result.stdout
+    assert "First-day options:" in help_text
+    assert "Advanced: Kubernetes/domain backend options:" in help_text
+    assert "Advanced: distributed runtime options:" in help_text
+    assert "usage: ua init [--output PATH]" in help_text
 
 
 @pytest.mark.asyncio
@@ -65,7 +97,9 @@ async def test_p0_golden_path_init_doctor_run_session(tmp_path: Path) -> None:
     assert "Universal Agent Configuration" in config_text
     assert "Provider: scripted" in config_text
     assert "Max steps: 20" in config_text
-    assert "kubernetes@0.2.0" in config_text
+    assert "local@0.1.0" in config_text
+    assert "Policy" in config_text
+    assert "Discovery order" in config_text
 
     # 3. doctor — every section passes with the default offline profile.
     doctor_out = StringIO()
@@ -170,7 +204,7 @@ async def test_p0_golden_path_init_doctor_run_session(tmp_path: Path) -> None:
     assert "SESSION" in text_list_out.getvalue()
     assert session_id in text_list_out.getvalue()
 
-    # 6. session show — human report with goal and timeline.
+    # 6. session show — human report with summary and counts; raw timeline is separate.
     show_out = StringIO()
     assert (
         await run_cli(
@@ -182,12 +216,51 @@ async def test_p0_golden_path_init_doctor_run_session(tmp_path: Path) -> None:
     show_text = show_out.getvalue()
     assert f"Session: {session_id}" in show_text
     assert "Status: success" in show_text
+    assert "Summary" in show_text
+    assert "What happened" in show_text
     assert "Goal: Analyze the demo workload" in show_text
-    assert "Timeline:" in show_text
-    assert "GoalCreated" in show_text
-    assert "GoalCompleted" in show_text
+    assert "Timeline:" not in show_text
     assert "Evidence:" in show_text
     assert "Actions:" in show_text
+
+    events_out = StringIO()
+    assert (
+        await run_cli(
+            ["--profile-config", profile_config, "session", "events", session_id],
+            stdout=events_out,
+        )
+        == 0
+    )
+    events_payload = _read_json(events_out)
+    event_items = events_payload.get("events")
+    assert isinstance(event_items, list)
+    assert any(
+        isinstance(event, dict) and event.get("type") == "GoalCompleted" for event in event_items
+    )
+
+    explain_out = StringIO()
+    assert (
+        await run_cli(
+            ["--profile-config", profile_config, "session", "explain", session_id],
+            stdout=explain_out,
+        )
+        == 0
+    )
+    explain_text = explain_out.getvalue()
+    assert "Error" in explain_text
+    assert "Reason" in explain_text
+    assert "Try" in explain_text
+    assert "Session is not waiting" in explain_text
+
+    explain_missing = StringIO()
+    assert (
+        await run_cli(
+            ["--profile-config", profile_config, "session", "explain", "missing-session"],
+            stdout=explain_missing,
+        )
+        == 0
+    )
+    assert "Session not found" in explain_missing.getvalue()
 
     # 7. profile — list and show the default profile.
     profile_list_out = StringIO()
@@ -208,7 +281,46 @@ async def test_p0_golden_path_init_doctor_run_session(tmp_path: Path) -> None:
     )
     show_profile_text = profile_show_out.getvalue()
     assert "Profile: default" in show_profile_text
-    assert "kubernetes@0.2.0" in show_profile_text
+    assert "local@0.1.0" in show_profile_text
+    assert "Model" in show_profile_text
+    assert "Policy" in show_profile_text
+    assert "Runtime" in show_profile_text
+
+
+@pytest.mark.asyncio
+async def test_agent_init_defaults_to_project_local_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("AGENT_CONFIG_DIR", raising=False)
+    monkeypatch.chdir(tmp_path)
+    out = StringIO()
+
+    assert await run_cli(["init", "--output-format", "json"], stdout=out) == 0
+
+    payload = _read_json(out)
+    assert payload["path"] == "universal-agent/profile.json"
+    assert payload["config"] == "universal-agent/config.json"
+    assert (tmp_path / "universal-agent" / "profile.json").is_file()
+    assert not (tmp_path / "home" / ".universal-agent" / "profile.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_agent_init_global_writes_user_level_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("AGENT_CONFIG_DIR", raising=False)
+    monkeypatch.chdir(tmp_path)
+    out = StringIO()
+
+    assert await run_cli(["init", "--global", "--output-format", "json"], stdout=out) == 0
+
+    payload = _read_json(out)
+    assert payload["path"] == str(tmp_path / "home" / ".universal-agent" / "profile.json")
+    assert (tmp_path / "home" / ".universal-agent" / "profile.json").is_file()
 
 
 @pytest.mark.asyncio

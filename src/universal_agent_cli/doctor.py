@@ -219,6 +219,10 @@ def render_doctor_checks(checks: Sequence[DoctorCheck], *, status: str) -> str:
             lines.append(f"  Try: {check.hint}")
     lines.append("")
     lines.append(f"Status: {status}")
+    if status == CHECK_OK:
+        lines.append('Next: agent run "Hello"')
+    else:
+        lines.append("Next: fix the checks above, then re-run `agent doctor`.")
     return "\n".join(lines) + "\n"
 
 

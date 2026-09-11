@@ -2,7 +2,7 @@
 
 Builds the domain-neutral `default` Profile service used by `agent run`,
 `agent init` defaults and doctor: the read-only Local domain, the deterministic
-FakeModel (scripted) decision adapter, and the profile written by `agent init`.
+scripted workspace decision adapter, and the profile written by `agent init`.
 """
 
 from __future__ import annotations

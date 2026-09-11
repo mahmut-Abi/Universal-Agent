@@ -40,7 +40,7 @@ uv run ua init
 uv run ua doctor
 
 # 4. Run your first Agent task
-uv run ua run "Analyze the demo workload"
+uv run ua run "Hello"
 
 # 5. Find your Session and see what happened
 uv run ua session list
@@ -50,15 +50,21 @@ uv run ua session show <session-id>
 That's the whole Golden Path: `install → init → doctor → run → session`.
 No `agentd`, no web server, no worker, no scheduler and **no API key** are needed
 for the default offline profile — it uses a deterministic built-in model
-(`scripted` / `FakeModel`) and the fake Kubernetes backend, so you can verify
-everything locally. Session state is persisted (file store) and survives restarts.
+(`scripted` / local workspace inspector) and the read-only local domain, so you can
+verify everything locally. Session state is persisted (file store) and survives restarts.
+
+You can also run the same flow end-to-end with:
+
+```bash
+scripts/demo-local.sh
+```
 
 Status output of `run` looks like:
 
 ```text
 Agent started
 Session: session-7d1e…
-Goal: Analyze the demo workload
+Goal: Hello
 
 Agent completed
 
@@ -80,7 +86,7 @@ the Golden Path.
 agent init        Create the local profile config (idempotent; --force resets with backups)
 agent doctor      Environment/config/model/runtime/profiles/domains/policy checks + fixes
 agent run GOAL    Run one goal; prints the session summary (creates a Session)
-agent session     list | show | resume | cancel (+ events/evidence/diagnostics/…)
+agent session     list | show | explain | resume | cancel (+ events/evidence/diagnostics/…)
 agent config      Show the active configuration (secrets are never printed)
 agent profile     list | show — available Agent profiles
 

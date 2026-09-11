@@ -25,13 +25,16 @@ from universal_agent.core.config_validation import parse_bounded_float
 from universal_agent.core.polling import poll_async_result
 from universal_agent.runtime.api import RuntimeEventBatch
 from universal_agent.service import RuntimeService
+from universal_agent.state import StateNotFoundError
 from universal_agent_cli.io import (
     _optional_bool,
     _write_json,
     _write_text,
 )
 from universal_agent_cli.text_views import (
+    render_session_explain_text,
     render_session_list_text,
+    render_session_not_found_explain_text,
     render_session_show_text,
 )
 
@@ -64,6 +67,38 @@ async def _dispatch_session(
             _write_text(out, render_session_show_text(body, events_body))
             return
         _write_json(out, body)
+        return
+    if command == "explain":
+        session_id = SessionId(cast(str, args.session_id))
+        try:
+            body = session_body(await service.get_session(session_id))
+            events_body = event_batch_body(await service.stream_events(session_id, limit=500))
+        except StateNotFoundError:
+            if cast(str, args.output) == "text":
+                _write_text(out, render_session_not_found_explain_text(str(session_id)))
+                return
+            _write_json(
+                out,
+                {
+                    "error": "session_not_found",
+                    "reason": f"No persisted session exists with id {session_id}.",
+                    "try": "Run `agent session list` or pass the same --profile-config.",
+                    "session_id": str(session_id),
+                },
+            )
+            return
+        if cast(str, args.output) == "text":
+            _write_text(out, render_session_explain_text(body, events_body))
+            return
+        _write_json(
+            out,
+            {
+                "session_id": str(session_id),
+                "status": body.get("goal_status"),
+                "termination_reason": body.get("termination_reason"),
+                "pending_action": body.get("pending_action"),
+            },
+        )
         return
     if command == "diagnostics":
         session_id = SessionId(cast(str, args.session_id))

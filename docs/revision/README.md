@@ -113,7 +113,7 @@ Use this file as the working backlog for the project.
 
 These are the next highest-ROI improvements. They are not new agent capabilities; they make the product easier to start, understand, and debug.
 
-### [ ] UA-P01-001 — Reconcile config location semantics in all contexts
+### [x] UA-P01-001 — Reconcile config location semantics in all contexts
 
 - Priority: P0
 - Area: Product / CLI / Config
@@ -124,7 +124,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - `agent init --help`, `agent init` output, `agent config`, README, and `docs/product.md` all agree.
   - Tests cover clean HOME + clean cwd config discovery.
 
-### [ ] UA-P01-002 — Make `default` profile truly domain-neutral or explicitly rename it
+### [x] UA-P01-002 — Make `default` profile truly domain-neutral or explicitly rename it
 
 - Priority: P0
 - Area: Product / Profile / Domain
@@ -135,7 +135,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - Kubernetes fake/local profiles remain available under explicit names such as `local-kubernetes` or `sre-kubernetes`.
   - A regression test asserts default profile output is domain-neutral.
 
-### [ ] UA-P01-003 — Split beginner and advanced CLI help surfaces
+### [x] UA-P01-003 — Split beginner and advanced CLI help surfaces
 
 - Priority: P0
 - Area: CLI / UX
@@ -146,7 +146,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - Advanced commands are grouped and clearly labeled advanced/experimental where appropriate.
   - `agent init --help` shows only first-day options by default or clearly separates advanced backend/model/distributed flags.
 
-### [ ] UA-P01-004 — Enrich `agent config` and `agent profile show`
+### [x] UA-P01-004 — Enrich `agent config` and `agent profile show`
 
 - Priority: P0
 - Area: CLI / Config / Profile
@@ -157,7 +157,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - `agent profile show default` shows model, domains, policy, runtime settings, and description.
   - JSON output remains stable for machines.
 
-### [ ] UA-P01-005 — Make `agent session show` human-first
+### [x] UA-P01-005 — Make `agent session show` human-first
 
 - Priority: P1
 - Area: CLI / Session / Evidence
@@ -168,7 +168,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - Raw technical timeline remains available through `session events` or JSON.
   - Evidence/action counts and terminal reason are still visible.
 
-### [ ] UA-P01-006 — Add `agent session explain <id>` for failures and waiting sessions
+### [x] UA-P01-006 — Add `agent session explain <id>` for failures and waiting sessions
 
 - Priority: P1
 - Area: Session / Diagnostics
@@ -179,7 +179,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - It explains policy waits, invalid finish decisions, evaluator mismatch, missing credentials, tool failure, and session-not-waiting cases.
   - Implementation is a service/read-model projection; it does not change runtime state.
 
-### [ ] UA-P01-007 — Standardize repairable CLI errors
+### [x] UA-P01-007 — Standardize repairable CLI errors
 
 - Priority: P1
 - Area: CLI / UX / Errors
@@ -190,7 +190,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - Covered errors include missing API key, invalid config, model unavailable, domain unavailable, policy denied, tool failed, session not found, profile not found, unsupported backend, and agentd unavailable.
   - Tests assert user-facing text contains an actionable `Try:` line.
 
-### [ ] UA-P01-008 — Add doctor final next-step guidance
+### [x] UA-P01-008 — Add doctor final next-step guidance
 
 - Priority: P1
 - Area: CLI / Doctor
@@ -205,7 +205,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 # C. P1 Behavior Proof Backlog
 
-### [ ] UA-P1-001 — Add reproducible local Golden Demo script
+### [x] UA-P1-001 — Add reproducible local Golden Demo script
 
 - Priority: P1
 - Area: Demo / Docs / Tests
@@ -309,7 +309,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 # D. P1/P2 Testing And Quality Backlog
 
-### [ ] UA-TEST-001 — Add clean-room config and Golden Path regression tests
+### [x] UA-TEST-001 — Add clean-room config and Golden Path regression tests
 
 - Priority: P0
 - Area: Tests / Product
@@ -320,7 +320,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - Tests cover init idempotency, doctor, config, run, session list/show, and profile list/show.
   - Tests assert config paths and session persistence behavior.
 
-### [ ] UA-TEST-002 — Add default-profile domain-neutral regression
+### [x] UA-TEST-002 — Add default-profile domain-neutral regression
 
 - Priority: P0
 - Area: Tests / Profile / UX
@@ -633,20 +633,20 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 ## Sprint 1 — Product Consistency
 
-- [ ] UA-P01-001 — Reconcile config location semantics in all contexts
-- [ ] UA-P01-002 — Make `default` profile truly domain-neutral or explicitly rename it
-- [ ] UA-P01-003 — Split beginner and advanced CLI help surfaces
-- [ ] UA-P01-004 — Enrich `agent config` and `agent profile show`
-- [ ] UA-TEST-001 — Add clean-room config and Golden Path regression tests
-- [ ] UA-TEST-002 — Add default-profile domain-neutral regression
+- [x] UA-P01-001 — Reconcile config location semantics in all contexts
+- [x] UA-P01-002 — Make `default` profile truly domain-neutral or explicitly rename it
+- [x] UA-P01-003 — Split beginner and advanced CLI help surfaces
+- [x] UA-P01-004 — Enrich `agent config` and `agent profile show`
+- [x] UA-TEST-001 — Add clean-room config and Golden Path regression tests
+- [x] UA-TEST-002 — Add default-profile domain-neutral regression
 
 ## Sprint 2 — Better Runtime UX
 
-- [ ] UA-P01-005 — Make `agent session show` human-first
-- [ ] UA-P01-006 — Add `agent session explain <id>` for failures and waiting sessions
-- [ ] UA-P01-007 — Standardize repairable CLI errors
-- [ ] UA-P01-008 — Add doctor final next-step guidance
-- [ ] UA-P1-001 — Add reproducible local Golden Demo script
+- [x] UA-P01-005 — Make `agent session show` human-first
+- [x] UA-P01-006 — Add `agent session explain <id>` for failures and waiting sessions
+- [x] UA-P01-007 — Standardize repairable CLI errors
+- [x] UA-P01-008 — Add doctor final next-step guidance
+- [x] UA-P1-001 — Add reproducible local Golden Demo script
 
 ## Sprint 3 — Kubernetes / Model Reliability
 
@@ -691,4 +691,6 @@ Add entries here when items are completed.
 2026-09-11 UA-DONE-001 completed via docs/revision/2026-09-11-p0-golden-path-validation.md.
 2026-09-11 UA-DONE-002 completed via P0 validation quality gates.
 2026-08-31 UA-DONE-003 completed via live Kubernetes manual drill record.
+2026-09-11 Sprint 1 completed: UA-P01-001/002/003/004 and UA-TEST-001/002. Evidence: `uv run ruff check src tests`; `uv run pytest tests/integration/test_cli.py tests/integration/test_cli_agentd_client.py tests/unit/test_security_secrets.py -q`; `uv run pytest tests/integration/test_p0_golden_path.py tests/integration/test_facade_golden_path.py -q`; clean HOME smoke for init/doctor/config/profile/run/session list/show/explain. Main files: README.md, docs/product.md, src/universal_agent_cli/{defaults.py,init.py,parser.py,text_views.py}, src/universal_agent/agentd/__main__.py, tests/integration/test_p0_golden_path.py, tests/unit/test_p0_config_and_views.py.
+2026-09-11 Sprint 2 completed: UA-P01-005/006/007/008 and UA-P1-001. Evidence: `scripts/demo-local.sh` clean HOME/workspace smoke; `agent session show` Summary/What happened; `agent session explain` Error/Reason/Try; `agent doctor` Next guidance; repairable CLI errors include machine-readable reason/try. Main files: src/universal_agent_cli/{agentd.py,doctor.py,io.py,session.py,text_views.py}, scripts/demo-local.sh, README.md, docs/revision/README.md.
 ```

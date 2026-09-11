@@ -527,7 +527,7 @@ async def test_cli_init_writes_parseable_profile_config(tmp_path: Path) -> None:
         "data_dir": str(tmp_path),
     }
     assert profile.name == "production-operator"
-    assert profile.domain == DomainConfig("kubernetes", "0.2.0")
+    assert profile.domain == DomainConfig("local", "0.1.0")
     assert profile.runtime.store == StoreConfig.file(str(store_path))
     assert profile.runtime.environment["environment"] == "production"
 
@@ -1933,6 +1933,8 @@ async def test_cli_kubernetes_model_probe_reports_missing_model_secret(
             str(profile_path),
             "--profile",
             "production-operator",
+            "--domain-backend",
+            "kubectl",
             "--model-provider",
             "openai_chat_completions",
             "--model-name",
@@ -2027,6 +2029,8 @@ async def test_cli_kubernetes_check_stops_before_preflight_when_model_probe_fail
             str(profile_path),
             "--profile",
             "production-operator",
+            "--domain-backend",
+            "kubectl",
             "--model-provider",
             "openai_chat_completions",
             "--model-name",
@@ -4321,12 +4325,13 @@ async def test_cli_session_events_rejects_invalid_wait_timeout() -> None:
     payload = read_json(error)
 
     assert status == 2
-    assert payload == {
-        "error": {
-            "code": "bad_request",
-            "message": "timeout_seconds must be between 0 and 30",
-        }
-    }
+    error_body = payload["error"]
+    assert isinstance(error_body, dict)
+    assert error_body["code"] == "bad_request"
+    assert error_body["message"] == "timeout_seconds must be between 0 and 30"
+    assert error_body["reason"] == "timeout_seconds must be between 0 and 30"
+    assert "Try:" in str(error_body["text"])
+    assert str(error_body["try"])
     assert output.getvalue() == ""
 
 
@@ -4354,12 +4359,13 @@ async def test_cli_session_events_rejects_invalid_wait_poll_interval() -> None:
     payload = read_json(error)
 
     assert status == 2
-    assert payload == {
-        "error": {
-            "code": "bad_request",
-            "message": "poll_interval_seconds must be between 0.001 and 5",
-        }
-    }
+    error_body = payload["error"]
+    assert isinstance(error_body, dict)
+    assert error_body["code"] == "bad_request"
+    assert error_body["message"] == "poll_interval_seconds must be between 0.001 and 5"
+    assert error_body["reason"] == "poll_interval_seconds must be between 0.001 and 5"
+    assert "Try:" in str(error_body["text"])
+    assert str(error_body["try"])
     assert output.getvalue() == ""
 
 
