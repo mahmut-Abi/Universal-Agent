@@ -480,7 +480,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - P4/P6/P7 content is discoverable but not in the Golden Path.
   - `docs/index.md` clearly routes readers.
 
-### [ ] UA-DOC-004 — Document OpenAI-compatible structured-output caveats
+### [x] UA-DOC-004 — Document OpenAI-compatible structured-output caveats
 
 - Priority: P1
 - Area: Docs / Model Providers
@@ -705,4 +705,5 @@ Add entries here when items are completed.
 2026-09-11 UA-TEST-005 completed: documented that `mypy` is the authoritative repository type checker and pyright/basedpyright findings are advisory unless explicitly added as a CI gate, preventing stale editor/lens findings from blocking release when mypy passes. Evidence: docs/developer-guide.md Quality Gates section; CI still runs `python -m mypy`. Main files: docs/developer-guide.md, docs/revision/README.md.
 2026-09-11 UA-DOC-001 completed: README first screen is user-oriented with Quick Start before CLI/configuration/profiles/sessions/domains/policy/web/agentd and architecture; Quick Start aligns with `scripts/demo-local.sh` and Golden Path tests. Evidence: README section-order scan and prior `scripts/demo-local.sh` / Golden Path test evidence. Main files: README.md, docs/revision/README.md.
 2026-09-11 UA-DOC-002 completed: verified `docs/RUNTIME_CONTRACT.md` documents Goal/Task/Decision/Action/Observation/Evidence/Policy/Evaluation/Session/Domain/Profile ownership and invariants, and README links CLI/API/Web/agentd users back to that contract. Evidence: `docs/RUNTIME_CONTRACT.md` scan and repository reference grep. Main files: docs/RUNTIME_CONTRACT.md, README.md, docs/revision/README.md.
+2026-09-11 UA-DOC-004 completed: verified model-provider docs explain `json_schema`, `json_object`, `prompt_json`, OpenAI-compatible endpoint caveats, model-probe scope, and fallback settings such as `prompt_json`, headers, and timeout. Evidence: grep across docs/runtime-operator-guide.md, docs/kubernetes-production-run-spec.md, docs/kubernetes-production-slice-spec.md, docs/kubernetes-live-operator-runbook.md. Main files: docs/runtime-operator-guide.md, docs/kubernetes-production-run-spec.md, docs/kubernetes-production-slice-spec.md, docs/kubernetes-live-operator-runbook.md, docs/revision/README.md.
 ```
