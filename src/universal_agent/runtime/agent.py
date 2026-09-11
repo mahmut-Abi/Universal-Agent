@@ -41,7 +41,7 @@ from universal_agent.runtime.actions import (
     ConfirmationRequired,
 )
 from universal_agent.runtime.capabilities import CapabilityAdvisor
-from universal_agent.runtime.decision import DecisionEngine
+from universal_agent.runtime.decision import DecisionEngine, normalize_runtime_decision
 from universal_agent.runtime.emission import EventEmitter
 from universal_agent.runtime.events import EventSink
 from universal_agent.runtime.initial_state import seed_initial_state
@@ -494,6 +494,7 @@ class AgentRuntime:
                             f"token limit reached: {current} >= {limit}",
                         ),
                     )
+            decision = normalize_runtime_decision(decision)
             try:
                 decision.validate()
             except ValueError as exc:

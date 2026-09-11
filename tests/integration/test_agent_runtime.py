@@ -710,6 +710,66 @@ async def test_normal_loop_requires_evaluator_before_finish() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.behavior
+async def test_finish_with_action_fields_is_normalized_after_evaluator_success() -> None:
+    runtime, _, store, events, backend = build_runtime(
+        [
+            execute_probe(),
+            Decision(
+                DecisionType.FINISH,
+                "Health verified, but provider echoed the prior action fields",
+                capability="inspect_workload",
+                target="deployment/example",
+                arguments=immutable_json({"name": "example"}),
+                expected_observations=("healthy",),
+            ),
+        ],
+        [True],
+    )
+
+    result = await runtime.run(*health_goal_and_task())
+    state = await store.load(result.session_id)
+    generated = [event for event in events.events if event.type == "DecisionGenerated"]
+    validated = [event for event in events.events if event.type == "DecisionValidated"]
+
+    assert result.status is ExecutionStatus.COMPLETED
+    assert backend.calls == 1
+    assert state.goal.status is GoalStatus.COMPLETED
+    assert generated[-1].data["capability"] == "inspect_workload"
+    assert validated[-1].data["decision_type"] == "finish"
+    assert "capability" not in validated[-1].data
+    assert not any(event.type == "DecisionRejected" for event in events.events)
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_malformed_finish_before_evaluation_still_fails_finish_gate() -> None:
+    runtime, _, store, events, backend = build_runtime(
+        [
+            Decision(
+                DecisionType.FINISH,
+                "Trying to finish before evidence exists",
+                capability="inspect_workload",
+                target="deployment/example",
+                arguments=immutable_json({"name": "example"}),
+                expected_observations=("healthy",),
+            )
+        ],
+        [],
+    )
+
+    result = await runtime.run(*health_goal_and_task())
+    state = await store.load(result.session_id)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error_code is ErrorCode.INVALID_STATE
+    assert backend.calls == 0
+    assert state.goal.status is GoalStatus.FAILED
+    assert any(event.type == "DecisionValidated" for event in events.events)
+    assert not any(event.type == "ActionStarted" for event in events.events)
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
 async def test_finish_is_rejected_without_evaluation() -> None:
     runtime, _, store, events, _ = build_runtime([finish()], [])
     goal, task = health_goal_and_task()

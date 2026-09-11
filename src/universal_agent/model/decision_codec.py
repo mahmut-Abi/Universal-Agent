@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 
 from pydantic import Field
 
@@ -99,7 +100,7 @@ def decode_decision(payload: JsonMapping) -> Decision:
         empty_template="{path} must be a non-empty string",
     )
     message = model_optional_non_empty_string(parsed.message, "message")
-    return Decision(
+    decision = Decision(
         decision_type,
         reason,
         capability=capability,
@@ -107,6 +108,29 @@ def decode_decision(payload: JsonMapping) -> Decision:
         arguments=arguments,
         expected_observations=expected_observations,
         message=message,
+    )
+    return normalize_decision_payload(decision)
+
+
+def normalize_decision_payload(decision: Decision) -> Decision:
+    """Normalize provider payload quirks without weakening the Decision contract.
+
+    Some providers produce a valid FINISH intent while echoing action-shaped
+    fields from a previous EXECUTE decision. FINISH is a runtime control-flow
+    proposal, not an action; stripping those fields is deterministic and keeps
+    completion authority in the Runtime's finish transition/evaluator gate.
+    """
+
+    if decision.type is not DecisionType.FINISH:
+        return decision
+    if decision.capability is None and decision.target is None and not decision.arguments:
+        return decision
+    return replace(
+        decision,
+        capability=None,
+        target=None,
+        arguments=immutable_json({}),
+        expected_observations=(),
     )
 
 

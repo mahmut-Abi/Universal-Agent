@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from dataclasses import replace
 from typing import Protocol, runtime_checkable
 
 from universal_agent.core import (
     Decision,
     DecisionContext,
     DecisionType,
+    immutable_json,
 )
 from universal_agent.model import ModelAdapter
 
@@ -23,13 +25,35 @@ class DecisionEngine(Protocol):
 DecisionRule = Callable[[DecisionContext], Decision | None]
 
 
+def normalize_runtime_decision(decision: Decision) -> Decision:
+    """Apply deterministic runtime-owned decision normalization.
+
+    Some model providers emit a valid ``finish`` intent while also echoing
+    action-shaped fields from a prior ``execute`` decision. The Runtime may
+    discard those action fields because FINISH is a control-flow transition,
+    not a tool action. Other decision types remain strict.
+    """
+
+    if decision.type is not DecisionType.FINISH:
+        return decision
+    if decision.capability is None and decision.target is None and not decision.arguments:
+        return decision
+    return replace(
+        decision,
+        capability=None,
+        target=None,
+        arguments=immutable_json({}),
+        expected_observations=(),
+    )
+
+
 class ModelBackedDecisionEngine:
     def __init__(self, model: ModelAdapter) -> None:
         self._model = model
 
     async def decide(self, context: DecisionContext) -> Decision:
         try:
-            decision = await self._model.decide(context)
+            decision = normalize_runtime_decision(await self._model.decide(context))
         except Exception as exc:
             raise DecisionError(f"model failed to produce a decision: {exc}") from exc
         try:
@@ -54,6 +78,7 @@ class RuleBasedDecisionEngine:
             decision = rule(context)
             if decision is None:
                 continue
+            decision = normalize_runtime_decision(decision)
             try:
                 decision.validate()
             except ValueError as exc:

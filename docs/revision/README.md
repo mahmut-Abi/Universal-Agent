@@ -250,7 +250,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - Pod-level evidence uses scoped claim names such as `pod.resource`, or evaluator matching is scope-aware.
   - Test proves tool success is not treated as task success without evaluator completion.
 
-### [ ] UA-P1-005 — Normalize or cheaply recover invalid model `finish` decisions
+### [x] UA-P1-005 — Normalize or cheaply recover invalid model `finish` decisions
 
 - Priority: P1
 - Area: Model / Runtime / Recovery
@@ -652,7 +652,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 - [x] UA-P1-002 — Add live-like Kubernetes kind/minikube contract test
 - [x] UA-P1-004 — Re-confirm or fix Kubernetes evidence claim granularity collision
-- [ ] UA-P1-005 — Normalize or cheaply recover invalid model `finish` decisions
+- [x] UA-P1-005 — Normalize or cheaply recover invalid model `finish` decisions
 - [ ] UA-P1-006 — Extend model probe to cover `finish` contract
 - [ ] UA-P1-007 — Add CLI wall-clock budget and clean boundary stop
 - [ ] UA-P1-008 — Add human-readable confirmation banner
@@ -695,4 +695,5 @@ Add entries here when items are completed.
 2026-09-11 Sprint 2 completed: UA-P01-005/006/007/008 and UA-P1-001. Evidence: `scripts/demo-local.sh` clean HOME/workspace smoke; `agent session show` Summary/What happened; `agent session explain` Error/Reason/Try; `agent doctor` Next guidance; repairable CLI errors include machine-readable reason/try. Main files: src/universal_agent_cli/{agentd.py,doctor.py,io.py,session.py,text_views.py}, scripts/demo-local.sh, README.md, docs/revision/README.md.
 2026-09-11 UA-P1-004 completed: Kubernetes pod evidence now records pod identity as `pod.resource`, preventing pod-level facts from overwriting workload-level `resource` criteria. Evidence: `uv run ruff check src/universal_agent/domains/kubernetes/evidence.py tests/unit/test_kubernetes_evidence.py tests/integration/test_kubernetes_remediation.py`; `uv run pytest tests/unit/test_kubernetes_evidence.py tests/integration/test_kubernetes_remediation.py -q`. Main files: src/universal_agent/domains/kubernetes/evidence.py, tests/unit/test_kubernetes_evidence.py, tests/integration/test_kubernetes_remediation.py.
 2026-09-11 UA-P1-002 completed: added opt-in live-like kind/minikube contract coverage that provisions an unhealthy zero-replica Deployment in a temporary namespace, runs the kubectl-backed Kubernetes flow with the scripted model in production mode, and verifies the policy confirmation boundary; skips cleanly unless explicitly enabled against a kind/minikube context. Evidence: `uv run ruff check tests/live/test_kubernetes_kind_contract.py`; `uv run pytest tests/live/test_kubernetes_kind_contract.py -q` (clean skip without opt-in). Main file: tests/live/test_kubernetes_kind_contract.py.
+2026-09-11 UA-P1-005 completed: added shared deterministic normalization for FINISH decisions that echo action fields at the provider decision-codec seam plus a runtime-side guard for direct/custom adapters, preserving strict validation for other decision types and keeping completion gated by evaluator state. Evidence: `uv run ruff check src/universal_agent/model/decision_codec.py src/universal_agent/runtime/decision.py src/universal_agent/runtime/agent.py tests/unit/test_model_http.py tests/integration/test_agent_runtime.py`; `uv run pytest tests/unit/test_model_http.py tests/integration/test_agent_runtime.py -q`. Main files: src/universal_agent/model/decision_codec.py, src/universal_agent/runtime/decision.py, src/universal_agent/runtime/agent.py, tests/unit/test_model_http.py, tests/integration/test_agent_runtime.py.
 ```

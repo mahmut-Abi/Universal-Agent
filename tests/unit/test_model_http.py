@@ -32,6 +32,7 @@ from universal_agent.model import (
     OpenAISdkModelTransport,
     model_usage,
 )
+from universal_agent.model.decision_codec import decode_decision
 from universal_agent.model.http import OpenAIClientFactory
 
 
@@ -224,6 +225,29 @@ def context() -> DecisionContext:
     )
 
 
+@pytest.mark.contract
+def test_decode_decision_normalizes_finish_with_echoed_action_fields() -> None:
+    decision = decode_decision(
+        immutable_json(
+            {
+                "type": "finish",
+                "reason": "Runtime criteria are already satisfied.",
+                "capability": "scale_workload",
+                "target": "deployment/api",
+                "arguments": {"name": "api", "replicas": 2},
+                "expected_observations": ["mutation_applied"],
+            }
+        )
+    )
+
+    assert decision.type is DecisionType.FINISH
+    assert decision.capability is None
+    assert decision.target is None
+    assert decision.arguments == {}
+    assert decision.expected_observations == ()
+    decision.validate()
+
+
 @pytest.mark.asyncio
 @pytest.mark.contract
 async def test_json_http_model_adapter_posts_context_and_decodes_decision_usage() -> None:
@@ -310,6 +334,36 @@ async def test_json_http_model_adapter_accepts_top_level_decision_without_usage(
     assert decision.type is DecisionType.FINISH
     assert decision.reason == "All criteria satisfied."
     assert model_usage(adapter) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_json_http_model_adapter_normalizes_finish_with_echoed_action_fields() -> None:
+    adapter = JsonHttpModelAdapter(
+        "https://models.example.test/decide",
+        "runtime-model",
+        transport=RecordingTransport(
+            immutable_json(
+                {
+                    "decision": {
+                        "type": "finish",
+                        "reason": "Runtime criteria are already satisfied.",
+                        "capability": "scale_workload",
+                        "target": "deployment/api",
+                        "arguments": {"name": "api", "replicas": 2},
+                        "expected_observations": ["mutation_applied"],
+                    }
+                }
+            )
+        ),
+    )
+
+    decision = await adapter.decide(context())
+
+    assert decision.type is DecisionType.FINISH
+    assert decision.capability is None
+    assert decision.target is None
+    assert decision.arguments == {}
 
 
 @pytest.mark.asyncio
@@ -432,6 +486,46 @@ def test_json_http_model_adapter_validates_configuration() -> None:
             "runtime-model",
             extra_headers={"X-Test\n": "bad"},
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_openai_chat_completions_model_adapter_normalizes_echoed_finish_action() -> None:
+    adapter = OpenAIChatCompletionsModelAdapter(
+        "gpt-runtime",
+        api_key="openai-secret",
+        transport=RecordingTransport(
+            immutable_json(
+                {
+                    "choices": [
+                        {
+                            "finish_reason": "stop",
+                            "message": {
+                                "role": "assistant",
+                                "content": json_text(
+                                    {
+                                        "type": "finish",
+                                        "reason": "Runtime criteria are already satisfied.",
+                                        "capability": "scale_workload",
+                                        "target": "deployment/api",
+                                        "arguments": {"name": "api", "replicas": 2},
+                                        "expected_observations": ["mutation_applied"],
+                                    }
+                                ),
+                            },
+                        }
+                    ],
+                }
+            )
+        ),
+    )
+
+    decision = await adapter.decide(context())
+
+    assert decision.type is DecisionType.FINISH
+    assert decision.capability is None
+    assert decision.target is None
+    assert decision.arguments == {}
 
 
 @pytest.mark.asyncio
