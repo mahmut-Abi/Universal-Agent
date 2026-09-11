@@ -114,6 +114,100 @@ async def test_kind_or_minikube_unhealthy_workload_reaches_confirmation(
         _kubectl(context, "delete", "namespace", namespace, "--ignore-not-found=true")
 
 
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_kind_or_minikube_unhealthy_workload_completes_fresh_verification(
+    tmp_path: Path,
+) -> None:
+    """Live-like staging contract: real kubectl remediation reaches completion.
+
+    Unlike the production-boundary test, this uses ``staging`` so the policy
+    allows the bounded scale action. The contract must then include fresh
+    verification evidence rather than stopping with completion verification
+    skipped at the confirmation boundary.
+    """
+
+    context = _local_kubernetes_context()
+    namespace = f"ua-live-like-{uuid4().hex[:8]}"
+    profile_path = tmp_path / "profile.json"
+    run_output = StringIO()
+
+    _kubectl(context, "create", "namespace", namespace)
+    try:
+        _kubectl(
+            context,
+            "create",
+            "deployment",
+            "ua-unhealthy",
+            "--image=registry.k8s.io/pause:3.9",
+            "--replicas=0",
+            "--namespace",
+            namespace,
+        )
+        init_status = await run_cli(
+            [
+                "init",
+                "--output-format",
+                "json",
+                "--output",
+                str(profile_path),
+                "--profile",
+                "local-kubernetes",
+                "--environment",
+                "staging",
+                "--domain-backend",
+                "kubectl",
+                "--kubectl-context",
+                context,
+                "--kubectl-namespace",
+                namespace,
+                "--kubectl-timeout-seconds",
+                "20",
+            ],
+            stdout=StringIO(),
+        )
+        run_status = await run_cli(
+            [
+                "--profile-config",
+                str(profile_path),
+                "kubernetes",
+                "run",
+                "local-kubernetes",
+                "--workload",
+                "deployment/ua-unhealthy",
+                "--namespace",
+                namespace,
+                "--skip-model-probe",
+                "--skip-preflight",
+            ],
+            stdout=run_output,
+        )
+        payload = _read_json(run_output)
+        run = payload["run"]
+        contract = payload["contract"]
+        assert isinstance(run, dict)
+        assert isinstance(contract, dict)
+        result = run["result"]
+        session = run["session"]
+        assert isinstance(result, dict)
+        assert isinstance(session, dict)
+
+        assert init_status == 0
+        assert run_status == 0
+        assert payload["status"] == "completed"
+        assert result["status"] == "completed"
+        assert session["pending_action"] is None
+        assert session["satisfied_criteria"]["healthy"] is True
+        assert session["satisfied_criteria"]["resource"] == "deployment/ua-unhealthy"
+        assert session["satisfied_criteria"]["namespace"] == namespace
+        assert contract["status"] == "ok"
+        checks = {str(item["name"]): item for item in contract["checks"] if isinstance(item, dict)}
+        assert checks["completion_verification"]["status"] == "ok"
+        assert checks["confirmation_boundary"]["status"] == "ok"
+    finally:
+        _kubectl(context, "delete", "namespace", namespace, "--ignore-not-found=true")
+
+
 def _local_kubernetes_context() -> str:
     if os.environ.get(ENABLE_ENV, "").lower() not in RUN_VALUES:
         pytest.skip(f"set {ENABLE_ENV}=true to run the live-like kind/minikube contract")
