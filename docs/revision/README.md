@@ -400,7 +400,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - Internal loop/session control/observation/recovery/settlement/persistence helpers are separated.
   - Behavior tests pass and no domain-specific branches are introduced.
 
-### [ ] UA-MAINT-004 — Split `src/universal_agent/service/runtime.py`
+### [x] UA-MAINT-004 — Split `src/universal_agent/service/runtime.py`
 
 - Priority: P2
 - Area: Maintenance / Runtime Service
@@ -663,7 +663,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 - [x] UA-MAINT-001 — Split `src/universal_agent_cli/parser.py`
 - [x] UA-MAINT-002 — Split `src/universal_agent_cli/agentd.py`
 - [x] UA-MAINT-003 — Split `src/universal_agent/runtime/agent.py`
-- [ ] UA-MAINT-004 — Split `src/universal_agent/service/runtime.py`
+- [x] UA-MAINT-004 — Split `src/universal_agent/service/runtime.py`
 - [ ] UA-MAINT-005 — Shrink root `universal_agent.__init__` public API surface
 
 ## Sprint 5 — Production Decisions
@@ -714,4 +714,5 @@ Add entries here when items are completed.
 2026-09-11 UA-MAINT-001 completed: `src/universal_agent_cli/parser.py` replaced by the `universal_agent_cli/parser/` package with golden_path, advanced, distributed, eval, and shared helper modules; `build_parser` behavior and help output unchanged. Evidence: `uv run ruff check src/universal_agent_cli/parser`; `uv run mypy src/universal_agent_cli/parser`; `uv run pytest tests/integration/test_p0_golden_path.py tests/integration/test_cli.py tests/integration/test_cli_agentd_client.py tests/unit/test_p0_config_and_views.py -q`; `uv run ua --help`. Main files: src/universal_agent_cli/parser/{__init__,golden_path,advanced,distributed,eval,_helpers}.py.
 2026-09-11 UA-MAINT-002 completed: `src/universal_agent_cli/agentd.py` reduced to a compatibility shim; remote command modules now live under `universal_agent_cli/remote/` (client, catalog, config, distributed, eval_ecosystem, kubernetes, observability, run, session, _shared). Evidence: `uv run ruff check src tests`; `uv run mypy src/universal_agent_cli`; `uv run pytest tests/integration/test_cli.py -q` (116 passed); `uv run pytest tests/integration/test_cli_agentd_client.py tests/integration/test_p0_golden_path.py tests/unit/test_p0_config_and_views.py -q` (37 passed). Main files: src/universal_agent_cli/agentd.py, src/universal_agent_cli/remote/*.py.
 2026-09-11 UA-MAINT-003 completed: session-control and capability-constraint helpers extracted from `runtime/agent.py` into `runtime/controls.py` (public AgentRuntime methods unchanged; `_actions` attr renamed to `_action_executor` for clarity). Evidence: `uv run ruff check src tests`; `uv run mypy src/universal_agent/runtime`; full suite `uv run pytest tests/ -q` (1463 passed, 5 skipped). Main files: src/universal_agent/runtime/{agent.py,controls.py}.
+2026-09-11 UA-MAINT-004 completed: world-projection helpers extracted from `service/runtime.py` into `service/world_views.py`; RuntimeService keeps its existing public method surface and delegates to the new module (catalog/distributed/operations services were already separate). Evidence: `uv run ruff check src/universal_agent/service`; `uv run mypy src/universal_agent/service`; full suite `uv run pytest tests/ -q` (1463 passed, 5 skipped). Main files: src/universal_agent/service/{runtime.py,world_views.py}.
 ```
