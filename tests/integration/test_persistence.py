@@ -13,16 +13,10 @@ from universal_agent import (
     Decision,
     DecisionType,
     DomainLoader,
-    FileEventStore,
-    FileRuntimeStore,
-    FileSessionStore,
     Goal,
     RuntimeAPI,
     RuntimeBuilder,
     ScriptedModelAdapter,
-    SQLiteEventStore,
-    SQLiteRuntimeStore,
-    SQLiteSessionStore,
     SuccessCriterion,
     Task,
     immutable_json,
@@ -37,7 +31,16 @@ from universal_agent.core import (
     new_session_id,
 )
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
-from universal_agent.persistence import encode_runtime_event, encode_session_snapshot
+from universal_agent.persistence import (
+    FileEventStore,
+    FileRuntimeStore,
+    FileSessionStore,
+    SQLiteEventStore,
+    SQLiteRuntimeStore,
+    SQLiteSessionStore,
+    encode_runtime_event,
+    encode_session_snapshot,
+)
 from universal_agent.state import SessionSnapshot, SessionVersionConflictError, session_from_state
 
 

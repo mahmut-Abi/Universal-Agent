@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from universal_agent import BaseDomainRuntime, DomainLoader, RuntimeBuilder, immutable_json
+from universal_agent import DomainLoader, RuntimeBuilder, immutable_json
 from universal_agent.core import (
     CapabilityCategory,
     CapabilityDefinition,
@@ -9,6 +9,7 @@ from universal_agent.core import (
     JsonMapping,
     ToolDefinition,
 )
+from universal_agent.domain import BaseDomainRuntime
 from universal_agent.evaluation import CriteriaEvaluator, Evaluator
 from universal_agent.tools import Tool
 

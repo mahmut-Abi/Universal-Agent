@@ -79,6 +79,12 @@ src = ["src", "tests", "examples"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# The legacy compatibility lookup in the root facade is a generated table;
+# keeping each "name": "module.attr" mapping on one reviewable line beats
+# wrapping long dotted paths across multiple lines.
+"src/universal_agent/__init__.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
