@@ -207,6 +207,36 @@ def _model_checks(report: Mapping[str, JsonValue] | None) -> list[DoctorCheck]:
     return checks
 
 
+def _distributed_runtime_checks(report: Mapping[str, JsonValue] | None) -> list[DoctorCheck]:
+    if report is None:
+        return []
+    runtime = report.get("runtime")
+    if not isinstance(runtime, Mapping):
+        return []
+    enabled: list[str] = []
+    for key in ("distributed_queue", "distributed_locks", "distributed_workers"):
+        section = runtime.get(key)
+        if not isinstance(section, Mapping):
+            continue
+        backend = str(section.get("backend") or "memory")
+        if backend != "memory":
+            enabled.append(f"{key}={backend}")
+    if not enabled:
+        return []
+    return [
+        DoctorCheck(
+            "Advanced",
+            "distributed runtime",
+            CHECK_SKIPPED,
+            "advanced/experimental local distributed backend enabled: " + ", ".join(enabled),
+            (
+                "Use local distributed mode only for development; choose production "
+                "queue/lock/worker backends before HA use."
+            ),
+        )
+    ]
+
+
 def render_doctor_checks(checks: Sequence[DoctorCheck], *, status: str) -> str:
     lines = ["Universal Agent Doctor", ""]
     current_section: str | None = None
@@ -258,6 +288,7 @@ async def run_doctor_command(args: argparse.Namespace, out: TextIO) -> int:
         validity, report = _config_validity_check(config_path)
         checks.append(validity)
     checks.extend(_model_checks(report))
+    checks.extend(_distributed_runtime_checks(report))
 
     if config_path is not None and report is not None:
         # Runtime/Profiles/Domains/Policy come from the embedded agentd runtime —

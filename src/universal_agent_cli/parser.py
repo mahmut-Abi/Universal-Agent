@@ -398,7 +398,10 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
     repair_state_events.add_argument("--confirmed", choices=("true", "false"), default="false")
     repair_state_events.add_argument("--dry-run", action="store_true")
 
-    distributed = commands.add_parser("distributed")
+    distributed = commands.add_parser(
+        "distributed",
+        help="(advanced/experimental) Inspect or drive local distributed runtime primitives.",
+    )
     distributed_commands = distributed.add_subparsers(
         dest="distributed_command",
         required=True,

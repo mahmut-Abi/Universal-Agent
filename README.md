@@ -90,8 +90,9 @@ agent session     list | show | explain | resume | cancel (+ events/evidence/dia
 agent config      Show the active configuration (secrets are never printed)
 agent profile     list | show — available Agent profiles
 
-Advanced: serve, kubernetes, chat, tui, eval, ecosystem, distributed,
-          domain-packages, memory, policies, evaluators, audit, repair, …
+Advanced / experimental: serve, kubernetes, chat, tui, eval, ecosystem,
+distributed (local queue/worker primitives only), domain-packages, memory,
+policies, evaluators, audit, repair, …
 ```
 
 Common flags:

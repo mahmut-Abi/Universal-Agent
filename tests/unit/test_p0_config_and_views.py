@@ -14,6 +14,7 @@ from universal_agent_cli.doctor import (
     CHECK_ERROR,
     CHECK_OK,
     DoctorCheck,
+    _distributed_runtime_checks,
     doctor_status,
     render_doctor_checks,
 )
@@ -198,6 +199,24 @@ def test_doctor_render_includes_try_hint_for_failures() -> None:
     assert "✗ credentials configured: missing: OPENAI_API_KEY" in rendered
     assert "Try: Set OPENAI_API_KEY or run `agent init`." in rendered
     assert "Status: error" in rendered
+
+
+def test_doctor_warns_when_distributed_local_backend_is_enabled() -> None:
+    checks = _distributed_runtime_checks(
+        {
+            "runtime": {
+                "distributed_queue": {"backend": "file"},
+                "distributed_locks": {"backend": "memory"},
+                "distributed_workers": {"backend": "sqlite"},
+            }
+        }
+    )
+
+    assert doctor_status(checks) == "warn"
+    rendered = render_doctor_checks(checks, status="warn")
+    assert "[Advanced]" in rendered
+    assert "advanced/experimental local distributed backend enabled" in rendered
+    assert "queue/lock/worker backends before HA use" in rendered
 
 
 def test_render_run_text_masks_nothing_but_shows_counts_and_next_steps() -> None:

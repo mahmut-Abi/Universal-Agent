@@ -594,7 +594,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 # H. Advanced Surface Freeze Backlog
 
-### [ ] UA-FREEZE-001 — Mark distributed runtime as advanced/experimental in user-facing surfaces
+### [x] UA-FREEZE-001 — Mark distributed runtime as advanced/experimental in user-facing surfaces
 
 - Priority: P1
 - Area: Product / Distributed / Docs
@@ -677,7 +677,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 ## Sprint 6 — Advanced Freeze / Labeling
 
-- [ ] UA-FREEZE-001 — Mark distributed runtime as advanced/experimental in user-facing surfaces
+- [x] UA-FREEZE-001 — Mark distributed runtime as advanced/experimental in user-facing surfaces
 - [ ] UA-FREEZE-002 — Mark ecosystem/package registry as experimental and freeze feature growth
 - [ ] UA-FREEZE-003 — Keep Multi-Agent explicitly optional and separate from Domain Composition
 
@@ -708,4 +708,5 @@ Add entries here when items are completed.
 2026-09-11 UA-DOC-004 completed: verified model-provider docs explain `json_schema`, `json_object`, `prompt_json`, OpenAI-compatible endpoint caveats, model-probe scope, and fallback settings such as `prompt_json`, headers, and timeout. Evidence: grep across docs/runtime-operator-guide.md, docs/kubernetes-production-run-spec.md, docs/kubernetes-production-slice-spec.md, docs/kubernetes-live-operator-runbook.md. Main files: docs/runtime-operator-guide.md, docs/kubernetes-production-run-spec.md, docs/kubernetes-production-slice-spec.md, docs/kubernetes-live-operator-runbook.md, docs/revision/README.md.
 2026-09-11 UA-DOC-003 completed: `docs/index.md` now routes readers by New Users/Golden Path, Operators/Production-Like Runs, Runtime/Domain Developers, and Advanced/Deferred Surfaces while keeping P4/P6/P7 discoverable but outside the Golden Path. Evidence: docs/index.md reader map. Main files: docs/index.md, docs/revision/README.md.
 2026-09-11 UA-DOC-005 completed: added `docs/security-production-decisions.md` with explicit selected/default/deferred statuses for identity provider, tenant model, authorization, secret provider, audit storage, and package trust; linked it from docs/index.md. Evidence: markdown validation via write/edit hooks. Main files: docs/security-production-decisions.md, docs/index.md, docs/revision/README.md.
+2026-09-11 UA-FREEZE-001 completed: distributed CLI command and README advanced list now say advanced/experimental with local-only primitives; `agent doctor` emits an Advanced warning when non-memory distributed queue/lock/worker backends are enabled without a production backend. Evidence: `uv run ruff check src/universal_agent_cli/doctor.py src/universal_agent_cli/parser.py tests/unit/test_p0_config_and_views.py README.md`; `uv run pytest tests/unit/test_p0_config_and_views.py -q`; `uv run ua --help` shows advanced/experimental distributed label. Main files: src/universal_agent_cli/doctor.py, src/universal_agent_cli/parser.py, README.md, tests/unit/test_p0_config_and_views.py.
 ```
