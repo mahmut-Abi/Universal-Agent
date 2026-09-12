@@ -36,9 +36,7 @@ def helper():
     )
     module = _load_report_module()
 
-    assert module.test_marker_counts(tests) == Counter(
-        {"behavior": 1, "contract": 1, "unit": 3}
-    )
+    assert module.test_marker_counts(tests) == Counter({"behavior": 1, "contract": 1, "unit": 3})
 
 
 def _load_report_module() -> ModuleType:

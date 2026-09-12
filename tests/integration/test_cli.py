@@ -4570,13 +4570,9 @@ async def test_cli_outputs_do_not_leak_config_or_session_secret_values(
     run_payload = read_json(run_output)
     session_id = run_payload["result"]["session_id"]
     assert isinstance(session_id, str)
+    assert await run_cli(["session", "show", session_id], service=service, stdout=show_output) == 0
     assert (
-        await run_cli(["session", "show", session_id], service=service, stdout=show_output)
-        == 0
-    )
-    assert (
-        await run_cli(["session", "events", session_id], service=service, stdout=events_output)
-        == 0
+        await run_cli(["session", "events", session_id], service=service, stdout=events_output) == 0
     )
 
     combined = "\n".join(

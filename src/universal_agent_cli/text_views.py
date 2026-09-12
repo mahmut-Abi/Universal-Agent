@@ -190,8 +190,7 @@ def render_session_show_text(
     pending = session_body.get("pending_action")
     if isinstance(pending, dict):
         lines.extend(
-            f"  {line}"
-            for line in _confirmation_banner_lines(pending, session_id, termination)
+            f"  {line}" for line in _confirmation_banner_lines(pending, session_id, termination)
         )
     lines.extend(["", "What happened"])
     if raw_status == "completed":
