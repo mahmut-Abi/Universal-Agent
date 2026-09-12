@@ -367,7 +367,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 # E. P2 Maintenance Surface Backlog
 
-### [ ] UA-MAINT-001 — Split `src/universal_agent_cli/parser.py`
+### [x] UA-MAINT-001 — Split `src/universal_agent_cli/parser.py`
 
 - Priority: P2
 - Area: Maintenance / CLI
@@ -660,7 +660,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 ## Sprint 4 — Maintenance Reduction
 
-- [ ] UA-MAINT-001 — Split `src/universal_agent_cli/parser.py`
+- [x] UA-MAINT-001 — Split `src/universal_agent_cli/parser.py`
 - [ ] UA-MAINT-002 — Split `src/universal_agent_cli/agentd.py`
 - [ ] UA-MAINT-003 — Split `src/universal_agent/runtime/agent.py`
 - [ ] UA-MAINT-004 — Split `src/universal_agent/service/runtime.py`
@@ -711,4 +711,5 @@ Add entries here when items are completed.
 2026-09-11 UA-FREEZE-001 completed: distributed CLI command and README advanced list now say advanced/experimental with local-only primitives; `agent doctor` emits an Advanced warning when non-memory distributed queue/lock/worker backends are enabled without a production backend. Evidence: `uv run ruff check src/universal_agent_cli/doctor.py src/universal_agent_cli/parser.py tests/unit/test_p0_config_and_views.py README.md`; `uv run pytest tests/unit/test_p0_config_and_views.py -q`; `uv run ua --help` shows advanced/experimental distributed label. Main files: src/universal_agent_cli/doctor.py, src/universal_agent_cli/parser.py, README.md, tests/unit/test_p0_config_and_views.py.
 2026-09-11 UA-FREEZE-002 completed: `agent ecosystem --help` now says advanced/experimental, docs/product.md freezes new ecosystem features unless they unlock Domain SDK validation, and existing catalog/verify behavior remains tested. Evidence: `uv run ruff check src/universal_agent_cli/parser.py`; `uv run pytest tests/unit/test_ecosystem_catalog.py tests/integration/test_cli.py -q`. Main files: src/universal_agent_cli/parser.py, docs/product.md.
 2026-09-11 UA-FREEZE-003 completed: `agent multi-agent --help` says advanced/experimental optional surface, and docs/product.md now states Multi-Agent is optional and separate from Domain Composition with structured task/result/evidence contracts required for any future work. Evidence: `uv run ua multi-agent --help`; docs/product.md D3. Main files: src/universal_agent_cli/parser.py, docs/product.md.
+2026-09-11 UA-MAINT-001 completed: `src/universal_agent_cli/parser.py` replaced by the `universal_agent_cli/parser/` package with golden_path, advanced, distributed, eval, and shared helper modules; `build_parser` behavior and help output unchanged. Evidence: `uv run ruff check src/universal_agent_cli/parser`; `uv run mypy src/universal_agent_cli/parser`; `uv run pytest tests/integration/test_p0_golden_path.py tests/integration/test_cli.py tests/integration/test_cli_agentd_client.py tests/unit/test_p0_config_and_views.py -q`; `uv run ua --help`. Main files: src/universal_agent_cli/parser/{__init__,golden_path,advanced,distributed,eval,_helpers}.py.
 ```
