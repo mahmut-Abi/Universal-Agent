@@ -45,6 +45,32 @@ as a release blocker when `python -m mypy` passes.
   agentd routes, Domain package registries or UI renderers.
 - Keep examples as executable documentation when adding user-facing surfaces.
 
+## Projection, View and Codec Conventions
+
+New code follows one pattern instead of hand-rolling per-surface projection
+pairs (this consolidates the earlier repetitive view/codec approach without
+breaking persisted data):
+
+- **Pure view modules** turn runtime objects into JSON-safe payloads: use
+  `universal_agent.agentd.representations` for API bodies, and dedicated pure
+  modules such as `universal_agent.service.world_views` and
+  `universal_agent.domains.kubernetes.report_views` for surface-specific
+  projections. These modules own no I/O and stay simple to test.
+- **Human text renderers** (`universal_agent_cli.text_views`) consume the same
+  JSON-safe bodies the machine output uses, so local and agentd thin-client
+  paths render identical text without a second projection layer.
+- **Flow control stays separate from rendering**: a module that dispatches
+  commands or mutates runtime state (for example `cli_reports.py`) never
+  inlines payload building; it calls the view modules. Test monkeypatch seams
+  stay on the flow module, which re-exports view names for compatibility.
+- **Compatibility for moved names**: when helpers move between modules, the
+  original module re-exports them (`from x import y as y`) so existing imports
+  and monkeypatches keep working; new code imports from the owning module.
+- **Serialization**: use `immutable_json` / `to_json_object` from core and the
+  typed codec modules (`persistence/codec.py`) for persisted data; do not add
+  ad-hoc serialization next to view helpers. Persisted codecs change only with
+  a migration/compatibility note in the module docstring.
+
 ## Common Test Targets
 
 ```bash
