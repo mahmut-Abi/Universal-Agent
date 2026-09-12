@@ -46,6 +46,10 @@
 - 约束：
   - `agent --help` 中 Golden Path 命令（init / doctor / run / session / config / profile）在顶层优先展示，其余分组标 `advanced`；
   - 这些命令不参与 Golden Path 验收，也不得阻塞它（例如：没有 kubeconfig 时 `agent run` 必须可用）。
+- 2026-09-11 冻结补充：
+  - `distributed` 标注 advanced/experimental，且仅覆盖本地 queue/lock/worker 原语，不是生产 HA；
+  - `ecosystem`（package registry）标注 advanced/experimental，非 Golden Path 必需；新 ecosystem 功能冻结，除非它直接解锁 Domain SDK 验证；现有 catalog/verify 行为保持测试覆盖；
+  - Multi-Agent 明确标注 optional：Domain 是能力/知识边界，Agent 是自治执行边界；多 Domain 通过 Domain Composition 在一个 Agent 内完成，Multi-Agent 生产化推迟到单 Agent 多 Domain 行为验证完成之后，未来实现必须使用结构化 task/result/evidence 契约而非聊天转写。
 
 ## 3. 概念 → 用户界面落点（验收对照表）
 

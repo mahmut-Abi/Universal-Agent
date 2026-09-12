@@ -391,7 +391,10 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
     traces.add_argument("--format", choices=("runtime", "otlp"), default="runtime")
     audit = commands.add_parser("audit")
     audit.add_argument("--integrity", action="store_true")
-    commands.add_parser("multi-agent")
+    commands.add_parser(
+        "multi-agent",
+        help="(advanced/experimental) Optional Multi-Agent registry and delegation surface.",
+    )
     repair = commands.add_parser("repair")
     repair_commands = repair.add_subparsers(dest="repair_command", required=True)
     repair_state_events = repair_commands.add_parser("state-events")
@@ -519,7 +522,10 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
         help="Render a deterministic one-shot snapshot instead of the interactive dashboard",
     )
 
-    ecosystem = commands.add_parser("ecosystem")
+    ecosystem = commands.add_parser(
+        "ecosystem",
+        help="(advanced/experimental) Inspect, verify or plan local ecosystem packages.",
+    )
     ecosystem_commands = ecosystem.add_subparsers(dest="ecosystem_command", required=True)
     ecosystem_catalog = ecosystem_commands.add_parser("catalog")
     ecosystem_catalog.add_argument("--domain-package-dir")
