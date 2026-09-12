@@ -18,10 +18,6 @@ from universal_agent.domains.kubernetes.cli import (
     LOCAL_PROFILE_NAME,
     add_kubernetes_command,
 )
-from universal_agent_cli.parser._helpers import (
-    add_evaluation_selector_arguments,
-    add_output_argument,
-)
 from universal_agent_cli.parser.advanced import (
     add_catalog_parsers,
     add_chat_parser,
@@ -40,6 +36,11 @@ from universal_agent_cli.parser.golden_path import (
     add_profile_parser,
     add_run_parser,
     add_session_parser,
+)
+
+from ._helpers import (
+    add_evaluation_selector_arguments,
+    add_output_argument,
 )
 
 GOLDEN_PATH_COMMANDS = (

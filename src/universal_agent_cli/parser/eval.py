@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from universal_agent_cli.parser._helpers import add_evaluation_selector_arguments
+from ._helpers import add_evaluation_selector_arguments
 
 
 def add_eval_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

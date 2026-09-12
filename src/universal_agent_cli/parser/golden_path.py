@@ -10,7 +10,8 @@ from universal_agent_cli.defaults import (
     default_work_queue_path,
     default_workers_path,
 )
-from universal_agent_cli.parser._helpers import add_output_argument
+
+from ._helpers import add_output_argument
 
 
 def add_init_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
