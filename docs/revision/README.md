@@ -378,7 +378,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
   - Existing CLI behavior is unchanged except intentional help improvements.
   - Targeted CLI tests pass.
 
-### [ ] UA-MAINT-002 — Split `src/universal_agent_cli/agentd.py`
+### [x] UA-MAINT-002 — Split `src/universal_agent_cli/agentd.py`
 
 - Priority: P2
 - Area: Maintenance / CLI / agentd
@@ -661,7 +661,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 ## Sprint 4 — Maintenance Reduction
 
 - [x] UA-MAINT-001 — Split `src/universal_agent_cli/parser.py`
-- [ ] UA-MAINT-002 — Split `src/universal_agent_cli/agentd.py`
+- [x] UA-MAINT-002 — Split `src/universal_agent_cli/agentd.py`
 - [ ] UA-MAINT-003 — Split `src/universal_agent/runtime/agent.py`
 - [ ] UA-MAINT-004 — Split `src/universal_agent/service/runtime.py`
 - [ ] UA-MAINT-005 — Shrink root `universal_agent.__init__` public API surface
@@ -712,4 +712,5 @@ Add entries here when items are completed.
 2026-09-11 UA-FREEZE-002 completed: `agent ecosystem --help` now says advanced/experimental, docs/product.md freezes new ecosystem features unless they unlock Domain SDK validation, and existing catalog/verify behavior remains tested. Evidence: `uv run ruff check src/universal_agent_cli/parser.py`; `uv run pytest tests/unit/test_ecosystem_catalog.py tests/integration/test_cli.py -q`. Main files: src/universal_agent_cli/parser.py, docs/product.md.
 2026-09-11 UA-FREEZE-003 completed: `agent multi-agent --help` says advanced/experimental optional surface, and docs/product.md now states Multi-Agent is optional and separate from Domain Composition with structured task/result/evidence contracts required for any future work. Evidence: `uv run ua multi-agent --help`; docs/product.md D3. Main files: src/universal_agent_cli/parser.py, docs/product.md.
 2026-09-11 UA-MAINT-001 completed: `src/universal_agent_cli/parser.py` replaced by the `universal_agent_cli/parser/` package with golden_path, advanced, distributed, eval, and shared helper modules; `build_parser` behavior and help output unchanged. Evidence: `uv run ruff check src/universal_agent_cli/parser`; `uv run mypy src/universal_agent_cli/parser`; `uv run pytest tests/integration/test_p0_golden_path.py tests/integration/test_cli.py tests/integration/test_cli_agentd_client.py tests/unit/test_p0_config_and_views.py -q`; `uv run ua --help`. Main files: src/universal_agent_cli/parser/{__init__,golden_path,advanced,distributed,eval,_helpers}.py.
+2026-09-11 UA-MAINT-002 completed: `src/universal_agent_cli/agentd.py` reduced to a compatibility shim; remote command modules now live under `universal_agent_cli/remote/` (client, catalog, config, distributed, eval_ecosystem, kubernetes, observability, run, session, _shared). Evidence: `uv run ruff check src tests`; `uv run mypy src/universal_agent_cli`; `uv run pytest tests/integration/test_cli.py -q` (116 passed); `uv run pytest tests/integration/test_cli_agentd_client.py tests/integration/test_p0_golden_path.py tests/unit/test_p0_config_and_views.py -q` (37 passed). Main files: src/universal_agent_cli/agentd.py, src/universal_agent_cli/remote/*.py.
 ```
