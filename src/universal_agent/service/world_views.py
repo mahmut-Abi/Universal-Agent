@@ -43,9 +43,7 @@ def world_projection_views(
     tuple[WorldEntityView, ...],
     tuple[WorldRelationView, ...],
 ]:
-    return world_projection_views_from_snapshot(
-        world_snapshot(components, session_id, evidence)
-    )
+    return world_projection_views_from_snapshot(world_snapshot(components, session_id, evidence))
 
 
 def world_neighborhood(

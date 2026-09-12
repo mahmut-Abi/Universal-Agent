@@ -678,8 +678,8 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 ## Sprint 6 — Advanced Freeze / Labeling
 
 - [x] UA-FREEZE-001 — Mark distributed runtime as advanced/experimental in user-facing surfaces
-- [ ] UA-FREEZE-002 — Mark ecosystem/package registry as experimental and freeze feature growth
-- [ ] UA-FREEZE-003 — Keep Multi-Agent explicitly optional and separate from Domain Composition
+- [x] UA-FREEZE-002 — Mark ecosystem/package registry as experimental and freeze feature growth
+- [x] UA-FREEZE-003 — Keep Multi-Agent explicitly optional and separate from Domain Composition
 
 ---
 
