@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import cast
 
 from universal_agent.context import BasicContextCompiler, ContextCompiler
 from universal_agent.core import (
     ActionId,
     AgentState,
-    CapabilityCategory,
     CapabilityDefinition,
     CapabilityInputContract,
     Decision,
@@ -42,6 +40,12 @@ from universal_agent.runtime.actions import (
     ConfirmationRequired,
 )
 from universal_agent.runtime.capabilities import CapabilityAdvisor
+from universal_agent.runtime.controls import (
+    _RISK_RANK,
+    _constrain_capability_context,
+    _SessionControl,
+    _validate_session_constraints,
+)
 from universal_agent.runtime.decision import DecisionEngine, normalize_runtime_decision
 from universal_agent.runtime.emission import EventEmitter
 from universal_agent.runtime.events import EventSink
@@ -73,22 +77,6 @@ from universal_agent.state import (
 )
 from universal_agent.state.event_store import EventStore
 from universal_agent.tasks import TaskManager
-
-_RISK_RANK = {
-    "low": 0,
-    "medium": 1,
-    "high": 2,
-}
-
-
-@dataclass(slots=True)
-class _SessionControl:
-    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    active_task: asyncio.Task[Any] | None = None
-    cancel_requested: bool = False
-    cancel_reason: str | None = None
-    pause_requested: bool = False
-    pause_reason: str | None = None
 
 
 class AgentRuntime:
@@ -147,7 +135,7 @@ class AgentRuntime:
         self._goal_compiler = goal_compiler
         self._decision_engine = decision_engine
         self._model_router = model_router
-        self._actions = ActionExecutor(
+        self._action_executor = ActionExecutor(
             components,
             self._environment,
             secret_provider=secret_provider,
@@ -319,7 +307,7 @@ class AgentRuntime:
                 mark_current_task(session, TaskStatus.RUNNING)
                 state.termination_reason = None
                 state.pending_action = None
-                await self._actions.release_pending_resource(
+                await self._action_executor.release_pending_resource(
                     session,
                     pending,
                     self._events.emitter_for(session),
@@ -673,11 +661,16 @@ class AgentRuntime:
             if requested is not None:
                 return requested
             if pending is not None:
-                outcome = await self._actions.execute(session, pending, emit, confirmed=True)
+                outcome = await self._action_executor.execute(
+                    session,
+                    pending,
+                    emit,
+                    confirmed=True,
+                )
                 pending = None
             else:
                 assert decision is not None
-                outcome = await self._actions.prepare(session, decision, emit)
+                outcome = await self._action_executor.prepare(session, decision, emit)
             if isinstance(outcome, ActionRejected):
                 return await self._settle(
                     session,
@@ -961,7 +954,7 @@ class AgentRuntime:
         ):
             pending = session.state.pending_action
             session.state.pending_action = None
-            await self._actions.release_pending_resource(
+            await self._action_executor.release_pending_resource(
                 session,
                 pending,
                 self._events.emitter_for(session),
@@ -1017,44 +1010,3 @@ class AgentRuntime:
         data: dict[str, object] | None = None,
     ) -> None:
         await self._events.emit(state, event_type, action_id=action_id, data=data)
-
-
-def _constrain_capability_context(
-    state: AgentState,
-    capabilities: tuple[CapabilityDefinition, ...],
-    input_contracts: tuple[CapabilityInputContract, ...],
-) -> tuple[tuple[CapabilityDefinition, ...], tuple[CapabilityInputContract, ...]]:
-    if not state.read_only:
-        return capabilities, input_contracts
-    allowed_capability_names = {
-        capability.name
-        for capability in capabilities
-        if capability.category is not CapabilityCategory.MUTATION
-    }
-    return (
-        tuple(
-            capability for capability in capabilities if capability.name in allowed_capability_names
-        ),
-        tuple(
-            contract
-            for contract in input_contracts
-            if contract.capability in allowed_capability_names
-        ),
-    )
-
-
-def _validate_session_constraints(
-    state: AgentState,
-    decision: Decision,
-    capabilities: tuple[CapabilityDefinition, ...],
-) -> tuple[ErrorCode, str] | None:
-    if not state.read_only or decision.type is not DecisionType.EXECUTE:
-        return None
-    capability_name = decision.capability or ""
-    capability = next((item for item in capabilities if item.name == capability_name), None)
-    if capability is None or capability.category is not CapabilityCategory.MUTATION:
-        return None
-    return (
-        ErrorCode.POLICY_DENIED,
-        f"read-only session cannot execute mutation capability: {capability.name}",
-    )

@@ -549,7 +549,7 @@ async def test_cancel_running_session_stops_active_tool_and_settles_once() -> No
     assert state.goal.status is GoalStatus.CANCELLED
     assert state.current_task.status is TaskStatus.CANCELLED
     assert domain.tool.cancelled is True
-    assert not runtime._actions.idempotency_store.seen(
+    assert not runtime._action_executor.idempotency_store.seen(
         IdempotencyKey(str(resolved_event.data["idempotency_key"]))
     )
     assert [event.type for event in events.events].count("GoalCancelled") == 1

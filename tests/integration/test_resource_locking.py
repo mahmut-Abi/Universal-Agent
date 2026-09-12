@@ -281,7 +281,7 @@ async def test_unknown_mutation_forgets_idempotency_record() -> None:
     assert result.error_code is ErrorCode.UNKNOWN_EXECUTION
     assert tool.calls == 1
     assert "IdempotencyChecked" in [event.type for event in events.events]
-    assert not runtime._actions.idempotency_store.seen(resolved.data["idempotency_key"])
+    assert not runtime._action_executor.idempotency_store.seen(resolved.data["idempotency_key"])
 
 
 @pytest.mark.asyncio
@@ -298,7 +298,7 @@ async def test_duplicate_idempotency_record_requires_reconcile_without_reexecuti
             ),
         ),
     )
-    runtime._actions.idempotency_store = AlwaysDuplicateIdempotencyStore()
+    runtime._action_executor.idempotency_store = AlwaysDuplicateIdempotencyStore()
 
     result = await runtime.run(*goal_task())
     event_types = [event.type for event in events.events]
@@ -321,7 +321,7 @@ async def test_duplicate_idempotency_record_reconciles_observed_success() -> Non
         PolicyEffect.ALLOW,
         action_reconcilers=(ResourceVersionReconciler(),),
     )
-    runtime._actions.idempotency_store = AlwaysDuplicateIdempotencyStore()
+    runtime._action_executor.idempotency_store = AlwaysDuplicateIdempotencyStore()
     components.resource_versions.set_current("setting/example", "rv-2")
 
     result = await runtime.run(*goal_task())
