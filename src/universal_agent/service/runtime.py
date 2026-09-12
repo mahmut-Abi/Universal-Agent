@@ -69,7 +69,7 @@ from universal_agent.service.catalog_service import CatalogService
 from universal_agent.service.distributed import DistributedService
 from universal_agent.service.distributed_runtime import DistributedRuntimeController
 from universal_agent.service.operations import OperationsService
-from universal_agent.service.projections import build_world_snapshot, memory_view
+from universal_agent.service.projections import memory_view
 from universal_agent.service.views import (
     CapabilityView,
     DistributedPendingActionSchedulingResult,
@@ -92,6 +92,15 @@ from universal_agent.service.views import (
     WorldFactView,
     WorldNeighborhoodView,
     WorldRelationView,
+)
+from universal_agent.service.world_views import (
+    world_neighborhood as _world_neighborhood_view,
+)
+from universal_agent.service.world_views import (
+    world_projection_views as _world_projection_views_from,
+)
+from universal_agent.service.world_views import (
+    world_snapshot as _build_world_snapshot,
 )
 from universal_agent.world import WorldSnapshot
 
@@ -690,9 +699,7 @@ class RuntimeService:
         tuple[WorldEntityView, ...],
         tuple[WorldRelationView, ...],
     ]:
-        from universal_agent.service.projections import world_projection_views_from_snapshot
-
-        return world_projection_views_from_snapshot(self._world_snapshot(session_id, evidence))
+        return _world_projection_views_from(self._components, session_id, evidence)
 
     def _world_neighborhood(
         self,
@@ -700,13 +707,11 @@ class RuntimeService:
         entity_id: str,
         relation: str | None,
     ) -> WorldNeighborhoodView | None:
-        from universal_agent.service.projections import world_neighborhood_view
-
-        return world_neighborhood_view(snapshot.neighborhood_for(entity_id, relation=relation))
+        return _world_neighborhood_view(snapshot, entity_id, relation)
 
     def _world_snapshot(
         self,
         session_id: SessionId,
         evidence: tuple[EvidenceView, ...],
     ) -> WorldSnapshot:
-        return build_world_snapshot(self._components, session_id, evidence)
+        return _build_world_snapshot(self._components, session_id, evidence)
