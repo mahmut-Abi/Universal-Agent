@@ -43,7 +43,7 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 
-RUN uv sync --locked --no-dev --no-editable --compile-bytecode
+RUN uv sync --locked --no-dev --no-editable --all-extras --compile-bytecode
 
 RUN agent version >/tmp/agent-version.json \
     && agent health >/tmp/agent-health.json

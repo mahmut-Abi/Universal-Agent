@@ -21,11 +21,12 @@ docker build \
   -t universal-agent-runtime:local .
 ```
 
-The build installs runtime dependencies from `uv.lock` with `uv sync --locked`
-and excludes development dependency groups. It also runs `agent version` and
-`agent health` during the image build so packaging or console-script regressions
-fail before the image is shipped. If dependencies change, refresh and commit the
-lock file before building the image.
+The build installs runtime dependencies from `uv.lock` with
+`uv sync --locked --all-extras` so the image can run any provider profile
+(OpenAI, PostgreSQL persistence, TUI), and excludes development dependency
+groups. It also runs `agent version` and `agent health` during the image build
+so packaging or console-script regressions fail before the image is shipped. If
+dependencies change, refresh and commit the lock file before building the image.
 
 ## Run the default runtime API
 

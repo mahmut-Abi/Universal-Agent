@@ -4,11 +4,32 @@ from collections.abc import Mapping
 from typing import Any, Protocol, TypeGuard, cast, runtime_checkable
 
 import httpx
-from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI, OpenAIError
 
 from universal_agent.core import JsonMapping, immutable_json
 from universal_agent.core.config_validation import parse_json_object
 from universal_agent.model.errors import JsonHttpModelError
+
+
+def _openai_sdk() -> tuple[type[Exception], type[Exception], type[Exception], type[Exception]]:
+    """Import the optional OpenAI SDK lazily and return its error types.
+
+    The OpenAI integration is an ``[openai]`` extra, not a core dependency; the
+    kernel imports this module eagerly, so the SDK may only be touched once an
+    OpenAI transport is actually constructed or called.
+    """
+    try:
+        from openai import (
+            APIConnectionError,
+            APIStatusError,
+            APITimeoutError,
+            OpenAIError,
+        )
+    except ImportError as exc:
+        raise ImportError(
+            "The OpenAI model provider requires the optional 'openai' dependency. "
+            "Install it with: pip install 'universal-agent-runtime[openai]'"
+        ) from exc
+    return APIConnectionError, APIStatusError, APITimeoutError, OpenAIError
 
 
 class OpenAIClientResponse(Protocol):
@@ -83,6 +104,7 @@ class OpenAISdkModelTransport:
         payload: JsonMapping,
         timeout_seconds: float,
     ) -> JsonMapping:
+        api_connection_error, api_status_error, api_timeout_error, openai_error = _openai_sdk()
         client = self._client(
             endpoint,
             "/responses",
@@ -92,13 +114,13 @@ class OpenAISdkModelTransport:
         )
         try:
             response = await client.responses.create(**_openai_kwargs(payload))
-        except APIStatusError as exc:
+        except api_status_error as exc:
             raise JsonHttpModelError(_openai_status_error_message(exc)) from exc
-        except APITimeoutError as exc:
+        except api_timeout_error as exc:
             raise JsonHttpModelError(f"OpenAI provider request timed out: {exc}") from exc
-        except APIConnectionError as exc:
+        except api_connection_error as exc:
             raise JsonHttpModelError(f"OpenAI provider connection failed: {exc}") from exc
-        except OpenAIError as exc:
+        except openai_error as exc:
             raise JsonHttpModelError(f"OpenAI provider request failed: {exc}") from exc
         finally:
             await client.close()
@@ -113,6 +135,7 @@ class OpenAISdkModelTransport:
         payload: JsonMapping,
         timeout_seconds: float,
     ) -> JsonMapping:
+        api_connection_error, api_status_error, api_timeout_error, openai_error = _openai_sdk()
         client = self._client(
             endpoint,
             "/chat/completions",
@@ -122,13 +145,13 @@ class OpenAISdkModelTransport:
         )
         try:
             response = await client.chat.completions.create(**_openai_kwargs(payload))
-        except APIStatusError as exc:
+        except api_status_error as exc:
             raise JsonHttpModelError(_openai_status_error_message(exc)) from exc
-        except APITimeoutError as exc:
+        except api_timeout_error as exc:
             raise JsonHttpModelError(f"OpenAI provider request timed out: {exc}") from exc
-        except APIConnectionError as exc:
+        except api_connection_error as exc:
             raise JsonHttpModelError(f"OpenAI provider connection failed: {exc}") from exc
-        except OpenAIError as exc:
+        except openai_error as exc:
             raise JsonHttpModelError(f"OpenAI provider request failed: {exc}") from exc
         finally:
             await client.close()
@@ -158,6 +181,13 @@ def _openai_client(
     default_headers: Mapping[str, str],
     timeout_seconds: float,
 ) -> OpenAIClient:
+    try:
+        from openai import AsyncOpenAI
+    except ImportError as exc:
+        raise ImportError(
+            "The OpenAI model provider requires the optional 'openai' dependency. "
+            "Install it with: pip install 'universal-agent-runtime[openai]'"
+        ) from exc
     return cast(
         OpenAIClient,
         AsyncOpenAI(
@@ -194,7 +224,8 @@ def _openai_response_mapping(response: object, field_name: str) -> JsonMapping:
     return _json_mapping(model_dump(mode="json"), field_name)
 
 
-def _openai_status_error_message(error: APIStatusError) -> str:
+def _openai_status_error_message(error: Exception) -> str:
+    # Duck-typed on the OpenAI SDK error shape so the SDK import stays lazy.
     response = getattr(error, "response", None)
     detail = ""
     if response is not None:
@@ -204,7 +235,8 @@ def _openai_status_error_message(error: APIStatusError) -> str:
     if not detail:
         message = str(error).strip()
         detail = f": {message}" if message else ""
-    return f"OpenAI provider returned HTTP {error.status_code}{detail}"
+    status_code = getattr(error, "status_code", 0)
+    return f"OpenAI provider returned HTTP {status_code}{detail}"
 
 
 def _json_mapping(value: object, field_name: str) -> JsonMapping:

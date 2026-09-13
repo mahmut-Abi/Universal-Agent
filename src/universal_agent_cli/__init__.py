@@ -5,8 +5,10 @@ import asyncio
 import sys
 import time
 from collections.abc import Sequence
+from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from types import ModuleType
 from typing import TextIO, cast
 
 from universal_agent.agentd.representations import (
@@ -88,8 +90,22 @@ from universal_agent_cli.text_views import (
     render_config_text,
     render_run_text,
 )
-from universal_agent_tui.tui import build_tui_snapshot, render_tui_snapshot
-from universal_agent_tui.tui_app import RuntimeTuiApp, service_tui_actions
+
+
+def _require_tui_module(module_name: str) -> ModuleType:
+    """Import an optional universal_agent_tui module lazily ([tui] extra).
+
+    The CLI top level must stay importable without the TUI stack so commands
+    like ``ua run`` do not pay for textual; the TUI command surfaces a clear
+    install hint when the extra is missing.
+    """
+    try:
+        return import_module(module_name)
+    except ImportError as exc:
+        raise ImportError(
+            "The interactive TUI requires the optional 'textual' dependency. "
+            "Install it with: pip install 'universal-agent-runtime[tui]'"
+        ) from exc
 
 
 def _primary_profile_name(service: RuntimeService) -> str | None:
@@ -511,6 +527,12 @@ async def _dispatch_tui(
     service: RuntimeService,
     out: TextIO,
 ) -> None:
+    tui_module = _require_tui_module("universal_agent_tui.tui")
+    tui_app_module = _require_tui_module("universal_agent_tui.tui_app")
+    build_tui_snapshot = tui_module.build_tui_snapshot
+    render_tui_snapshot = tui_module.render_tui_snapshot
+    RuntimeTuiApp = tui_app_module.RuntimeTuiApp
+    service_tui_actions = tui_app_module.service_tui_actions
     session_id = cast(str | None, args.session_id)
     if cast(bool, args.static):
         snapshot = await build_tui_snapshot(

@@ -17,12 +17,10 @@ dependencies = [
   "jsonlines>=4,<5",
   "jsonschema>=4.23,<5",
   "junit-xml>=1.9,<2",
-  "openai>=1.99,<3",
   "opentelemetry-proto>=1.28,<2",
   "orjson>=3.10,<4",
   "packaging>=24,<27",
   "prometheus-client>=0.22,<1",
-  "psycopg[binary]>=3.2,<4",
   "pydantic>=2.5,<3",
   "python-dateutil>=2.9,<3",
   "pyyaml>=6,<7",
@@ -31,15 +29,21 @@ dependencies = [
   "sqlalchemy>=2.0,<3",
   "starlette>=0.37,<1",
   "tenacity>=9,<10",
-  "textual>=3.0",
   "uvicorn>=0.30,<1",
 ]
 
-[project.scripts]
-agent = "universal_agent_cli:main"
-ua = "universal_agent_cli:main"
-
+# Provider/UI/store integrations are optional extras; the kernel imports them
+# lazily so the Golden Path (scripted model, file/sqlite stores, no UI) works
+# with the core dependencies only. opentelemetry-proto and prometheus-client
+# stay core: observability exports are P3.6 runtime scope and both packages
+# are small, pure-Python wheels.
 [project.optional-dependencies]
+openai = ["openai>=1.99,<3"]
+tui = ["textual>=3.0"]
+postgres = ["psycopg[binary]>=3.2,<4"]
+all = ["universal-agent-runtime[openai,tui,postgres]"]
+# Dev tooling, installed by pip via `.[dev]`; keep in sync with the
+# [dependency-groups].dev table at the bottom of this file.
 dev = [
   "mypy>=1.11,<2",
   "types-python-dateutil>=2.9,<3",
@@ -50,6 +54,10 @@ dev = [
   "types-protobuf>=6,<8",
   "types-PyYAML>=6,<7",
 ]
+
+[project.scripts]
+agent = "universal_agent_cli:main"
+ua = "universal_agent_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = [
@@ -95,7 +103,21 @@ python_version = "3.12"
 strict = true
 files = ["src", "tests", "examples"]
 
+# uv installs [dependency-groups] on a bare `uv sync`; keep this dev group in
+# sync with [project.optional-dependencies].dev above plus every extra the
+# test suite imports (openai, tui, postgres) so both install paths produce a
+# complete test environment. CI installs `.[dev,all]` via pip.
 [dependency-groups]
 dev = [
-    "types-python-dateutil>=2.9,<3",
+  "mypy>=1.11,<2",
+  "openai>=1.99,<3",
+  "psycopg[binary]>=3.2,<4",
+  "pytest>=8.3,<10",
+  "pytest-asyncio>=1.4,<2",
+  "ruff==0.16.4",
+  "textual>=3.0",
+  "types-jsonschema>=4.23,<5",
+  "types-protobuf>=6,<8",
+  "types-PyYAML>=6,<7",
+  "types-python-dateutil>=2.9,<3",
 ]

@@ -36,7 +36,7 @@ jobs:
       - name: Install package
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e '.[dev]'
+          python -m pip install -e '.[dev,all]'
 
       # Format/lint/type gates run once on the primary version; test runs on
       # every matrix leg so behavior is verified across the supported range.
@@ -133,7 +133,7 @@ jobs:
       - name: Install package
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e '.[dev]'
+          python -m pip install -e '.[dev,all]'
 
       - name: Prepare live profile
         env:

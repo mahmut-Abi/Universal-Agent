@@ -120,12 +120,18 @@ async def dispatch_agentd_commands(
 async def _dispatch_remote_tui(args: argparse.Namespace, client: AgentdClient) -> None:
     """Run the interactive TUI dashboard against a remote agentd Runtime API."""
 
-    from universal_agent_tui.tui_app import RuntimeTuiApp
-    from universal_agent_tui.tui_remote import (
-        agentd_event_watcher,
-        agentd_snapshot_provider,
-        agentd_tui_actions,
-    )
+    try:
+        from universal_agent_tui.tui_app import RuntimeTuiApp
+        from universal_agent_tui.tui_remote import (
+            agentd_event_watcher,
+            agentd_snapshot_provider,
+            agentd_tui_actions,
+        )
+    except ImportError as exc:
+        raise ImportError(
+            "The interactive TUI requires the optional 'textual' dependency. "
+            "Install it with: pip install 'universal-agent-runtime[tui]'"
+        ) from exc
 
     session_id = cast(str | None, args.session_id)
     app = RuntimeTuiApp(

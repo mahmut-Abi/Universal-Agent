@@ -30,8 +30,10 @@ Requires Python **3.12+**.
 git clone <repo>
 cd Universal-Agent
 
-# 1. Install
+# 1. Install (core runtime: deterministic offline model, file/sqlite stores)
 uv sync
+# Optional integrations: --extra openai / --extra tui / --extra postgres
+# (or --all-extras)
 
 # 2. First-time setup — creates universal-agent/profile.json + config.json
 uv run ua init
@@ -237,7 +239,7 @@ Goal → Context → Decision(capability) → Capability Resolver → Policy →
 ## Development
 
 Python 3.12+ with [uv](https://docs.astral.sh/uv/) (CI installs with pip via
-`pip install -e '.[dev]'`; both work):
+`pip install -e '.[dev,all]'`; both work):
 
 ```bash
 uv sync --extra dev
