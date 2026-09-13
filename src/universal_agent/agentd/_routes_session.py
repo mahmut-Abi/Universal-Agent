@@ -120,6 +120,7 @@ class SessionRouteHandlers:
                     submission.goal,
                     submission.task,
                     timeout_seconds=submission.timeout_seconds,
+                    read_only=submission.read_only,
                 )
             return json_response(runtime_run_body(run), status_code=201)
 

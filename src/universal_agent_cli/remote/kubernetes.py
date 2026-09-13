@@ -47,6 +47,8 @@ async def _dispatch_remote_kubernetes(
         body["skip_cluster"] = bool(getattr(args, "skip_cluster", False))
     if kubernetes_command == "evidence":
         body["submit_run"] = bool(getattr(args, "submit_run", False))
+    if kubernetes_command == "run" and bool(getattr(args, "dry_run", False)):
+        body["read_only"] = True
 
     payload = await client.post_json(f"/v1/kubernetes/{operation}", body=body)
     _write_json(out, payload)

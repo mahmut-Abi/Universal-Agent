@@ -172,6 +172,8 @@ class KubernetesApiBackend:
             return await self._inspect_logs(arguments)
         if capability == "inspect_events":
             return await self._inspect_events(arguments)
+        if capability == "inspect_service":
+            return await self._inspect_service(arguments)
         raise ValueError(f"unsupported Kubernetes API inspection capability: {capability}")
 
     async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
@@ -361,6 +363,29 @@ class KubernetesApiBackend:
             }
         )
 
+    async def _inspect_service(self, arguments: JsonMapping) -> JsonMapping:
+        ref = k8s.resource_ref(
+            arguments,
+            default_kind="service",
+            default_namespace=self._default_namespace,
+        )
+        service = await self._request_json("GET", _services_path(ref.namespace, ref.name))
+        endpoints = await self._request_json("GET", _endpoints_path(ref.namespace, ref.name))
+        spec = k8s.object_value(service.get("spec"))
+        ready, not_ready = k8s.endpoint_address_counts(endpoints)
+        return immutable_json(
+            {
+                "resource": ref.resource,
+                "namespace": ref.namespace,
+                "service_type": k8s.string_value(spec.get("type")),
+                "selector": k8s.object_value(spec.get("selector")),
+                "ports": spec.get("ports", []),
+                "ready_endpoint_count": ready,
+                "not_ready_endpoint_count": not_ready,
+                "endpoints_ready": ready > 0,
+            }
+        )
+
     async def _scale_workload(self, arguments: JsonMapping) -> JsonMapping:
         ref = k8s.resource_ref(
             arguments,
@@ -518,6 +543,14 @@ def _pod_log_path(namespace: str, name: str) -> str:
     return _pod_path(namespace, name) + "/log"
 
 
+def _services_path(namespace: str, name: str) -> str:
+    return f"/api/v1/namespaces/{_quote_path_part(namespace)}/services/{_quote_path_part(name)}"
+
+
+def _endpoints_path(namespace: str, name: str) -> str:
+    return f"/api/v1/namespaces/{_quote_path_part(namespace)}/endpoints/{_quote_path_part(name)}"
+
+
 def _events_path(namespace: str) -> str:
     return f"/api/v1/namespaces/{_quote_path_part(namespace)}/events"
 
@@ -528,6 +561,7 @@ def _workload_plural(kind: str) -> str:
         "statefulset": "statefulsets",
         "daemonset": "daemonsets",
         "replicaset": "replicasets",
+        "service": "services",
     }
     try:
         return plurals[kind]

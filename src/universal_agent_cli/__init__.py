@@ -438,13 +438,19 @@ async def _dispatch_run(
     goal = Goal(cast(str, args.goal), criteria)
     timeout_seconds = _run_timeout_seconds(args)
     started = time.monotonic()
+    read_only = cast(bool, getattr(args, "dry_run", False))
     if cast(bool, args.compile_goal):
         if cast(str | None, args.task) is not None:
             raise ValueError("--task cannot be used with --compile-goal")
         run = await service.run_compiled_goal(goal, timeout_seconds=timeout_seconds)
     else:
         task = Task(cast(str | None, args.task) or "Run goal", tuple(item.key for item in criteria))
-        run = await service.run_goal(goal, task, timeout_seconds=timeout_seconds)
+        run = await service.run_goal(
+            goal,
+            task,
+            timeout_seconds=timeout_seconds,
+            read_only=read_only,
+        )
     duration_seconds = time.monotonic() - started
     body = runtime_run_body(run)
     if cast(str, args.output) == "json":

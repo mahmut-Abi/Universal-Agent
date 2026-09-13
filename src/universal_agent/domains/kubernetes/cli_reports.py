@@ -27,6 +27,9 @@ from universal_agent.domains.kubernetes.cli_runtime import (
     ModelAdapterBuilder,
     configured_kubernetes_backend,
 )
+from universal_agent.domains.kubernetes.diagnosis import (
+    view_evidence,
+)
 from universal_agent.domains.kubernetes.production_contract import (
     kubernetes_production_contract_report,
 )
@@ -149,8 +152,16 @@ async def dispatch_kubernetes(
                     1,
                 )
         run = await run_kubernetes_remediation(args, service)
+        explorer = await service.session_explorer(run.result.session_id)
         return KubernetesCliResult(
-            kubernetes_run_body(args, run, preflight_report, model_probe_report)
+            kubernetes_run_body(
+                args,
+                run,
+                preflight_report,
+                model_probe_report,
+                evidence=tuple(view_evidence(item) for item in explorer.evidence),
+                environment=service.config().environment,
+            )
         )
     raise ValueError(f"unknown kubernetes command: {command}")
 
@@ -740,4 +751,9 @@ async def run_kubernetes_remediation(
         kubernetes_remediation_task_description(operation.workload, operation.namespace),
         kubernetes_initial_task_required_criteria(operation.namespace),
     )
-    return await service.run_goal(goal, task)
+    return await service.run_goal(goal, task, read_only=dry_run_requested(args))
+
+
+def dry_run_requested(args: argparse.Namespace) -> bool:
+    """Whether the operator asked for a read-only dry run (spec P1 section 13)."""
+    return bool(getattr(args, "dry_run", False))

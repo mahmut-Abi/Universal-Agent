@@ -1,0 +1,54 @@
+{
+  "name": "k8s-oomkilled-diagnosis",
+  "description": "Diagnose OOMKilled pods from memory exhaustion",
+  "scenarios": [
+    {
+      "name": "diagnose-oomkilled-pods",
+      "goal": {
+        "description": "Identify why deployment/cart pods are being OOMKilled and determine the recovery action",
+        "success_criteria": [
+          {
+            "key": "root_cause_identified",
+            "expected": true
+          },
+          {
+            "key": "recovery_action_determined",
+            "expected": true
+          }
+        ]
+      },
+      "task": {
+        "description": "Inspect workload and pod container states to identify OOMKilled as the root cause",
+        "required_criteria": [
+          "root_cause_identified"
+        ]
+      },
+      "expectations": {
+        "expected_status": "completed",
+        "max_iterations": 8,
+        "required_capabilities": [
+          "inspect_workload",
+          "inspect_pod"
+        ],
+        "required_evidence_claims": [
+          "root_cause",
+          "healthy"
+        ],
+        "forbidden_events": [
+          "ActionReconcileRequired"
+        ]
+      },
+      "kind": "scenario",
+      "tags": [
+        "kubernetes",
+        "pod",
+        "oom",
+        "diagnosis"
+      ]
+    }
+  ],
+  "quality_gate": {
+    "min_pass_rate": 0.85,
+    "min_goal_completion_rate": 0.9
+  }
+}

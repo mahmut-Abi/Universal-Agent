@@ -142,6 +142,7 @@ class KubernetesDomain:
         "inspect_pod",
         "inspect_logs",
         "inspect_events",
+        "inspect_service",
     )
 
     def __init__(self, backend: KubernetesBackend) -> None:

@@ -480,3 +480,22 @@ def json_object(value: object) -> dict[str, JsonValue]:
 def snake_case(value: str) -> str:
     normalized = value.strip().replace("-", "_").replace(" ", "_").replace(".", "_")
     return to_snake(normalized).strip("_")
+
+
+def endpoint_address_counts(endpoints: dict[str, JsonValue]) -> tuple[int, int]:
+    """Count ready vs not-ready addresses across an Endpoints object's subsets."""
+    subsets = endpoints.get("subsets")
+    if not isinstance(subsets, list):
+        return 0, 0
+    ready = 0
+    not_ready = 0
+    for subset in subsets:
+        if not isinstance(subset, dict):
+            continue
+        addresses = subset.get("addresses")
+        if isinstance(addresses, list):
+            ready += len(addresses)
+        not_ready_addresses = subset.get("notReadyAddresses")
+        if isinstance(not_ready_addresses, list):
+            not_ready += len(not_ready_addresses)
+    return ready, not_ready

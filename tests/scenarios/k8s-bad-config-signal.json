@@ -1,0 +1,51 @@
+{
+  "name": "k8s-bad-config-signal",
+  "description": "Diagnose pods failing due to a bad configuration signal",
+  "scenarios": [
+    {
+      "name": "diagnose-bad-config",
+      "goal": {
+        "description": "Identify why deployment/app pods are failing due to a bad configuration and determine the recovery action",
+        "success_criteria": [
+          {
+            "key": "root_cause_identified",
+            "expected": true
+          },
+          {
+            "key": "recovery_action_determined",
+            "expected": true
+          }
+        ]
+      },
+      "task": {
+        "description": "Inspect pod logs and events to identify the bad configuration signal",
+        "required_criteria": [
+          "root_cause_identified"
+        ]
+      },
+      "expectations": {
+        "expected_status": "completed",
+        "max_iterations": 8,
+        "required_capabilities": [
+          "inspect_workload",
+          "inspect_logs",
+          "inspect_events"
+        ],
+        "required_evidence_claims": [
+          "root_cause",
+          "pod_diagnostics_observed"
+        ]
+      },
+      "kind": "scenario",
+      "tags": [
+        "kubernetes",
+        "config",
+        "diagnosis"
+      ]
+    }
+  ],
+  "quality_gate": {
+    "min_pass_rate": 0.85,
+    "min_goal_completion_rate": 0.9
+  }
+}

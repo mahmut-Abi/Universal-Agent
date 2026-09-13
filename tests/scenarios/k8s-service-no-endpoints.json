@@ -1,0 +1,52 @@
+{
+  "name": "k8s-service-no-endpoints",
+  "description": "Diagnose a service with no healthy endpoints",
+  "scenarios": [
+    {
+      "name": "diagnose-service-no-endpoints",
+      "goal": {
+        "description": "Identify why service/api has no healthy endpoints and determine the recovery action",
+        "success_criteria": [
+          {
+            "key": "root_cause_identified",
+            "expected": true
+          },
+          {
+            "key": "recovery_action_determined",
+            "expected": true
+          }
+        ]
+      },
+      "task": {
+        "description": "Inspect service endpoints, pod readiness and workload health to identify the root cause",
+        "required_criteria": [
+          "root_cause_identified"
+        ]
+      },
+      "expectations": {
+        "expected_status": "completed",
+        "max_iterations": 8,
+        "required_capabilities": [
+          "inspect_service",
+          "inspect_pod",
+          "inspect_workload"
+        ],
+        "required_evidence_claims": [
+          "root_cause",
+          "healthy"
+        ]
+      },
+      "kind": "scenario",
+      "tags": [
+        "kubernetes",
+        "service",
+        "endpoints",
+        "diagnosis"
+      ]
+    }
+  ],
+  "quality_gate": {
+    "min_pass_rate": 0.85,
+    "min_goal_completion_rate": 0.9
+  }
+}

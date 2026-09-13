@@ -1279,3 +1279,107 @@ async def test_kubectl_backend_executes_rollout_restart() -> None:
     # _base_args adds no --context here (context is None), so the command is
     # exactly the rollout invocation.
     assert runner.calls == [("rollout", "restart", "deployment/api", "--namespace", "prod")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_kubectl_backend_inspects_service_with_endpoints() -> None:
+    runner = RecordingKubectlRunner(
+        {
+            (
+                "--context",
+                "prod",
+                "get",
+                "service",
+                "api",
+                "--namespace",
+                "prod",
+                "-o",
+                "json",
+            ): {
+                "metadata": {"name": "api", "namespace": "prod"},
+                "spec": {
+                    "type": "ClusterIP",
+                    "selector": {"app": "api"},
+                    "ports": [{"port": 80, "targetPort": 8080, "protocol": "TCP"}],
+                },
+            },
+            (
+                "--context",
+                "prod",
+                "get",
+                "endpoints",
+                "api",
+                "--namespace",
+                "prod",
+                "-o",
+                "json",
+            ): {
+                "metadata": {"name": "api"},
+                "subsets": [
+                    {
+                        "addresses": [{"ip": "10.0.0.1"}, {"ip": "10.0.0.2"}],
+                        "notReadyAddresses": [{"ip": "10.0.0.3"}],
+                        "ports": [{"port": 8080}],
+                    }
+                ],
+            },
+        }
+    )
+    backend = KubectlBackend(runner=runner, default_namespace="prod", context="prod")
+
+    result = await backend.inspect(
+        "inspect_service",
+        immutable_json({"name": "api", "namespace": "prod"}),
+    )
+
+    assert result["resource"] == "service/api"
+    assert result["namespace"] == "prod"
+    assert result["service_type"] == "ClusterIP"
+    assert result["selector"] == {"app": "api"}
+    assert result["ports"] == [{"port": 80, "targetPort": 8080, "protocol": "TCP"}]
+    assert result["ready_endpoint_count"] == 2
+    assert result["not_ready_endpoint_count"] == 1
+    assert result["endpoints_ready"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_kubernetes_api_backend_inspects_service_with_endpoints() -> None:
+    transport = RecordingKubernetesApiTransport(
+        {
+            ("GET", "/api/v1/namespaces/prod/services/api", ()): {
+                "metadata": {"name": "api", "namespace": "prod"},
+                "spec": {
+                    "type": "ClusterIP",
+                    "selector": {"app": "api"},
+                    "ports": [{"port": 80, "targetPort": 8080}],
+                },
+            },
+            ("GET", "/api/v1/namespaces/prod/endpoints/api", ()): {
+                "metadata": {"name": "api"},
+                "subsets": [
+                    {
+                        "addresses": [{"ip": "10.0.0.1"}],
+                        "notReadyAddresses": [],
+                        "ports": [{"port": 8080}],
+                    }
+                ],
+            },
+        }
+    )
+    backend = KubernetesApiBackend(
+        api_server="https://kube.test",
+        transport=transport,
+        bearer_token="token",
+        default_namespace="prod",
+    )
+
+    result = await backend.inspect(
+        "inspect_service",
+        immutable_json({"name": "api", "namespace": "prod"}),
+    )
+
+    assert result["resource"] == "service/api"
+    assert result["ready_endpoint_count"] == 1
+    assert result["endpoints_ready"] is True

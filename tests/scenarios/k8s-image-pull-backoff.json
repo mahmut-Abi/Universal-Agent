@@ -1,0 +1,55 @@
+{
+  "name": "k8s-image-pull-backoff",
+  "description": "Diagnose ImagePullBackOff caused by a bad image tag",
+  "scenarios": [
+    {
+      "name": "diagnose-image-pull-backoff",
+      "goal": {
+        "description": "Identify why deployment/checkout pods are in ImagePullBackOff and determine the recovery action",
+        "success_criteria": [
+          {
+            "key": "root_cause_identified",
+            "expected": true
+          },
+          {
+            "key": "recovery_action_determined",
+            "expected": true
+          }
+        ]
+      },
+      "task": {
+        "description": "Inspect workload status, pod container states, and events to identify the image pull failure",
+        "required_criteria": [
+          "root_cause_identified"
+        ]
+      },
+      "expectations": {
+        "expected_status": "completed",
+        "max_iterations": 8,
+        "required_capabilities": [
+          "inspect_workload",
+          "inspect_pod",
+          "inspect_events"
+        ],
+        "required_evidence_claims": [
+          "root_cause",
+          "healthy"
+        ],
+        "forbidden_events": [
+          "ActionReconcileRequired"
+        ]
+      },
+      "kind": "scenario",
+      "tags": [
+        "kubernetes",
+        "pod",
+        "imagepull",
+        "diagnosis"
+      ]
+    }
+  ],
+  "quality_gate": {
+    "min_pass_rate": 0.85,
+    "min_goal_completion_rate": 0.9
+  }
+}

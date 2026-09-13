@@ -102,11 +102,35 @@ Common flags:
 ```bash
 agent run "goal" --profile default          # explicit profile (positional profile also works)
 agent run "goal" --output json              # machine-readable output (text is the default)
+agent run "goal" --dry-run                  # read-only: investigate + diagnose, no mutation
 agent session list --output json
 agent session show <id> --output json       # same payloads the API returns
 agent doctor --output json --fail-on error  # exit 1 on failures (default for doctor)
 agent --api-url http://host:8765 run "..."  # thin-client mode against a running agentd
 ```
+
+## Kubernetes Incident Response
+
+The Kubernetes domain provides a full incident-response loop: evidence-backed
+diagnosis, policy-gated remediation (restart/scale), human confirmation for
+production mutations, and fresh health verification.
+
+```bash
+# Diagnose a workload (read-only, no mutation)
+agent --profile-config universal-agent/profile.json \
+  kubernetes run production-operator --workload deployment/checkout --namespace prod
+
+# The run pauses at the confirmation boundary for production mutations.
+# Review the pending action, then approve or reject:
+agent session resume <session-id> --confirmed true
+```
+
+The run payload includes `diagnosis` (summary, confidence, evidence refs,
+root cause) and `proposal` (action, target, reason, risk,
+`requires_confirmation`) built deterministically from collected evidence.
+Every mutation passes through policy evaluation (`ALLOW` / `DENY` /
+`REQUIRE_CONFIRMATION`) and is verified with fresh health observations before
+the task is marked complete.
 
 ## Configuration
 

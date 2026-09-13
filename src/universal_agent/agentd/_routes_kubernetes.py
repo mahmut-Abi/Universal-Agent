@@ -84,6 +84,7 @@ async def handle_kubernetes_route(
         skip_model_probe=_flag(body, "skip_model_probe"),
         skip_cluster=skip_cluster,
         submit_run=_flag(body, "submit_run"),
+        dry_run=_flag(body, "read_only"),
     )
     try:
         result = await dispatch_kubernetes(args, service)

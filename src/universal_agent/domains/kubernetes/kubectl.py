@@ -108,6 +108,8 @@ class KubectlBackend:
             return await self._inspect_logs(arguments)
         if capability == "inspect_events":
             return await self._inspect_events(arguments)
+        if capability == "inspect_service":
+            return await self._inspect_service(arguments)
         raise ValueError(f"unsupported kubectl inspection capability: {capability}")
 
     async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
@@ -301,6 +303,31 @@ class KubectlBackend:
                 "namespace": ref.namespace,
                 "event_count": len(events),
                 "recent_events": recent_events,
+            }
+        )
+
+    async def _inspect_service(self, arguments: JsonMapping) -> JsonMapping:
+        ref = k8s.resource_ref(
+            arguments, default_kind="service", default_namespace=self._default_namespace
+        )
+        service = await self._run_json(
+            "get", "service", ref.name, "--namespace", ref.namespace, "-o", "json"
+        )
+        endpoints = await self._run_json(
+            "get", "endpoints", ref.name, "--namespace", ref.namespace, "-o", "json"
+        )
+        spec = k8s.object_value(service.get("spec"))
+        ready, not_ready = k8s.endpoint_address_counts(endpoints)
+        return immutable_json(
+            {
+                "resource": ref.resource,
+                "namespace": ref.namespace,
+                "service_type": k8s.string_value(spec.get("type")),
+                "selector": k8s.object_value(spec.get("selector")),
+                "ports": spec.get("ports", []),
+                "ready_endpoint_count": ready,
+                "not_ready_endpoint_count": not_ready,
+                "endpoints_ready": ready > 0,
             }
         )
 

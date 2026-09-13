@@ -45,6 +45,8 @@ async def _dispatch_remote_run(
         if timeout_seconds <= 0:
             raise ValueError("--timeout-seconds must be greater than 0")
         body["timeout_seconds"] = timeout_seconds
+    if cast(bool, getattr(args, "dry_run", False)):
+        body["read_only"] = True
     started = time.monotonic()
     payload = await client.post_json("/v1/sessions", body=body)
     duration_seconds = time.monotonic() - started

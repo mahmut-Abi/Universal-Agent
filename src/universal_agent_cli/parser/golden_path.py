@@ -169,6 +169,14 @@ def add_run_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]
         default=[],
         help="Goal success criterion as KEY=JSON. Repeat for multiple criteria.",
     )
+    run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Run in read-only mode: the agent investigates but mutation "
+            "capabilities are unavailable (spec P1 section 13)."
+        ),
+    )
 
 
 def add_session_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

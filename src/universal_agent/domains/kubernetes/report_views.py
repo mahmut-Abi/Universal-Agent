@@ -21,6 +21,13 @@ from universal_agent.core import (
     immutable_json,
     to_json_object,
 )
+from universal_agent.domains.kubernetes.diagnosis import (
+    DiagnosisEvidence,
+    WorkloadDiagnosis,
+    build_diagnosis,
+    build_proposal,
+    pod_level_root_cause,
+)
 from universal_agent.domains.kubernetes.production_contract import (
     kubernetes_production_contract_report,
 )
@@ -191,10 +198,16 @@ def kubernetes_run_body(
     run: RuntimeRun,
     preflight: JsonMapping | None,
     model_probe: JsonMapping | None,
+    evidence: tuple[DiagnosisEvidence, ...] = (),
+    environment: JsonMapping | None = None,
 ) -> JsonMapping:
     profile_config = cast(str | None, args.profile_config)
     operation = KubernetesOperation.from_args(args).to_json()
     run_body = to_json_object(run, fallback_to_string=True)
+    diagnosis = build_diagnosis(
+        evidence,
+        goal_description=run.session.goal_description,
+    )
     return immutable_json(
         {
             "status": run.result.status.value,
@@ -202,6 +215,8 @@ def kubernetes_run_body(
             "model_probe": None if model_probe is None else dict(model_probe),
             "preflight": None if preflight is None else dict(preflight),
             "run": run_body,
+            "diagnosis": None if diagnosis is None else _diagnosis_body(diagnosis),
+            "proposal": _workload_proposal(args, diagnosis, environment),
             "contract": dict(
                 kubernetes_production_contract_report(
                     operation=operation,
@@ -214,6 +229,72 @@ def kubernetes_run_body(
             "next_step": kubernetes_run_next_step(run, profile_config),
         }
     )
+
+
+def _workload_proposal(
+    args: argparse.Namespace,
+    diagnosis: WorkloadDiagnosis | None,
+    environment: JsonMapping | None,
+) -> dict[str, JsonValue] | None:
+    """Deterministically map the diagnosis onto the matching mutation proposal."""
+    if diagnosis is None or diagnosis.root_cause is None:
+        return None
+    workload = cast(str | None, getattr(args, "workload", None))
+    if workload is None:
+        return None
+    if pod_level_root_cause(diagnosis.root_cause):
+        action = "restart_workload"
+        arguments: dict[str, JsonValue] = {
+            "name": kubernetes_workload_name(workload),
+            "restart_strategy": "rolling",
+        }
+    elif diagnosis.root_cause == "under_replicated":
+        action = "scale_workload"
+        arguments = {"name": kubernetes_workload_name(workload)}
+    else:
+        return None
+    namespace = cast(str | None, getattr(args, "namespace", None))
+    if namespace is not None:
+        arguments["namespace"] = namespace
+    proposal = build_proposal(
+        diagnosis,
+        action=action,
+        target=workload,
+        environment=_environment_name(environment),
+        arguments=dict(arguments),
+    )
+    if proposal is None:
+        return None
+    return {
+        "action": proposal.action,
+        "target": proposal.target,
+        "reason": proposal.reason,
+        "evidence_refs": [str(ref) for ref in proposal.evidence_refs],
+        "expected_effect": proposal.expected_effect,
+        "risk": proposal.risk,
+        "arguments": cast(dict[str, JsonValue], proposal.arguments),
+        "requires_confirmation": proposal.requires_confirmation,
+    }
+
+
+def _diagnosis_body(diagnosis: WorkloadDiagnosis) -> dict[str, JsonValue]:
+    return {
+        "summary": diagnosis.summary,
+        "confidence": diagnosis.confidence,
+        "evidence_refs": [str(ref) for ref in diagnosis.evidence_refs],
+        "affected_resources": list(diagnosis.affected_resources),
+        "root_cause": diagnosis.root_cause or "",
+        "healthy": diagnosis.healthy,
+    }
+
+
+def _environment_name(environment: JsonMapping | None) -> str | None:
+    if environment is None:
+        return None
+    name = environment.get("environment")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return None
 
 
 def kubernetes_run_model_probe_failed_body(

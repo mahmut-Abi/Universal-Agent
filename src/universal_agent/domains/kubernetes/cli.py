@@ -49,6 +49,14 @@ def add_kubernetes_command(
     kubernetes_run.add_argument("--skip-preflight", action="store_true")
     kubernetes_run.add_argument("--skip-model-probe", action="store_true")
     kubernetes_run.add_argument("--skip-cluster", action="store_true")
+    kubernetes_run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Run the investigation in read-only mode: evidence and diagnosis are "
+            "collected but mutation capabilities are unavailable."
+        ),
+    )
     kubernetes_evidence = kubernetes_commands.add_parser("evidence")
     kubernetes_evidence.add_argument("profile")
     kubernetes_evidence.add_argument("--workload", required=True)
