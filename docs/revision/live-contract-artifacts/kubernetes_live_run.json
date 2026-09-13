@@ -1,0 +1,333 @@
+{
+  "apiVersion": "agent.nantian.dev/v1alpha1",
+  "environment": {
+    "namespace": "agent-demo",
+    "profile": "production-operator",
+    "run_enabled": true,
+    "workload": "deployment/agent-demo-nginx"
+  },
+  "kind": "KubernetesLiveContractArtifact",
+  "metadata": {
+    "generated_at": "2026-09-13T12:05:59.334403+00:00",
+    "name": "kubernetes-live-run"
+  },
+  "payload": {
+    "contract": {
+      "check_count": 10,
+      "checks": [
+        {
+          "details": {
+            "capability": "inspect_workload"
+          },
+          "message": "model returned a validated Kubernetes inspection decision",
+          "name": "model_probe",
+          "status": "ok"
+        },
+        {
+          "message": "model probe decision is scoped to the requested workload",
+          "name": "model_probe_scope",
+          "status": "ok"
+        },
+        {
+          "details": {
+            "reason": "probe only requests inspect_workload",
+            "verified": false
+          },
+          "message": "finish decision contract explicitly unverified by the execute-only model probe",
+          "name": "finish_contract",
+          "status": "ok"
+        },
+        {
+          "message": "Kubernetes preflight completed successfully",
+          "name": "kubernetes_preflight",
+          "status": "ok"
+        },
+        {
+          "message": "preflight has no failed checks",
+          "name": "preflight_failures",
+          "status": "ok"
+        },
+        {
+          "message": "preflight has no warning checks",
+          "name": "preflight_warnings",
+          "status": "ok"
+        },
+        {
+          "details": {
+            "session_id": "session-efc1a21b-054a-45c9-bc38-df5a434583d3"
+          },
+          "message": "runtime session was submitted through RuntimeService",
+          "name": "runtime_submission",
+          "status": "ok"
+        },
+        {
+          "message": "runtime completed the Kubernetes remediation flow",
+          "name": "runtime_result",
+          "status": "ok"
+        },
+        {
+          "details": {
+            "healthy": true,
+            "namespace_matches": true,
+            "resource_matches": true
+          },
+          "message": "completed run includes fresh workload health criteria",
+          "name": "completion_verification",
+          "status": "ok"
+        },
+        {
+          "message": "no mutation is pending confirmation",
+          "name": "confirmation_boundary",
+          "status": "ok"
+        }
+      ],
+      "failed_check_count": 0,
+      "passed": true,
+      "skipped_check_count": 0,
+      "status": "ok",
+      "warning_check_count": 0
+    },
+    "model_probe": {
+      "capability_count": 6,
+      "decision": {
+        "arguments": {
+          "name": "agent-demo-nginx",
+          "namespace": "agent-demo"
+        },
+        "capability": "inspect_workload",
+        "expected_observations": [
+          "Workload spec and status for deployment/agent-demo-nginx in namespace agent-demo",
+          "Replica counts: desired versus ready versus available",
+          "Pod conditions and readiness state indicating whether the deployment is healthy or degraded"
+        ],
+        "message": "Inspecting deployment/agent-demo-nginx in namespace agent-demo to assess current health before deciding whether remediation is required.",
+        "reason": "Iteration 1 with no runtime observations yet. The goal requires restoring deployment/agent-demo-nginx in namespace agent-demo to a healthy state, and the current task requires inspecting that workload to determine whether remediation is needed. Policy permits read-only Kubernetes inspection, so inspect_workload is the safe, appropriate first step.",
+        "target": "deployment/agent-demo-nginx",
+        "type": "execute"
+      },
+      "model": {
+        "api_key_secret": "<redacted>",
+        "endpoint": "https://api.360.cn/v1/chat/completions",
+        "name": "z-ai/glm-5.3-flash",
+        "provider": "openai_chat_completions",
+        "response_format": "json_object",
+        "timeout_seconds": 30.0
+      },
+      "next_step": {
+        "message": "Model probe passed; run Kubernetes preflight before remediation.",
+        "type": "run_kubernetes_preflight"
+      },
+      "operation": {
+        "namespace": "agent-demo",
+        "profile": "production-operator",
+        "workload": "deployment/agent-demo-nginx"
+      },
+      "status": "ok"
+    },
+    "next_step": null,
+    "operation": {
+      "namespace": "agent-demo",
+      "profile": "production-operator",
+      "workload": "deployment/agent-demo-nginx"
+    },
+    "preflight": {
+      "checks": [
+        {
+          "message": "kubernetes domain is active",
+          "name": "kubernetes_domain",
+          "status": "ok"
+        },
+        {
+          "details": {
+            "backend": "kubectl"
+          },
+          "message": "real Kubernetes backend is configured",
+          "name": "kubernetes_backend",
+          "status": "ok"
+        },
+        {
+          "details": {
+            "secret": "<redacted>",
+            "source": "env"
+          },
+          "message": "model API key secret is available",
+          "name": "model_secret",
+          "status": "ok"
+        },
+        {
+          "details": {
+            "available": [
+              "inspect_cluster",
+              "inspect_events",
+              "inspect_logs",
+              "inspect_pod",
+              "inspect_workload",
+              "scale_workload"
+            ],
+            "missing": []
+          },
+          "message": "kubernetes runtime exposes expected capabilities",
+          "name": "kubernetes_capabilities",
+          "status": "ok"
+        },
+        {
+          "details": {
+            "resource": "cluster"
+          },
+          "message": "inspect_cluster succeeded",
+          "name": "cluster_inspection",
+          "status": "ok"
+        },
+        {
+          "details": {
+            "resource": "deployment/agent-demo-nginx"
+          },
+          "message": "inspect_workload succeeded",
+          "name": "workload_inspection",
+          "status": "ok"
+        }
+      ],
+      "domain": {
+        "backend": "kubectl",
+        "name": "kubernetes",
+        "settings": {
+          "context": "kubernetes-admin@kubernetes",
+          "default_namespace": "agent-demo",
+          "timeout_seconds": 10.0
+        },
+        "version": "0.2.0"
+      },
+      "model": {
+        "api_key_secret": "<redacted>",
+        "name": "z-ai/glm-5.3-flash",
+        "provider": "openai_chat_completions"
+      },
+      "observations": {
+        "cluster_inspection": {
+          "healthy": true,
+          "namespace_count": 15,
+          "node_count": 1,
+          "ready_node_count": 1,
+          "resource": "cluster"
+        },
+        "workload_inspection": {
+          "available_replicas": 1,
+          "conditions": [
+            {
+              "message": "ReplicaSet \"agent-demo-nginx-857ff4559b\" has successfully progressed.",
+              "reason": "NewReplicaSetAvailable",
+              "status": "True",
+              "type": "Progressing"
+            },
+            {
+              "message": "Deployment has minimum availability.",
+              "reason": "MinimumReplicasAvailable",
+              "status": "True",
+              "type": "Available"
+            }
+          ],
+          "desired_replicas": 1,
+          "generation": 21,
+          "healthy": true,
+          "kind": "deployment",
+          "name": "agent-demo-nginx",
+          "namespace": "agent-demo",
+          "observed_generation": 21,
+          "pod_count": 1,
+          "pods": [
+            {
+              "containers": [
+                {
+                  "name": "nginx",
+                  "ready": true,
+                  "reason": "",
+                  "restart_count": 0,
+                  "state": "running"
+                }
+              ],
+              "name": "agent-demo-nginx-857ff4559b-x9mkq",
+              "namespace": "agent-demo",
+              "phase": "Running",
+              "ready": true,
+              "resource": "pod/agent-demo-nginx-857ff4559b-x9mkq",
+              "resource_version": "10542406",
+              "restart_count": 0
+            }
+          ],
+          "ready_pod_count": 1,
+          "ready_replicas": 1,
+          "resource": "deployment/agent-demo-nginx",
+          "resource_version": "10542408",
+          "selector_labels": {
+            "app": "agent-demo-nginx"
+          },
+          "updated_replicas": 1
+        }
+      },
+      "profile_config": ".universal-agent/live-contract/kubernetes-production-profile.json",
+      "status": "ok"
+    },
+    "run": {
+      "result": {
+        "error_code": null,
+        "goal_id": "goal-a9c735b8-8318-470c-9b34-1b302078c023",
+        "iterations": 2,
+        "reason": "workload health criteria satisfied",
+        "session_id": "session-efc1a21b-054a-45c9-bc38-df5a434583d3",
+        "status": "completed",
+        "task_id": "task-9d8c9492-4f61-40db-9661-c6775a554aad",
+        "user_message": null
+      },
+      "session": {
+        "current_task_description": "Inspect Kubernetes workload deployment/agent-demo-nginx in namespace agent-demo and determine whether remediation is required.",
+        "current_task_id": "task-9d8c9492-4f61-40db-9661-c6775a554aad",
+        "current_task_status": "completed",
+        "domain_name": "kubernetes",
+        "domain_version": "0.2.0",
+        "error_code": null,
+        "goal_description": "Restore Kubernetes workload deployment/agent-demo-nginx in namespace agent-demo to healthy state. Inspect, diagnose, apply only policy-allowed safe remediation, and verify fresh health evidence.",
+        "goal_id": "goal-a9c735b8-8318-470c-9b34-1b302078c023",
+        "goal_status": "completed",
+        "iteration": 2,
+        "latest_evaluation": {
+          "evaluator_name": "workload-health",
+          "goal_completed": true,
+          "matched_criteria": {
+            "healthy": true,
+            "namespace": "agent-demo",
+            "resource": "deployment/agent-demo-nginx"
+          },
+          "reason": "workload health criteria satisfied",
+          "status": "completed",
+          "task_completed": true
+        },
+        "pending_action": null,
+        "satisfied_criteria": {
+          "healthy": true,
+          "namespace": "agent-demo",
+          "resource": "deployment/agent-demo-nginx"
+        },
+        "session_id": "session-efc1a21b-054a-45c9-bc38-df5a434583d3",
+        "tasks": [
+          {
+            "depends_on": [],
+            "description": "Inspect Kubernetes workload deployment/agent-demo-nginx in namespace agent-demo and determine whether remediation is required.",
+            "required_criteria": [
+              "resource",
+              "namespace"
+            ],
+            "status": "completed",
+            "task_id": "task-9d8c9492-4f61-40db-9661-c6775a554aad"
+          }
+        ],
+        "termination_reason": "workload health criteria satisfied"
+      }
+    },
+    "status": "completed"
+  },
+  "summary": {
+    "contract_status": "ok",
+    "exit_code": 0,
+    "payload_status": "completed"
+  }
+}

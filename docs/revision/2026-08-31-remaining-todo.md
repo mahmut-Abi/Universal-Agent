@@ -78,9 +78,13 @@ real deployment environment, credentials, or production infrastructure.
   - [ ] Complete P7 external package install, mandatory signature verification
     and isolated activation; requires supply-chain policy decisions for
     completion.
-- [ ] P0/P3.7 live Kubernetes proof: run the production operator path against a
+- [x] P0/P3.7 live Kubernetes proof: run the production operator path against a
   real cluster and real model provider in live CI, including diagnose -> safe
-  remediation or confirmation -> fresh verification.
+  remediation or confirmation -> fresh verification. (Verified 2026-09-13:
+  LLM-driven diagnose -> confirmation boundary -> approved scale remediation ->
+  fresh health verification on a real cluster; see
+  `2026-09-13-live-kubernetes-operator-verification.md`. The CI-gated job
+  additionally requires repository secrets to re-run remotely.)
   - [x] Add a shared Kubernetes live contract artifact writer that redacts
     secret-shaped fields and refuses to write artifacts that fail the runtime
     secret scanner.
