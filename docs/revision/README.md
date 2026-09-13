@@ -594,6 +594,23 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 # H. Advanced Surface Freeze Backlog
 
+### [x] P5-CORE-004 — Console evidence drill-down
+
+- Priority: P5 (UI roadmap `docs/revision/2026-09-12-p5-ui-roadmap.md`)
+- Area: UI / Web Console / Evidence
+- Done when:
+  - `/console/sessions/{id}/evidence-drilldown` returns evidence records
+    with claim, source, action/observation/task linkage, confidence, and
+    domain attribution, plus subject/domain filter facets.
+  - Web console session view renders a filterable evidence table from the
+    same payload; empty state is explicit.
+  - Verification status is honest (confidence + source, no fabricated
+    verdict); unit tests cover linkage, filters, empty world, and route
+    200/404.
+- Evidence: `src/universal_agent/agentd/evidence_drilldown.py`,
+  `tests/unit/test_agentd_evidence_drilldown.py` (5 tests), full gate clean,
+  `uv run pytest tests/` 1485 passed.
+
 ### [x] P5-CORE-003 — Console world model explorer navigation
 
 - Priority: P5 (UI roadmap `docs/revision/2026-09-12-p5-ui-roadmap.md`)
@@ -769,4 +786,5 @@ Add entries here when items are completed.
 2026-09-12 P5-CORE-001 completed: developer guide test targets now point at real web/TUI test files (test_web_console.py did not exist); new `tests/unit/test_agentd_console.py` covers handler-level console contracts the integration suites cannot reach — unknown-path pass-through to the main router, JS/CSS asset content types, fallback page rendering when the universal_agent_web package is absent, and the /console/evaluations payload backed by a real FileEvaluationReportStore. Evidence: `uv run pytest tests/unit/test_agentd_console.py -q` (6 passed); full gate ruff format/check + mypy (503 files) clean; `uv run pytest tests/ -q` (1469 passed, 5 skipped). Main files: tests/unit/test_agentd_console.py, docs/developer-guide.md.
 2026-09-12 P5-CORE-002 completed: session event timeline drill-down. New pure projection `agentd/timeline.py` groups RuntimeEvents into correlated steps (decision → policy → action → observation → evidence) keyed by stable goal/task/action ids, surfacing redacted decision payloads, policy effects, observation and evidence links; retry attempts split by action_id, goal/task lifecycle events attach as context. Console route `/console/sessions/{id}/timeline` (200/404) serves it; web console session view renders the timeline from the same JSON payload (no second projection layer). Evidence: `uv run pytest tests/unit/test_agentd_timeline.py -q` (6 passed); full gate ruff format/check + mypy (505 files) clean; `uv run pytest tests/ -q` (1475 passed, 5 skipped); node --check on app.js. Main files: src/universal_agent/agentd/{timeline.py,console_routes.py}, tests/unit/test_agentd_timeline.py, src/universal_agent_web/static/{app.js,style.css}.
 2026-09-12 P5-CORE-003 completed: world model explorer navigation. New pure projection `agentd/world_explorer.py` adds operator navigation over the existing SessionWorldView: per-entity outgoing/incoming relations, supporting evidence ids, contributing domains from evidence attribution (name@version), and the conflicting-fact list with per-candidate domain/value/confidence. Console route `/console/sessions/{id}/world-explorer` (200/404); web console session view gains a World explorer panel with entity table + conflicts panel. Evidence: `uv run pytest tests/unit/test_agentd_world_explorer.py -q` (5 passed); full gate ruff format/check + mypy (507 files) clean; `uv run pytest tests/ -q` (1480 passed, 5 skipped); node --check. Main files: src/universal_agent/agentd/{world_explorer.py,console_routes.py}, tests/unit/test_agentd_world_explorer.py, src/universal_agent_web/static/app.js.
+2026-09-12 P5-CORE-004 completed: evidence drill-down. New pure projection `agentd/evidence_drilldown.py` returns evidence records with claim/source/action/observation/task linkage, confidence, domain attribution, and subject/domain filter facets (honest verification status: confidence + source, no fabricated verdict). Console route `/console/sessions/{id}/evidence-drilldown` (200/404); web console session view gains a filterable Evidence drill-down table with explicit empty state. Evidence: `uv run pytest tests/unit/test_agentd_evidence_drilldown.py -q` (5 passed); full gate ruff format/check + mypy (509 files) clean; `uv run pytest tests/ -q` (1485 passed, 5 skipped); node --check. Main files: src/universal_agent/agentd/{evidence_drilldown.py,console_routes.py}, tests/unit/test_agentd_evidence_drilldown.py, src/universal_agent_web/static/app.js.
 ```
