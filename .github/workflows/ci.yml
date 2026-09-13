@@ -58,8 +58,15 @@ jobs:
         run: docker build -t universal-agent-runtime:ci .
 
       - name: Smoke test agentd container runtime
+        env:
+          # Generated per-run so the token never lives in workflow logs or
+          # the repository; mounted via --env-file instead of -e on the
+          # command line.
+          AGENTD_AUTH_TOKEN: ${{ secrets.AGENTD_SMOKE_AUTH_TOKEN || format('ci-smoke-{0}', github.run_id) }}
         run: |
+          printf 'AGENTD_AUTH_TOKEN=%s\n' "$AGENTD_AUTH_TOKEN" > agentd-smoke.env
           docker run -d --name agentd-smoke -p 8765:8765 \
+            --env-file agentd-smoke.env \
             universal-agent-runtime:ci
           ready=false
           for _ in $(seq 1 30); do
@@ -77,6 +84,7 @@ jobs:
           curl -fsS http://127.0.0.1:8765/health
           docker exec agentd-smoke test -f /config/profile.json
           docker rm -f agentd-smoke
+          rm -f agentd-smoke.env
 
   kubernetes-live-contract:
     name: Kubernetes live contract

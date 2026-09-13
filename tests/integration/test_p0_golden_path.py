@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from io import StringIO
 from pathlib import Path
 
@@ -47,8 +48,19 @@ def test_cli_help_prioritizes_golden_path_and_labels_advanced() -> None:
 
 
 def test_init_help_groups_first_day_and_advanced_options() -> None:
+    # Exercise the real console-script entry (argv[0] == "ua") without
+    # depending on `uv` or an installed `ua` shim: CI runners have neither.
     result = subprocess.run(
-        ["uv", "run", "ua", "init", "--help"],
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; sys.argv[0] = 'ua'; "
+                "from universal_agent_cli import main; sys.exit(main())"
+            ),
+            "init",
+            "--help",
+        ],
         check=True,
         capture_output=True,
         text=True,
