@@ -9,7 +9,7 @@
 ## 1. 概念表（唯一词汇表）
 
 | 概念 | 是什么 | 用户何时接触 |
-|---|---|---|
+| --- | --- | --- |
 | **Agent** | 用户真正运行的 AI Agent。用户通过 `agent run "goal"` 使用它。 | 第一天 |
 | **Runtime** | Agent 的执行引擎：task/tool 执行、policy 强制、observation/evidence/evaluation、session、persistence、recovery。不是用户首先接触的东西。 | 通过 Session/Evidence 间接接触 |
 | **Profile** | Agent 的工作身份/行为配置：system prompt、模型、启用 Domain、Policy 等。 | `agent init`、`agent profile list/show`、`agent run --profile` |
@@ -56,7 +56,7 @@
 P0 标准要求用户能回答"我从哪里启动/配置/排查"。各概念必须落到：
 
 | 概念 | init | doctor | config | run | session | profile |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | Agent | — | ✓ 环境就绪 | — | ✓ `agent run "goal"` | — | — |
 | Runtime | ✓ 生成 runtime 配置 | ✓ 初始化/持久化检查 | ✓ 展示 runtime 段 | ✓ 创建 Session | ✓ list/show/resume/cancel | — |
 | Profile | ✓ 默认 `default` | ✓ 默认 profile 存在 | — | ✓ `--profile` 可选 | — | ✓ list/show |

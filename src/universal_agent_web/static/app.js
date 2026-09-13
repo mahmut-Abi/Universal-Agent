@@ -208,7 +208,9 @@ function evidenceDrilldownView(sessionId) {
     .then((payload) => {
       const records = payload.evidence || [];
       if (records.length === 0) {
-        list.replaceChildren(el("p", {}, "No evidence recorded for this session."));
+        list.replaceChildren(
+          el("p", {}, "No evidence recorded for this session."),
+        );
         return;
       }
       const subjectFilter = selectFilter(
@@ -251,7 +253,9 @@ function evidenceDrilldownView(sessionId) {
       );
     })
     .catch((error) => {
-      list.replaceChildren(el("p", {}, `Evidence drill-down unavailable: ${error.message}`));
+      list.replaceChildren(
+        el("p", {}, `Evidence drill-down unavailable: ${error.message}`),
+      );
     });
   return container;
 }
@@ -279,7 +283,10 @@ function worldExplorerView(sessionId) {
         table(
           ["Entity", "Kind", "Domains", "Out", "In"],
           (payload.entities || []).map((entity) => [
-            linked(entity.entity_id, `#/sessions/${sessionId}/world/${encodeURIComponent(entity.entity_id)}`),
+            linked(
+              entity.entity_id,
+              `#/sessions/${sessionId}/world/${encodeURIComponent(entity.entity_id)}`,
+            ),
             entity.kind,
             (entity.contributing_domains || []).join(", ") || "-",
             (entity.outgoing_relations || []).length,
@@ -296,7 +303,8 @@ function worldExplorerView(sessionId) {
 }
 
 function conflictsPanel(conflicts) {
-  if (conflicts.length === 0) return el("p", {}, "No cross-domain fact conflicts.");
+  if (conflicts.length === 0)
+    return el("p", {}, "No cross-domain fact conflicts.");
   return panel(
     "Cross-domain conflicts",
     table(
@@ -337,7 +345,8 @@ function timelineView(sessionId) {
       for (const step of steps) {
         const facts = [];
         if (step.policy_effect) facts.push(`policy=${step.policy_effect}`);
-        if (step.observation_id) facts.push(`observation=${step.observation_id}`);
+        if (step.observation_id)
+          facts.push(`observation=${step.observation_id}`);
         if ((step.evidence_ids || []).length > 0) {
           facts.push(`evidence=${step.evidence_ids.join(", ")}`);
         }
@@ -356,7 +365,9 @@ function timelineView(sessionId) {
       }
     })
     .catch((error) => {
-      stepsList.replaceChildren(el("li", {}, `Timeline unavailable: ${error.message}`));
+      stepsList.replaceChildren(
+        el("li", {}, `Timeline unavailable: ${error.message}`),
+      );
     });
   return container;
 }
@@ -406,14 +417,8 @@ async function viewSessionDetail(sessionId) {
           ]),
         ),
       ),
-      panel(
-        "Execution timeline",
-        timelineView(sessionId),
-      ),
-      panel(
-        "World explorer",
-        worldExplorerView(sessionId),
-      ),
+      panel("Execution timeline", timelineView(sessionId)),
+      panel("World explorer", worldExplorerView(sessionId)),
       panel(
         "Evidence",
         table(
@@ -425,10 +430,7 @@ async function viewSessionDetail(sessionId) {
           ]),
         ),
       ),
-      panel(
-        "Evidence drill-down",
-        evidenceDrilldownView(sessionId),
-      ),
+      panel("Evidence drill-down", evidenceDrilldownView(sessionId)),
       panel(
         "World facts",
         table(
