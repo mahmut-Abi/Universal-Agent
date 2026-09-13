@@ -466,7 +466,10 @@ class ActionExecutor:
                     }
                 ),
                 error=message,
-                error_code=ErrorCode.UNKNOWN_EXECUTION,
+                # Classified as a resource conflict (not UNKNOWN_EXECUTION) so
+                # recovery rules can reconcile the lost race with a bounded
+                # retry instead of failing the goal terminally.
+                error_code=ErrorCode.RESOURCE_CONFLICT,
             ),
         )
         state.observations.append(observation)

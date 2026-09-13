@@ -291,8 +291,10 @@ async def test_duplicate_idempotency_record_requires_reconcile_without_reexecuti
         PolicyEffect.ALLOW,
         recovery_rules=(
             RecoveryRule(
+                # RESOURCE_CONFLICT is the new classification for duplicate
+                # idempotency records (recoverable, not UNKNOWN_EXECUTION).
                 "ask-user-for-reconcile",
-                (FailureCategory.UNKNOWN,),
+                (FailureCategory.TRANSIENT,),
                 RecoveryStrategy.ASK_USER,
                 max_attempts=1,
             ),
@@ -310,7 +312,7 @@ async def test_duplicate_idempotency_record_requires_reconcile_without_reexecuti
     assert "ActionStarted" not in event_types
     assert "RecoveryPlanned" in event_types
     assert observation.data["status"] == "unknown"
-    assert observation.data["error_code"] == ErrorCode.UNKNOWN_EXECUTION.value
+    assert observation.data["error_code"] == ErrorCode.RESOURCE_CONFLICT.value
     assert "reconcile" in str(observation.data["error"])
 
 

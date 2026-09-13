@@ -15,6 +15,10 @@ from universal_agent.recovery.models import (
 def classify_failure(error_code: ErrorCode) -> FailureCategory:
     if error_code is ErrorCode.TIMEOUT:
         return FailureCategory.TIMEOUT
+    if error_code is ErrorCode.RESOURCE_CONFLICT:
+        # Idempotency/version conflicts are recoverable: the action may have
+        # landed despite the lost race, and a bounded retry can reconcile.
+        return FailureCategory.TRANSIENT
     if error_code in {ErrorCode.POLICY_DENIED, ErrorCode.CONFIRMATION_REJECTED}:
         return FailureCategory.PERMISSION_DENIED
     if error_code in {

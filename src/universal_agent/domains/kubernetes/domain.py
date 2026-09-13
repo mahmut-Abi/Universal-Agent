@@ -214,6 +214,18 @@ class KubernetesDomain:
                 priority=10,
                 match_capabilities=self._inspection_capability_names,
             ),
+            RecoveryRule(
+                # Idempotency/version conflicts on mutations surface as
+                # RESOURCE_CONFLICT observations; a single bounded retry lets
+                # the executor's reconcile path resolve the lost race instead
+                # of failing the goal terminally.
+                "kubernetes-conflict-reconcile",
+                (FailureCategory.TRANSIENT,),
+                RecoveryStrategy.RETRY_ACTION,
+                max_attempts=1,
+                priority=20,
+                match_capabilities=("scale_workload", "restart_workload"),
+            ),
         )
 
     def memories(self) -> tuple[MemoryRecord, ...]:
