@@ -20,6 +20,7 @@ from sqlalchemy import (
     Table,
     UniqueConstraint,
     create_engine,
+    tuple_,
 )
 from sqlalchemy import insert as sql_insert
 from sqlalchemy import select as sql_select
@@ -188,14 +189,51 @@ class PostgresRuntimeStore:
             except SQLAlchemyIntegrityError as exc:
                 raise ValueError(f"session already exists: {snapshot.state.session_id}") from exc
 
-    async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
+    async def list_sessions(
+        self,
+        *,
+        after_session_id: SessionId | None = None,
+        limit: int | None = None,
+    ) -> tuple[SessionSnapshot, ...]:
+        if limit is not None and limit < 1:
+            raise ValueError("session list limit must be positive")
         with self._connect() as connection:
-            rows = connection.execute(
+            statement = (
                 sql_select(_SESSIONS.c.version, _SESSIONS.c.payload)
                 .where(_SESSIONS.c.tenant_id == self._tenant_id)
                 .order_by(_SESSIONS.c.created_at.desc(), _SESSIONS.c.session_id.desc())
-            ).all()
+            )
+            if after_session_id is not None:
+                cursor_key = self._session_cursor_key(connection, after_session_id)
+                statement = statement.where(
+                    tuple_(_SESSIONS.c.created_at, _SESSIONS.c.session_id) < cursor_key
+                )
+            if limit is not None:
+                statement = statement.limit(limit)
+            rows = connection.execute(statement).all()
         return tuple(_decode_session_row(cast(Mapping[str, Any], row._mapping)) for row in rows)
+
+    def _session_cursor_key(
+        self,
+        connection: Connection,
+        session_id: SessionId,
+    ) -> tuple[datetime, str]:
+        """Resolve the (created_at, session_id) ordering key of the cursor.
+
+        Sessions strictly after the cursor in newest-first order are exactly
+        those whose ordering key is smaller than the cursor's key.
+        """
+        row = connection.execute(
+            sql_select(_SESSIONS.c.created_at, _SESSIONS.c.session_id)
+            .where(_SESSIONS.c.tenant_id == self._tenant_id)
+            .where(_SESSIONS.c.session_id == str(session_id))
+        ).first()
+        if row is None:
+            raise ValueError(f"session cursor not found: {session_id}")
+        created_at = row[0]
+        if not isinstance(created_at, datetime):
+            raise ValueError(f"invalid stored created_at for session {session_id}")
+        return (created_at, str(row[1]))
 
     async def load_session(self, session_id: SessionId) -> SessionSnapshot:
         with self._connect() as connection:
@@ -367,7 +405,7 @@ class PostgresRuntimeStore:
                 .limit(limit)
                 .with_for_update(skip_locked=True)
             ).all()
-            sequences = tuple(int(row._mapping["sequence"]) for row in rows)
+            sequences = tuple(_int_column(row._mapping["sequence"]) for row in rows)
             if sequences:
                 connection.execute(
                     sql_update(_RUNTIME_EVENT_OUTBOX)
@@ -414,7 +452,7 @@ class PostgresRuntimeStore:
             )
         with self._connect() as connection:
             result = connection.execute(statement)
-        return int(result.rowcount or 0)
+        return result.rowcount or 0
 
     def release_outbox_events(
         self,
@@ -443,7 +481,7 @@ class PostgresRuntimeStore:
                     last_error=error,
                 )
             )
-        return int(result.rowcount or 0)
+        return result.rowcount or 0
 
     def _outbox_events(
         self,
@@ -492,7 +530,7 @@ def apply_postgres_migrations(engine: Engine) -> PostgresMigrationReport:
     with engine.begin() as connection:
         _METADATA.create_all(connection)
         existing = tuple(
-            int(row._mapping["version"])
+            _int_column(row._mapping["version"])
             for row in connection.execute(
                 sql_select(_SCHEMA_MIGRATIONS.c.version).order_by(
                     _SCHEMA_MIGRATIONS.c.version.asc()
@@ -639,11 +677,14 @@ def _json_object(value: object) -> JsonMapping:
 
 
 def _int_column(value: object) -> int:
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        return int(value)
-    raise TypeError(f"postgres integer column returned {type(value).__name__}")
+    if isinstance(value, bool) or not isinstance(value, int):
+        if isinstance(value, str | bytes | bytearray):
+            try:
+                return int(value)
+            except ValueError as exc:
+                raise TypeError("postgres integer column returned non-integer text") from exc
+        raise TypeError(f"postgres integer column returned {type(value).__name__}")
+    return value
 
 
 def _optional_string(value: object) -> str | None:

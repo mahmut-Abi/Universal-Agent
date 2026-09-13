@@ -279,14 +279,13 @@ class RuntimeAPI:
         after_session_id: SessionId | None = None,
         limit: int | None = None,
     ) -> RuntimeSessionBatch:
-        summaries = tuple(
-            session_summary_view(snapshot) for snapshot in await self._session_store.list_sessions()
-        )
-        views = filter_session_summaries(
-            summaries,
+        # Pagination/cursor semantics live in the store layer so durable stores
+        # can push them down to SQL instead of decoding every snapshot.
+        snapshots = await self._session_store.list_sessions(
             after_session_id=after_session_id,
             limit=limit,
         )
+        views = tuple(session_summary_view(snapshot) for snapshot in snapshots)
         return RuntimeSessionBatch(
             views,
             str(views[-1].session_id) if views else _session_cursor_value(after_session_id),
@@ -431,34 +430,6 @@ def session_summary_view(snapshot: SessionSnapshot) -> SessionSummaryView:
         domain_version=snapshot.domain_version,
         created_at=state.goal.created_at,
     )
-
-
-def filter_session_summaries(
-    sessions: tuple[SessionSummaryView, ...],
-    *,
-    after_session_id: SessionId | None = None,
-    limit: int | None = None,
-) -> tuple[SessionSummaryView, ...]:
-    if limit is not None and limit < 1:
-        raise ValueError("session list limit must be positive")
-
-    selected: list[SessionSummaryView] = []
-    cursor_seen = after_session_id is None
-    cursor_in_scope = False
-    for session in sessions:
-        if after_session_id is not None and session.session_id == after_session_id:
-            cursor_in_scope = True
-        if not cursor_seen:
-            if session.session_id == after_session_id:
-                cursor_seen = True
-            continue
-        selected.append(session)
-        if limit is not None and len(selected) >= limit:
-            break
-
-    if after_session_id is not None and not cursor_in_scope:
-        raise ValueError(f"session cursor not found: {after_session_id}")
-    return tuple(selected)
 
 
 def pending_action_view(pending: PendingAction | None) -> PendingActionView | None:

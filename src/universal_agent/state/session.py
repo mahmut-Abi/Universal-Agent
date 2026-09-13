@@ -256,8 +256,16 @@ class EventSourcedSessionStore:
     async def create_session(self, snapshot: SessionSnapshot) -> None:
         await self._store.create_session(snapshot)
 
-    async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
-        return await self._store.list_sessions()
+    async def list_sessions(
+        self,
+        *,
+        after_session_id: SessionId | None = None,
+        limit: int | None = None,
+    ) -> tuple[SessionSnapshot, ...]:
+        return await self._store.list_sessions(
+            after_session_id=after_session_id,
+            limit=limit,
+        )
 
     async def load_session(self, session_id: SessionId) -> SessionSnapshot:
         from universal_agent.state.store import StateNotFoundError

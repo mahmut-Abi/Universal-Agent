@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import sqlite3
+import threading
 from collections.abc import AsyncGenerator, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -16,6 +18,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    tuple_,
 )
 from sqlalchemy import insert as sql_insert
 from sqlalchemy import select as sql_select
@@ -33,7 +36,7 @@ from universal_agent.core import (
     loads_json,
     utc_now,
 )
-from universal_agent.core.config_validation import parse_json_object
+from universal_agent.core.config_validation import parse_json_object, parse_positive_int
 from universal_agent.persistence.codec import (
     decode_runtime_event,
     decode_session_snapshot,
@@ -41,7 +44,7 @@ from universal_agent.persistence.codec import (
     encode_session_snapshot,
 )
 from universal_agent.persistence.sqlite_engine import create_configured_sqlite_engine
-from universal_agent.runtime.events import filter_events, poll_event_reader
+from universal_agent.runtime.events import EventCursorError, poll_event_reader
 from universal_agent.state import (
     SessionSnapshot,
     SessionVersionConflictError,
@@ -103,13 +106,21 @@ class SQLiteOutboxEvent:
 
 
 class SQLiteSessionStore:
-    """SQLite-backed SessionStore adapter for local durable runtime deployments."""
+    """SQLite-backed SessionStore adapter for local durable runtime deployments.
+
+    Blocking SQLite work runs on worker threads through ``asyncio.to_thread``
+    so a busy database (WAL ``busy_timeout``) never freezes the event loop.
+    """
 
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
         self._engine: Engine | None = None
+        self._engine_lock = threading.Lock()
 
     async def create_session(self, snapshot: SessionSnapshot) -> None:
+        await asyncio.to_thread(self._create_session_sync, snapshot)
+
+    def _create_session_sync(self, snapshot: SessionSnapshot) -> None:
         snapshot.version = 0
         payload = _encode_json(encode_session_snapshot(snapshot))
         with self._connect() as connection:
@@ -125,21 +136,62 @@ class SQLiteSessionStore:
             except SQLAlchemyIntegrityError as exc:
                 raise ValueError(f"session already exists: {snapshot.state.session_id}") from exc
 
-    async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
+    async def list_sessions(
+        self,
+        *,
+        after_session_id: SessionId | None = None,
+        limit: int | None = None,
+    ) -> tuple[SessionSnapshot, ...]:
+        return await asyncio.to_thread(self._list_sessions_sync, after_session_id, limit)
+
+    def _list_sessions_sync(
+        self,
+        after_session_id: SessionId | None,
+        limit: int | None,
+    ) -> tuple[SessionSnapshot, ...]:
+        if limit is not None and limit < 1:
+            raise ValueError("session list limit must be positive")
+        statement = sql_select(_SESSIONS.c.payload, _SESSIONS.c.version).order_by(
+            _SESSIONS.c.created_at.desc(), _SESSIONS.c.session_id.desc()
+        )
         with self._connect() as connection:
-            rows = connection.execute(
-                sql_select(_SESSIONS.c.payload, _SESSIONS.c.version).order_by(
-                    _SESSIONS.c.created_at.desc(),
-                    _SESSIONS.c.session_id.desc(),
+            if after_session_id is not None:
+                cursor_key = self._session_cursor_key(connection, after_session_id)
+                statement = statement.where(
+                    tuple_(_SESSIONS.c.created_at, _SESSIONS.c.session_id) < cursor_key
                 )
-            ).all()
+            if limit is not None:
+                statement = statement.limit(limit)
+            rows = connection.execute(statement).all()
         return tuple(_decode_stored_session(row[0], row[1]) for row in rows)
 
+    @staticmethod
+    def _session_cursor_key(connection: Connection, session_id: SessionId) -> tuple[str, str]:
+        """Resolve the (created_at, session_id) ordering key of the cursor.
+
+        Sessions strictly after the cursor in newest-first order are exactly
+        those whose ordering key is smaller than the cursor's key.
+        """
+        row = connection.execute(
+            sql_select(_SESSIONS.c.created_at, _SESSIONS.c.session_id).where(
+                _SESSIONS.c.session_id == str(session_id)
+            )
+        ).first()
+        if row is None:
+            raise ValueError(f"session cursor not found: {session_id}")
+        return (str(row[0]), str(row[1]))
+
     async def load_session(self, session_id: SessionId) -> SessionSnapshot:
+        return await asyncio.to_thread(self._load_session_sync, session_id)
+
+    def _load_session_sync(self, session_id: SessionId) -> SessionSnapshot:
         with self._connect() as connection:
             return _load_stored_session(connection, session_id)
 
     async def save_session(self, snapshot: SessionSnapshot) -> None:
+        await asyncio.to_thread(self._save_session_sync, snapshot)
+
+    def _save_session_sync(self, snapshot: SessionSnapshot) -> None:
         original_version = snapshot.version
         snapshot.version = original_version + 1
         payload = _encode_json(encode_session_snapshot(snapshot))
@@ -180,21 +232,29 @@ class SQLiteSessionStore:
 
     def _sqlite_engine(self) -> Engine:
         if self._engine is None:
-            self._engine = create_configured_sqlite_engine(self._path)
-            _METADATA.create_all(self._engine)
-            _ensure_sessions_version_column(self._engine)
+            with self._engine_lock:
+                if self._engine is None:
+                    self._engine = create_configured_sqlite_engine(self._path)
+                    _METADATA.create_all(self._engine)
+                    _ensure_sessions_version_column(self._engine)
         return self._engine
 
 
 class SQLiteEventStore:
-    """SQLite-backed EventSink/EventReader adapter with cursor-compatible ordering."""
+    """SQLite-backed EventSink/EventReader adapter with cursor-compatible ordering.
+
+    Blocking SQLite work runs on worker threads through ``asyncio.to_thread``;
+    the sync ``append``/``all``/``events_for`` surface stays synchronous for
+    the EventStore protocol and replay paths.
+    """
 
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
         self._engine: Engine | None = None
+        self._engine_lock = threading.Lock()
 
     async def emit(self, event: RuntimeEvent) -> None:
-        self.append(event)
+        await asyncio.to_thread(self.append, event)
 
     def append(self, event: RuntimeEvent) -> None:
         with self._connect() as connection:
@@ -222,17 +282,64 @@ class SQLiteEventStore:
         after_event_id: EventId | None = None,
         limit: int | None = None,
     ) -> tuple[RuntimeEvent, ...]:
-        events = tuple(
-            event
-            for event in (self.all() if session_id is None else self.events_for(session_id))
-            if event.type != SESSION_STATE_EVENT
+        return await asyncio.to_thread(
+            self._list_events_sync,
+            session_id,
+            after_event_id,
+            limit,
         )
-        return filter_events(
-            events,
-            session_id=session_id,
-            after_event_id=after_event_id,
-            limit=limit,
+
+    def _list_events_sync(
+        self,
+        session_id: SessionId | None,
+        after_event_id: EventId | None,
+        limit: int | None,
+    ) -> tuple[RuntimeEvent, ...]:
+        if limit is not None:
+            parse_positive_int(limit, "event stream limit")
+        statement = (
+            sql_select(_RUNTIME_EVENTS.c.payload)
+            .where(_RUNTIME_EVENTS.c.type != SESSION_STATE_EVENT)
+            .order_by(_RUNTIME_EVENTS.c.sequence.asc())
         )
+        if session_id is not None:
+            statement = statement.where(_RUNTIME_EVENTS.c.session_id == str(session_id))
+        if after_event_id is not None:
+            cursor_sequence = self._event_cursor_sequence(session_id, after_event_id)
+            statement = statement.where(_RUNTIME_EVENTS.c.sequence > cursor_sequence)
+        if limit is not None:
+            statement = statement.limit(limit)
+        with self._connect() as connection:
+            rows = connection.execute(statement).all()
+        return tuple(decode_runtime_event(_loads_json_object(row[0])) for row in rows)
+
+    def _event_cursor_sequence(
+        self,
+        session_id: SessionId | None,
+        after_event_id: EventId,
+    ) -> int:
+        """Resolve the journal sequence of an in-scope cursor event.
+
+        The cursor must exist within the queried scope (session filter, and
+        never a SessionStateCommitted event, which is excluded from results);
+        otherwise it is out of scope, matching ``filter_events`` semantics.
+        """
+        statement = (
+            sql_select(_RUNTIME_EVENTS.c.sequence)
+            .where(_RUNTIME_EVENTS.c.event_id == str(after_event_id))
+            .where(_RUNTIME_EVENTS.c.type != SESSION_STATE_EVENT)
+        )
+        if session_id is not None:
+            statement = statement.where(_RUNTIME_EVENTS.c.session_id == str(session_id))
+        with self._connect() as connection:
+            row = connection.execute(statement).first()
+        if row is None:
+            raise EventCursorError(f"event cursor not found: {after_event_id}")
+        sequence = row[0]
+        if isinstance(sequence, bool) or not isinstance(sequence, int):
+            raise ValueError(f"invalid event sequence for cursor {after_event_id}")
+        typed_sequence: int = sequence
+        return typed_sequence
 
     async def watch_events(
         self,
@@ -268,7 +375,7 @@ class SQLiteEventStore:
             rows = connection.execute(statement).all()
         return tuple(
             SQLiteOutboxEvent(
-                int(row[0]),
+                _decode_outbox_sequence(row[0]),
                 EventId(str(row[1])),
                 SessionId(str(row[2])),
                 decode_runtime_event(_loads_json_object(str(row[3]))),
@@ -286,7 +393,7 @@ class SQLiteEventStore:
                 .where(_RUNTIME_EVENT_OUTBOX.c.published_at.is_(None))
                 .values(published_at=utc_now().isoformat())
             )
-        return int(result.rowcount or 0)
+        return result.rowcount or 0
 
     @contextmanager
     def _connect(self) -> Iterator[Connection]:
@@ -296,9 +403,11 @@ class SQLiteEventStore:
 
     def _sqlite_engine(self) -> Engine:
         if self._engine is None:
-            self._engine = create_configured_sqlite_engine(self._path)
-            _METADATA.create_all(self._engine)
-            _ensure_sessions_version_column(self._engine)
+            with self._engine_lock:
+                if self._engine is None:
+                    self._engine = create_configured_sqlite_engine(self._path)
+                    _METADATA.create_all(self._engine)
+                    _ensure_sessions_version_column(self._engine)
         return self._engine
 
 
@@ -308,6 +417,13 @@ class SQLiteRuntimeStore(SQLiteSessionStore, SQLiteEventStore):
     state_event_commit_strategy = "sqlite_transaction"
 
     async def commit_session_event(
+        self,
+        snapshot: SessionSnapshot,
+        event: RuntimeEvent,
+    ) -> None:
+        await asyncio.to_thread(self._commit_session_event_sync, snapshot, event)
+
+    def _commit_session_event_sync(
         self,
         snapshot: SessionSnapshot,
         event: RuntimeEvent,
@@ -342,6 +458,12 @@ class SQLiteRuntimeStore(SQLiteSessionStore, SQLiteEventStore):
             except Exception:
                 snapshot.version = original_version
                 raise
+
+
+def _decode_outbox_sequence(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("sqlite outbox sequence must be an integer")
+    return value
 
 
 def _encode_json(payload: object) -> str:
@@ -414,7 +536,10 @@ def _decode_version(value: object) -> int:
     if isinstance(value, int):
         return value
     if isinstance(value, str | bytes | bytearray):
-        return int(value)
+        try:
+            return int(value)
+        except ValueError as exc:
+            raise ValueError("sqlite session version must be an integer") from exc
     raise ValueError("sqlite session version must be an integer")
 
 

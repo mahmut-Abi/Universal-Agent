@@ -30,11 +30,51 @@ class StateStore(Protocol):
 class SessionStore(StateStore, Protocol):
     async def create_session(self, snapshot: SessionSnapshot) -> None: ...
 
-    async def list_sessions(self) -> tuple[SessionSnapshot, ...]: ...
+    async def list_sessions(
+        self,
+        *,
+        after_session_id: SessionId | None = None,
+        limit: int | None = None,
+    ) -> tuple[SessionSnapshot, ...]: ...
 
     async def load_session(self, session_id: SessionId) -> SessionSnapshot: ...
 
     async def save_session(self, snapshot: SessionSnapshot) -> None: ...
+
+
+def paginate_session_snapshots(
+    snapshots: tuple[SessionSnapshot, ...],
+    *,
+    after_session_id: SessionId | None,
+    limit: int | None,
+) -> tuple[SessionSnapshot, ...]:
+    """Shared newest-first cursor/limit pagination over ordered snapshots.
+
+    Stores that already paginate in SQL bypass this helper; in-memory stores
+    (and file stores, which must read every document anyway) share it so the
+    cursor semantics stay identical to the SQL pushdown: sessions strictly
+    after the cursor follow it in newest-first order, and an unknown cursor is
+    a ``ValueError``.
+    """
+    if limit is not None and limit < 1:
+        raise ValueError("session list limit must be positive")
+    selected: list[SessionSnapshot] = []
+    cursor_seen = after_session_id is None
+    cursor_in_scope = False
+    for snapshot in snapshots:
+        session_id = snapshot.state.session_id
+        if after_session_id is not None and session_id == after_session_id:
+            cursor_in_scope = True
+        if not cursor_seen:
+            if session_id == after_session_id:
+                cursor_seen = True
+            continue
+        selected.append(snapshot)
+        if limit is not None and len(selected) >= limit:
+            break
+    if after_session_id is not None and not cursor_in_scope:
+        raise ValueError(f"session cursor not found: {after_session_id}")
+    return tuple(selected)
 
 
 class StateEventCommitter(Protocol):
@@ -58,9 +98,14 @@ class InMemorySessionStore:
         snapshot.version = created.version
         self._sessions[session_id] = created
 
-    async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
+    async def list_sessions(
+        self,
+        *,
+        after_session_id: SessionId | None = None,
+        limit: int | None = None,
+    ) -> tuple[SessionSnapshot, ...]:
         snapshots = tuple(copy_session(snapshot) for snapshot in self._sessions.values())
-        return tuple(
+        ordered = tuple(
             sorted(
                 snapshots,
                 key=lambda snapshot: (
@@ -69,6 +114,11 @@ class InMemorySessionStore:
                 ),
                 reverse=True,
             )
+        )
+        return paginate_session_snapshots(
+            ordered,
+            after_session_id=after_session_id,
+            limit=limit,
         )
 
     async def load_session(self, session_id: SessionId) -> SessionSnapshot:

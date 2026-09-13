@@ -12,6 +12,7 @@ from universal_agent.state.store import (
     StateEventCommitter,
     StateNotFoundError,
     StateStore,
+    paginate_session_snapshots,
 )
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "StateNotFoundError",
     "StateStore",
     "copy_session",
+    "paginate_session_snapshots",
     "session_from_state",
 ]

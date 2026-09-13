@@ -32,6 +32,7 @@ from universal_agent.state import (
     SessionSnapshot,
     SessionVersionConflictError,
     StateNotFoundError,
+    paginate_session_snapshots,
     session_from_state,
 )
 from universal_agent.state.event_store import SESSION_STATE_EVENT
@@ -58,7 +59,12 @@ class FileSessionStore:
             snapshot.version = 0
             self._write_snapshot(path, snapshot)
 
-    async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
+    async def list_sessions(
+        self,
+        *,
+        after_session_id: SessionId | None = None,
+        limit: int | None = None,
+    ) -> tuple[SessionSnapshot, ...]:
         with self._locked():
             if not self._sessions.exists():
                 return ()
@@ -67,7 +73,7 @@ class FileSessionStore:
                 snapshots.append(
                     decode_session_snapshot(_load_json_object(path, "session snapshot"))
                 )
-            return tuple(
+            ordered = tuple(
                 sorted(
                     snapshots,
                     key=lambda snapshot: (
@@ -76,6 +82,11 @@ class FileSessionStore:
                     ),
                     reverse=True,
                 )
+            )
+            return paginate_session_snapshots(
+                ordered,
+                after_session_id=after_session_id,
+                limit=limit,
             )
 
     async def load_session(self, session_id: SessionId) -> SessionSnapshot:
@@ -216,10 +227,18 @@ class FileRuntimeStore(FileSessionStore, FileEventStore):
         self._commits = self._root / "commits"
         self._file_lock = FileLock(str(self._root / ".runtime-store.lock"))
 
-    async def list_sessions(self) -> tuple[SessionSnapshot, ...]:
+    async def list_sessions(
+        self,
+        *,
+        after_session_id: SessionId | None = None,
+        limit: int | None = None,
+    ) -> tuple[SessionSnapshot, ...]:
         with self._locked():
             self._recover_commits()
-            return await super().list_sessions()
+            return await super().list_sessions(
+                after_session_id=after_session_id,
+                limit=limit,
+            )
 
     async def load_session(self, session_id: SessionId) -> SessionSnapshot:
         with self._locked():
