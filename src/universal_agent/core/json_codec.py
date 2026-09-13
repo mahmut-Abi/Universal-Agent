@@ -101,6 +101,9 @@ def write_json_file(
             )
         tmp_path.replace(target)
     except Exception:
+        # Boundary: atomic-write cleanup. Any failure (encode, flush, replace)
+        # must leave the target untouched and no temp file behind, then the
+        # original error propagates unchanged.
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
         raise

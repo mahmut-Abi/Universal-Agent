@@ -41,10 +41,10 @@ from universal_agent.runtime.actions import (
 )
 from universal_agent.runtime.capabilities import CapabilityAdvisor
 from universal_agent.runtime.controls import (
-    _RISK_RANK,
-    _constrain_capability_context,
-    _SessionControl,
-    _validate_session_constraints,
+    RISK_RANK,
+    SessionControl,
+    constrain_capability_context,
+    validate_session_constraints,
 )
 from universal_agent.runtime.decision import DecisionEngine, normalize_runtime_decision
 from universal_agent.runtime.emission import EventEmitter
@@ -145,7 +145,7 @@ class AgentRuntime:
         self._capability_context_cache: (
             tuple[tuple[CapabilityDefinition, ...], tuple[CapabilityInputContract, ...]] | None
         ) = None
-        self._session_controls: dict[SessionId, _SessionControl] = {}
+        self._session_controls: dict[SessionId, SessionControl] = {}
 
     async def run(
         self,
@@ -432,7 +432,7 @@ class AgentRuntime:
             state.iteration += 1
             await self._save(session)
             all_capabilities, all_input_contracts = self._get_capability_context()
-            capabilities, input_contracts = _constrain_capability_context(
+            capabilities, input_contracts = constrain_capability_context(
                 state,
                 all_capabilities,
                 all_input_contracts,
@@ -451,6 +451,9 @@ class AgentRuntime:
             try:
                 decision, usage_source = await self._decide(context)
             except Exception as exc:
+                # Boundary: model adapters and custom DecisionEngines raise
+                # arbitrary errors; every failure becomes a structured
+                # MODEL_FAILURE so the loop settles deterministically.
                 return await self._settle(
                     session,
                     fail(session, ErrorCode.MODEL_FAILURE, f"model failed: {exc}"),
@@ -524,7 +527,7 @@ class AgentRuntime:
                     session,
                     fail(session, ErrorCode.VALIDATION_ERROR, reason),
                 )
-            constraint_error = _validate_session_constraints(state, decision, all_capabilities)
+            constraint_error = validate_session_constraints(state, decision, all_capabilities)
             if constraint_error is not None:
                 error_code, reason = constraint_error
                 await self._events.emit_decision_rejected(
@@ -602,7 +605,7 @@ class AgentRuntime:
             return ModelSelectionContext(risk=RiskLevel.LOW, readonly=True)
         highest = max(
             capabilities,
-            key=lambda item: _RISK_RANK.get(item.risk.value, 0),
+            key=lambda item: RISK_RANK.get(item.risk.value, 0),
         )
         readonly = all(item.category.value != "mutation" for item in capabilities)
         return ModelSelectionContext(
@@ -702,10 +705,10 @@ class AgentRuntime:
             ),
         )
 
-    def _control_for(self, session_id: SessionId) -> _SessionControl:
+    def _control_for(self, session_id: SessionId) -> SessionControl:
         control = self._session_controls.get(session_id)
         if control is None:
-            control = _SessionControl()
+            control = SessionControl()
             self._session_controls[session_id] = control
         return control
 
@@ -722,7 +725,7 @@ class AgentRuntime:
     async def _continue_controlled(
         self,
         session: SessionRuntimeState,
-        control: _SessionControl,
+        control: SessionControl,
         *,
         decision: Decision | None = None,
         pending: PendingAction | None = None,

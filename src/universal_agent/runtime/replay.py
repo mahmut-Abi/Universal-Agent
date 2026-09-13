@@ -252,6 +252,9 @@ class RuntimeReplayEngine:
             try:
                 return decode_session_snapshot(payload)
             except Exception:
+                # Boundary: recovery projection scans committed events for the
+                # latest decodable snapshot; a corrupt event is skipped rather
+                # than blocking resume entirely.
                 continue
         return None
 

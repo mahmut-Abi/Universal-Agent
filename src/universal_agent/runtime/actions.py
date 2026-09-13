@@ -367,6 +367,9 @@ class ActionExecutor:
                 self.idempotency_store.forget(idempotency_key)
             raise
         except Exception:
+            # Boundary: tool failures surface as arbitrary errors; the
+            # idempotency record is always cleaned up before the error
+            # propagates to the observation layer for classification.
             if idempotency_recorded:
                 self.idempotency_store.forget(idempotency_key)
             raise
@@ -508,6 +511,9 @@ class ActionExecutor:
             try:
                 result = await reconciler.reconcile(context)
             except Exception as exc:
+                # Boundary: reconcilers are domain-provided plugins; one
+                # plugin crashing must not fail the action, so the failure is
+                # recorded as an event and reconciliation continues.
                 await emit(
                     "ActionReconcileFailed",
                     pending.action_id,

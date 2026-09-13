@@ -55,6 +55,9 @@ class ModelBackedDecisionEngine:
         try:
             decision = normalize_runtime_decision(await self._model.decide(context))
         except Exception as exc:
+            # Boundary: model adapters raise arbitrary errors; they are
+            # normalized into DecisionError so the runtime loop can classify
+            # every decision failure uniformly.
             raise DecisionError(f"model failed to produce a decision: {exc}") from exc
         try:
             decision.validate()
