@@ -1,0 +1,28 @@
+# Dependabot keeps runtime and CI dependencies current so security patches
+# flow in without manual lockfile churn. Version bumps land as separate PRs so
+# failures bisect to a single dependency. The monthly open-pull-requests-limit
+# keeps review volume bounded for a single-maintainer repository, and the
+# cooldown days delay freshly published releases (supply-chain mitigation)
+# until they have had a short soak period.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      # Type stubs are inert at runtime; batch them to reduce review noise.
+      type-stubs:
+        patterns:
+          - "types-*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7

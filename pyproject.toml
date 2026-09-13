@@ -44,7 +44,7 @@ dev = [
   "mypy>=1.11,<2",
   "types-python-dateutil>=2.9,<3",
   "pytest>=8.3,<10",
-  "pytest-asyncio>=0.24,<1",
+  "pytest-asyncio>=1.4,<2",
   "ruff==0.16.4",
   "types-jsonschema>=4.23,<5",
   "types-protobuf>=6,<8",
@@ -62,6 +62,11 @@ packages = [
 
 [tool.pytest.ini_options]
 addopts = "-q"
+filterwarnings = [
+  # Fail loudly on deprecations (e.g. Python 3.16 removals) instead of letting
+  # them accumulate silently until a future Python upgrade breaks the suite.
+  "error::DeprecationWarning",
+]
 testpaths = ["tests"]
 markers = [
   "integration: integration tests over runtime/service/CLI/HTTP seams",

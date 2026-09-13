@@ -9,11 +9,19 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
-    name: Python quality gates
+    name: Python quality gates (${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
 
     steps:
       - name: Check out repository
@@ -22,7 +30,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install package
@@ -30,19 +38,25 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e '.[dev]'
 
+      # Format/lint/type gates run once on the primary version; test runs on
+      # every matrix leg so behavior is verified across the supported range.
       - name: Check formatting
+        if: matrix.python-version == '3.12'
         run: python -m ruff format --check src tests examples
 
       - name: Lint
+        if: matrix.python-version == '3.12'
         run: python -m ruff check .
 
       - name: Type check
+        if: matrix.python-version == '3.12'
         run: python -m mypy
 
       - name: Test
         run: python -m pytest -q
 
       - name: Report test behavior/contract/unit ratio
+        if: matrix.python-version == '3.12'
         run: python scripts/report-test-ratio.py
 
   container:
