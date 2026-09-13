@@ -594,6 +594,23 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 # H. Advanced Surface Freeze Backlog
 
+### [x] P5-CORE-002 — Console session event timeline drill-down
+
+- Priority: P5 (UI roadmap `docs/revision/2026-09-12-p5-ui-roadmap.md`)
+- Area: UI / Web Console / Session Explorer
+- Done when:
+  - `/console/sessions/{id}/timeline` returns a correlated step projection
+    (decision → policy → action → observation → evidence) keyed by stable
+    goal/task/action identifiers.
+  - Web console session view renders the timeline from that single JSON
+    payload (no second projection layer).
+  - Decision payloads are the emission-time redacted ones; unit tests cover
+    grouping, retry splitting by action id, policy denial, empty/orphan
+    events, and the route (200 + 404).
+- Evidence: `src/universal_agent/agentd/timeline.py` (pure projection),
+  `tests/unit/test_agentd_timeline.py` (6 tests), full gate clean,
+  `uv run pytest tests/` 1475 passed.
+
 ### [x] P5-CORE-001 — Console route handler test suite and real doc test paths
 
 - Priority: P5 (UI roadmap `docs/revision/2026-09-12-p5-ui-roadmap.md`)
@@ -733,4 +750,5 @@ Add entries here when items are completed.
 2026-09-11 UA-MAINT-006 completed: pure report rendering/payload helpers (`KubernetesOperation`, run/check/evidence bodies, next-step builders, workload naming helpers) extracted from `cli_reports.py` (1058→743 lines) into `kubernetes/report_views.py`; operator flow (dispatch/probe/preflight) and the test monkeypatch seam stay in cli_reports, which re-exports all moved names. Evidence: `uv run ruff check src tests examples`; `uv run ruff format --check src tests examples`; `uv run mypy` (502 files clean); `uv run pytest tests/unit/test_kubernetes_cli_reports.py tests/integration/test_cli.py tests/integration/test_kubernetes_production_contract.py tests/integration/test_kubernetes_remediation.py tests/integration/test_agentd_kubernetes.py tests/unit/test_kubernetes_live_contract.py -q` (139 passed); full suite 1463 passed. Main files: src/universal_agent/domains/kubernetes/{cli_reports.py,report_views.py}.
 2026-09-11 UA-MAINT-007 completed: unified projection/view/codec convention documented in the developer guide (pure view modules such as world_views/report_views, shared text renderers, flow-vs-rendering separation, compat re-exports for moved names, core serialization utilities); opportunistic consolidation landed this cycle via the world_views, report_views, remote, and parser helper modules without breaking persisted data. Evidence: docs/developer-guide.md Projection/View/Codec Conventions; full suite `uv run pytest tests/ -q` (1463 passed, 5 skipped). Main files: docs/developer-guide.md.
 2026-09-12 P5-CORE-001 completed: developer guide test targets now point at real web/TUI test files (test_web_console.py did not exist); new `tests/unit/test_agentd_console.py` covers handler-level console contracts the integration suites cannot reach — unknown-path pass-through to the main router, JS/CSS asset content types, fallback page rendering when the universal_agent_web package is absent, and the /console/evaluations payload backed by a real FileEvaluationReportStore. Evidence: `uv run pytest tests/unit/test_agentd_console.py -q` (6 passed); full gate ruff format/check + mypy (503 files) clean; `uv run pytest tests/ -q` (1469 passed, 5 skipped). Main files: tests/unit/test_agentd_console.py, docs/developer-guide.md.
+2026-09-12 P5-CORE-002 completed: session event timeline drill-down. New pure projection `agentd/timeline.py` groups RuntimeEvents into correlated steps (decision → policy → action → observation → evidence) keyed by stable goal/task/action ids, surfacing redacted decision payloads, policy effects, observation and evidence links; retry attempts split by action_id, goal/task lifecycle events attach as context. Console route `/console/sessions/{id}/timeline` (200/404) serves it; web console session view renders the timeline from the same JSON payload (no second projection layer). Evidence: `uv run pytest tests/unit/test_agentd_timeline.py -q` (6 passed); full gate ruff format/check + mypy (505 files) clean; `uv run pytest tests/ -q` (1475 passed, 5 skipped); node --check on app.js. Main files: src/universal_agent/agentd/{timeline.py,console_routes.py}, tests/unit/test_agentd_timeline.py, src/universal_agent_web/static/{app.js,style.css}.
 ```
