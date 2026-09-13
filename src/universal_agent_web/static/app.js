@@ -199,6 +199,57 @@ async function actionButton(label, path, body) {
   );
 }
 
+function worldExplorerView(sessionId) {
+  const container = el("div", {});
+  const summary = el("p", {}, "Loading world explorer…");
+  const detail = el("div", {});
+  container.append(summary, detail);
+  api(`/console/sessions/${sessionId}/world-explorer`)
+    .then((payload) => {
+      summary.textContent =
+        `${payload.entity_count} entities · ${payload.relation_count} relations · ` +
+        `${payload.conflict_count} conflicts`;
+      detail.replaceChildren(
+        table(
+          ["Entity", "Kind", "Domains", "Out", "In"],
+          (payload.entities || []).map((entity) => [
+            linked(entity.entity_id, `#/sessions/${sessionId}/world/${encodeURIComponent(entity.entity_id)}`),
+            entity.kind,
+            (entity.contributing_domains || []).join(", ") || "-",
+            (entity.outgoing_relations || []).length,
+            (entity.incoming_relations || []).length,
+          ]),
+        ),
+        conflictsPanel(payload.conflicts || []),
+      );
+    })
+    .catch((error) => {
+      summary.textContent = `World explorer unavailable: ${error.message}`;
+    });
+  return container;
+}
+
+function conflictsPanel(conflicts) {
+  if (conflicts.length === 0) return el("p", {}, "No cross-domain fact conflicts.");
+  return panel(
+    "Cross-domain conflicts",
+    table(
+      ["Subject", "Claim", "Selected value", "Candidates"],
+      conflicts.map((conflict) => [
+        conflict.subject,
+        conflict.claim,
+        String(conflict.current_value),
+        (conflict.candidates || [])
+          .map(
+            (candidate) =>
+              `${candidate.value} (${candidate.domain || candidate.source})`,
+          )
+          .join(", "),
+      ]),
+    ),
+  );
+}
+
 function timelineView(sessionId) {
   const container = el("div", {});
   const stepsList = el("ol", { class: "timeline" });
@@ -292,6 +343,10 @@ async function viewSessionDetail(sessionId) {
       panel(
         "Execution timeline",
         timelineView(sessionId),
+      ),
+      panel(
+        "World explorer",
+        worldExplorerView(sessionId),
       ),
       panel(
         "Evidence",

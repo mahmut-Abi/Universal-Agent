@@ -30,6 +30,7 @@ from universal_agent.agentd.routing import (
     AgentdRouteMatcher,
 )
 from universal_agent.agentd.timeline import timeline_body
+from universal_agent.agentd.world_explorer import world_explorer_body
 from universal_agent.core import SessionId, to_json_object
 from universal_agent.evaluation.console import (
     build_evaluation_console_snapshot,
@@ -62,6 +63,10 @@ _CONSOLE_ROUTES = AgentdRouteMatcher(
         AgentdRouteDefinition(
             "console_session_timeline",
             "/console/sessions/{session_id}/timeline",
+        ),
+        AgentdRouteDefinition(
+            "console_session_world_explorer",
+            "/console/sessions/{session_id}/world-explorer",
         ),
         AgentdRouteDefinition(
             "console_session_pause",
@@ -245,6 +250,15 @@ async def handle_console_route(
         except StateNotFoundError as exc:
             return not_found(str(exc))
         return json_response(timeline_body(batch.events))
+
+    if route.name == "console_session_world_explorer":
+        session_id = SessionId(route.path_params["session_id"])
+        try:
+            explorer = await service.session_explorer(session_id)
+            world = await service.session_world(session_id)
+        except StateNotFoundError as exc:
+            return not_found(str(exc))
+        return json_response(world_explorer_body(world, explorer.evidence))
 
     if route.name in {
         "console_root",
