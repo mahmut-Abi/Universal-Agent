@@ -33,10 +33,12 @@ class AgentdClientError(RuntimeError):
         *,
         status_code: int | None = None,
         code: str | None = None,
+        timed_out: bool = False,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.code = code
+        self.timed_out = timed_out
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,12 +69,13 @@ class AgentdClient:
         bearer_token: str | None = None,
         timeout_seconds: float = 30.0,
         client: httpx.AsyncClient | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._base_url = _base_url(base_url)
         self._bearer_token = _bearer_token(bearer_token)
         parse_positive_float(timeout_seconds, "agentd client timeout_seconds")
         self._timeout_seconds = timeout_seconds
-        self._client = client or httpx.AsyncClient()
+        self._client = client or httpx.AsyncClient(transport=transport)
         self._owns_client = client is None
 
     async def __aenter__(self) -> AgentdClient:
@@ -95,8 +98,9 @@ class AgentdClient:
         path: str,
         *,
         query: Mapping[str, object] | None = None,
+        timeout_seconds: float | None = None,
     ) -> JsonMapping:
-        response = await self._request("GET", path, query=query)
+        response = await self._request("GET", path, query=query, timeout_seconds=timeout_seconds)
         return _response_json(response)
 
     async def post_json(
@@ -105,8 +109,11 @@ class AgentdClient:
         *,
         body: Mapping[str, JsonValue] | None = None,
         query: Mapping[str, object] | None = None,
+        timeout_seconds: float | None = None,
     ) -> JsonMapping:
-        response = await self._request("POST", path, body=body, query=query)
+        response = await self._request(
+            "POST", path, body=body, query=query, timeout_seconds=timeout_seconds
+        )
         return _response_json(response)
 
     async def get_text(
@@ -191,16 +198,26 @@ class AgentdClient:
         *,
         body: Mapping[str, JsonValue] | None = None,
         query: Mapping[str, object] | None = None,
+        timeout_seconds: float | None = None,
     ) -> httpx.Response:
         headers = self._headers(body is not None)
+        timeout = self._timeout_seconds if timeout_seconds is None else timeout_seconds
+        parse_positive_float(timeout, "agentd client request timeout_seconds")
         try:
             return await self._client.request(
                 method,
                 _request_url(self._base_url, path, query),
                 headers=headers,
                 content=None if body is None else dumps_json(dict(body)).encode("utf-8"),
-                timeout=self._timeout_seconds,
+                timeout=timeout,
             )
+        except httpx.TimeoutException as exc:
+            raise AgentdClientError(
+                f"agentd request timed out after {timeout}s: {exc}. The runtime may "
+                "still be processing the run - check `agent session list` for a "
+                "waiting/completed session before retrying.",
+                timed_out=True,
+            ) from exc
         except httpx.RequestError as exc:
             raise AgentdClientError(f"agentd request failed: {exc}") from exc
 

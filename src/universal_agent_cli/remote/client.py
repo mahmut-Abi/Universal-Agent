@@ -48,6 +48,7 @@ async def dispatch_agentd_cli(args: argparse.Namespace, out: TextIO) -> None:
     async with AgentdClient(
         cast(str, args.api_url),
         bearer_token=_agentd_api_token(args),
+        timeout_seconds=_client_timeout_seconds(args),
     ) as client:
         await dispatch_agentd_commands(args, out, client)
 
@@ -164,6 +165,26 @@ def command_supports_agentd(args: argparse.Namespace) -> bool:
     if command == "domain-packages":
         return cast(str, args.domain_packages_command) in {"list", "show"}
     return True
+
+
+_LONG_RUN_COMMANDS = frozenset({"run", "kubernetes", "eval"})
+_LONG_RUN_DEFAULT_TIMEOUT_SECONDS = 900.0
+
+
+def _client_timeout_seconds(args: argparse.Namespace) -> float:
+    """Resolve the agentd request timeout for this CLI invocation.
+
+    Long-running commands (goal execution with real model rounds) default to a
+    900s request timeout so the client does not give up while the server-side
+    session is still progressing; an explicit --api-timeout-seconds always
+    wins.
+    """
+    explicit = cast(float | None, getattr(args, "api_timeout_seconds", None))
+    if explicit is not None:
+        return explicit
+    if cast(str, args.command) in _LONG_RUN_COMMANDS:
+        return _LONG_RUN_DEFAULT_TIMEOUT_SECONDS
+    return 30.0
 
 
 def _agentd_api_token(args: argparse.Namespace) -> str | None:

@@ -64,6 +64,7 @@ from universal_agent.state import StateNotFoundError
 from universal_agent_api import AgentdClient, AgentdClientError
 from universal_agent_cli.agentd import (
     _agentd_api_token,
+    _client_timeout_seconds,
     command_supports_agentd,
     dispatch_agentd_cli,
     dispatch_agentd_commands,
@@ -188,6 +189,7 @@ async def run_cli(
                 async with AgentdClient(
                     embedded.base_url,
                     bearer_token=_agentd_api_token(args),
+                    timeout_seconds=_client_timeout_seconds(args),
                 ) as embedded_client:
                     await dispatch_agentd_commands(args, out, embedded_client)
             finally:
@@ -234,6 +236,7 @@ async def run_cli(
                 async with AgentdClient(
                     embedded.base_url,
                     bearer_token=_agentd_api_token(args),
+                    timeout_seconds=_client_timeout_seconds(args),
                 ) as embedded_client:
                     await dispatch_agentd_commands(args, out, embedded_client)
             finally:

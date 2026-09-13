@@ -98,6 +98,14 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
         "--api-token-env",
         help="Environment variable containing the bearer token for --api-url requests.",
     )
+    parser.add_argument(
+        "--api-timeout-seconds",
+        type=float,
+        help=(
+            "Per-request timeout for --api-url calls. Long-running commands "
+            "(run/kubernetes/eval) default to 900 seconds; everything else to 30."
+        ),
+    )
     commands = parser.add_subparsers(
         dest="command",
         required=True,
