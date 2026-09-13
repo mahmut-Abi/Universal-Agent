@@ -199,6 +199,72 @@ async function actionButton(label, path, body) {
   );
 }
 
+function evidenceDrilldownView(sessionId) {
+  const container = el("div", {});
+  const controls = el("div", {});
+  const list = el("div", {});
+  container.append(controls, list);
+  api(`/console/sessions/${sessionId}/evidence-drilldown`)
+    .then((payload) => {
+      const records = payload.evidence || [];
+      if (records.length === 0) {
+        list.replaceChildren(el("p", {}, "No evidence recorded for this session."));
+        return;
+      }
+      const subjectFilter = selectFilter(
+        "All subjects",
+        payload.subjects || [],
+        (record) => renderRecords(records, record.value),
+      );
+      const domainFilter = selectFilter(
+        "All domains",
+        payload.domains || [],
+        (record) => renderRecords(records, subjectFilter.value, record.value),
+      );
+      controls.replaceChildren(subjectFilter, " ", domainFilter);
+      function renderRecords(all, subject, domain) {
+        const visible = all.filter(
+          (item) =>
+            (!subject || item.subject === subject) &&
+            (!domain || item.domain === domain),
+        );
+        list.replaceChildren(
+          table(
+            ["Evidence", "Claim", "Confidence", "Domain", "Action", "Source"],
+            visible.map((item) => [
+              item.evidence_id,
+              item.claim,
+              item.confidence,
+              item.domain || "-",
+              item.action_id,
+              item.source,
+            ]),
+          ),
+        );
+      }
+      renderRecords(records, "", "");
+      subjectFilter.addEventListener("change", () =>
+        renderRecords(records, subjectFilter.value, domainFilter.value),
+      );
+      domainFilter.addEventListener("change", () =>
+        renderRecords(records, subjectFilter.value, domainFilter.value),
+      );
+    })
+    .catch((error) => {
+      list.replaceChildren(el("p", {}, `Evidence drill-down unavailable: ${error.message}`));
+    });
+  return container;
+}
+
+function selectFilter(label, values, _onChange) {
+  const select = document.createElement("select");
+  select.append(el("option", { value: "" }, label));
+  for (const value of values || []) {
+    select.append(el("option", { value }, value));
+  }
+  return select;
+}
+
 function worldExplorerView(sessionId) {
   const container = el("div", {});
   const summary = el("p", {}, "Loading world explorer…");
@@ -358,6 +424,10 @@ async function viewSessionDetail(sessionId) {
             String(item.value),
           ]),
         ),
+      ),
+      panel(
+        "Evidence drill-down",
+        evidenceDrilldownView(sessionId),
       ),
       panel(
         "World facts",

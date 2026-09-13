@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib.resources
 from typing import Any
 
+from universal_agent.agentd.evidence_drilldown import evidence_drilldown_body
 from universal_agent.agentd.http import (
     HttpResponse,
     json_response,
@@ -67,6 +68,10 @@ _CONSOLE_ROUTES = AgentdRouteMatcher(
         AgentdRouteDefinition(
             "console_session_world_explorer",
             "/console/sessions/{session_id}/world-explorer",
+        ),
+        AgentdRouteDefinition(
+            "console_session_evidence_drilldown",
+            "/console/sessions/{session_id}/evidence-drilldown",
         ),
         AgentdRouteDefinition(
             "console_session_pause",
@@ -259,6 +264,14 @@ async def handle_console_route(
         except StateNotFoundError as exc:
             return not_found(str(exc))
         return json_response(world_explorer_body(world, explorer.evidence))
+
+    if route.name == "console_session_evidence_drilldown":
+        session_id = SessionId(route.path_params["session_id"])
+        try:
+            explorer = await service.session_explorer(session_id)
+        except StateNotFoundError as exc:
+            return not_found(str(exc))
+        return json_response(evidence_drilldown_body(session_id, explorer.evidence))
 
     if route.name in {
         "console_root",
