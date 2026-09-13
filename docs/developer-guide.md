@@ -79,7 +79,7 @@ breaking persisted data):
 .venv/bin/python -m pytest tests/integration/test_agentd_routes.py -q
 .venv/bin/python -m pytest tests/integration/test_cli.py -q
 .venv/bin/python -m pytest tests/unit/test_operations.py -q
-.venv/bin/python -m pytest tests/unit/test_web_console.py tests/unit/test_tui.py -q
+.venv/bin/python -m pytest tests/unit/test_tui.py tests/unit/test_evaluation_console.py tests/integration/test_web_static.py tests/integration/test_web_console_actions.py -q
 .venv/bin/python -m pytest tests/unit/test_ecosystem_catalog.py -q
 ```
 
