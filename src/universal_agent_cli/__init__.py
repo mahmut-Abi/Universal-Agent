@@ -100,6 +100,10 @@ def _require_tui_module(module_name: str) -> ModuleType:
     like ``ua run`` do not pay for textual; the TUI command surfaces a clear
     install hint when the extra is missing.
     """
+    # Allowlist: only the two runtime TUI modules are ever imported here.
+    allowed_tui_modules = {"universal_agent_tui.tui", "universal_agent_tui.tui_app"}
+    if module_name not in allowed_tui_modules:
+        raise ImportError(f"module is not an allowlisted TUI module: {module_name}")
     try:
         return import_module(module_name)
     except ImportError as exc:
