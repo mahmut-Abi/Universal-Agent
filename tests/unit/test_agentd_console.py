@@ -170,7 +170,6 @@ async def test_console_evaluations_payload_lists_reports(tmp_path: Any) -> None:
     assert suites[0]["failed_scenarios"] == ["policy-denial"]
 
 
-@pytest.mark.asyncio
 @pytest.mark.unit
 def test_evaluation_console_snapshot_ignores_non_report_files(
     tmp_path: Any,
