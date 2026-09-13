@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from universal_agent.agentd.timeline import timeline_body
 from universal_agent.core import DomainIdentity, SessionId, dumps_json
 from universal_agent.operations import AuditRecordView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
@@ -51,6 +52,7 @@ _TUI_SECTION_TITLES = frozenset(
         "World Entities",
         "World Relations",
         "Session Evidence",
+        "Execution Timeline",
         "Recent Events",
         "Audit",
     }
@@ -155,6 +157,8 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
     lines.extend(_world_relation_lines(snapshot.session_explorer))
     lines.extend(("", "Session Evidence", _rule()))
     lines.extend(_evidence_lines(snapshot.session_explorer))
+    lines.extend(("", "Execution Timeline", _rule()))
+    lines.extend(_timeline_lines(snapshot.events))
     lines.extend(("", "Recent Events", _rule()))
     lines.extend(_event_lines(snapshot.events))
     lines.extend(("", "Audit", _rule()))
@@ -588,6 +592,43 @@ def _evidence_lines(explorer: SessionExplorerView | None) -> list[str]:
         )
         for item in explorer.evidence
     ]
+
+
+def _timeline_lines(events: tuple[RuntimeEventView, ...]) -> list[str]:
+    """Render the correlated execution timeline from the shared projection.
+
+    Uses the same ``agentd.timeline`` payload as the web console so both
+    surfaces answer "why did the agent do this?" from one implementation.
+    """
+
+    body = timeline_body(events)
+    steps_raw = body.get("steps", ())
+    if not isinstance(steps_raw, (list, tuple)) or not steps_raw:
+        return ["- none"]
+    lines: list[str] = []
+    for step_raw in steps_raw:
+        if not isinstance(step_raw, dict):
+            continue
+        step = step_raw
+        facts: list[str] = []
+        policy_effect = step.get("policy_effect")
+        if policy_effect is not None:
+            facts.append(f"policy={policy_effect}")
+        observation_id = step.get("observation_id")
+        if observation_id is not None:
+            facts.append(f"observation={observation_id}")
+        evidence_raw = step.get("evidence_ids") or ()
+        if isinstance(evidence_raw, (list, tuple)) and evidence_raw:
+            facts.append(f"evidence={','.join(str(item) for item in evidence_raw)}")
+        facts.append(f"events={step.get('event_count', 0)}")
+        action_id = step.get("action_id") or "-"
+        lines.append(f"- {step.get('label')} action={action_id} {' '.join(facts)}")
+        decision_raw = step.get("decision")
+        if isinstance(decision_raw, dict):
+            target = decision_raw.get("target")
+            if target is not None:
+                lines.append(f"  - target={target}")
+    return lines
 
 
 def _event_lines(events: tuple[RuntimeEventView, ...]) -> list[str]:

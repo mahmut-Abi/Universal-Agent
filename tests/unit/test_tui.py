@@ -450,6 +450,8 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
     assert "deployment/example -[owns]-> pod/example-1 evidence=evidence-3" in rendered
     assert "Session Evidence" in rendered
     assert "evidence-1 subject=deployment/example claim=healthy value=True" in rendered
+    assert "Execution Timeline" in rendered
+    assert "- Action: inspect_workload action=action-1 events=1" in rendered
     assert "ActionStarted" in rendered
     assert "capability=inspect_workload" in rendered
     assert "policy=allow:allow-read" in rendered
@@ -495,3 +497,90 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
     assert "- warn active_resource_locks=1" in degraded_rendered
     assert "- info waiting_sessions=1" in degraded_rendered
     assert "- info recoveries_planned=1" in degraded_rendered
+
+
+@pytest.mark.unit
+def test_tui_timeline_lines_group_events_and_handle_empty() -> None:
+    from universal_agent.agentd.timeline import timeline_body  # noqa: F401
+    from universal_agent_tui.tui import _timeline_lines
+
+    # Empty history renders an explicit placeholder.
+    assert _timeline_lines(()) == ["- none"]
+
+    # A decision chain groups into one step with correlated identifiers.
+    now = datetime.now(UTC)
+    session = SessionId("session-1")
+    goal = GoalId("goal-1")
+    task = TaskId("task-1")
+    events = (
+        RuntimeEventView(
+            "e1",
+            "DecisionGenerated",
+            session,
+            goal,
+            task,
+            ActionId("a1"),
+            MappingProxyType(
+                {
+                    "decision_type": "execute",
+                    "capability": "scale_deployment",
+                    "target": "deployment/api",
+                }
+            ),
+            now,
+        ),
+        RuntimeEventView(
+            "e2",
+            "PolicyChecked",
+            session,
+            goal,
+            task,
+            ActionId("a1"),
+            MappingProxyType({"effect": "allow", "policy": "scaling-policy"}),
+            now,
+        ),
+        RuntimeEventView(
+            "e3",
+            "ObservationReceived",
+            session,
+            goal,
+            task,
+            ActionId("a1"),
+            MappingProxyType({"observation_id": "obs-1", "status": "succeeded"}),
+            now,
+        ),
+        RuntimeEventView(
+            "e4",
+            "EvidenceRecorded",
+            session,
+            goal,
+            task,
+            ActionId("a1"),
+            MappingProxyType({"evidence_id": "ev-1", "claim": "scaled"}),
+            now,
+        ),
+    )
+    lines = _timeline_lines(events)
+    assert lines[0] == (
+        "- Decision: scale_deployment (execute) action=a1"
+        " policy=allow observation=obs-1 evidence=ev-1 events=4"
+    )
+    assert lines[1] == "  - target=deployment/api"
+
+    # A long history without an opener still renders every event count.
+    orphans = tuple(
+        RuntimeEventView(
+            f"e{index}",
+            "SessionPaused",
+            session,
+            goal,
+            task,
+            None,
+            MappingProxyType({}),
+            now,
+        )
+        for index in range(1, 30)
+    )
+    orphan_lines = _timeline_lines(orphans)
+    assert len(orphan_lines) == 1
+    assert "events=29" in orphan_lines[0]
