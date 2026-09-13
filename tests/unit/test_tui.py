@@ -584,3 +584,103 @@ def test_tui_timeline_lines_group_events_and_handle_empty() -> None:
     orphan_lines = _timeline_lines(orphans)
     assert len(orphan_lines) == 1
     assert "events=29" in orphan_lines[0]
+
+
+@pytest.mark.unit
+def test_tui_renders_conflicts_and_evidence_linkage_from_shared_projections() -> None:
+    from universal_agent_tui.tui import _conflict_lines, _evidence_lines
+
+    now = datetime.now(UTC)
+    session = SessionId("session-2")
+    goal = GoalId("goal-2")
+    task = TaskId("task-2")
+    session_view = SessionView(
+        session,
+        goal,
+        "Verify workload health",
+        GoalStatus.COMPLETED,
+        task,
+        "Inspect workload",
+        TaskStatus.COMPLETED,
+        1,
+        (),
+        MappingProxyType({"healthy": True}),
+        None,
+        None,
+        "done",
+        None,
+        "kubernetes",
+        "0.2.0",
+    )
+    explorer = SessionExplorerView(
+        session_view,
+        (
+            EvidenceView(
+                EvidenceId("evidence-1"),
+                session,
+                task,
+                ActionId("action-1"),
+                ObservationId("observation-1"),
+                "deployment/example",
+                "healthy",
+                True,
+                "inspect_workload",
+                0.99,
+                now,
+                "kubernetes",
+                "0.2.0",
+            ),
+        ),
+        (),
+        (),
+        (),
+        (
+            WorldFactHistoryView(
+                "deployment/example",
+                "healthy",
+                WorldFactView(
+                    "deployment/example",
+                    "healthy",
+                    True,
+                    0.99,
+                    now,
+                    ("evidence-1",),
+                ),
+                (
+                    WorldFactEvidenceView(
+                        "evidence-1",
+                        True,
+                        0.99,
+                        now,
+                        "inspect_workload:kubernetes_inspect_workload",
+                    ),
+                    WorldFactEvidenceView(
+                        "evidence-4",
+                        False,
+                        0.51,
+                        now,
+                        "stale_health_probe",
+                    ),
+                ),
+                True,
+            ),
+        ),
+    )
+
+    evidence_lines = _evidence_lines(explorer)
+    assert any(
+        "action=action-1" in line and "domain=kubernetes@0.2.0" in line for line in evidence_lines
+    )
+
+    conflict_lines = _conflict_lines(explorer)
+    assert len(conflict_lines) == 1
+    assert "deployment/example healthy" in conflict_lines[0]
+    assert "selected=True" in conflict_lines[0]
+    assert "True (kubernetes@0.2.0)" in conflict_lines[0]
+    assert "False (stale_health_probe)" in conflict_lines[0]
+
+    # Empty explorer yields the explicit placeholder in both views.
+    empty = SessionExplorerView(session_view, (), ())
+    assert _evidence_lines(empty) == ["- none"]
+    assert _conflict_lines(empty) == ["- none"]
+    assert _conflict_lines(None) == ["- none"]

@@ -3,7 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from universal_agent.agentd.evidence_drilldown import evidence_drilldown_body
 from universal_agent.agentd.timeline import timeline_body
+from universal_agent.agentd.world_explorer import world_explorer_body
 from universal_agent.core import DomainIdentity, SessionId, dumps_json
 from universal_agent.operations import AuditRecordView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
@@ -21,6 +23,7 @@ from universal_agent.service import (
     RuntimeSecretRefView,
     RuntimeService,
     SessionExplorerView,
+    SessionWorldView,
     ToolView,
 )
 from universal_agent_tui.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
@@ -49,6 +52,7 @@ _TUI_SECTION_TITLES = frozenset(
         "Task Timeline",
         "World Facts",
         "World Fact History",
+        "Cross-Domain Conflicts",
         "World Entities",
         "World Relations",
         "Session Evidence",
@@ -151,6 +155,8 @@ def render_tui_snapshot(snapshot: TuiSnapshot) -> str:
     lines.extend(_world_fact_lines(snapshot.session_explorer))
     lines.extend(("", "World Fact History", _rule()))
     lines.extend(_world_fact_history_lines(snapshot.session_explorer))
+    lines.extend(("", "Cross-Domain Conflicts", _rule()))
+    lines.extend(_conflict_lines(snapshot.session_explorer))
     lines.extend(("", "World Entities", _rule()))
     lines.extend(_world_entity_lines(snapshot.session_explorer))
     lines.extend(("", "World Relations", _rule()))
@@ -539,6 +545,49 @@ def _world_fact_lines(explorer: SessionExplorerView | None) -> list[str]:
     ]
 
 
+def _conflict_lines(explorer: SessionExplorerView | None) -> list[str]:
+    """Render the explorer payload's conflicting facts with domain rollups.
+
+    Consumes the same ``world_explorer_body`` projection as the web console:
+    each conflict lists selected value plus per-candidate domain/value pairs.
+    """
+
+    if explorer is None:
+        return ["- none"]
+    payload = world_explorer_body(
+        SessionWorldView(
+            explorer.session.session_id,
+            (),
+            explorer.world_fact_histories,
+            explorer.world_entities,
+            explorer.world_relations,
+        ),
+        explorer.evidence,
+    )
+    conflicts_raw = payload.get("conflicts", ())
+    if not isinstance(conflicts_raw, (list, tuple)) or not conflicts_raw:
+        return ["- none"]
+    lines: list[str] = []
+    for conflict_raw in conflicts_raw:
+        if not isinstance(conflict_raw, dict):
+            continue
+        conflict = conflict_raw
+        candidates_text: list[str] = []
+        candidates_raw = conflict.get("candidates", ())
+        if isinstance(candidates_raw, (list, tuple)):
+            for candidate_raw in candidates_raw:
+                if not isinstance(candidate_raw, dict):
+                    continue
+                domain = candidate_raw.get("domain") or candidate_raw.get("source")
+                candidates_text.append(f"{candidate_raw.get('value')} ({domain})")
+        lines.append(
+            f"- {conflict.get('subject')} {conflict.get('claim')}"
+            f" selected={_value_text(conflict.get('current_value'))}"
+            f" candidates={'; '.join(candidates_text) or 'none'}"
+        )
+    return lines
+
+
 def _world_fact_history_lines(explorer: SessionExplorerView | None) -> list[str]:
     if explorer is None or not explorer.world_fact_histories:
         return ["- none"]
@@ -579,19 +628,40 @@ def _world_relation_lines(explorer: SessionExplorerView | None) -> list[str]:
 
 
 def _evidence_lines(explorer: SessionExplorerView | None) -> list[str]:
+    """Render evidence with the drill-down payload's action/domain linkage.
+
+    Consumes the same ``evidence_drilldown_body`` projection as the web
+    console so terminal operators see identical linkage (action, observation,
+    task, contributing domain) without a second implementation.
+    """
+
     if explorer is None or not explorer.evidence:
         return ["- none"]
-    return [
-        (
-            f"- {item.evidence_id}"
-            f" subject={item.subject}"
-            f" claim={item.claim}"
-            f" value={_value_text(item.value)}"
-            f" source={item.source}"
-            f" confidence={item.confidence:.2f}"
+    payload = evidence_drilldown_body(explorer.session.session_id, explorer.evidence)
+    records_raw = payload.get("evidence", ())
+    if not isinstance(records_raw, (list, tuple)) or not records_raw:
+        return ["- none"]
+    lines: list[str] = []
+    for record_raw in records_raw:
+        if not isinstance(record_raw, dict):
+            continue
+        record = record_raw
+        domain = record.get("domain") or "-"
+        lines.append(
+            f"- {record.get('evidence_id')}"
+            f" subject={record.get('subject')}"
+            f" claim={record.get('claim')}"
+            f" value={_value_text(record.get('value'))}"
+            f" source={record.get('source')}"
+            f" confidence={record.get('confidence')}"
         )
-        for item in explorer.evidence
-    ]
+        lines.append(
+            f"  - action={record.get('action_id')}"
+            f" observation={record.get('observation_id')}"
+            f" task={record.get('task_id')}"
+            f" domain={domain}"
+        )
+    return lines
 
 
 def _timeline_lines(events: tuple[RuntimeEventView, ...]) -> list[str]:
