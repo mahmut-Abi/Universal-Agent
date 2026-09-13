@@ -29,6 +29,7 @@ from universal_agent.agentd.routing import (
     AgentdRouteMatch,
     AgentdRouteMatcher,
 )
+from universal_agent.agentd.timeline import timeline_body
 from universal_agent.core import SessionId, to_json_object
 from universal_agent.evaluation.console import (
     build_evaluation_console_snapshot,
@@ -58,6 +59,10 @@ _CONSOLE_ROUTES = AgentdRouteMatcher(
         AgentdRouteDefinition("console_domain_version", "/console/domains/{name}/{version}"),
         AgentdRouteDefinition("console_domain", "/console/domains/{name}"),
         AgentdRouteDefinition("console_sessions", "/console/sessions"),
+        AgentdRouteDefinition(
+            "console_session_timeline",
+            "/console/sessions/{session_id}/timeline",
+        ),
         AgentdRouteDefinition(
             "console_session_pause",
             "/console/sessions/{session_id}/pause",
@@ -232,6 +237,14 @@ async def handle_console_route(
 
     if route.name == "console_evaluations":
         return json_response(_evaluations_payload(service, evaluation_report_dir))
+
+    if route.name == "console_session_timeline":
+        session_id = SessionId(route.path_params["session_id"])
+        try:
+            batch = await service.stream_events(session_id)
+        except StateNotFoundError as exc:
+            return not_found(str(exc))
+        return json_response(timeline_body(batch.events))
 
     if route.name in {
         "console_root",

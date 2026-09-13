@@ -168,3 +168,15 @@ footer {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.timeline {
+  margin: 8px 0 0;
+  padding-left: 22px;
+}
+.timeline-step {
+  margin-bottom: 6px;
+}
+.timeline-meta {
+  color: #5d6b82;
+  font-size: 12px;
+}

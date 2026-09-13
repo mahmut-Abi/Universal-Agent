@@ -199,6 +199,51 @@ async function actionButton(label, path, body) {
   );
 }
 
+function timelineView(sessionId) {
+  const container = el("div", {});
+  const stepsList = el("ol", { class: "timeline" });
+  container.append(
+    el(
+      "p",
+      {},
+      "Correlated steps: decision → policy → action → observation → evidence.",
+    ),
+    stepsList,
+  );
+  api(`/console/sessions/${sessionId}/timeline`)
+    .then((payload) => {
+      const steps = payload.steps || [];
+      if (steps.length === 0) {
+        stepsList.append(el("li", {}, "No execution steps recorded."));
+        return;
+      }
+      for (const step of steps) {
+        const facts = [];
+        if (step.policy_effect) facts.push(`policy=${step.policy_effect}`);
+        if (step.observation_id) facts.push(`observation=${step.observation_id}`);
+        if ((step.evidence_ids || []).length > 0) {
+          facts.push(`evidence=${step.evidence_ids.join(", ")}`);
+        }
+        stepsList.append(
+          el(
+            "li",
+            { class: "timeline-step" },
+            el("strong", {}, step.label),
+            el(
+              "span",
+              { class: "timeline-meta" },
+              ` · action=${step.action_id || "-"} · ${facts.join(" · ") || step.event_count + " events"}`,
+            ),
+          ),
+        );
+      }
+    })
+    .catch((error) => {
+      stepsList.replaceChildren(el("li", {}, `Timeline unavailable: ${error.message}`));
+    });
+  return container;
+}
+
 async function viewSessionDetail(sessionId) {
   const [session, events, evidence, world] = await Promise.all([
     api(`/v1/sessions/${sessionId}`),
@@ -243,6 +288,10 @@ async function viewSessionDetail(sessionId) {
             new Date(event.occurred_at).toLocaleTimeString(),
           ]),
         ),
+      ),
+      panel(
+        "Execution timeline",
+        timelineView(sessionId),
       ),
       panel(
         "Evidence",
