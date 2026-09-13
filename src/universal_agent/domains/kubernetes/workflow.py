@@ -24,6 +24,7 @@ class KubernetesRemediationExpander:
         "inspect_logs",
         "inspect_events",
         "scale_workload",
+        "restart_workload",
     )
 
     def expand(self, context: TaskExpansionContext) -> tuple[TaskSpec, ...]:
@@ -33,7 +34,7 @@ class KubernetesRemediationExpander:
         specs: list[TaskSpec] = []
 
         if (
-            facts.get("healthy") is False
+            _fact_is(facts.get("healthy"), False)
             and facts.get("resource") is not None
             and facts.get("root_cause") is None
         ):
@@ -61,6 +62,26 @@ class KubernetesRemediationExpander:
                 )
             )
 
+        if (
+            root_cause in _POD_LOG_ROOT_CAUSES
+            and facts.get("pod_diagnostics_observed") is not None
+            and facts.get("mutation_applied") is None
+            and "healthy" in current_criteria
+        ):
+            # Pod-level failures (crash loops, image errors, pending) are not
+            # repairable by scaling; a rolling restart re-pulls the image and
+            # re-creates containers while preserving the workload spec. Only
+            # goals that actually require workload health expand this task —
+            # diagnostics-only goals stop after evidence collection.
+            specs.append(
+                TaskSpec(
+                    "remediate-unhealthy-workload",
+                    "Rolling-restart the workload to recover failed pods",
+                    ("mutation_applied",),
+                    depends_on,
+                )
+            )
+
         if root_cause == "under_replicated" and facts.get("mutation_applied") is None:
             specs.append(
                 TaskSpec(
@@ -70,8 +91,7 @@ class KubernetesRemediationExpander:
                     depends_on,
                 )
             )
-
-        if facts.get("mutation_applied") is True and "mutation_applied" in current_criteria:
+        if _fact_is(facts.get("mutation_applied"), True) and "mutation_applied" in current_criteria:
             specs.append(
                 TaskSpec(
                     "verify-remediation",
@@ -82,8 +102,8 @@ class KubernetesRemediationExpander:
             )
 
         if (
-            facts.get("verification_observed") is True
-            and facts.get("healthy") is False
+            _fact_is(facts.get("verification_observed"), True)
+            and _fact_is(facts.get("healthy"), False)
             and "verification_observed" in current_criteria
         ):
             specs.append(
@@ -96,6 +116,16 @@ class KubernetesRemediationExpander:
             )
 
         return tuple(specs)
+
+
+def _fact_is(value: object, expected: bool) -> bool:
+    """Strict bool fact match: None never equals True/False.
+
+    Uses variable-to-variable identity internally so fact semantics (missing
+    is not False) stay exact without identity checks against literals.
+    """
+
+    return value is expected
 
 
 def _has_owned_pod(value: JsonValue | None) -> bool:

@@ -21,6 +21,11 @@ class _ScaleWorkloadArgumentsPayload(ConfigPayload):
     replicas: int
 
 
+class _RestartWorkloadArgumentsPayload(ConfigPayload):
+    name: PydanticNonEmptyString
+    namespace: PydanticNonEmptyString
+
+
 class KubernetesScalePolicy:
     name = "kubernetes-scale-safety"
     _allowed_environments = frozenset({"development", "staging", "production"})
@@ -135,6 +140,100 @@ def _scale_workload_arguments(
         return PolicyResult(
             PolicyEffect.DENY,
             "scale_workload target does not match the workload name",
+            policy_name,
+        )
+
+
+class KubernetesRestartPolicy:
+    """Guard for the restart_workload mutation capability.
+
+    Mirrors the scale-safety policy: environment must be identified, only
+    deployment targets are allowed, goal-scope criteria are enforced, and
+    production restarts always require human confirmation.
+    """
+
+    name = "kubernetes-restart-safety"
+    _allowed_environments = frozenset({"development", "staging", "production"})
+    _protected_environments = frozenset({"production"})
+
+    def evaluate(self, context: PolicyContext) -> PolicyResult | None:
+        if context.capability.name != "restart_workload":
+            return None
+
+        environment = _environment_name(context)
+        if environment is None:
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "Kubernetes mutation requires an identified environment",
+                self.name,
+            )
+        if environment not in self._allowed_environments:
+            return PolicyResult(
+                PolicyEffect.DENY,
+                f"Kubernetes mutation is not allowed in environment: {environment}",
+                self.name,
+            )
+
+        target = context.target
+        if not isinstance(target, str) or not target.startswith("deployment/"):
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "restart_workload requires a deployment target",
+                self.name,
+            )
+        arguments = _restart_workload_arguments(context, self.name)
+        if isinstance(arguments, PolicyResult):
+            return arguments
+        if arguments.name and target != f"deployment/{arguments.name}":
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "restart_workload target does not match the workload name",
+                self.name,
+            )
+        expected_resource = _expected_criterion(context, "resource")
+        if expected_resource is not None and target != expected_resource:
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "restart_workload target is outside the requested workload scope",
+                self.name,
+            )
+        expected_namespace = _expected_criterion(context, "namespace")
+        if expected_namespace is not None and arguments.namespace != expected_namespace:
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "restart_workload namespace is outside the requested workload scope",
+                self.name,
+            )
+        if environment in self._protected_environments:
+            return PolicyResult(
+                PolicyEffect.REQUIRE_CONFIRMATION,
+                "production workload restart requires confirmation",
+                self.name,
+            )
+        return PolicyResult(
+            PolicyEffect.ALLOW,
+            "bounded Kubernetes workload restart allowed",
+            self.name,
+        )
+
+
+def _restart_workload_arguments(
+    context: PolicyContext,
+    policy_name: str,
+) -> _RestartWorkloadArgumentsPayload | PolicyResult:
+    try:
+        return _RestartWorkloadArgumentsPayload.model_validate(dict(context.arguments))
+    except PydanticValidationError as exc:
+        field = pydantic_error_details(exc).path
+        if field == "namespace":
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "restart_workload requires a namespace",
+                policy_name,
+            )
+        return PolicyResult(
+            PolicyEffect.DENY,
+            "restart_workload requires a workload name",
             policy_name,
         )
 

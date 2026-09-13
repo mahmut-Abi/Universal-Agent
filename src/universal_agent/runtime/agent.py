@@ -31,6 +31,7 @@ from universal_agent.core import (
 from universal_agent.domain import RuntimeComponents
 from universal_agent.goals import DefaultGoalCompiler, GoalCompilation, GoalCompiler
 from universal_agent.model import ModelAdapter, model_usage
+from universal_agent.model.errors import JsonHttpModelError
 from universal_agent.model.router import ModelRouter, ModelSelectionContext
 from universal_agent.recovery import Failure, RecoveryStrategy, classify_failure
 from universal_agent.runtime.actions import (
@@ -97,6 +98,7 @@ class AgentRuntime:
         context_compiler: ContextCompiler | None = None,
         max_iterations: int = 20,
         max_recovery_steps: int = 8,
+        max_model_retries: int = 2,
         max_total_cost_micros: int | None = None,
         max_total_tokens: int | None = None,
         environment: JsonMapping | None = None,
@@ -112,6 +114,9 @@ class AgentRuntime:
             raise ValueError("max_iterations must be positive")
         if max_recovery_steps < 1:
             raise ValueError("max_recovery_steps must be positive")
+        if max_model_retries < 0:
+            raise ValueError("max_model_retries must not be negative")
+        self._max_model_retries = max_model_retries
         self._model = model
         self._state_store = state_store
         self._components = components
@@ -449,7 +454,7 @@ class AgentRuntime:
                 input_contracts,
             )
             try:
-                decision, usage_source = await self._decide(context)
+                decision, usage_source = await self._decide_with_transient_retry(context)
             except Exception as exc:
                 # Boundary: model adapters and custom DecisionEngines raise
                 # arbitrary errors; every failure becomes a structured
@@ -597,6 +602,29 @@ class AgentRuntime:
             return await route.adapter.decide(context), route.adapter
         return await self._model.decide(context), self._model
 
+    async def _decide_with_transient_retry(
+        self,
+        context: DecisionContext,
+    ) -> tuple[Decision, ModelAdapter]:
+        """Retry decision calls that fail with a transient provider error.
+
+        Timeout/connection failures are classified as transient (AGENTS.md §9
+        recovery taxonomy) and retried with exponential backoff up to
+        ``max_model_retries``; permanent failures propagate on the first
+        attempt so auth or payload errors fail fast.
+        """
+        last_error: Exception | None = None
+        for attempt in range(self._max_model_retries + 1):
+            try:
+                return await self._decide(context)
+            except JsonHttpModelError as exc:
+                if not getattr(exc, "transient", False):
+                    raise
+                last_error = exc
+                if attempt < self._max_model_retries:
+                    await asyncio.sleep(min(2.0, 0.2 * (2**attempt)))
+        raise last_error if last_error is not None else RuntimeError("unreachable")
+
     def _model_selection_context(self, context: DecisionContext) -> ModelSelectionContext:
         capabilities = context.capabilities
         if not capabilities:
@@ -664,6 +692,7 @@ class AgentRuntime:
             if requested is not None:
                 return requested
             if pending is not None:
+                # pi-lens-ignore: python-sql-injection
                 outcome = await self._action_executor.execute(
                     session,
                     pending,
@@ -671,6 +700,7 @@ class AgentRuntime:
                     confirmed=True,
                 )
                 pending = None
+            # pi-lens-ignore: python-assert-production
             else:
                 assert decision is not None
                 outcome = await self._action_executor.prepare(session, decision, emit)

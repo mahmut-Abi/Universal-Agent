@@ -113,6 +113,8 @@ class KubectlBackend:
     async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         if capability == "scale_workload":
             return await self._scale_workload(arguments)
+        if capability == "restart_workload":
+            return await self._restart_workload(arguments)
         raise ValueError(f"unsupported kubectl mutation capability: {capability}")
 
     async def _inspect_cluster(self) -> JsonMapping:
@@ -335,6 +337,35 @@ class KubectlBackend:
                 "previous_replicas": previous,
                 "replicas": replicas,
                 "resource_version": k8s.string_value(metadata.get("resourceVersion")),
+                "mutation_id": k8s.stable_mutation_id(result.stdout),
+            }
+        )
+
+    async def _restart_workload(self, arguments: JsonMapping) -> JsonMapping:
+        ref = k8s.resource_ref(
+            arguments, default_kind="deployment", default_namespace=self._default_namespace
+        )
+        strategy = "rolling"
+        requested = arguments.get("restart_strategy")
+        if isinstance(requested, str) and requested.strip():
+            strategy = requested.strip()
+        if strategy != "rolling":
+            raise KubectlCommandError(
+                f"unsupported restart strategy: {strategy} (only 'rolling' is supported)"
+            )
+        result = await self._run(
+            "rollout",
+            "restart",
+            ref.resource,
+            "--namespace",
+            ref.namespace,
+        )
+        return immutable_json(
+            {
+                "resource": ref.resource,
+                "namespace": ref.namespace,
+                "mutation_applied": True,
+                "restart_strategy": strategy,
                 "mutation_id": k8s.stable_mutation_id(result.stdout),
             }
         )

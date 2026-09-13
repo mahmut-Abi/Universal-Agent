@@ -1369,8 +1369,8 @@ def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     assert ready.ready
     assert ready.reason == "ready"
     assert ready.domain_count == 1
-    assert ready.capability_count == 6
-    assert ready.tool_count == 6
+    assert ready.capability_count == 7
+    assert ready.tool_count == 7
     assert domains[0].name == "kubernetes"
     assert domains[0].version == "0.2.0"
     assert domains[0].primary

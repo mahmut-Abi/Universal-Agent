@@ -16,13 +16,17 @@ from universal_agent.core import (
     JsonValue,
     PolicyEffect,
     RiskLevel,
+    SideEffect,
     ToolDefinition,
     immutable_json,
 )
 from universal_agent.domain import ActionArgumentContext, ActionArgumentProvider
 from universal_agent.domains.kubernetes.backend import KubernetesBackend, KubernetesMutationBackend
 from universal_agent.domains.kubernetes.evidence import KubernetesEvidenceExtractor
-from universal_agent.domains.kubernetes.policy import KubernetesScalePolicy
+from universal_agent.domains.kubernetes.policy import (
+    KubernetesRestartPolicy,
+    KubernetesScalePolicy,
+)
 from universal_agent.domains.kubernetes.tools import KubernetesScaleTool
 from universal_agent.domains.kubernetes.workflow import KubernetesRemediationExpander
 from universal_agent.evaluation import Evaluator
@@ -247,6 +251,38 @@ class KubernetesRemediationContextProvider:
         )
 
 
+class KubernetesRestartTool:
+    def __init__(self, backend: KubernetesMutationBackend) -> None:
+        self.definition = ToolDefinition(
+            name="kubernetes_restart_workload",
+            description="Restart a Kubernetes deployment with a rolling restart",
+            capabilities=("restart_workload",),
+            required_arguments=("name", "namespace"),
+            side_effect=SideEffect.REVERSIBLE,
+            risk=RiskLevel.LOW,
+            argument_schema=immutable_json(
+                {
+                    "required": ["name", "namespace"],
+                    "properties": {
+                        "name": {"type": "string", "minLength": 1},
+                        "namespace": {"type": "string", "minLength": 1},
+                        "restart_strategy": {
+                            "type": "string",
+                            "enum": ["rolling"],
+                            "default": "rolling",
+                        },
+                    },
+                    "additionalProperties": False,
+                }
+            ),
+        )
+        self._backend = backend
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        result = await self._backend.mutate("restart_workload", arguments)
+        return immutable_json(result)
+
+
 class KubernetesScaleGuardArgumentProvider:
     name = "kubernetes-scale-guard-arguments"
     capability_names = ("scale_workload",)
@@ -270,7 +306,11 @@ class KubernetesScaleGuardArgumentProvider:
 
 
 class KubernetesRemediationDomain(KubernetesDomain):
-    _capability_names = (*KubernetesDomain._inspection_capability_names, "scale_workload")
+    _capability_names = (
+        *KubernetesDomain._inspection_capability_names,
+        "scale_workload",
+        "restart_workload",
+    )
 
     def __init__(
         self,
@@ -304,13 +344,23 @@ class KubernetesRemediationDomain(KubernetesDomain):
                 CapabilityCategory.MUTATION,
                 RiskLevel.MEDIUM,
             ),
+            CapabilityDefinition(
+                "restart_workload",
+                "Restart a deployment with a rolling restart",
+                CapabilityCategory.MUTATION,
+                RiskLevel.LOW,
+            ),
         )
 
     def tools(self) -> tuple[Tool, ...]:
-        return (*super().tools(), KubernetesScaleTool(self._mutation_backend))
+        return (
+            *super().tools(),
+            KubernetesScaleTool(self._mutation_backend),
+            KubernetesRestartTool(self._mutation_backend),
+        )
 
     def policies(self) -> tuple[Policy, ...]:
-        return (*super().policies(), KubernetesScalePolicy())
+        return (*super().policies(), KubernetesScalePolicy(), KubernetesRestartPolicy())
 
     def context_providers(self) -> tuple[DomainContextProvider, ...]:
         return (KubernetesRemediationContextProvider(),)

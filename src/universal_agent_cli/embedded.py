@@ -94,14 +94,12 @@ def launch_embedded_runtime(
     if probe_only:
         command.append("--probe-only")
 
-    process = subprocess.Popen(command)
+    process = subprocess.Popen(command, stderr=subprocess.PIPE)
     deadline = time.monotonic() + timeout_seconds
     try:
         while time.monotonic() < deadline:
             if process.poll() is not None:
-                raise EmbeddedRuntimeError(
-                    f"embedded agentd exited during startup with code {process.returncode}"
-                )
+                raise EmbeddedRuntimeError(_startup_failure_message(process))
             try:
                 port = int(port_file.read_text(encoding="utf-8").strip())
             except (FileNotFoundError, ValueError):
@@ -109,13 +107,40 @@ def launch_embedded_runtime(
                 continue
             return EmbeddedRuntime(process, f"http://127.0.0.1:{port}", port_file)
         raise EmbeddedRuntimeError(
-            f"embedded agentd did not report its port within {timeout_seconds} seconds"
+            _startup_failure_message(
+                process,
+                f"embedded agentd did not report its port within {timeout_seconds} seconds",
+            )
         )
     except BaseException:
         if process.poll() is None:
             process.terminate()
         port_file.unlink(missing_ok=True)
         raise
+
+
+def _startup_failure_message(
+    process: subprocess.Popen[bytes],
+    prefix: str | None = None,
+) -> str:
+    """Compose a startup-failure message including the subprocess stderr tail.
+
+    The stderr pipe is read non-blockingly only after the process has exited;
+    while the subprocess is still running the pipe stays open and only the
+    prefix is returned.
+    """
+    detail = ""
+    if process.poll() is not None and process.stderr is not None:
+        try:
+            raw = process.stderr.read() or b""
+            text = raw.decode("utf-8", errors="replace").strip()
+        except (OSError, ValueError):
+            text = ""
+        if text:
+            lines = [line for line in text.splitlines() if line.strip()]
+            detail = ": " + lines[-1][:500] if lines else ""
+    base = prefix or (f"embedded agentd exited during startup with code {process.returncode}")
+    return base + detail
 
 
 __all__ = ["EmbeddedRuntime", "EmbeddedRuntimeError", "launch_embedded_runtime"]

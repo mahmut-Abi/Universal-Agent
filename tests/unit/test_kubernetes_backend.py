@@ -1252,3 +1252,30 @@ def test_kubernetes_backends_validate_constructor_inputs() -> None:
             timeout_seconds=0,
             transport=RecordingKubernetesApiTransport({}),
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_kubectl_backend_executes_rollout_restart() -> None:
+    runner = RecordingKubectlRunner(
+        {
+            (
+                "rollout",
+                "restart",
+                "deployment/api",
+                "--namespace",
+                "prod",
+            ): KubectlResult((), "deployment.apps/api restarted", "", 0),
+        }
+    )
+    backend = KubectlBackend(runner=runner, default_namespace="prod")
+
+    result = await backend.mutate(
+        "restart_workload", immutable_json({"name": "api", "namespace": "prod"})
+    )
+
+    assert result["mutation_applied"] is True
+    assert result["restart_strategy"] == "rolling"
+    # _base_args adds no --context here (context is None), so the command is
+    # exactly the rollout invocation.
+    assert runner.calls == [("rollout", "restart", "deployment/api", "--namespace", "prod")]

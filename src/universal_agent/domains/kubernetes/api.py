@@ -9,7 +9,14 @@ from urllib.parse import quote
 
 import httpx
 
-from universal_agent.core import JsonCodecError, JsonMapping, JsonValue, immutable_json, loads_json
+from universal_agent.core import (
+    JsonCodecError,
+    JsonMapping,
+    JsonValue,
+    immutable_json,
+    loads_json,
+    utc_now,
+)
 from universal_agent.core.config_validation import (
     parse_json_object,
     parse_json_value,
@@ -170,6 +177,8 @@ class KubernetesApiBackend:
     async def mutate(self, capability: str, arguments: JsonMapping) -> JsonMapping:
         if capability == "scale_workload":
             return await self._scale_workload(arguments)
+        if capability == "restart_workload":
+            return await self._restart_workload(arguments)
         raise ValueError(f"unsupported Kubernetes API mutation capability: {capability}")
 
     async def _inspect_cluster(self) -> JsonMapping:
@@ -400,6 +409,50 @@ class KubernetesApiBackend:
                 "mutation_id": k8s.stable_mutation_id(
                     k8s.string_value(response_metadata.get("resourceVersion"))
                     or f"{ref.resource} scaled to {replicas}"
+                ),
+            }
+        )
+
+    async def _restart_workload(self, arguments: JsonMapping) -> JsonMapping:
+        ref = k8s.resource_ref(
+            arguments,
+            default_kind="deployment",
+            default_namespace=self._default_namespace,
+        )
+        strategy = "rolling"
+        requested = arguments.get("restart_strategy")
+        if isinstance(requested, str) and requested.strip():
+            strategy = requested.strip()
+        if strategy != "rolling":
+            raise KubernetesApiError(
+                f"unsupported restart strategy: {strategy} (only 'rolling' is supported)"
+            )
+        # A rolling restart is expressed as a strategic-merge patch that stamps
+        # a fresh rollout annotation onto the pod template.
+        now = utc_now().isoformat()
+        body: dict[str, JsonValue] = {
+            "spec": {
+                "template": {
+                    "metadata": {"annotations": {"kubectl.kubernetes.io/restartedAt": now}}
+                }
+            }
+        }
+        response = await self._request_json(
+            "PATCH",
+            _workload_path(ref.kind, ref.namespace, ref.name),
+            body=immutable_json(body),
+            headers={"content-type": "application/strategic-merge-patch+json"},
+        )
+        response_metadata = k8s.object_value(response.get("metadata"))
+        return immutable_json(
+            {
+                "resource": ref.resource,
+                "namespace": ref.namespace,
+                "mutation_applied": True,
+                "restart_strategy": strategy,
+                "mutation_id": k8s.stable_mutation_id(
+                    k8s.string_value(response_metadata.get("resourceVersion"))
+                    or f"{ref.resource} rolling restart at {now}"
                 ),
             }
         )

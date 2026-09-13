@@ -647,7 +647,7 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     assert health.body["status"] == "ok"
     assert health.headers["content-type"] == "application/json"
     assert ready.body["ready"] is True
-    assert ready.body["capability_count"] == 6
+    assert ready.body["capability_count"] == 7
     assert domains.body["domains"] == [
         {
             "name": "kubernetes",
@@ -662,6 +662,7 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
                 "inspect_logs",
                 "inspect_events",
                 "scale_workload",
+                "restart_workload",
             ],
             "evaluator_names": ["workload-health"],
         }

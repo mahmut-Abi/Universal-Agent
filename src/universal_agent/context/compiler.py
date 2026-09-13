@@ -11,6 +11,7 @@ from universal_agent.core import (
     CapabilitySummary,
     ContextFragment,
     DecisionContext,
+    dumps_json,
     immutable_json,
 )
 from universal_agent.evidence import Evidence
@@ -53,6 +54,7 @@ class BasicContextCompiler:
         enable_relevance_ranking: bool = True,
         enable_compression: bool = True,
         enable_dedup: bool = False,
+        stall_repeats: int = 3,
     ) -> None:
         self._max_fragments = max_fragments
         self._max_characters = max_characters
@@ -62,6 +64,7 @@ class BasicContextCompiler:
         self._enable_relevance_ranking = enable_relevance_ranking
         self._enable_compression = enable_compression
         self._enable_dedup = enable_dedup
+        self._stall_repeats = stall_repeats
         self._precomputed_tokens: set[str] | None = None
 
     def compile(
@@ -97,7 +100,7 @@ class BasicContextCompiler:
             ),
             goal_success_criteria=state.goal.success_criteria,
             current_task_required_criteria=state.current_task.required_criteria,
-            domain_context=fragments,
+            domain_context=(*fragments, *self._stall_advisory(evidence)),
             world_context=self._world_fragments(world, state),
             evidence_context=self._evidence_fragments(evidence, state),
             task_context=self._task_fragments(tasks, state),
@@ -175,6 +178,49 @@ class BasicContextCompiler:
             ),
         ]
         return self._budget_fragments(fragments, state=state)
+
+    def _stall_advisory(
+        self,
+        evidence: tuple[Evidence, ...],
+    ) -> tuple[ContextFragment, ...]:
+        """Advise the model when repeated identical observations stall a goal.
+
+        A stall means the most recent observations all came from the same
+        capability and produced no new distinct (subject, claim, value) fact.
+        Continuing the same inspection cannot make progress, so the advisory
+        tells the model to change approach, use a remediation capability, or
+        finish with an explicit reason instead of looping.
+        """
+        if self._stall_repeats < 1:
+            return ()
+        distinct_facts: set[tuple[str, str, str]] = set()
+        recent_sources: list[str] = []
+        for item in sorted(
+            evidence,
+            key=lambda item: (item.observed_at, str(item.id)),
+        )[-self._stall_repeats :]:
+            if len(recent_sources) < self._stall_repeats:
+                recent_sources.append(item.source.split(":", 1)[0])
+            distinct_facts.add((item.subject, item.claim, dumps_json(item.value)))
+        if (
+            len(recent_sources) < self._stall_repeats
+            or len(set(recent_sources)) != 1
+            or len(distinct_facts) > 1
+        ):
+            return ()
+        capability = recent_sources[0]
+        return (
+            ContextFragment(
+                "runtime.stall_advisory",
+                f"Decision stall detected: {self._stall_repeats} consecutive "
+                f"observations from '{capability}' produced no new facts. Repeating "
+                "this inspection cannot satisfy the goal. Change approach: use a "
+                "different capability (for example a remediation action), or finish "
+                "with an explicit report of the findings and why the goal cannot "
+                "be completed.",
+                1,
+            ),
+        )
 
     def _evidence_fragments(
         self,
