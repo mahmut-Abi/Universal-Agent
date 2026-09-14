@@ -140,20 +140,31 @@ async def test_sqlite_event_store_watch_events_polls_new_events(tmp_path: Path) 
     store = SQLiteEventStore(tmp_path / "events.sqlite3")
     session = SessionId("s1")
     received: list[RuntimeEvent] = []
+    first_heartbeat = asyncio.Event()
 
     async def _consume() -> None:
         async for event in store.watch_events(session, heartbeat_interval=0.01):
             received.append(event)
+            if event.type == "Heartbeat":
+                # Gate the producer on the first heartbeat so exactly one
+                # event-free tick is guaranteed before the produce step;
+                # extra heartbeat ticks between the two are load-dependent.
+                first_heartbeat.set()
             if event.type == "DecisionGenerated":
                 break
 
     async def _produce() -> None:
-        await asyncio.sleep(0.02)
+        await first_heartbeat.wait()
         await store.emit(_make_event(session, "DecisionGenerated"))
 
-    await asyncio.gather(_consume(), _produce())
+    await asyncio.wait_for(asyncio.gather(_consume(), _produce()), timeout=10)
 
-    assert [event.type for event in received] == ["Heartbeat", "DecisionGenerated"]
+    # Deterministic shape: an idle watch heartbeats before any event, the
+    # produced event is always delivered, and nothing but heartbeats appears
+    # in between — regardless of poll/load timing.
+    assert received[0].type == "Heartbeat"
+    assert received[-1].type == "DecisionGenerated"
+    assert all(event.type == "Heartbeat" for event in received[1:-1])
 
 
 @pytest.mark.unit

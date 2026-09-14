@@ -235,12 +235,17 @@ class SQLiteSessionStore:
             yield connection
 
     def _sqlite_engine(self) -> Engine:
+        # Assign self._engine only AFTER DDL completes: the unlocked fast-path
+        # read above returns as soon as the attribute is set, so assigning
+        # before create_all lets a concurrent first call query a database
+        # whose tables do not exist yet (CI caught exactly that race).
         if self._engine is None:
             with self._engine_lock:
                 if self._engine is None:
-                    self._engine = create_configured_sqlite_engine(self._path)
-                    _METADATA.create_all(self._engine)
-                    _ensure_sessions_version_column(self._engine)
+                    engine = create_configured_sqlite_engine(self._path)
+                    _METADATA.create_all(engine)
+                    _ensure_sessions_version_column(engine)
+                    self._engine = engine
         return self._engine
 
 
@@ -416,12 +421,17 @@ class SQLiteEventStore:
             yield connection
 
     def _sqlite_engine(self) -> Engine:
+        # Assign self._engine only AFTER DDL completes: the unlocked fast-path
+        # read above returns as soon as the attribute is set, so assigning
+        # before create_all lets a concurrent first call query a database
+        # whose tables do not exist yet (CI caught exactly that race).
         if self._engine is None:
             with self._engine_lock:
                 if self._engine is None:
-                    self._engine = create_configured_sqlite_engine(self._path)
-                    _METADATA.create_all(self._engine)
-                    _ensure_sessions_version_column(self._engine)
+                    engine = create_configured_sqlite_engine(self._path)
+                    _METADATA.create_all(engine)
+                    _ensure_sessions_version_column(engine)
+                    self._engine = engine
         return self._engine
 
 
