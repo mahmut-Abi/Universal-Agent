@@ -1,6 +1,6 @@
 # P0 Golden Path Validation Record (2026-09-11)
 
-Spec: `Universal-Agent-P0-spec.md` (P0 产品化任务与验收标准).
+Spec: `docs/specs/Universal-Agent-P0-spec.md` (P0 产品化任务与验收标准).
 Decisions: `docs/product.md` (D1 `agent` entry kept, D2 generic `default`
 profile, D3 advanced commands labeled, D4 config layout, D5 text-default output).
 

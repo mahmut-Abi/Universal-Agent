@@ -32,7 +32,7 @@ Start with the conservative Sprint 1 prompt first. After it finishes cleanly, ru
 主要参考文件：
 
 - `AGENTS.md`
-- `Universal-Agent-P0-spec.md`
+- `docs/specs/Universal-Agent-P0-spec.md`
 - `docs/product.md`
 - `docs/revision/README.md`
 - `docs/revision/2026-09-11-p0-golden-path-validation.md`
@@ -249,7 +249,7 @@ Recommended first run:
 主要参考文件：
 
 - `AGENTS.md`
-- `Universal-Agent-P0-spec.md`
+- `docs/specs/Universal-Agent-P0-spec.md`
 - `docs/product.md`
 - `docs/revision/README.md`
 - `docs/revision/2026-09-11-p0-golden-path-validation.md`

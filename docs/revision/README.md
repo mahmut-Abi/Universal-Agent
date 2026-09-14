@@ -40,7 +40,7 @@ Use this file as the working backlog for the project.
 
 ## Source Documents
 
-- `Universal-Agent-P0-spec.md` — P0 productization contract and DoD.
+- `docs/specs/Universal-Agent-P0-spec.md` — P0 productization contract and DoD.
 - `docs/product.md` — current product vocabulary and CLI entry decisions.
 - `docs/revision/2026-09-11-p0-golden-path-validation.md` — P0 validation snapshot.
 - `docs/revision/2026-09-11-project-optimization-recommendations.md` — detailed optimization recommendations.
@@ -183,7 +183,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 - Priority: P1
 - Area: CLI / UX / Errors
-- Source: `Universal-Agent-P0-spec.md`, `docs/revision/2026-09-11-project-optimization-recommendations.md`
+- Source: `docs/specs/Universal-Agent-P0-spec.md`, `docs/revision/2026-09-11-project-optimization-recommendations.md`
 - Why: ordinary users should see Error / Reason / Try, not stack traces or raw internal exceptions.
 - Done when:
   - Common CLI failures use a shared renderer.
@@ -313,7 +313,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 - Priority: P0
 - Area: Tests / Product
-- Source: `Universal-Agent-P0-spec.md`, `docs/revision/2026-09-11-project-optimization-recommendations.md`
+- Source: `docs/specs/Universal-Agent-P0-spec.md`, `docs/revision/2026-09-11-project-optimization-recommendations.md`
 - Why: first-day product flow should never regress silently.
 - Done when:
   - Tests cover clean HOME and clean cwd.
@@ -451,7 +451,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 - Priority: P1
 - Area: Docs / Product
-- Source: `Universal-Agent-P0-spec.md`, `docs/revision/2026-09-11-project-optimization-recommendations.md`
+- Source: `docs/specs/Universal-Agent-P0-spec.md`, `docs/revision/2026-09-11-project-optimization-recommendations.md`
 - Why: README should answer what to run before explaining architecture depth.
 - Done when:
   - Quick Start appears before architecture, distributed, multi-agent, ecosystem, and deep internals.
@@ -462,7 +462,7 @@ These are the next highest-ROI improvements. They are not new agent capabilities
 
 - Priority: P1
 - Area: Docs / Runtime
-- Source: `Universal-Agent-P0-spec.md`, `docs/revision/2026-09-11-p0-golden-path-validation.md`
+- Source: `docs/specs/Universal-Agent-P0-spec.md`, `docs/revision/2026-09-11-p0-golden-path-validation.md`
 - Why: prevents future changes from moving state, policy, or control flow back into the model.
 - Done when:
   - Goal, Task, Decision, Action, Observation, Evidence, Policy, Evaluation, Session, Domain, and Profile ownership are documented.

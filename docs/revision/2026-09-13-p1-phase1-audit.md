@@ -1,6 +1,6 @@
 # P1 Phase 1 — Audit（2026-09-13）
 
-Spec: `P1 Kubernetes SRE Vertical — Codex 可验收实施规格.md`（§41 Phase 1 要求：
+Spec: `docs/specs/P1 Kubernetes SRE Vertical — Codex 可验收实施规格.md`（§41 Phase 1 要求：
 只审计、不改代码）。逐条对照 P1 验收标准与当前代码库。
 
 ## What Already Exists（可复用，P1 无需新写）
