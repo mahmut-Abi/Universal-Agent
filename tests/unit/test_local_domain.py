@@ -276,8 +276,11 @@ def test_local_domain_wires_every_runtime_component_seam() -> None:
     )
 
     assert len(domain.evaluators()) == 1
-    assert [fragment.key for provider in domain.context_providers() for fragment in
-            provider.provide(state)] == ["workspace-context"]
+    assert [
+        fragment.key
+        for provider in domain.context_providers()
+        for fragment in provider.provide(state)
+    ] == ["workspace-context"]
     assert len(domain.evidence_extractors()) == 1
     assert len(domain.world_updaters()) == 1
     assert len(domain.task_expanders()) == 1

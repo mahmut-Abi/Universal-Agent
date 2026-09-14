@@ -81,6 +81,12 @@ filterwarnings = [
   # Fail loudly on deprecations (e.g. Python 3.16 removals) instead of letting
   # them accumulate silently until a future Python upgrade breaks the suite.
   "error::DeprecationWarning",
+  # starlette.testclient evaluates the `anyio.abc.BlockingPortal` alias in a
+  # module-level type alias; anyio 4.15.0 deprecated that alias and starlette
+  # <1 has not switched to anyio.from_thread.BlockingPortal yet. The warning
+  # fires at collection time in CI's fresh pip resolution, so ignore exactly
+  # this third-party message until upstream fixes it.
+  "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
 ]
 testpaths = ["tests"]
 markers = [
