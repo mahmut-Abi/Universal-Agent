@@ -224,6 +224,28 @@ until a human resumes it. The LLM cannot bypass this boundary (see
 `docs/RUNTIME_CONTRACT.md`, and `tests/integration/test_facade_golden_path.py`
 for the executable proof).
 
+## Troubleshooting
+
+Every CLI error already carries a `Try:` hint with the next step; the common
+scenarios:
+
+| Symptom | Fix |
+| --- | --- |
+| `profile config not found` | Run `agent init`, or pass the same `--profile-config` used for setup. |
+| `unknown profile` | Run `agent profile list` and retry with a listed profile. |
+| API key / credential errors | Set the declared environment variable, or re-run `agent init` with the scripted (offline) model. |
+| `agentd request failed` / connection refused | Start agentd (`agent serve`), check `--api-url`/`--api-token`, or omit `--api-url` for embedded mode. A long LLM run that times out client-side may still be progressing — check `agent session list` before retrying. |
+| `policy_denied` on a mutation | The Runtime blocked an unsafe action (this is by design). Adjust the arguments or the policy rules in the profile. |
+| Confirmation required | Review the pending action with `agent session show <id>`, then `agent session resume <id> --confirmed true` (or `--confirmed false` to reject). |
+| Kubernetes domain/backend errors | Run `agent doctor` and verify the profile's domain backend settings. |
+| Tool failure details | `agent session events <id>` shows the full event timeline; `agent session diagnostics <id>` adds state details. |
+| `session not found` | Run `agent session list` and use an existing session id. |
+
+For anything else: `agent doctor` checks environment, configuration, model,
+runtime, profiles, domains and policy in one pass, and every failed check
+prints what to fix. Add `--output json` to any command for machine-readable
+error payloads with structured hints.
+
 ## Web
 
 The Web Console is a read-only observation/management UI served by `agentd`
