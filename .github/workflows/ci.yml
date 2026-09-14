@@ -53,10 +53,12 @@ jobs:
         run: python -m mypy
 
       - name: Test
-        run: python -m pytest -q
+        run: python -m pytest -q -n auto
 
       # Report-only coverage baseline (86% branch at introduction); no
-      # enforcement gate until per-module baselines are agreed.
+      # enforcement gate until per-module baselines are agreed. Coverage runs
+      # serially: xdist workers write separate files and `--cov` handles
+      # combination, but a serial run keeps the report deterministic.
       - name: Coverage report
         if: matrix.python-version == '3.12'
         run: python -m pytest -q --cov --cov-report=term --cov-report=json
