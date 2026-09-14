@@ -32,8 +32,8 @@ cd Universal-Agent
 
 # 1. Install (core runtime: deterministic offline model, file/sqlite stores)
 uv sync
-# Optional integrations: --extra openai / --extra tui / --extra postgres
-# (or --all-extras)
+# Optional integrations: --extra server (agentd HTTP API) / openai / tui /
+# postgres (or --all-extras)
 
 # 2. First-time setup — creates universal-agent/profile.json + config.json
 uv run ua init

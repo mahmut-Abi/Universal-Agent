@@ -1525,16 +1525,16 @@ dependencies = [
     { name = "rapidfuzz" },
     { name = "rich" },
     { name = "sqlalchemy" },
-    { name = "starlette" },
     { name = "tenacity" },
-    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
 all = [
     { name = "openai" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "starlette" },
     { name = "textual" },
+    { name = "uvicorn" },
 ]
 dev = [
     { name = "mypy" },
@@ -1543,16 +1543,22 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
     { name = "ruff" },
+    { name = "starlette" },
     { name = "types-jsonschema" },
     { name = "types-protobuf" },
     { name = "types-python-dateutil" },
     { name = "types-pyyaml" },
+    { name = "uvicorn" },
 ]
 openai = [
     { name = "openai" },
 ]
 postgres = [
     { name = "psycopg", extra = ["binary"] },
+]
+server = [
+    { name = "starlette" },
+    { name = "uvicorn" },
 ]
 tui = [
     { name = "textual" },
@@ -1568,11 +1574,13 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
     { name = "ruff" },
+    { name = "starlette" },
     { name = "textual" },
     { name = "types-jsonschema" },
     { name = "types-protobuf" },
     { name = "types-python-dateutil" },
     { name = "types-pyyaml" },
+    { name = "uvicorn" },
 ]
 
 [package.metadata]
@@ -1601,17 +1609,19 @@ requires-dist = [
     { name = "rich", specifier = ">=13.9,<15" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.16.4" },
     { name = "sqlalchemy", specifier = ">=2.0,<3" },
-    { name = "starlette", specifier = ">=0.37,<1" },
+    { name = "starlette", marker = "extra == 'dev'", specifier = ">=0.37,<1" },
+    { name = "starlette", marker = "extra == 'server'", specifier = ">=0.37,<1" },
     { name = "tenacity", specifier = ">=9,<10" },
     { name = "textual", marker = "extra == 'tui'", specifier = ">=3.0" },
     { name = "types-jsonschema", marker = "extra == 'dev'", specifier = ">=4.23,<5" },
     { name = "types-protobuf", marker = "extra == 'dev'", specifier = ">=6,<8" },
     { name = "types-python-dateutil", marker = "extra == 'dev'", specifier = ">=2.9,<3" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6,<7" },
-    { name = "universal-agent-runtime", extras = ["openai", "tui", "postgres"], marker = "extra == 'all'" },
-    { name = "uvicorn", specifier = ">=0.30,<1" },
+    { name = "universal-agent-runtime", extras = ["server", "openai", "tui", "postgres"], marker = "extra == 'all'" },
+    { name = "uvicorn", marker = "extra == 'dev'", specifier = ">=0.30,<1" },
+    { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.30,<1" },
 ]
-provides-extras = ["openai", "tui", "postgres", "all", "dev"]
+provides-extras = ["server", "openai", "tui", "postgres", "all", "dev"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1623,11 +1633,13 @@ dev = [
     { name = "pytest-cov", specifier = ">=7,<8" },
     { name = "pytest-xdist", specifier = ">=3.8,<4" },
     { name = "ruff", specifier = "==0.16.4" },
+    { name = "starlette", specifier = ">=0.37,<1" },
     { name = "textual", specifier = ">=3.0" },
     { name = "types-jsonschema", specifier = ">=4.23,<5" },
     { name = "types-protobuf", specifier = ">=6,<8" },
     { name = "types-python-dateutil", specifier = ">=2.9,<3" },
     { name = "types-pyyaml", specifier = ">=6,<7" },
+    { name = "uvicorn", specifier = ">=0.30,<1" },
 ]
 
 [[package]]

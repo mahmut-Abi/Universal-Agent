@@ -27,9 +27,7 @@ dependencies = [
   "rapidfuzz>=3.9,<4",
   "rich>=13.9,<15",
   "sqlalchemy>=2.0,<3",
-  "starlette>=0.37,<1",
   "tenacity>=9,<10",
-  "uvicorn>=0.30,<1",
 ]
 
 # Provider/UI/store integrations are optional extras; the kernel imports them
@@ -38,16 +36,23 @@ dependencies = [
 # stay core: observability exports are P3.6 runtime scope and both packages
 # are small, pure-Python wheels.
 [project.optional-dependencies]
+# agentd Runtime server (HTTP API + Web Console). Personal/Golden Path use
+# never needs it; `ua serve` / `agentd` require this extra.
+server = ["starlette>=0.37,<1", "uvicorn>=0.30,<1"]
 openai = ["openai>=1.99,<3"]
 tui = ["textual>=3.0"]
 postgres = ["psycopg[binary]>=3.2,<4"]
-all = ["universal-agent-runtime[openai,tui,postgres]"]
+all = ["universal-agent-runtime[server,openai,tui,postgres]"]
 # Dev tooling, installed by pip via `.[dev]`; keep in sync with the
 # [dependency-groups].dev table at the bottom of this file.
 dev = [
   "mypy>=1.11,<2",
   "pytest-cov>=7,<8",
   "pytest-xdist>=3.8,<4",
+  # The test suite exercises the agentd server surface; keep the server
+  # extra installed in every dev environment.
+  "starlette>=0.37,<1",
+  "uvicorn>=0.30,<1",
   "types-python-dateutil>=2.9,<3",
   "pytest>=8.3,<10",
   "pytest-asyncio>=1.4,<2",
@@ -134,7 +139,10 @@ dev = [
   "pytest>=8.3,<10",
   "pytest-asyncio>=1.4,<2",
   "ruff==0.16.4",
+  # Server extra: the test suite exercises the agentd HTTP surface.
+  "starlette>=0.37,<1",
   "textual>=3.0",
+  "uvicorn>=0.30,<1",
   "types-jsonschema>=4.23,<5",
   "types-protobuf>=6,<8",
   "types-PyYAML>=6,<7",

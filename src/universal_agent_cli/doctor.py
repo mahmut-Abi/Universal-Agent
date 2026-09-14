@@ -32,7 +32,6 @@ _DEPENDENCY_PROBES = (
     "httpx",
     "orjson",
     "openai",
-    "uvicorn",
 )
 
 CHECK_OK = "ok"
