@@ -9,73 +9,9 @@ from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from types import ModuleType
-from typing import TextIO, cast
+from typing import TYPE_CHECKING, TextIO, cast
 
-from universal_agent.agentd.representations import (
-    capability_body,
-    config_body,
-    domain_body,
-    evaluator_body,
-    event_batch_body,
-    memory_body,
-    policy_body,
-    runtime_run_body,
-    tool_body,
-)
 from universal_agent.core import Goal, SessionId, Task
-from universal_agent.distributed import (
-    DistributedLockConflictError,
-    DistributedLockLeaseLostError,
-    WorkerNotFoundError,
-    WorkItemNotFoundError,
-)
-from universal_agent.domain import DomainPackageNotFoundError
-from universal_agent.domains.kubernetes.cli import (
-    LOCAL_PROFILE_NAME,
-    dispatch_kubernetes,
-    is_kubernetes_probe_service_command,
-)
-from universal_agent.domains.kubernetes.cli import (
-    build_configured_probe_service as build_kubernetes_configured_probe_service,
-)
-from universal_agent.domains.kubernetes.cli import (
-    build_configured_service as build_kubernetes_configured_service,
-)
-from universal_agent.domains.local.cli_runtime import (
-    build_local_profile_service,
-    build_local_service,
-)
-from universal_agent.ecosystem import (
-    EcosystemRegistryNotFoundError,
-    EcosystemRegistryStoreNotFoundError,
-)
-from universal_agent.evaluation.dataset import EvaluationDatasetNotFoundError
-from universal_agent.evaluation.dispatch import DispatchExit
-from universal_agent.host.runtime import RuntimeHost, build_configured_model_adapter
-from universal_agent.memory import MemoryKind, MemoryNotFoundError
-from universal_agent.profile import (
-    ProfileConfig,
-    ProfileConfigNotFoundError,
-    default_profile_config_path,
-)
-from universal_agent.security import EnvSecretProvider
-from universal_agent.service import RuntimeService
-from universal_agent.state import StateNotFoundError
-from universal_agent_api import AgentdClient, AgentdClientError
-from universal_agent_cli.agentd import (
-    _agentd_api_token,
-    _client_timeout_seconds,
-    command_supports_agentd,
-    dispatch_agentd_cli,
-    dispatch_agentd_commands,
-)
-from universal_agent_cli.catalog_commands import _dispatch_domain_packages, _dispatch_profile
-from universal_agent_cli.config import validate_profile_config_file
-from universal_agent_cli.distributed import _dispatch_distributed
-from universal_agent_cli.doctor import run_doctor_command
-from universal_agent_cli.ecosystem import _dispatch_ecosystem
-from universal_agent_cli.evaluation import _dispatch_eval
-from universal_agent_cli.init import _dispatch_init
 from universal_agent_cli.io import (
     CliExit,
     _success_criteria,
@@ -83,14 +19,36 @@ from universal_agent_cli.io import (
     _write_json,
     _write_text,
 )
-from universal_agent_cli.observability import _dispatch_observability
 from universal_agent_cli.parser import build_parser
-from universal_agent_cli.serve import ServerRunner, _dispatch_serve
-from universal_agent_cli.session import _dispatch_session
-from universal_agent_cli.text_views import (
-    render_config_text,
-    render_run_text,
-)
+
+if TYPE_CHECKING:
+    # Static surface only: resolved lazily at runtime so importing the CLI
+    # package stays light (the parser/argparse floor) for commands like
+    # `ua --help` that never dispatch.
+    from universal_agent.service import RuntimeService
+    from universal_agent_cli.serve import ServerRunner
+
+    # Compatibility re-export, resolved at runtime via module __getattr__.
+    LOCAL_PROFILE_NAME: str
+
+__all__ = [
+    "LOCAL_PROFILE_NAME",
+    "build_configured_probe_service",
+    "build_configured_service",
+    "build_default_service",
+    "main",
+    "run_cli",
+]
+
+
+def __getattr__(name: str) -> object:
+    # Compatibility re-export: resolved lazily so the CLI package import does
+    # not pull the Kubernetes Domain runtime stacks for a single constant.
+    if name == "LOCAL_PROFILE_NAME":
+        from universal_agent.domains.kubernetes.cli_parser import LOCAL_PROFILE_NAME
+
+        return LOCAL_PROFILE_NAME
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _require_tui_module(module_name: str) -> ModuleType:
@@ -121,10 +79,18 @@ def _primary_profile_name(service: RuntimeService) -> str | None:
 def build_default_service() -> RuntimeService:
     """Golden Path default: the domain-neutral Local workspace profile."""
 
+    from universal_agent.domains.local.cli_runtime import build_local_service
+
     return build_local_service()
 
 
 def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
+    from universal_agent.domains.kubernetes.cli import build_configured_service
+    from universal_agent.domains.local.cli_runtime import build_local_profile_service
+    from universal_agent.host.runtime import RuntimeHost, build_configured_model_adapter
+    from universal_agent.profile import ProfileConfig
+    from universal_agent.security import EnvSecretProvider
+
     profile = ProfileConfig.from_json_file(profile_config_path).to_profile()
     if profile.runtime.domain_package_paths:
         secret_provider = EnvSecretProvider()
@@ -140,7 +106,7 @@ def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
     configured_domains = profile.runtime.configured_domains()
     if configured_domains and configured_domains[0].name == "local":
         return build_local_profile_service(profile_config_path)
-    return build_kubernetes_configured_service(
+    return build_configured_service(
         profile_config_path,
         model_adapter_builder=build_configured_model_adapter,
     )
@@ -149,7 +115,9 @@ def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
 def build_configured_probe_service(profile_config_path: str | Path) -> RuntimeService:
     """Build RuntimeService metadata without requiring the configured model to connect."""
 
-    return build_kubernetes_configured_probe_service(profile_config_path)
+    from universal_agent.domains.kubernetes.cli import build_configured_probe_service
+
+    return build_configured_probe_service(profile_config_path)
 
 
 async def run_cli(
@@ -161,6 +129,32 @@ async def run_cli(
     stderr: TextIO | None = None,
     prog: str | None = None,
 ) -> int:
+    from universal_agent.distributed import (
+        DistributedLockConflictError,
+        DistributedLockLeaseLostError,
+        WorkerNotFoundError,
+        WorkItemNotFoundError,
+    )
+    from universal_agent.domain import DomainPackageNotFoundError
+    from universal_agent.domains.kubernetes.cli import is_kubernetes_probe_service_command
+    from universal_agent.ecosystem import (
+        EcosystemRegistryNotFoundError,
+        EcosystemRegistryStoreNotFoundError,
+    )
+    from universal_agent.evaluation.dataset import EvaluationDatasetNotFoundError
+    from universal_agent.evaluation.dispatch import DispatchExit
+    from universal_agent.memory import MemoryNotFoundError
+    from universal_agent.profile import ProfileConfigNotFoundError
+    from universal_agent.state import StateNotFoundError
+    from universal_agent_api import AgentdClient, AgentdClientError
+    from universal_agent_cli.agentd import (
+        _agentd_api_token,
+        _client_timeout_seconds,
+        command_supports_agentd,
+        dispatch_agentd_cli,
+        dispatch_agentd_commands,
+    )
+
     parser = build_parser(prog)
     args = parser.parse_args(list(argv) if argv is not None else None)
     out = stdout or sys.stdout
@@ -214,6 +208,8 @@ async def run_cli(
         if cast(str, args.command) == "doctor":
             # Production doctor: local preflight first, then the embedded
             # runtime — the same initialization path `agent run` uses.
+            from universal_agent_cli.doctor import run_doctor_command
+
             return await run_doctor_command(args, out)
         if command_supports_agentd(args):
             # Production path without an injected runtime: serve the runtime
@@ -286,6 +282,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _service_from_args(args: argparse.Namespace) -> RuntimeService:
+    from universal_agent.domains.kubernetes.cli import is_kubernetes_probe_service_command
+
     profile_config = cast(str | None, args.profile_config)
     if profile_config is None:
         return build_default_service()
@@ -299,6 +297,8 @@ def _is_config_validate_command(args: argparse.Namespace) -> bool:
 
 
 def _dispatch_config_validate(args: argparse.Namespace, out: TextIO) -> None:
+    from universal_agent_cli.config import validate_profile_config_file
+
     profile_config = cast(str | None, args.profile_config)
     if profile_config is None:
         raise ValueError("config validate requires --profile-config")
@@ -318,6 +318,24 @@ async def _dispatch(
     *,
     server_runner: ServerRunner | None = None,
 ) -> None:
+    from universal_agent.agentd.representations import (
+        capability_body,
+        domain_body,
+        evaluator_body,
+        memory_body,
+        policy_body,
+        tool_body,
+    )
+    from universal_agent.memory import MemoryKind
+    from universal_agent_cli.catalog_commands import _dispatch_domain_packages, _dispatch_profile
+    from universal_agent_cli.distributed import _dispatch_distributed
+    from universal_agent_cli.ecosystem import _dispatch_ecosystem
+    from universal_agent_cli.evaluation import _dispatch_eval
+    from universal_agent_cli.init import _dispatch_init
+    from universal_agent_cli.observability import _dispatch_observability
+    from universal_agent_cli.serve import _dispatch_serve
+    from universal_agent_cli.session import _dispatch_session
+
     command = cast(str, args.command)
     if command == "version":
         _write_json(out, {"version": _package_version()})
@@ -352,6 +370,9 @@ async def _dispatch(
         await _dispatch_run(args, service, out)
         return
     if command == "kubernetes":
+        from universal_agent.domains.kubernetes.cli_reports import dispatch_kubernetes
+        from universal_agent.host.runtime import build_configured_model_adapter
+
         result = await dispatch_kubernetes(
             args,
             service,
@@ -433,6 +454,9 @@ async def _dispatch_run(
     service: RuntimeService,
     out: TextIO,
 ) -> None:
+    from universal_agent.agentd.representations import event_batch_body, runtime_run_body
+    from universal_agent_cli.text_views import render_run_text
+
     profile = _resolve_run_profile(args, service)
     criteria = _success_criteria(cast(list[str], args.success))
     goal = Goal(cast(str, args.goal), criteria)
@@ -571,6 +595,9 @@ def _dispatch_config(
     service: RuntimeService,
     out: TextIO,
 ) -> None:
+    from universal_agent.agentd.representations import config_body, policy_body
+    from universal_agent_cli.text_views import render_config_text
+
     command = cast(str | None, args.config_command)
     profile_config_path = _config_scope_path(args)
     if command is None:
@@ -612,6 +639,8 @@ def _config_scope_path(args: argparse.Namespace) -> str | None:
     explicit = cast(str | None, args.profile_config)
     if explicit is not None:
         return explicit
+    from universal_agent.profile import default_profile_config_path
+
     discovered = default_profile_config_path()
     return str(discovered) if discovered.is_file() else None
 
@@ -636,13 +665,3 @@ def _package_version() -> str:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-__all__ = [
-    "LOCAL_PROFILE_NAME",
-    "build_configured_probe_service",
-    "build_configured_service",
-    "build_default_service",
-    "main",
-    "run_cli",
-]

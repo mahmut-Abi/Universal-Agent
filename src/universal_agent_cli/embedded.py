@@ -96,6 +96,10 @@ def launch_embedded_runtime(
 
     process = subprocess.Popen(command, stderr=subprocess.PIPE)
     deadline = time.monotonic() + timeout_seconds
+    # Short first polls: the agentd child usually reports its port within a
+    # few milliseconds, so a fixed 50ms sleep would add that to every
+    # production CLI command; back off toward 50ms while it keeps starting.
+    poll_seconds = 0.005
     try:
         while time.monotonic() < deadline:
             if process.poll() is not None:
@@ -103,7 +107,8 @@ def launch_embedded_runtime(
             try:
                 port = int(port_file.read_text(encoding="utf-8").strip())
             except (FileNotFoundError, ValueError):
-                time.sleep(0.05)
+                time.sleep(poll_seconds)
+                poll_seconds = min(poll_seconds * 2, 0.05)
                 continue
             return EmbeddedRuntime(process, f"http://127.0.0.1:{port}", port_file)
         raise EmbeddedRuntimeError(

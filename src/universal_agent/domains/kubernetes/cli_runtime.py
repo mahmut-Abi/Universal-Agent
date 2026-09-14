@@ -23,6 +23,7 @@ from universal_agent.distributed import DistributedRuntimeCoordinator
 from universal_agent.domain import DomainLoader, RuntimeBuilder
 from universal_agent.domains.kubernetes.api import KubernetesApiBackend
 from universal_agent.domains.kubernetes.backend import KubernetesBackend, KubernetesMutationBackend
+from universal_agent.domains.kubernetes.cli_parser import LOCAL_PROFILE_NAME
 from universal_agent.domains.kubernetes.domain import KubernetesRemediationDomain
 from universal_agent.domains.kubernetes.kubectl import KubectlBackend
 from universal_agent.host import (
@@ -38,7 +39,6 @@ from universal_agent.security import EnvSecretProvider, SecretProvider, resolve_
 from universal_agent.service import RuntimeService
 from universal_agent.state import InMemoryStateStore
 
-LOCAL_PROFILE_NAME = "local-kubernetes"
 PREFLIGHT_CAPABILITIES = (
     "inspect_cluster",
     "inspect_workload",

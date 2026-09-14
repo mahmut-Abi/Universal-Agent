@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from universal_agent.domains.kubernetes.cli import LOCAL_PROFILE_NAME
+from universal_agent.domains.kubernetes.cli_parser import LOCAL_PROFILE_NAME
 
 
 def add_observability_parsers(

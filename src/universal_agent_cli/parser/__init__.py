@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import argparse
 
-from universal_agent.domains.kubernetes.cli import (
+from universal_agent.domains.kubernetes.cli_parser import (
     LOCAL_PROFILE_NAME,
     add_kubernetes_command,
 )

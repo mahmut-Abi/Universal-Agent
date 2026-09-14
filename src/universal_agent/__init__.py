@@ -1,9 +1,10 @@
 """Universal Agent Runtime public facade.
 
-The eager surface is the small SDK facade used by README and examples.
-All legacy re-exports remain importable for compatibility through a lazy
-module ``__getattr__``; prefer importing them from their submodules in new
-code (see ``__dir__`` for the full compatibility names).
+The SDK facade used by README and examples (``Agent``, ``Goal``, ``RuntimeService``
+…) resolves lazily through module ``__getattr__`` alongside the legacy re-exports,
+so ``import universal_agent`` stays light and `ua` startup does not pay for the
+server/model/persistence stacks. All names below remain importable exactly as
+before (see ``__dir__`` for the full compatibility names).
 
 ``_LEGACY_EXPORTS`` is a generated lookup table; E501 is exempted for this
 file in pyproject so each mapping stays on one reviewable line.
@@ -11,33 +12,29 @@ file in pyproject so each mapping stays on one reviewable line.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from universal_agent.core import (
-    Decision,
-    DecisionType,
-    ExecutionResult,
-    ExecutionStatus,
-    Goal,
-    SuccessCriterion,
-    Task,
-    ToolDefinition,
-    immutable_json,
-)
-from universal_agent.domain import RuntimeBuilder
-from universal_agent.facade import (
-    Agent,
-    AgentConfigurationError,
-)
-from universal_agent.host import RuntimeHost
-from universal_agent.model import ScriptedModelAdapter
-from universal_agent.runtime import InMemoryEventSink
-from universal_agent.service import RuntimeService
-from universal_agent.state import (
-    InMemoryStateStore,
-    StateStore,
-)
-from universal_agent.tools import Tool
+if TYPE_CHECKING:
+    # Static surface only: these are resolved lazily at runtime via __getattr__.
+    from universal_agent.core import (
+        Decision,
+        DecisionType,
+        ExecutionResult,
+        ExecutionStatus,
+        Goal,
+        SuccessCriterion,
+        Task,
+        ToolDefinition,
+        immutable_json,
+    )
+    from universal_agent.domain import RuntimeBuilder
+    from universal_agent.facade import Agent, AgentConfigurationError
+    from universal_agent.host import RuntimeHost
+    from universal_agent.model import ScriptedModelAdapter
+    from universal_agent.runtime import InMemoryEventSink
+    from universal_agent.service import RuntimeService
+    from universal_agent.state import InMemoryStateStore, StateStore
+    from universal_agent.tools import Tool
 
 __all__ = [
     "Agent",
@@ -60,6 +57,30 @@ __all__ = [
     "ToolDefinition",
     "immutable_json",
 ]
+
+# SDK facade surface: name -> "module.attribute", resolved lazily by __getattr__
+# so importing the root package does not pull the service/host/model stacks.
+_FACADE_EXPORTS: dict[str, str] = {
+    "Agent": "universal_agent.facade.Agent",
+    "AgentConfigurationError": "universal_agent.facade.AgentConfigurationError",
+    "Decision": "universal_agent.core.Decision",
+    "DecisionType": "universal_agent.core.DecisionType",
+    "ExecutionResult": "universal_agent.core.ExecutionResult",
+    "ExecutionStatus": "universal_agent.core.ExecutionStatus",
+    "Goal": "universal_agent.core.Goal",
+    "InMemoryEventSink": "universal_agent.runtime.InMemoryEventSink",
+    "InMemoryStateStore": "universal_agent.state.InMemoryStateStore",
+    "RuntimeBuilder": "universal_agent.domain.RuntimeBuilder",
+    "RuntimeHost": "universal_agent.host.RuntimeHost",
+    "RuntimeService": "universal_agent.service.RuntimeService",
+    "ScriptedModelAdapter": "universal_agent.model.ScriptedModelAdapter",
+    "StateStore": "universal_agent.state.StateStore",
+    "SuccessCriterion": "universal_agent.core.SuccessCriterion",
+    "Task": "universal_agent.core.Task",
+    "Tool": "universal_agent.tools.Tool",
+    "ToolDefinition": "universal_agent.core.ToolDefinition",
+    "immutable_json": "universal_agent.core.immutable_json",
+}
 
 # name -> "module.attribute" resolved lazily by __getattr__.
 _LEGACY_EXPORTS: dict[str, str] = {
@@ -385,7 +406,7 @@ _LEGACY_EXPORTS: dict[str, str] = {
 
 
 def __getattr__(name: str) -> Any:
-    path = _LEGACY_EXPORTS.get(name)
+    path = _FACADE_EXPORTS.get(name) or _LEGACY_EXPORTS.get(name)
     if path is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     # Compatibility plan: lazy re-export of the pre-facade root API.
@@ -398,4 +419,4 @@ def __getattr__(name: str) -> Any:
 
 
 def __dir__() -> list[str]:
-    return sorted(set(globals()) | set(_LEGACY_EXPORTS))
+    return sorted(set(globals()) | set(_FACADE_EXPORTS) | set(_LEGACY_EXPORTS))
