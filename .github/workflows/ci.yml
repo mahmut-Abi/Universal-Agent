@@ -55,6 +55,12 @@ jobs:
       - name: Test
         run: python -m pytest -q
 
+      # Report-only coverage baseline (86% branch at introduction); no
+      # enforcement gate until per-module baselines are agreed.
+      - name: Coverage report
+        if: matrix.python-version == '3.12'
+        run: python -m pytest -q --cov --cov-report=term --cov-report=json
+
       - name: Report test behavior/contract/unit ratio
         if: matrix.python-version == '3.12'
         run: python scripts/report-test-ratio.py

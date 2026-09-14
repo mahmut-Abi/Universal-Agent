@@ -16,3 +16,9 @@ dist/
 .universal-agent/
 universal-agent/
 .pi/
+
+# Coverage artifacts
+.coverage
+.coverage.*
+coverage.json
+htmlcov/
