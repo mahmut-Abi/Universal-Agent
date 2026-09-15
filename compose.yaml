@@ -1,6 +1,8 @@
 ## Universal Agent server (agentd) + standalone web chat UI.
 ##
-## Start:            AGENTD_AUTH_TOKEN=<token> docker compose up --build
+## Start (in-memory store): AGENTD_AUTH_TOKEN=<token> docker compose up --build
+## Start (sqlite persistence): AGENTD_AUTH_TOKEN=<token> AGENTD_STORE_BACKEND=sqlite \
+##                             docker compose up --build
 ## With Postgres:    AGENTD_AUTH_TOKEN=<token> AGENTD_PG_URL=postgresql://agent:agent@postgres:5432/agent \
 ##                   docker compose --profile postgres up --build
 ##                   (and set the agentd profile store backend to postgres with url_env=AGENTD_PG_URL)
@@ -14,6 +16,11 @@ services:
     environment:
       AGENTD_AUTH_TOKEN: ${AGENTD_AUTH_TOKEN:?set AGENTD_AUTH_TOKEN before starting agentd}
       AGENTD_PG_URL: ${AGENTD_PG_URL:-}
+      # First-boot store selection (profile.json is generated once):
+      # memory (default) | file | sqlite; use AGENTD_STORE_PATH to place the
+      # db on the agent-data volume (default /data/state.db).
+      AGENTD_STORE_BACKEND: ${AGENTD_STORE_BACKEND:-memory}
+      AGENTD_STORE_PATH: ${AGENTD_STORE_PATH:-/data/state.db}
     volumes:
       - agent-data:/data
       - agent-config:/config
