@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from universal_agent.agentd.evidence_drilldown import evidence_drilldown_body
 from universal_agent.agentd.http import (
     HttpResponse,
     json_response,
@@ -26,13 +25,14 @@ from universal_agent.agentd.routing import (
     AgentdRouteMatch,
     AgentdRouteMatcher,
 )
-from universal_agent.agentd.timeline import timeline_body
-from universal_agent.agentd.world_explorer import world_explorer_body
 from universal_agent.core import SessionId, to_json_object
 from universal_agent.evaluation.console import (
     build_evaluation_console_snapshot,
 )
 from universal_agent.service import RuntimeService
+from universal_agent.service.evidence_drilldown import evidence_drilldown_body
+from universal_agent.service.timeline import timeline_body
+from universal_agent.service.world_explorer import world_explorer_body
 from universal_agent.state import StateNotFoundError
 
 _CONSOLE_ROUTES = AgentdRouteMatcher(

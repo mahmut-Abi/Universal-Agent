@@ -300,7 +300,8 @@ async function refreshSelected() {
 
 const DETAIL_LOADERS = {
   timeline: (sessionId) => get(`/console/sessions/${sessionId}/timeline`),
-  evidence: (sessionId) => get(`/console/sessions/${sessionId}/evidence-drilldown`),
+  evidence: (sessionId) =>
+    get(`/console/sessions/${sessionId}/evidence-drilldown`),
   world: (sessionId) => get(`/console/sessions/${sessionId}/world-explorer`),
 };
 
@@ -349,7 +350,9 @@ function detailCard(title) {
 }
 
 function detailTimeline(payload) {
-  const card = detailCard(`Execution timeline (${payload.step_count || 0} steps)`);
+  const card = detailCard(
+    `Execution timeline (${payload.step_count || 0} steps)`,
+  );
   for (const step of payload.steps || []) {
     const row = document.createElement("div");
     row.className = "detail-row";
@@ -391,12 +394,15 @@ function detailEvidence(payload) {
     table.append(tr);
   }
   card.append(table);
-  if (!(payload.evidence || []).length) card.append(emptyNote("no evidence recorded"));
+  if (!(payload.evidence || []).length)
+    card.append(emptyNote("no evidence recorded"));
   return card;
 }
 
 function detailWorld(payload) {
-  const card = detailCard(`World model (${(payload.entities || []).length} entities)`);
+  const card = detailCard(
+    `World model (${(payload.entities || []).length} entities)`,
+  );
   for (const entity of payload.entities || []) {
     const row = document.createElement("div");
     row.className = "detail-row";
@@ -414,7 +420,8 @@ function detailWorld(payload) {
     row.textContent = `⚠ conflict: ${conflict.subject} · ${conflict.claim} = ${JSON.stringify(conflict.current_value)}`;
     card.append(row);
   }
-  if (!(payload.entities || []).length) card.append(emptyNote("world model is empty"));
+  if (!(payload.entities || []).length)
+    card.append(emptyNote("world model is empty"));
   return card;
 }
 

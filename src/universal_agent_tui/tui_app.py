@@ -62,11 +62,13 @@ def service_tui_actions(service: RuntimeService) -> TuiActions:
         return await service.cancel_session(session_id, reason=reason or "session cancelled")
 
     async def chat(goal_text: str) -> JsonMapping:
-        from universal_agent.agentd.representations import runtime_run_body
-        from universal_agent.core import Goal, Task
+        from universal_agent.core import Goal, Task, immutable_json, to_json_object
 
         run = await service.run_goal(Goal(goal_text, ()), Task("Chat turn", ()))
-        return runtime_run_body(run)
+        # Same JSON shape as the agentd runtime_run_body projection, built
+        # from core helpers so this client package never imports the agentd
+        # application adapter.
+        return immutable_json(to_json_object(run, fallback_to_string=True))
 
     return TuiActions(pause=pause, resume=resume, cancel=cancel, chat=chat)
 

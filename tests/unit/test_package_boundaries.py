@@ -103,6 +103,9 @@ def test_runtime_layers_do_not_import_agentd_adapter() -> None:
         SRC / KERNEL_PACKAGE / "service",
         SRC / KERNEL_PACKAGE / "evaluation",
         SRC / KERNEL_PACKAGE / "ecosystem",
+        # Client packages are HTTP-first surfaces: they consume projections
+        # from the kernel service layer, never the agentd adapter.
+        SRC / "universal_agent_tui",
     )
     violations: list[str] = []
     for root in guarded_roots:
@@ -116,9 +119,9 @@ def test_runtime_layers_do_not_import_agentd_adapter() -> None:
                 ):
                     violations.append(relative)
     assert violations == [], (
-        "domain/runtime/service/evaluation/ecosystem layers must not import "
-        "universal_agent.agentd application adapters "
-        f"(found: {sorted(set(violations))})"
+        "domain/runtime/service/evaluation/ecosystem layers and client "
+        "packages must not import universal_agent.agentd application "
+        f"adapters (found: {sorted(set(violations))})"
     )
 
 

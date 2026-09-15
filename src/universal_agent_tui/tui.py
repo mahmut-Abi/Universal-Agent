@@ -3,9 +3,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from universal_agent.agentd.evidence_drilldown import evidence_drilldown_body
-from universal_agent.agentd.timeline import timeline_body
-from universal_agent.agentd.world_explorer import world_explorer_body
 from universal_agent.core import DomainIdentity, SessionId, dumps_json
 from universal_agent.operations import AuditRecordView
 from universal_agent.runtime import RuntimeEventView, SessionSummaryView, SessionView
@@ -26,6 +23,9 @@ from universal_agent.service import (
     SessionWorldView,
     ToolView,
 )
+from universal_agent.service.evidence_drilldown import evidence_drilldown_body
+from universal_agent.service.timeline import timeline_body
+from universal_agent.service.world_explorer import world_explorer_body
 from universal_agent_tui.console import RuntimeConsoleSnapshot, build_runtime_console_snapshot
 from universal_agent_tui.render import render_terminal_lines
 

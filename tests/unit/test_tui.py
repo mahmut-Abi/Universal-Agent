@@ -501,7 +501,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
 
 @pytest.mark.unit
 def test_tui_timeline_lines_group_events_and_handle_empty() -> None:
-    from universal_agent.agentd.timeline import timeline_body  # noqa: F401
+    from universal_agent.service.timeline import timeline_body  # noqa: F401
     from universal_agent_tui.tui import _timeline_lines
 
     # Empty history renders an explicit placeholder.

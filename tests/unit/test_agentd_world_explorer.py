@@ -14,7 +14,6 @@ from typing import Any
 import pytest
 
 from universal_agent.agentd.console_routes import handle_console_route
-from universal_agent.agentd.world_explorer import world_explorer_body
 from universal_agent.core import ActionId, ObservationId, SessionId, TaskId
 from universal_agent.evidence import EvidenceId
 from universal_agent.runtime import EvidenceView
@@ -26,6 +25,7 @@ from universal_agent.service.views import (
     WorldFactView,
     WorldRelationView,
 )
+from universal_agent.service.world_explorer import world_explorer_body
 from universal_agent.state import StateNotFoundError
 
 NOW = datetime.now(UTC)

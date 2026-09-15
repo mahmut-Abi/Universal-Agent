@@ -15,9 +15,9 @@ from typing import Any
 import pytest
 
 from universal_agent.agentd.console_routes import handle_console_route
-from universal_agent.agentd.timeline import timeline_body
 from universal_agent.core import ActionId, GoalId, JsonMapping, SessionId, TaskId
 from universal_agent.runtime.api import RuntimeEventBatch, RuntimeEventView
+from universal_agent.service.timeline import timeline_body
 from universal_agent.state import StateNotFoundError
 
 NOW = datetime.now(UTC)

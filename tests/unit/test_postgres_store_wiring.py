@@ -51,9 +51,7 @@ def test_postgres_store_config_rejects_path() -> None:
 def test_build_stores_postgres_missing_env_fails_before_connecting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config = _runtime_config(
-        StoreConfig(StoreBackend.POSTGRES, url_env="AGENTD_PG_URL_MISSING")
-    )
+    config = _runtime_config(StoreConfig(StoreBackend.POSTGRES, url_env="AGENTD_PG_URL_MISSING"))
     monkeypatch.delenv("AGENTD_PG_URL_MISSING", raising=False)
 
     with pytest.raises(ValueError, match="AGENTD_PG_URL_MISSING"):
