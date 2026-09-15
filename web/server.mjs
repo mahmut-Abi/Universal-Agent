@@ -49,15 +49,7 @@ function isAuthorized(req) {
 }
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PUBLIC_DIR = path.join(HERE, "public");
-
-const STATIC_FILES = {
-  "/": "index.html",
-  "/index.html": "index.html",
-  "/login.html": "login.html",
-  "/app.js": "app.js",
-  "/style.css": "style.css",
-};
+const DIST_DIR = path.join(HERE, "dist");
 
 const CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -151,27 +143,38 @@ async function proxy(req, res, url) {
 }
 
 async function serveStatic(res, pathname) {
-  const relative = STATIC_FILES[pathname];
-  if (!relative) {
+  // Serves the Vue-built dashboard bundle from ./dist (Vite output).
+  // `/` renders the SPA entry; other paths resolve inside dist with a
+  // traversal guard; unknown paths fall back to the SPA entry.
+  const rel =
+    pathname === "/" || pathname === "/index.html"
+      ? "index.html"
+      : pathname.slice(1);
+  const resolved = path.resolve(DIST_DIR, rel);
+  if (!resolved.startsWith(DIST_DIR + path.sep) && resolved !== DIST_DIR) {
     json(res, 404, {
       error: { code: "not_found", message: `unknown path: ${pathname}` },
     });
     return;
   }
   try {
-    const body = await readFile(path.join(PUBLIC_DIR, relative));
+    const body = await readFile(resolved);
     res.writeHead(200, {
       "content-type":
-        CONTENT_TYPES[path.extname(relative)] || "application/octet-stream",
+        CONTENT_TYPES[path.extname(resolved)] || "application/octet-stream",
     });
     res.end(body);
-  } catch (error) {
-    json(res, 500, {
-      error: {
-        code: "web_internal",
-        message: `failed to read ${relative}: ${error.message}`,
-      },
-    });
+  } catch {
+    // SPA fallback: client-side navigations and unknown paths get the entry.
+    try {
+      const body = await readFile(path.join(DIST_DIR, "index.html"));
+      res.writeHead(200, { "content-type": CONTENT_TYPES[".html"] });
+      res.end(body);
+    } catch {
+      json(res, 404, {
+        error: { code: "not_found", message: `unknown path: ${pathname}` },
+      });
+    }
   }
 }
 
@@ -192,9 +195,11 @@ function handleLogin(req, res) {
     });
     return;
   }
-  serveStatic(res, "/login.html").catch((error) => {
-    json(res, 500, { error: { code: "web_internal", message: String(error) } });
-  });
+  // Inline login page (the UI itself is the Vue SPA; only this gate is
+  // server-rendered).
+  const page = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Universal-Agent 登录</title><style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#f5f5f7}form{background:#fff;border:1px solid #d2d2d7;border-radius:12px;padding:32px;width:280px}input{width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid #d2d2d7;border-radius:8px;margin-top:6px}button{width:100%;padding:10px;border:0;border-radius:8px;background:#0071e3;color:#fff;font:inherit;margin-top:14px;cursor:pointer}.err{color:#ff3b30;font-size:13px}</style></head><body><form method="POST"><h2 style="margin:0 0 12px;font-size:16px">Universal-Agent</h2>${req.url.includes("error=1") ? '<p class="err">密码错误，请重试</p>' : ""}<input type="password" name="password" placeholder="访问密码" autofocus><button>登录</button></form></body></html>`;
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  res.end(page);
 }
 
 const server = createServer((req, res) => {
