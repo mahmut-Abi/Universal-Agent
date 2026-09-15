@@ -187,14 +187,19 @@ function onChatKeydown(e) {
 
 /* ── 配置：Profile CRUD / Domains / Policy ── */
 const profileModal = reactive({ open: false, editing: null })
-const pmForm = reactive({ name: '', desc: '', domains: [] })
-const pmError = ref('')
+const pmForm = reactive({ name: '', desc: '', domains: [],
+  model: { provider: 'scripted', name: '', endpoint: '', api_key_env: '', timeout_seconds: 30 } })
+const MODEL_PROVIDERS = ['scripted', 'json_http', 'openai_chat_completions', 'openai_responses']
 function openProfileModal(name) {
   profileModal.editing = name || null
-  const p = name ? m.profiles.find(x => x.name === name) : null
+  const p = name ? m.profiles.find((x) => x.name === name) : null
   pmForm.name = name || ''
   pmForm.desc = p ? p.desc.replace(/^(K8s 运维|通用离线) Profile · /, '') : ''
-  pmForm.domains = m.profiles.find(x => x.name === name)?.domains?.length ? [...m.profiles.find(x => x.name === name).domains] : m.domains.map(d => d.name)
+  pmForm.domains = m.profiles.find((x) => x.name === name)?.domains?.length ? [...m.profiles.find((x) => x.name === name).domains] : m.domains.map((d) => d.name)
+  const existing = p && p.raw && p.raw.runtime && p.raw.runtime.model
+  pmForm.model = existing
+    ? { provider: existing.provider || 'scripted', name: existing.name || '', endpoint: existing.endpoint || '', api_key_env: existing.api_key_secret || '', timeout_seconds: existing.timeout_seconds || 30 }
+    : { provider: 'scripted', name: '', endpoint: '', api_key_env: '', timeout_seconds: 30 }
   pmError.value = ''
   profileModal.open = true
 }
@@ -209,12 +214,16 @@ function saveProfile() {
     name: n,
     version: (m.domains.find((d) => d.name === n) || {}).version || '0.1.0',
   }))
-  const payload = { name, domains: domainObjs, desc: pmForm.desc.trim() || '自定义 Profile · ' + pmForm.domains.join('/') }
+  if (pmForm.model.provider !== 'scripted' && !pmForm.model.api_key_env.trim()) {
+    pmError.value = '非 scripted Provider 需要填写 API Key 环境变量名'
+    return
+  }
+  const payload = { name, domains: domainObjs, desc: pmForm.desc.trim() || '自定义 Profile · ' + pmForm.domains.join('/'), model: { ...pmForm.model } }
   const op = profileModal.editing ? profilePatch(profileModal.editing, payload) : profileCreate(payload)
   op.then(() =>
     loadConfig(m).then(() => {
       profileModal.open = false
-      toast(profileModal.editing ? 'Profile 已更新 · PATCH /v1/profiles/' + name : 'Profile 已创建 · POST /v1/profiles')
+      toast((profileModal.editing ? 'Profile 已更新 · PATCH /v1/profiles/' + name : 'Profile 已创建 · POST /v1/profiles') + '（需重启/重载 agentd 后生效）')
     }))
     .catch((e) => toast('保存失败：' + e.message))
 }
@@ -618,7 +627,7 @@ onMounted(() => {
               <div v-for="(p, i) in m.profiles" :key="p.name" class="conf-row">
                 <div class="conf-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5"/></svg></div>
                 <div class="grow">
-                  <div class="name">{{ p.name }} <span v-if="p.builtin" class="tag">内置</span></div>
+                  <div class="name">{{ p.name }} <span v-if="p.model" class="tag">{{ p.model }}</span> <span v-if="p.builtin" class="tag">内置</span></div>
                   <div class="desc">{{ p.desc }}</div>
                 </div>
                 <div class="row-actions">
@@ -994,6 +1003,17 @@ onMounted(() => {
           <div class="field" :class="{ invalid: !!pmError }"><label for="pf-name">名称</label>
             <input type="text" id="pf-name" v-model="pmForm.name" :disabled="!!profileModal.editing" placeholder="如 prod-readonly" autocomplete="off" @keydown.enter="saveProfile">
             <div class="f-err">{{ pmError }}</div></div>
+          <div class="field"><label>模型（per-profile，可选）</label>
+            <select v-model="pmForm.model.provider" class="input" id="pm-model-provider" style="margin-bottom:6px">
+              <option v-for="p in MODEL_PROVIDERS" :key="p" :value="p">{{ p }}</option>
+            </select>
+            <template v-if="pmForm.model.provider !== 'scripted'">
+              <input v-model="pmForm.model.name" class="input" placeholder="模型名，如 gpt-4o-mini" style="margin-bottom:6px" id="pm-model-name">
+              <input v-model="pmForm.model.endpoint" class="input" placeholder="Endpoint（可选，如 https://api.openai.com/v1）" style="margin-bottom:6px" id="pm-model-endpoint">
+              <input v-model="pmForm.model.api_key_env" class="input" placeholder="API Key 环境变量名，如 OPENAI_API_KEY" id="pm-model-key">
+            </template>
+            <div class="hint">写入 profile 的 runtime.model + runtime.secrets；scrited 表示使用部署默认模型。需重启/重载 agentd 生效。</div>
+          </div>
           <div class="field"><label>启用 Domains</label>
             <div id="pf-domains" style="display:grid;gap:6px">
               <label v-for="d in m.domains" :key="d.name" class="check-row" style="cursor:pointer">

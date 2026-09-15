@@ -237,7 +237,11 @@ function fmtTime(iso) {
 export async function loadRuntimeConfig(state) {
   try {
     const d = await apiGet("/v1/config");
-    state.runtimeConfig = { available: true, model: d.model || null, limits: d.limits || null };
+    state.runtimeConfig = {
+      available: true,
+      model: d.model || null,
+      limits: d.limits || null,
+    };
   } catch {
     // 部署未启用 deployment config store 时 GET /v1/config → 503：展示不可用态
     state.runtimeConfig = { available: false, model: null, limits: null };
@@ -289,7 +293,9 @@ export async function loadConfig(state) {
     desc: p.description || (p.domains || []).map((d) => d.name).join("/"),
     builtin: p.name === "default",
     domains: (p.domains || []).map((d) => d.name),
-    model: p.model || "—",
+    model: p.runtime?.model
+      ? `${p.runtime.model.provider} / ${p.runtime.model.name}`
+      : "",
     version: p.version,
     raw: p,
   }));
@@ -522,19 +528,47 @@ export function cancelSession(sid) {
 }
 
 /* ── Profile 配置写入（422 校验错误会带 errors，抛给 toast） ── */
+/* ── Profile 配置写入（支持 per-profile 模型：runtime.model + runtime.secrets）──
+   新建/修改后的 Profile 需重启/重载 agentd 才进入运行时 read model。 */
+function buildRuntimeModel(model) {
+  const runtime = {};
+  if (!model || model.provider === "scripted") return runtime;
+  if (!model.api_key_env) {
+    throw new Error("非 scripted provider 需要填写 API Key 环境变量名");
+  }
+  runtime.secrets = {
+    [model.api_key_env]: { source: "env", key: model.api_key_env, required: false },
+  };
+  const m = {
+    provider: model.provider,
+    name: model.name || "default",
+    timeout_seconds: Number(model.timeout_seconds) || 30,
+    api_key_secret: model.api_key_env,
+  };
+  if (model.endpoint) m.endpoint = model.endpoint;
+  runtime.model = m;
+  return runtime;
+}
+
 export function profileCreate(payload) {
-  return apiPost("/v1/profiles", {
+  const body = {
     name: payload.name,
     version: "0.1.0",
     description: payload.desc,
     domains: payload.domains,
-  });
+  };
+  const runtime = buildRuntimeModel(payload.model);
+  if (Object.keys(runtime).length) body.runtime = runtime;
+  return apiPost("/v1/profiles", body);
 }
 export function profilePatch(name, payload) {
-  return apiPatch(`/v1/profiles/${encodeURIComponent(name)}`, {
+  const body = {
     description: payload.desc,
     domains: payload.domains,
-  });
+  };
+  const runtime = buildRuntimeModel(payload.model);
+  if (Object.keys(runtime).length) body.runtime = runtime;
+  return apiPatch(`/v1/profiles/${encodeURIComponent(name)}`, body);
 }
 export function profileRemove(name) {
   return apiDelete(`/v1/profiles/${encodeURIComponent(name)}`);
