@@ -33,7 +33,9 @@ const AGENTD_TOKEN = process.env.AGENTD_TOKEN || "";
 const WEB_PASSWORD = process.env.WEB_PASSWORD || "";
 
 function sessionCookieValue() {
-  return createHmac("sha256", "universal-agent-web").update(WEB_PASSWORD).digest("hex");
+  return createHmac("sha256", "universal-agent-web")
+    .update(WEB_PASSWORD)
+    .digest("hex");
 }
 
 function isAuthorized(req) {
@@ -245,5 +247,7 @@ const server = createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`universal-agent-web listening on http://0.0.0.0:${PORT}`);
   console.log(`  agentd: ${AGENTD_URL || "(not configured — set AGENTD_URL)"}`);
-  console.log(`  login gate: ${WEB_PASSWORD ? "enabled (WEB_PASSWORD)" : "disabled"}`);
+  console.log(
+    `  login gate: ${WEB_PASSWORD ? "enabled (WEB_PASSWORD)" : "disabled"}`,
+  );
 });

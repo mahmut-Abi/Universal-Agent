@@ -21,7 +21,7 @@
           "evaluate",
           "finish"
         ],
-        "note": "从目标到经验证的完成：决策、治理、执行、观察、评估一条主路径。"
+        "note": "从目标到经验证的完成：决策、治理、执行、观察、更新、评估一条主路径。"
       },
       {
         "id": "governance",
@@ -29,10 +29,9 @@
         "focus": [
           "decision",
           "policy",
-          "ask",
           "action"
         ],
-        "note": "策略在模型之外以确定性代码执行，DENY 与 CONFIRM 都不经过模型。"
+        "note": "策略在模型之外以确定性代码执行，DENY 直接进入 Ask User 或终止。"
       },
       {
         "id": "recovery-loop",
@@ -42,9 +41,9 @@
           "recover",
           "cont",
           "action",
-          "decision"
+          "context"
         ],
-        "note": "评估驱动继续、恢复或询问；恢复回到执行，继续回到决策。"
+        "note": "评估驱动继续、恢复或询问；恢复回到执行，继续重新编译上下文。"
       }
     ]
   },
@@ -54,20 +53,12 @@
       "label": "内核循环"
     },
     {
-      "id": "observe",
-      "label": "观察 · 证据"
-    },
-    {
-      "id": "state",
-      "label": "状态与世界模型"
-    },
-    {
-      "id": "eval",
-      "label": "评估"
+      "id": "record",
+      "label": "观察 · 证据 · 状态"
     },
     {
       "id": "outcomes",
-      "label": "循环出口"
+      "label": "评估与出口"
     }
   ],
   "phases": [
@@ -100,8 +91,7 @@
     "action",
     "obs",
     "update",
-    "evaluate",
-    "finish"
+    "evaluate"
   ],
   "semanticChecks": {
     "allowedRoots": [
@@ -112,6 +102,12 @@
       "recover",
       "ask",
       "finish"
+    ],
+    "requiredEdges": [
+      {
+        "from": "recover",
+        "to": "action"
+      }
     ],
     "requiredPaths": [
       {
@@ -133,10 +129,10 @@
       "id": "context",
       "lane": "kernel",
       "col": 1,
+      "width": 150,
       "type": "backend",
       "label": "Context Compilation",
-      "sublabel": "状态 · 世界模型 · 当前任务",
-      "width": 150
+      "sublabel": "状态 · 世界模型 · 当前任务"
     },
     {
       "id": "decision",
@@ -164,25 +160,25 @@
     },
     {
       "id": "obs",
-      "lane": "observe",
-      "col": 5,
+      "lane": "record",
+      "col": 4,
+      "width": 150,
       "type": "messagebus",
       "label": "Observation · Evidence",
-      "sublabel": "工具结果 → 规范化证据",
-      "width": 170
+      "sublabel": "工具结果 → 规范化证据"
     },
     {
       "id": "update",
-      "lane": "state",
+      "lane": "record",
       "col": 5,
+      "width": 150,
       "type": "database",
       "label": "State / World Update",
-      "sublabel": "运行时持有，模型只读",
-      "width": 150
+      "sublabel": "运行时持有，模型只读"
     },
     {
       "id": "evaluate",
-      "lane": "eval",
+      "lane": "outcomes",
       "col": 5,
       "type": "backend",
       "label": "Evaluation",
@@ -215,7 +211,7 @@
     {
       "id": "finish",
       "lane": "outcomes",
-      "col": 5,
+      "col": 4,
       "type": "cloud",
       "label": "Finish",
       "sublabel": "目标达成 · 已验证"
@@ -256,54 +252,59 @@
       "from": "action",
       "to": "obs",
       "role": "main",
-      "variant": "emphasis"
+      "variant": "emphasis",
+      "route": "drop"
     },
     {
       "id": "obs-update",
       "from": "obs",
       "to": "update",
       "role": "main",
+      "variant": "emphasis",
       "label": "证据"
     },
     {
       "id": "update-evaluate",
       "from": "update",
       "to": "evaluate",
-      "role": "main"
+      "role": "main",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
     },
     {
-      "id": "eval-cont",
+      "id": "evaluate-finish",
       "from": "evaluate",
-      "to": "cont",
-      "label": "继续"
+      "to": "finish",
+      "role": "main",
+      "variant": "emphasis",
+      "label": "目标达成"
     },
     {
-      "id": "eval-recover",
-      "from": "evaluate",
-      "to": "recover",
-      "label": "需恢复"
-    },
-    {
-      "id": "eval-ask",
+      "id": "evaluate-ask",
       "from": "evaluate",
       "to": "ask",
       "label": "需用户"
     },
     {
-      "id": "eval-finish",
+      "id": "evaluate-recover",
       "from": "evaluate",
-      "to": "finish",
-      "label": "目标达成",
-      "role": "main",
-      "variant": "emphasis"
+      "to": "recover",
+      "label": "需恢复"
     },
     {
-      "id": "cont-decision",
+      "id": "evaluate-cont",
+      "from": "evaluate",
+      "to": "cont",
+      "label": "继续"
+    },
+    {
+      "id": "cont-context",
       "from": "cont",
-      "to": "decision",
+      "to": "context",
       "role": "return",
       "variant": "dashed",
-      "label": "下一次迭代"
+      "label": "下一次迭代 · 重新编译上下文"
     },
     {
       "id": "recover-action",
@@ -311,16 +312,7 @@
       "to": "action",
       "role": "return",
       "variant": "dashed",
-      "label": "重试 / 替代",
-      "channelX": 760
-    },
-    {
-      "id": "policy-ask",
-      "from": "policy",
-      "to": "ask",
-      "role": "error",
-      "variant": "security",
-      "label": "DENY"
+      "label": "重试 / 替代能力"
     }
   ],
   "cards": [
@@ -337,15 +329,15 @@
       "title": "策略在模型之外",
       "items": [
         "Policy Check 以确定性代码执行 ALLOW / CONFIRM / DENY",
-        "DENY 不再回到模型，直接进入 Ask User 或终止"
+        "DENY 不回到模型，直接 Ask User 或终止"
       ]
     },
     {
       "dot": "emerald",
       "title": "评估决定出口",
       "items": [
-        "工具成功 ≠ 任务成功，Evaluation 强制验证后才可 Finish",
-        "Continue 支持动态任务扩展，Recover 回到执行而非盲目重试"
+        "工具成功 ≠ 任务成功，验证通过才可 Finish",
+        "Continue 扩展下一任务，Recover 回到执行重试"
       ]
     }
   ]

@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from universal_agent.configuration import DomainConfig, ModelProvider, RuntimeConfig, StoreBackend
+from universal_agent.configuration import (
+    DomainConfig,
+    ModelProvider,
+    RuntimeConfig,
+    StoreBackend,
+    StoreConfig,
+)
 from universal_agent.core import (
     Decision,
     DomainIdentity,
@@ -428,6 +435,34 @@ def _validate_profile(
         )
 
 
+def _postgres_store(store_config: StoreConfig) -> tuple[SessionStore, _EventStore]:
+    """Build the Postgres runtime store from an env-resolved DSN.
+
+    The DSN (which contains credentials) is read from the environment
+    variable named by ``store.url_env`` at assembly time; it never lives in
+    the config file or config projections. Requires the ``postgres`` extra.
+    """
+
+    if store_config.url_env is None:
+        raise ValueError("postgres store requires url_env")
+    url = os.environ.get(store_config.url_env)
+    if not url:
+        raise ValueError(
+            f"postgres store url_env {store_config.url_env!r} is not set in "
+            "the environment; export the Postgres DSN (e.g. "
+            "postgresql://user:password@host:5432/db)"
+        )
+    try:
+        from universal_agent.persistence import PostgresRuntimeStore
+    except ImportError as exc:
+        raise ValueError(
+            "postgres store requires the optional 'postgres' extra: "
+            "pip install 'universal-agent-runtime[postgres]'"
+        ) from exc
+    pg_store = PostgresRuntimeStore(url=url)
+    return pg_store, pg_store
+
+
 def _build_stores(config: RuntimeConfig) -> tuple[SessionStore, _EventStore]:
     if config.store.backend is StoreBackend.MEMORY:
         events = InMemoryEventSink()
@@ -440,6 +475,8 @@ def _build_stores(config: RuntimeConfig) -> tuple[SessionStore, _EventStore]:
         assert config.store.path is not None
         sqlite_store = SQLiteRuntimeStore(config.store.path)
         return sqlite_store, sqlite_store
+    if config.store.backend is StoreBackend.POSTGRES:
+        return _postgres_store(config.store)
     raise ValueError(f"unsupported store backend: {config.store.backend}")
 
 

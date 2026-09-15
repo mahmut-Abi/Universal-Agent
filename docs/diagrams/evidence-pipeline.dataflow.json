@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Evidence 证据管道",
+    "locale": "zh-CN",
+    "output": "evidence-pipeline.html",
+    "viewBox": [1068, 760],
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "main-pipeline",
+        "label": "主管道",
+        "focus": ["action", "tool", "observation", "evidence", "evaluator", "eventstream"],
+        "note": "工具结果必须转化为证据并由 Evaluator 验证，工具成功不等于任务成功。"
+      },
+      {
+        "id": "traceability",
+        "label": "可追溯性",
+        "focus": ["evidence", "observation", "action"],
+        "note": "证据绑定 goal / task / action / observation / evidence / session 稳定 ID 链。"
+      },
+      {
+        "id": "audit-replay",
+        "label": "审计与回放",
+        "focus": ["eventstream", "replay", "state"],
+        "note": "Event Store 支撑审计、追踪、回放与回归评估。"
+      }
+    ]
+  },
+  "stages": [
+    { "label": "执行" },
+    { "label": "工具执行" },
+    { "label": "观察与证据" },
+    { "label": "评估与更新" },
+    { "label": "审计与回放" }
+  ],
+  "nodes": [
+    { "id": "action", "type": "backend", "label": "Action Runtime", "sublabel": "执行能力 · 取消", "stage": 0, "row": 0 },
+    { "id": "tool", "type": "backend", "label": "Tool Runtime", "sublabel": "校验 · 超时 · 归一化", "stage": 1, "row": 0 },
+    { "id": "observation", "type": "backend", "label": "Observation", "sublabel": "结构化观察结果", "stage": 2, "row": 0 },
+    { "id": "evidence", "type": "database", "label": "Evidence System", "sublabel": "可追溯 · 可回放", "tag": "稳定 ID 绑定", "stage": 2, "row": 2 },
+    { "id": "evaluator", "type": "backend", "label": "Evaluator", "sublabel": "验证 task / goal 成功", "width": 128, "stage": 3, "row": 2 },
+    { "id": "state", "type": "database", "label": "State · World Model", "sublabel": "状态与世界模型更新", "stage": 3, "row": 4 },
+    { "id": "eventstream", "type": "messagebus", "label": "Event Stream", "sublabel": "Event Store · 审计 · 追踪", "width": 150, "stage": 4, "row": 2 },
+    { "id": "replay", "type": "external", "label": "评估与回放", "sublabel": "场景 · 回归 · 策略测试 (P3.7)", "width": 132, "stage": 4, "row": 4 }
+  ],
+  "flows": [
+    { "id": "action-to-tool", "from": "action", "to": "tool", "label": "execute", "variant": "emphasis", "route": "straight" },
+    { "id": "tool-to-observation", "from": "tool", "to": "observation", "label": "归一化结果", "variant": "emphasis", "route": "straight" },
+    { "id": "observation-to-evidence", "from": "observation", "to": "evidence", "label": "记录证据", "variant": "emphasis", "route": "vertical-channel" },
+    { "id": "evidence-to-evaluator", "from": "evidence", "to": "evaluator", "label": "证据充分性", "variant": "emphasis", "route": "straight" },
+    { "id": "evaluator-to-state", "from": "evaluator", "to": "state", "label": "StateUpdated", "route": "vertical-channel" },
+    { "id": "evaluator-to-eventstream", "from": "evaluator", "to": "eventstream", "label": "EvaluationCompleted", "labelDy": 53, "route": "straight" },
+    { "id": "eventstream-to-replay", "from": "eventstream", "to": "replay", "label": "回放数据集", "variant": "dashed", "route": "vertical-channel" }
+  ],
+  "cards": [
+    { "dot": "rose", "title": "验证规则", "items": ["工具成功 ≠ 任务成功", "kubectl apply 成功不等于 deployment 健康", "Goal 完成必须由 Evaluator 判定，禁止以模型自述收尾"] },
+    { "dot": "cyan", "title": "稳定 ID", "items": ["goal_id · task_id · action_id · observation_id · evidence_id · session_id", "日志可重建：为何决策、依据什么、调用了什么、结果如何"] },
+    { "dot": "emerald", "title": "审计与回放", "items": ["关键迁移产生事件：ActionCompleted / EvidenceCreated / EvaluationCompleted", "Event Store 支撑审计、追踪、回放与 P3.7 评估"] }
+  ]
+}

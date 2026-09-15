@@ -38,8 +38,8 @@
       }
     ],
     "viewBox": [
-      1500,
-      580
+      1050,
+      560
     ]
   },
   "participants": [
@@ -73,7 +73,7 @@
       "id": "propose-decision",
       "from": "kernel",
       "to": "policy",
-      "y": 180,
+      "y": 162,
       "label": "决策提案",
       "variant": "default"
     },
@@ -81,7 +81,7 @@
       "id": "policy-confirm",
       "from": "policy",
       "to": "kernel",
-      "y": 222,
+      "y": 202,
       "label": "CONFIRM · 需人工确认",
       "variant": "security"
     },
@@ -89,7 +89,7 @@
       "id": "pause-request",
       "from": "kernel",
       "to": "api",
-      "y": 268,
+      "y": 244,
       "label": "暂停执行 · 请求确认",
       "variant": "emphasis",
       "note": "暂停是 Runtime 状态转换，模型不能自行恢复"
@@ -98,7 +98,7 @@
       "id": "user-approve",
       "from": "api",
       "to": "kernel",
-      "y": 318,
+      "y": 292,
       "label": "用户批准",
       "variant": "return"
     },
@@ -106,7 +106,7 @@
       "id": "user-reject",
       "from": "api",
       "to": "kernel",
-      "y": 358,
+      "y": 330,
       "label": "用户拒绝 → 取消动作",
       "variant": "dashed",
       "note": "目标可转 Ask User 或 Finish，不执行该动作"
@@ -115,7 +115,7 @@
       "id": "dispatch-action",
       "from": "kernel",
       "to": "action",
-      "y": 412,
+      "y": 378,
       "label": "执行动作",
       "variant": "emphasis"
     },
@@ -123,7 +123,7 @@
       "id": "action-result",
       "from": "action",
       "to": "kernel",
-      "y": 456,
+      "y": 416,
       "label": "观察结果",
       "variant": "return"
     },
@@ -131,7 +131,7 @@
       "id": "policy-deny",
       "from": "policy",
       "to": "kernel",
-      "y": 512,
+      "y": 462,
       "label": "分支 DENY → 立即停止",
       "variant": "dashed",
       "note": "策略拒绝走确定性代码，不进入暂停等待"
@@ -140,26 +140,26 @@
   "activations": [
     {
       "participant": "kernel",
-      "from": 176,
-      "to": 462,
+      "from": 158,
+      "to": 422,
       "type": "backend"
     },
     {
       "participant": "policy",
-      "from": 178,
+      "from": 160,
       "to": 228,
       "type": "security"
     },
     {
       "participant": "api",
-      "from": 264,
-      "to": 364,
+      "from": 240,
+      "to": 336,
       "type": "frontend"
     },
     {
       "participant": "action",
-      "from": 408,
-      "to": 462,
+      "from": 374,
+      "to": 422,
       "type": "backend"
     }
   ],
@@ -178,14 +178,6 @@
       "items": [
         "DENY 由确定性代码判定，直接停止且不暂停",
         "用户拒绝 → 取消动作，目标转 Ask User 或 Finish"
-      ]
-    },
-    {
-      "dot": "cyan",
-      "title": "运行时控制",
-      "items": [
-        "暂停 / 恢复 / 取消均为 Runtime 状态转换",
-        "LLM 只提议决策，从不拥有控制流"
       ]
     }
   ]

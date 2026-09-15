@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Context Compiler 上下文编译数据流",
+    "locale": "zh-CN",
+    "output": "context-compiler.html",
+    "viewBox": [1280, 760],
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "main-path",
+        "label": "主路径",
+        "focus": ["goal-task", "compiler", "context", "model"],
+        "note": "目标与任务经编译后成为模型的唯一输入。"
+      },
+      {
+        "id": "state-truth",
+        "label": "状态与世界模型",
+        "focus": ["state-world", "evidence-memory", "compiler"],
+        "note": "当前事实来自运行时快照，而非对话历史。"
+      },
+      {
+        "id": "policy-capability",
+        "label": "能力与策略",
+        "focus": ["caps-actions", "policies", "compiler"],
+        "note": "可用能力、相关策略与近期动作共同约束决策上下文。"
+      }
+    ]
+  },
+  "stages": [
+    { "label": "运行时来源" },
+    { "label": "上下文编译" },
+    { "label": "预算内产物" },
+    { "label": "模型消费" }
+  ],
+  "nodes": [
+    { "id": "goal-task", "type": "backend", "label": "Goal · Current Task", "sublabel": "目标与当前任务", "stage": 0, "row": 0 },
+    { "id": "state-world", "type": "database", "label": "State · World Model", "sublabel": "状态与世界快照", "stage": 0, "row": 1 },
+    { "id": "evidence-memory", "type": "database", "label": "Evidence · Memory", "sublabel": "相关证据与记忆", "stage": 0, "row": 2 },
+    { "id": "caps-actions", "type": "backend", "label": "Capabilities · Actions", "sublabel": "可用能力与近期动作", "stage": 0, "row": 3, "width": 150 },
+    { "id": "policies", "type": "security", "label": "Relevant Policies", "sublabel": "相关策略", "stage": 0, "row": 4 },
+    { "id": "compiler", "type": "backend", "label": "Context Compiler", "sublabel": "预算感知编译", "stage": 1, "row": 2, "tag": "budget-aware" },
+    { "id": "context", "type": "messagebus", "label": "Compiled Context", "sublabel": "预算内上下文", "stage": 2, "row": 2, "tag": "唯一输入" },
+    { "id": "model", "type": "external", "label": "Model Adapter", "sublabel": "LLM 推理", "stage": 3, "row": 2 }
+  ],
+  "flows": [
+    { "from": "goal-task", "to": "compiler", "label": "目标 · 任务", "variant": "emphasis", "route": "straight" },
+    { "from": "state-world", "to": "compiler", "label": "状态 · 世界快照", "route": "straight" },
+    { "from": "evidence-memory", "to": "compiler", "label": "证据 · 记忆", "route": "straight" },
+    { "from": "caps-actions", "to": "compiler", "label": "能力 · 动作", "route": "straight" },
+    { "from": "policies", "to": "compiler", "label": "策略", "route": "straight" },
+    { "from": "compiler", "to": "context", "label": "预算内编译", "variant": "emphasis", "classification": "排序 · 压缩 · 去重", "route": "straight" },
+    { "from": "context", "to": "model", "label": "编译后上下文", "variant": "emphasis", "classification": "禁止全量投喂", "route": "straight" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "预算纪律", "items": ["绝不盲目发送全部对话、工具输出与日志", "预算感知：相关性排序 / token 预算 / 压缩 / 去重", "证据与能力按当前任务的相关性挑选"] },
+    { "dot": "emerald", "title": "运行时持有", "items": ["状态、世界模型、证据均来自运行时快照", "Context Compiler 是内核与模型之间的唯一通道"] },
+    { "dot": "amber", "title": "可演进", "items": ["记忆与策略作为一等上下文来源", "未来可加摘要、压缩与能力选择策略"] }
+  ]
+}

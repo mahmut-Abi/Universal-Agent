@@ -1,6 +1,9 @@
 ## Universal Agent server (agentd) + standalone web chat UI.
 ##
-## Start:  AGENTD_AUTH_TOKEN=<token> docker compose up --build
+## Start:            AGENTD_AUTH_TOKEN=<token> docker compose up --build
+## With Postgres:    AGENTD_AUTH_TOKEN=<token> AGENTD_PG_URL=postgresql://agent:agent@postgres:5432/agent \
+##                   docker compose --profile postgres up --build
+##                   (and set the agentd profile store backend to postgres with url_env=AGENTD_PG_URL)
 ## agentd: http://localhost:8765     web: http://localhost:8080
 services:
   agentd:
@@ -10,6 +13,7 @@ services:
       - "8765:8765"
     environment:
       AGENTD_AUTH_TOKEN: ${AGENTD_AUTH_TOKEN:?set AGENTD_AUTH_TOKEN before starting agentd}
+      AGENTD_PG_URL: ${AGENTD_PG_URL:-}
     volumes:
       - agent-data:/data
       - agent-config:/config
@@ -38,6 +42,31 @@ services:
     mem_limit: 256m
     restart: unless-stopped
 
+  # Optional durable store: enable with `--profile postgres` and set the
+  # agentd profile store backend to {"backend": "postgres",
+  # "url_env": "AGENTD_PG_URL"}.
+  postgres:
+    image: postgres:16-alpine
+    container_name: universal-agent-postgres
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent
+      POSTGRES_DB: agent
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
 volumes:
   agent-data:
   agent-config:
+  pg-data:

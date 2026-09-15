@@ -180,6 +180,54 @@ button:disabled {
   border-color: var(--accent);
 }
 
+#detail-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 18px 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+#detail-tabs .tab {
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+}
+#detail-tabs .tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.detail-card {
+  padding: 6px 0;
+}
+.detail-card h3 {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 8px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.detail-row {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.detail-row.conflict { color: var(--warn); }
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.detail-table th,
+.detail-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.detail-table th { color: var(--muted); font-weight: 500; }
+
 #transcript {
   flex: 1;
   overflow-y: auto;

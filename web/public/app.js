@@ -8,6 +8,8 @@ const state = {
   events: [], // transcript events for the selected session
   eventSource: null,
   searchQuery: "",
+  activeTab: "chat",
+  detail: null,
 };
 
 /* ------------------------------------------------------------------ */
@@ -201,6 +203,7 @@ function render() {
   renderChatHeader();
   renderTranscript();
   renderConfirmation();
+  renderDetail();
 }
 
 /* ------------------------------------------------------------------ */
@@ -238,9 +241,11 @@ async function selectSession(sessionId) {
   ]);
   state.selected = session;
   state.events = (batch && batch.events) || [];
+  state.detail = null;
   rebuildItems();
   render();
   openEventStream(sessionId);
+  void loadDetail();
 }
 
 function closeEventStream() {
@@ -286,6 +291,165 @@ async function refreshSelected() {
   await loadSessions();
   rebuildItems();
   render();
+  void loadDetail();
+}
+
+/* ------------------------------------------------------------------ */
+/* Session detail tabs (timeline / evidence / world)                   */
+/* ------------------------------------------------------------------ */
+
+const DETAIL_LOADERS = {
+  timeline: (sessionId) => get(`/console/sessions/${sessionId}/timeline`),
+  evidence: (sessionId) => get(`/console/sessions/${sessionId}/evidence-drilldown`),
+  world: (sessionId) => get(`/console/sessions/${sessionId}/world-explorer`),
+};
+
+function renderDetail() {
+  const container = $("detail");
+  const tabs = $("detail-tabs");
+  const session = state.selected;
+  if (!session || state.activeTab === "chat") {
+    tabs.classList.add("hidden");
+    container.classList.add("hidden");
+    return;
+  }
+  tabs.classList.remove("hidden");
+  container.classList.remove("hidden");
+  container.replaceChildren();
+
+  for (const button of tabs.querySelectorAll(".tab")) {
+    button.classList.toggle("active", button.dataset.tab === state.activeTab);
+  }
+
+  const payload = state.detail;
+  if (payload === undefined) {
+    const loading = document.createElement("div");
+    loading.className = "bubble system";
+    loading.textContent = "loading…";
+    container.append(loading);
+    return;
+  }
+
+  if (state.activeTab === "timeline") {
+    container.append(detailTimeline(payload || {}));
+  } else if (state.activeTab === "evidence") {
+    container.append(detailEvidence(payload || {}));
+  } else if (state.activeTab === "world") {
+    container.append(detailWorld(payload || {}));
+  }
+}
+
+function detailCard(title) {
+  const card = document.createElement("div");
+  card.className = "detail-card";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  card.append(heading);
+  return card;
+}
+
+function detailTimeline(payload) {
+  const card = detailCard(`Execution timeline (${payload.step_count || 0} steps)`);
+  for (const step of payload.steps || []) {
+    const row = document.createElement("div");
+    row.className = "detail-row";
+    const effect = step.policy_effect ? ` · policy: ${step.policy_effect}` : "";
+    row.innerHTML = "";
+    const label = document.createElement("div");
+    label.innerHTML = ""; // no raw HTML
+    label.textContent = `${step.label}${effect}`;
+    const meta = document.createElement("div");
+    meta.className = "muted";
+    meta.textContent = `${(step.event_types || []).join(", ") || "no events"} · evidence: ${(step.evidence_ids || []).length}`;
+    row.append(label, meta);
+    card.append(row);
+  }
+  if (!(payload.steps || []).length) {
+    card.append(emptyNote("no steps yet"));
+  }
+  return card;
+}
+
+function detailEvidence(payload) {
+  const card = detailCard(`Evidence (${payload.evidence_count || 0})`);
+  const table = document.createElement("table");
+  table.className = "detail-table";
+  const header = document.createElement("tr");
+  for (const key of ["subject", "claim", "confidence", "source", "domain"]) {
+    const th = document.createElement("th");
+    th.textContent = key;
+    header.append(th);
+  }
+  table.append(header);
+  for (const record of payload.evidence || []) {
+    const tr = document.createElement("tr");
+    for (const key of ["subject", "claim", "confidence", "source", "domain"]) {
+      const td = document.createElement("td");
+      td.textContent = String(record[key] ?? "");
+      tr.append(td);
+    }
+    table.append(tr);
+  }
+  card.append(table);
+  if (!(payload.evidence || []).length) card.append(emptyNote("no evidence recorded"));
+  return card;
+}
+
+function detailWorld(payload) {
+  const card = detailCard(`World model (${(payload.entities || []).length} entities)`);
+  for (const entity of payload.entities || []) {
+    const row = document.createElement("div");
+    row.className = "detail-row";
+    const label = document.createElement("div");
+    label.textContent = `${entity.entity_id} (${entity.kind || "?"}) · relations ↑${(entity.outgoing_relations || []).length} ↓${(entity.incoming_relations || []).length}`;
+    const meta = document.createElement("div");
+    meta.className = "muted";
+    meta.textContent = `domains: ${(entity.contributing_domains || []).join(", ") || "-"}`;
+    row.append(label, meta);
+    card.append(row);
+  }
+  for (const conflict of payload.conflicts || []) {
+    const row = document.createElement("div");
+    row.className = "detail-row conflict";
+    row.textContent = `⚠ conflict: ${conflict.subject} · ${conflict.claim} = ${JSON.stringify(conflict.current_value)}`;
+    card.append(row);
+  }
+  if (!(payload.entities || []).length) card.append(emptyNote("world model is empty"));
+  return card;
+}
+
+function emptyNote(text) {
+  const note = document.createElement("div");
+  note.className = "muted";
+  note.textContent = text;
+  return note;
+}
+
+async function loadDetail() {
+  const session = state.selected;
+  if (!session || state.activeTab === "chat") {
+    state.detail = null;
+    renderDetail();
+    return;
+  }
+  const loader = DETAIL_LOADERS[state.activeTab];
+  if (!loader) return;
+  state.detail = undefined; // loading
+  renderDetail();
+  try {
+    state.detail = await loader(session.session_id);
+  } catch (error) {
+    state.detail = { error: String(error.message || error) };
+  }
+  renderDetail();
+}
+
+function switchTab(tab) {
+  if (state.activeTab === tab) return;
+  state.activeTab = tab;
+  state.detail = null;
+  renderDetail();
+  void loadDetail();
 }
 
 /* ------------------------------------------------------------------ */
@@ -353,6 +517,10 @@ $("composer").addEventListener("submit", async (event) => {
     $("btn-send").disabled = false;
   }
 });
+
+for (const button of document.querySelectorAll("#detail-tabs .tab")) {
+  button.addEventListener("click", () => switchTab(button.dataset.tab));
+}
 
 $("session-search").addEventListener("input", (event) => {
   state.searchQuery = event.target.value || "";

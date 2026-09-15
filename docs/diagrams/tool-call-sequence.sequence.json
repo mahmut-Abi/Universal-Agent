@@ -6,51 +6,178 @@
     "locale": "zh-CN",
     "output": "tool-call-sequence.html",
     "quality_profile": "showcase",
-    "viewBox": [1950, 620],
+    "column_fit": "spread",
+    "viewBox": [
+      1085,
+      560
+    ],
     "views": [
       {
         "id": "allow-path",
         "label": "ALLOW 主路径",
-        "focus": ["kernel", "decision", "policy", "action", "evidence"],
+        "focus": [
+          "kernel",
+          "decision",
+          "policy",
+          "action",
+          "evidence"
+        ],
         "note": "决策提案经策略允许后执行工具，结果归一化为证据。"
       },
       {
         "id": "deny-branch",
         "label": "DENY 分支",
-        "focus": ["kernel", "policy"],
+        "focus": [
+          "kernel",
+          "policy"
+        ],
         "note": "策略拒绝时立即停止，不执行任何工具。"
       },
       {
         "id": "evidence-handoff",
         "label": "证据移交",
-        "focus": ["action", "evidence", "kernel"],
+        "focus": [
+          "action",
+          "evidence",
+          "kernel"
+        ],
         "note": "工具成功不等于任务成功，证据必须经 Evaluator 验证。"
       }
     ]
   },
   "participants": [
-    { "id": "kernel", "type": "backend", "label": "Agent Kernel", "sublabel": "任务循环编排" },
-    { "id": "decision", "type": "backend", "label": "Decision Engine", "sublabel": "LLM 推理提案" },
-    { "id": "policy", "type": "security", "label": "Policy Engine", "sublabel": "确定性规则" },
-    { "id": "action", "type": "backend", "label": "Action Runtime", "sublabel": "工具执行 · 超时 · 取消" },
-    { "id": "evidence", "type": "backend", "label": "Evidence System", "sublabel": "观察 → 证据" }
+    {
+      "id": "kernel",
+      "type": "backend",
+      "label": "Agent Kernel",
+      "sublabel": "任务循环编排"
+    },
+    {
+      "id": "decision",
+      "type": "backend",
+      "label": "Decision Engine",
+      "sublabel": "LLM 推理提案"
+    },
+    {
+      "id": "policy",
+      "type": "security",
+      "label": "Policy Engine",
+      "sublabel": "确定性规则"
+    },
+    {
+      "id": "action",
+      "type": "backend",
+      "label": "Action Runtime",
+      "sublabel": "工具执行 · 超时 · 取消"
+    },
+    {
+      "id": "evidence",
+      "type": "backend",
+      "label": "Evidence System",
+      "sublabel": "观察 → 证据"
+    }
   ],
   "messages": [
-    { "id": "request-decision", "from": "kernel", "to": "decision", "y": 185, "label": "编译上下文 · 请求决策", "variant": "default" },
-    { "id": "structured-decision", "from": "decision", "to": "kernel", "y": 228, "label": "结构化决策契约", "variant": "return", "note": "type / capability / arguments / expected_observations" },
-    { "id": "policy-check", "from": "kernel", "to": "policy", "y": 274, "label": "策略检查", "variant": "security" },
-    { "id": "policy-allow", "from": "policy", "to": "kernel", "y": 318, "label": "ALLOW", "variant": "return" },
-    { "id": "policy-deny", "from": "policy", "to": "kernel", "y": 356, "label": "DENY → 停止", "variant": "dashed", "note": "分支：策略拒绝时不执行任何工具" },
-    { "id": "execute-capability", "from": "kernel", "to": "action", "y": 404, "label": "执行 capability 与参数", "variant": "emphasis" },
-    { "id": "normalize-observation", "from": "action", "to": "evidence", "y": 448, "label": "工具结果 → 归一化 Observation", "variant": "emphasis", "note": "timeout / cancellation 由 Action Runtime 强制" },
-    { "id": "evidence-handoff", "from": "evidence", "to": "kernel", "y": 492, "label": "Evidence → Evaluator 验证", "variant": "return", "note": "工具成功 ≠ 任务成功" }
+    {
+      "id": "request-decision",
+      "from": "kernel",
+      "to": "decision",
+      "y": 160,
+      "label": "编译上下文 · 请求决策",
+      "variant": "default"
+    },
+    {
+      "id": "structured-decision",
+      "from": "decision",
+      "to": "kernel",
+      "y": 204,
+      "label": "结构化决策契约",
+      "variant": "return",
+      "note": "type / capability / arguments / expected_observations"
+    },
+    {
+      "id": "policy-check",
+      "from": "kernel",
+      "to": "policy",
+      "y": 248,
+      "label": "策略检查",
+      "variant": "security"
+    },
+    {
+      "id": "policy-allow",
+      "from": "policy",
+      "to": "kernel",
+      "y": 292,
+      "label": "ALLOW",
+      "variant": "return"
+    },
+    {
+      "id": "policy-deny",
+      "from": "policy",
+      "to": "kernel",
+      "y": 336,
+      "label": "DENY → 停止",
+      "variant": "dashed",
+      "note": "分支：策略拒绝时不执行任何工具"
+    },
+    {
+      "id": "execute-capability",
+      "from": "kernel",
+      "to": "action",
+      "y": 380,
+      "label": "执行 capability 与参数",
+      "variant": "emphasis"
+    },
+    {
+      "id": "normalize-observation",
+      "from": "action",
+      "to": "evidence",
+      "y": 424,
+      "label": "工具结果 → 归一化 Observation",
+      "variant": "emphasis",
+      "note": "timeout / cancellation 由 Action Runtime 强制"
+    },
+    {
+      "id": "evidence-handoff",
+      "from": "evidence",
+      "to": "kernel",
+      "y": 468,
+      "label": "Evidence → Evaluator 验证",
+      "variant": "return",
+      "note": "工具成功 ≠ 任务成功"
+    }
   ],
   "activations": [
-    { "participant": "kernel", "from": 180, "to": 505, "type": "backend" },
-    { "participant": "decision", "from": 180, "to": 234, "type": "backend" },
-    { "participant": "policy", "from": 270, "to": 362, "type": "security" },
-    { "participant": "action", "from": 400, "to": 456, "type": "backend" },
-    { "participant": "evidence", "from": 444, "to": 500, "type": "backend" }
+    {
+      "participant": "kernel",
+      "from": 155,
+      "to": 480,
+      "type": "backend"
+    },
+    {
+      "participant": "decision",
+      "from": 155,
+      "to": 210,
+      "type": "backend"
+    },
+    {
+      "participant": "policy",
+      "from": 244,
+      "to": 368,
+      "type": "security"
+    },
+    {
+      "participant": "action",
+      "from": 400,
+      "to": 436,
+      "type": "backend"
+    },
+    {
+      "participant": "evidence",
+      "from": 440,
+      "to": 476,
+      "type": "backend"
+    }
   ],
   "cards": [
     {

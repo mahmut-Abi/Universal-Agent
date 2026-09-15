@@ -37,6 +37,7 @@ class StoreBackend(StrEnum):
     MEMORY = "memory"
     FILE = "file"
     SQLITE = "sqlite"
+    POSTGRES = "postgres"
 
 
 class SecretSource(StrEnum):
@@ -65,6 +66,9 @@ class _SecretRefPayload(ConfigPayload):
 class _StoreConfigPayload(ConfigPayload):
     backend: _StoreBackendPayload = StoreBackend.MEMORY
     path: str | None = None
+    # Name of the environment variable holding the Postgres DSN. The URL
+    # itself (which contains credentials) never lives in the config file.
+    url_env: str | None = None
 
 
 class _RuntimeLimitsConfigPayload(ConfigPayload):
@@ -142,6 +146,7 @@ class SecretRef:
 class StoreConfig:
     backend: StoreBackend = StoreBackend.MEMORY
     path: str | None = None
+    url_env: str | None = None
 
     @classmethod
     def memory(cls) -> StoreConfig:
@@ -158,7 +163,7 @@ class StoreConfig:
     @classmethod
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> StoreConfig:
         payload = parse_payload(_StoreConfigPayload, values)
-        config = cls(payload.backend, payload.path)
+        config = cls(payload.backend, payload.path, payload.url_env)
         config.validate()
         return config
 
@@ -181,6 +186,21 @@ class StoreConfig:
             )
         if self.backend is StoreBackend.MEMORY and self.path is not None:
             raise ValueError("memory store does not accept path")
+        if self.backend is StoreBackend.POSTGRES:
+            if self.path is not None:
+                raise ValueError("postgres store does not accept path")
+            if self.url_env is None:
+                raise ValueError(
+                    "postgres store requires url_env: the name of the "
+                    "environment variable holding the Postgres DSN (the URL "
+                    "itself contains credentials and must not live in the "
+                    "config file)"
+                )
+            parse_non_empty_string(
+                self.url_env,
+                "postgres store url_env",
+                empty_template="postgres store requires url_env",
+            )
 
 
 @dataclass(frozen=True, slots=True)

@@ -10,63 +10,285 @@
       {
         "id": "classify-and-decide",
         "label": "分类与决策",
-        "focus": ["task-failure", "classify", "manager"],
+        "focus": [
+          "task-failure",
+          "classify",
+          "manager"
+        ],
         "note": "错误码先确定性分类，再由 RecoveryManager 按规则优先级决策。"
       },
       {
         "id": "bounded-recovery",
         "label": "有界恢复",
-        "focus": ["manager", "retry", "alternative", "diagnose"],
+        "focus": [
+          "manager",
+          "retry",
+          "alternative",
+          "diagnose"
+        ],
         "note": "每条恢复策略都有 max_attempts 上限，无限重试被禁止。"
       },
       {
         "id": "escalate-or-stop",
         "label": "上报与终止",
-        "focus": ["ask-user", "stop", "resume"],
+        "focus": [
+          "ask-user",
+          "stop",
+          "resume"
+        ],
         "note": "权限拒绝与次数耗尽确定性终止，恢复成功后回到执行循环。"
       }
     ]
   },
   "lanes": [
-    { "id": "core", "label": "失败判定" },
-    { "id": "bounded", "label": "有界恢复策略" },
-    { "id": "escalate", "label": "诊断与上报" },
-    { "id": "terminal", "label": "终止", "variant": "exception" }
+    {
+      "id": "core",
+      "label": "失败判定"
+    },
+    {
+      "id": "bounded",
+      "label": "有界恢复策略"
+    },
+    {
+      "id": "escalate",
+      "label": "诊断与上报"
+    },
+    {
+      "id": "terminal",
+      "label": "终止",
+      "variant": "exception"
+    }
   ],
   "phases": [
-    { "id": "detect", "label": "失败", "fromCol": 0, "toCol": 0 },
-    { "id": "decide", "label": "分类 · 决策", "fromCol": 1, "toCol": 2, "variant": "emphasis" },
-    { "id": "recover", "label": "确定性恢复", "fromCol": 3, "toCol": 4 },
-    { "id": "resolve", "label": "继续 / 终止", "fromCol": 5, "toCol": 5, "variant": "dashed" }
+    {
+      "id": "detect",
+      "label": "失败",
+      "fromCol": 0,
+      "toCol": 0
+    },
+    {
+      "id": "decide",
+      "label": "分类 · 决策",
+      "fromCol": 1,
+      "toCol": 2,
+      "variant": "emphasis"
+    },
+    {
+      "id": "recover",
+      "label": "确定性恢复",
+      "fromCol": 3,
+      "toCol": 4
+    },
+    {
+      "id": "resolve",
+      "label": "继续 / 终止",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
   ],
-  "mainPath": ["task-failure", "classify", "manager", "retry", "resume"],
+  "mainPath": [
+    "task-failure",
+    "classify",
+    "manager",
+    "retry",
+    "resume"
+  ],
   "nodes": [
-    { "id": "task-failure", "lane": "core", "col": 0, "type": "backend", "label": "任务失败", "sublabel": "Observation / Evaluation", "width": 100 },
-    { "id": "classify", "lane": "core", "col": 1, "type": "backend", "label": "失败分类", "sublabel": "classify_failure(error_code)", "width": 112 },
-    { "id": "manager", "lane": "core", "col": 2, "type": "backend", "label": "恢复决策", "sublabel": "RecoveryManager.decide", "tag": "规则优先级" },
-    { "id": "retry", "lane": "bounded", "col": 3, "type": "backend", "label": "重试动作", "sublabel": "RETRY_ACTION · max 3 / 2", "width": 100 },
-    { "id": "alternative", "lane": "bounded", "col": 4, "type": "backend", "label": "替代能力", "sublabel": "ALTERNATIVE_CAPABILITY · max 1", "width": 120 },
-    { "id": "diagnose", "lane": "escalate", "col": 3, "type": "backend", "label": "扩展诊断", "sublabel": "EXPAND_DIAGNOSIS_TASK" },
-    { "id": "ask-user", "lane": "escalate", "col": 4, "type": "external", "label": "询问用户", "sublabel": "ASK_USER · max 1" },
-    { "id": "resume", "lane": "core", "col": 5, "type": "messagebus", "label": "回到执行循环", "sublabel": "Action Runtime 继续" },
-    { "id": "stop", "lane": "terminal", "col": 5, "type": "security", "label": "STOP 终止", "sublabel": "默认 · 耗尽 · 权限拒绝" }
+    {
+      "id": "task-failure",
+      "lane": "core",
+      "col": 0,
+      "type": "backend",
+      "label": "任务失败",
+      "sublabel": "Observation / Evaluation",
+      "width": 100
+    },
+    {
+      "id": "classify",
+      "lane": "core",
+      "col": 1,
+      "type": "backend",
+      "label": "失败分类",
+      "sublabel": "classify_failure(error_code)",
+      "width": 112
+    },
+    {
+      "id": "manager",
+      "lane": "core",
+      "col": 2,
+      "type": "backend",
+      "label": "恢复决策",
+      "sublabel": "RecoveryManager.decide",
+      "tag": "规则优先级"
+    },
+    {
+      "id": "retry",
+      "lane": "bounded",
+      "col": 3,
+      "type": "backend",
+      "label": "重试动作",
+      "sublabel": "RETRY_ACTION · max 3 / 2",
+      "width": 100
+    },
+    {
+      "id": "alternative",
+      "lane": "bounded",
+      "col": 4,
+      "type": "backend",
+      "label": "替代能力",
+      "sublabel": "ALTERNATIVE_CAPABILITY · max 1",
+      "width": 120
+    },
+    {
+      "id": "diagnose",
+      "lane": "escalate",
+      "col": 3,
+      "type": "backend",
+      "label": "扩展诊断",
+      "sublabel": "EXPAND_DIAGNOSIS_TASK"
+    },
+    {
+      "id": "ask-user",
+      "lane": "escalate",
+      "col": 4,
+      "type": "external",
+      "label": "询问用户",
+      "sublabel": "ASK_USER · max 1"
+    },
+    {
+      "id": "resume",
+      "lane": "core",
+      "col": 5,
+      "type": "messagebus",
+      "label": "回到执行循环",
+      "sublabel": "Action Runtime 继续"
+    },
+    {
+      "id": "stop",
+      "lane": "terminal",
+      "col": 5,
+      "type": "security",
+      "label": "STOP 终止",
+      "sublabel": "默认 · 耗尽 · 权限拒绝"
+    }
   ],
   "edges": [
-    { "id": "fail-to-classify", "from": "task-failure", "to": "classify", "label": "error_code", "role": "main" },
-    { "id": "classify-to-manager", "from": "classify", "to": "manager", "label": "FailureCategory", "role": "main" },
-    { "id": "manager-to-retry", "from": "manager", "to": "retry", "label": "transient / timeout / tool_failure", "role": "main" },
-    { "id": "manager-to-alternative", "from": "manager", "to": "alternative", "label": "dependency_missing" },
-    { "id": "manager-to-diagnose", "from": "manager", "to": "diagnose", "label": "evaluation_failed / validation" },
-    { "id": "manager-to-ask-user", "from": "manager", "to": "ask-user", "label": "user_required / unknown" },
-    { "id": "manager-to-stop", "from": "manager", "to": "stop", "label": "permission_denied · 耗尽 · 无规则", "role": "error", "variant": "security" },
-    { "id": "retry-to-resume", "from": "retry", "to": "resume", "role": "return", "route": "up-channel" },
-    { "id": "alternative-to-resume", "from": "alternative", "to": "resume", "role": "return" },
-    { "id": "diagnose-to-resume", "from": "diagnose", "to": "resume", "role": "return", "route": "up-channel" },
-    { "id": "ask-user-to-resume", "from": "ask-user", "to": "resume", "label": "用户答复后", "role": "return", "route": "up-channel" }
+    {
+      "id": "fail-to-classify",
+      "from": "task-failure",
+      "to": "classify",
+      "label": "error_code",
+      "role": "main"
+    },
+    {
+      "id": "classify-to-manager",
+      "from": "classify",
+      "to": "manager",
+      "label": "FailureCategory",
+      "role": "main"
+    },
+    {
+      "id": "manager-to-retry",
+      "from": "manager",
+      "to": "retry",
+      "label": "可重试失败类别",
+      "role": "main"
+    },
+    {
+      "id": "manager-to-alternative",
+      "from": "manager",
+      "to": "alternative",
+      "label": "dependency_missing"
+    },
+    {
+      "id": "manager-to-diagnose",
+      "from": "manager",
+      "to": "diagnose",
+      "label": "evaluation_failed / validation"
+    },
+    {
+      "id": "manager-to-ask-user",
+      "from": "manager",
+      "to": "ask-user",
+      "label": "user_required / unknown"
+    },
+    {
+      "id": "manager-to-stop",
+      "from": "manager",
+      "to": "stop",
+      "label": "permission_denied · 耗尽 · 无规则",
+      "role": "error",
+      "variant": "security"
+    },
+    {
+      "id": "retry-to-resume",
+      "from": "retry",
+      "to": "resume",
+      "role": "return"
+    },
+    {
+      "id": "alternative-to-resume",
+      "from": "alternative",
+      "to": "resume",
+      "role": "return"
+    },
+    {
+      "id": "diagnose-to-resume",
+      "from": "diagnose",
+      "to": "resume",
+      "role": "return"
+    },
+    {
+      "id": "ask-user-to-resume",
+      "from": "ask-user",
+      "to": "resume",
+      "label": "用户答复后",
+      "role": "return",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          860,
+          372
+        ],
+        [
+          860,
+          180
+        ],
+        [
+          822,
+          180
+        ]
+      ]
+    }
   ],
   "cards": [
-    { "dot": "cyan", "title": "确定性决策", "items": ["RecoveryManager 按规则优先级匹配 FailureCategory", "策略由确定性代码产生，模型不参与恢复决策"] },
-    { "dot": "emerald", "title": "有界恢复", "items": ["transient / timeout → RETRY_ACTION（max 3）", "tool_failure → 重试（max 2）或替代能力（max 1）", "evaluation_failed / validation → 扩展诊断任务"] },
-    { "dot": "rose", "title": "终止边界", "items": ["permission_denied（含 POLICY_DENIED）→ STOP，不重试", "次数耗尽或无匹配规则 → default-stop", "无限重试被禁止：每条规则都有 max_attempts"] }
+    {
+      "dot": "cyan",
+      "title": "确定性决策",
+      "items": [
+        "RecoveryManager 按规则优先级匹配 FailureCategory",
+        "策略由确定性代码产生，模型不参与恢复决策"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "有界恢复",
+      "items": [
+        "transient / timeout → RETRY_ACTION（max 3）",
+        "tool_failure → 重试（max 2）或替代能力（max 1）",
+        "evaluation_failed / validation → 扩展诊断任务"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "终止边界",
+      "items": [
+        "permission_denied（含 POLICY_DENIED）→ STOP，不重试",
+        "次数耗尽或无匹配规则 → default-stop",
+        "无限重试被禁止：每条规则都有 max_attempts"
+      ]
+    }
   ]
 }
