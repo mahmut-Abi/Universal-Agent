@@ -45,9 +45,13 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--read-only-auth-token-env")
     parser.add_argument("--evaluation-report-dir")
     parser.add_argument(
-        "--kubernetes-default",
-        action="store_true",
-        help="Use the built-in Kubernetes service when no profile config is supplied.",
+        "--default-domain",
+        default="local",
+        help=(
+            "Default service domain when no profile config is supplied. Names "
+            "resolve through the universal_agent.default_domains entry-point "
+            "group (registered domain default services)."
+        ),
     )
     return parser
 
@@ -58,7 +62,8 @@ def _build_service_from_profile(profile_config: str) -> RuntimeService:
     Delegates to the shared domains-package composition point so agentd uses
     the same profile dispatch as the CLI and the SDK facade: profiles with
     domain_package_paths load their packaged domains; local profiles use the
-    domain-neutral local service; everything else uses the Kubernetes build.
+    domain-neutral local service; everything else uses the matching built-in
+    domain profile service.
     """
 
     from universal_agent.domains.profile_service import build_configured_service
@@ -67,7 +72,7 @@ def _build_service_from_profile(profile_config: str) -> RuntimeService:
 
 
 def _build_probe_service(profile_config: str) -> RuntimeService:
-    """Build a probe-style RuntimeService (Kubernetes operator probe surface)."""
+    """Build a probe-style RuntimeService (domain operator probe surface)."""
 
     from universal_agent.domains.profile_service import build_probe_service
 
@@ -120,9 +125,9 @@ def main(argv: list[str] | None = None) -> int:
             else _build_service_from_profile(profile_config)
         )
     else:
-        from universal_agent.domains.profile_service import build_default_service
+        from universal_agent.domains.profile_service import build_default_domain_service
 
-        service = build_default_service(kubernetes_default=args.kubernetes_default)
+        service = build_default_domain_service(args.default_domain)
 
     server = AgentdHttpServer(
         AgentdApp(

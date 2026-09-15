@@ -42,12 +42,12 @@ __all__ = [
 
 
 def __getattr__(name: str) -> object:
-    # Compatibility re-export: resolved lazily so the CLI package import does
-    # not pull the Kubernetes Domain runtime stacks for a single constant.
+    # Compatibility re-export: resolved via domain contributions so the CLI
+    # package never names a concrete domain.
     if name == "LOCAL_PROFILE_NAME":
-        from universal_agent.domains.kubernetes.cli_parser import LOCAL_PROFILE_NAME
+        from universal_agent_cli.parser import local_profile_name
 
-        return LOCAL_PROFILE_NAME
+        return local_profile_name()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -93,11 +93,39 @@ def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
 
 
 def build_configured_probe_service(profile_config_path: str | Path) -> RuntimeService:
-    """Build RuntimeService metadata without requiring the configured model to connect."""
+    """Build a probe-style RuntimeService via the domain contribution surface."""
 
-    from universal_agent.domains.kubernetes.cli import build_configured_probe_service
+    from universal_agent_cli.contributions import load_cli_contributions
 
-    return build_configured_probe_service(profile_config_path)
+    for contribution in load_cli_contributions():
+        if contribution.build_probe_service is not None:
+            return contribution.build_probe_service(str(profile_config_path))
+    raise ValueError(
+        "no domain contributes a probe service; use a profile config with "
+        "--profile-config or run `agent init` first"
+    )
+
+
+def _embedded_probe_only(args: argparse.Namespace) -> bool:
+    """Whether the command should launch its embedded runtime in probe mode."""
+
+    from universal_agent_cli.parser import domain_contribution_for_command
+
+    contribution = domain_contribution_for_command(cast(str, args.command))
+    if contribution is not None and contribution.is_probe_service_command is not None:
+        return contribution.is_probe_service_command(args)
+    return False
+
+
+def _embedded_domain_default(args: argparse.Namespace) -> str | None:
+    """Domain whose default service backs an embedded runtime launch."""
+
+    from universal_agent_cli.parser import domain_contribution_for_command
+
+    contribution = domain_contribution_for_command(cast(str, args.command))
+    if contribution is not None and contribution.uses_embedded_default_service:
+        return contribution.domain
+    return None
 
 
 async def run_cli(
@@ -116,7 +144,6 @@ async def run_cli(
         WorkItemNotFoundError,
     )
     from universal_agent.domain import DomainPackageNotFoundError
-    from universal_agent.domains.kubernetes.cli import is_kubernetes_probe_service_command
     from universal_agent.ecosystem import (
         EcosystemRegistryNotFoundError,
         EcosystemRegistryStoreNotFoundError,
@@ -201,9 +228,9 @@ async def run_cli(
 
             try:
                 embedded = launch_embedded_runtime(
-                    cast(str | None, args.profile_config),
-                    probe_only=is_kubernetes_probe_service_command(args),
-                    kubernetes_default=cast(str, args.command) == "kubernetes",
+                    cast("str | None", args.profile_config),
+                    probe_only=_embedded_probe_only(args),
+                    domain_default=_embedded_domain_default(args),
                 )
             except EmbeddedRuntimeError as exc:
                 _write_error(
@@ -262,13 +289,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _service_from_args(args: argparse.Namespace) -> RuntimeService:
-    from universal_agent.domains.kubernetes.cli import is_kubernetes_probe_service_command
+    from universal_agent_cli.parser import domain_contribution_for_command
 
-    profile_config = cast(str | None, args.profile_config)
+    profile_config = cast("str | None", args.profile_config)
     if profile_config is None:
         return build_default_service()
-    if is_kubernetes_probe_service_command(args):
-        return build_configured_probe_service(profile_config)
+    contribution = domain_contribution_for_command(cast(str, args.command))
+    if (
+        contribution is not None
+        and contribution.build_probe_service is not None
+        and contribution.is_probe_service_command is not None
+        and contribution.is_probe_service_command(args)
+    ):
+        return contribution.build_probe_service(profile_config)
     return build_configured_service(profile_config)
 
 
@@ -349,18 +382,14 @@ async def _dispatch(
     if command == "run":
         await _dispatch_run(args, service, out)
         return
-    if command == "kubernetes":
-        from universal_agent.domains.kubernetes.cli_reports import dispatch_kubernetes
-        from universal_agent.host.runtime import build_configured_model_adapter
+    from universal_agent_cli.parser import domain_contribution_for_command
 
-        result = await dispatch_kubernetes(
-            args,
-            service,
-            model_adapter_builder=build_configured_model_adapter,
-        )
-        _write_json(out, result.payload)
-        if result.status != 0:
-            raise CliExit(result.status)
+    contribution = domain_contribution_for_command(command)
+    if contribution is not None and contribution.dispatch is not None:
+        outcome = await contribution.dispatch(args, service)
+        _write_json(out, outcome.payload)
+        if outcome.status != 0:
+            raise CliExit(outcome.status)
         return
     if command == "tui":
         await _dispatch_tui(args, service, out)

@@ -32,7 +32,6 @@ from universal_agent_cli.remote.eval_ecosystem import (
     _dispatch_remote_ecosystem,
     _dispatch_remote_eval,
 )
-from universal_agent_cli.remote.kubernetes import _dispatch_remote_kubernetes
 from universal_agent_cli.remote.observability import (
     _dispatch_remote_metrics,
     _dispatch_remote_repair,
@@ -70,8 +69,14 @@ async def dispatch_agentd_commands(
     if command == "tui":
         await _dispatch_remote_tui(args, client)
         return
-    if command == "kubernetes":
-        await _dispatch_remote_kubernetes(args, out, client)
+    from universal_agent_cli.parser import domain_contribution_for_command
+
+    contribution = domain_contribution_for_command(command)
+    if contribution is not None and contribution.remote_dispatch is not None:
+        outcome = await contribution.remote_dispatch(args, client)
+        _write_json(out, outcome.payload)
+        if outcome.status != 0:
+            raise CliExit(outcome.status)
         return
     if command == "eval":
         await _dispatch_remote_eval(args, out, client)
@@ -167,8 +172,20 @@ def command_supports_agentd(args: argparse.Namespace) -> bool:
     return True
 
 
-_LONG_RUN_COMMANDS = frozenset({"run", "kubernetes", "eval"})
+_BASE_LONG_RUN_COMMANDS = frozenset({"run", "eval"})
 _LONG_RUN_DEFAULT_TIMEOUT_SECONDS = 900.0
+
+
+def _contributed_long_run_commands() -> frozenset[str]:
+    """Domain-contributed commands that use the long agentd client timeout."""
+
+    from universal_agent_cli.contributions import load_cli_contributions
+
+    return frozenset(
+        contribution.command_name
+        for contribution in load_cli_contributions()
+        if contribution.command_name is not None and contribution.long_running_command
+    )
 
 
 def _client_timeout_seconds(args: argparse.Namespace) -> float:
@@ -182,7 +199,7 @@ def _client_timeout_seconds(args: argparse.Namespace) -> float:
     explicit = cast(float | None, getattr(args, "api_timeout_seconds", None))
     if explicit is not None:
         return explicit
-    if cast(str, args.command) in _LONG_RUN_COMMANDS:
+    if cast(str, args.command) in _BASE_LONG_RUN_COMMANDS | _contributed_long_run_commands():
         return _LONG_RUN_DEFAULT_TIMEOUT_SECONDS
     return 30.0
 

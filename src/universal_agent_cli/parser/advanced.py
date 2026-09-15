@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import argparse
 
-from universal_agent.domains.kubernetes.cli_parser import LOCAL_PROFILE_NAME
-
 
 def add_observability_parsers(
     commands: argparse._SubParsersAction[argparse.ArgumentParser],
@@ -182,8 +180,11 @@ def add_catalog_parsers(commands: argparse._SubParsersAction[argparse.ArgumentPa
 
 
 def add_chat_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    # Lazy import: parser/__init__ imports this module during its own init.
+    from universal_agent_cli.parser import local_profile_name
+
     chat = commands.add_parser("chat", help="(advanced) Interactive conversation with the runtime")
-    chat.add_argument("--profile", default=LOCAL_PROFILE_NAME)
+    chat.add_argument("--profile", default=local_profile_name())
     chat.add_argument(
         "--show-events",
         action="store_true",

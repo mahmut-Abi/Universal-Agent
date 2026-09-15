@@ -66,6 +66,21 @@ dev = [
 agent = "universal_agent_cli:main"
 ua = "universal_agent_cli:main"
 
+# Domain-contributed host surfaces (AGENTS.md §11): the CLI/agentd hosts
+# discover these via entry points and never import a concrete domain.
+[project.entry-points."universal_agent.agentd_routes"]
+kubernetes = "universal_agent.domains.kubernetes.agentd_routes:kubernetes_agentd_contribution"
+
+[project.entry-points."universal_agent.cli_contributions"]
+kubernetes = "universal_agent.domains.kubernetes.registration:kubernetes_cli_contribution"
+
+[project.entry-points."universal_agent.default_domains"]
+local = "universal_agent.domains.local.cli_runtime:build_local_service"
+kubernetes = "universal_agent.domains.kubernetes.cli_runtime:build_default_service"
+
+[project.entry-points."universal_agent.evaluation_suites"]
+kubernetes = "universal_agent.domains.kubernetes.eval_suite:build_kubernetes_evaluation_suite"
+
 [tool.hatch.build.targets.wheel]
 packages = [
   "src/universal_agent",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 
+from universal_agent_cli.contributions import CliDomainContribution
 from universal_agent_cli.defaults import (
     default_distributed_locks_path,
     default_store_path,
@@ -14,7 +15,11 @@ from universal_agent_cli.defaults import (
 from ._helpers import add_output_argument
 
 
-def add_init_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+def add_init_parser(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+    *,
+    contributions: tuple[CliDomainContribution, ...] = (),
+) -> None:
     init = commands.add_parser(
         "init",
         usage=(
@@ -32,7 +37,9 @@ def add_init_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser
     first_day = init.add_argument_group("First-day options")
     advanced_runtime = init.add_argument_group("Advanced: runtime/store options")
     advanced_distributed = init.add_argument_group("Advanced: distributed runtime options")
-    advanced_domain = init.add_argument_group("Advanced: Kubernetes/domain backend options")
+    # Domain backends are contributed: the shell owns the group and the
+    # generic --domain-backend selector; domains add their own options.
+    advanced_domain = init.add_argument_group("Advanced: domain backend options")
     advanced_model = init.add_argument_group("Advanced: model transport options")
     first_day.add_argument(
         "--output",
@@ -85,21 +92,15 @@ def add_init_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser
     )
     advanced_distributed.add_argument("--distributed-workers-path", default=default_workers_path())
     advanced_distributed.add_argument("--distributed-terminal-retention-seconds", type=float)
+    domain_backends = ("fake", *(b for c in contributions for b in c.init_backends))
     advanced_domain.add_argument(
         "--domain-backend",
-        choices=("fake", "kubectl", "kubernetes_api"),
+        choices=domain_backends,
         default="fake",
     )
-    advanced_domain.add_argument("--kubectl-namespace", default="default")
-    advanced_domain.add_argument("--kubectl-context")
-    advanced_domain.add_argument("--kubectl-kubeconfig")
-    advanced_domain.add_argument("--kubectl-timeout-seconds", type=float, default=10.0)
-    advanced_domain.add_argument("--kubernetes-api-server")
-    advanced_domain.add_argument("--kubernetes-api-namespace", default="default")
-    advanced_domain.add_argument("--kubernetes-api-token-env")
-    advanced_domain.add_argument("--kubernetes-api-token-file")
-    advanced_domain.add_argument("--kubernetes-api-token-secret", default="kubernetes_api_token")
-    advanced_domain.add_argument("--kubernetes-api-timeout-seconds", type=float, default=10.0)
+    for contribution in contributions:
+        if contribution.init_add_arguments is not None:
+            contribution.init_add_arguments(advanced_domain)
     first_day.add_argument(
         "--model-provider",
         choices=("scripted", "json_http", "openai_chat_completions", "openai_responses"),

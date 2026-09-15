@@ -92,6 +92,14 @@ def _write_error(out: TextIO, code: str, message: str) -> None:
     )
 
 
+def _domain_error_keywords() -> frozenset[str]:
+    """Domain names from contributions, for error-hint keyword matching."""
+
+    from universal_agent_cli.contributions import load_cli_contributions
+
+    return frozenset(contribution.domain for contribution in load_cli_contributions())
+
+
 def _repair_hint(code: str, message: str) -> str:
     lower = f"{code} {message}".lower()
     if "profile config not found" in lower:
@@ -104,7 +112,11 @@ def _repair_hint(code: str, message: str) -> str:
         return "Start agentd, check --api-url/--api-token, or omit --api-url for embedded mode."
     if "policy" in lower or "confirmed" in lower or "confirmation" in lower:
         return "Review the pending action and retry with the explicit confirmation flag."
-    if "domain" in lower or "backend" in lower or "kubernetes" in lower:
+    if (
+        "domain" in lower
+        or "backend" in lower
+        or any(keyword in lower for keyword in _domain_error_keywords())
+    ):
         return "Run `agent doctor` and verify the selected profile/domain backend configuration."
     if "tool" in lower:
         return "Run `agent doctor`, then inspect `agent session events <id>` for tool details."

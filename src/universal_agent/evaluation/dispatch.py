@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from importlib.metadata import entry_points
 from pathlib import Path
 from typing import TextIO, cast
 
@@ -64,6 +65,8 @@ from universal_agent.evaluation.scenario_config import (
     load_evaluation_suite_config,
 )
 from universal_agent.service import RuntimeService
+
+EVALUATION_SUITES_ENTRY_POINT_GROUP = "universal_agent.evaluation_suites"
 
 
 class DispatchExit(Exception):
@@ -268,7 +271,29 @@ def _evaluation_suite_config(args: argparse.Namespace) -> EvaluationSuiteConfig:
     suite_file = cast(str | None, args.suite_file)
     if suite_file is not None:
         return load_evaluation_suite_config(suite_file)
-    return EvaluationSuiteConfig(_local_evaluation_suite(cast(str, args.suite)))
+    name = cast(str, args.suite)
+    contributed = _contributed_suite(name)
+    if contributed is not None:
+        return EvaluationSuiteConfig(contributed)
+    return EvaluationSuiteConfig(_local_evaluation_suite(name))
+
+
+def _contributed_suite(name: str) -> EvaluationSuite | None:
+    """Domain-contributed evaluation suite (entry-point discovered).
+
+    Suites are registered in the ``universal_agent.evaluation_suites``
+    entry-point group so the evaluation harness never names a concrete
+    domain.
+    """
+
+    for entry_point in entry_points(group=EVALUATION_SUITES_ENTRY_POINT_GROUP):
+        if entry_point.name != name:
+            continue
+        factory = entry_point.load()
+        suite = factory(name)
+        if isinstance(suite, EvaluationSuite):
+            return suite
+    return None
 
 
 def _evaluation_quality_gate(
@@ -383,7 +408,7 @@ def _local_evaluation_suite(name: str) -> EvaluationSuite:
                     max_actions=1,
                 ),
                 kind=EvaluationScenarioKind.REGRESSION,
-                tags=("smoke", "kubernetes"),
+                tags=("smoke", "local"),
             ),
             EvaluationScenario(
                 "invalid scale policy",
@@ -398,10 +423,10 @@ def _local_evaluation_suite(name: str) -> EvaluationSuite:
                     max_actions=0,
                 ),
                 kind=EvaluationScenarioKind.POLICY,
-                tags=("policy", "kubernetes"),
+                tags=("policy", "local"),
             ),
         ),
-        tags=("local", "kubernetes"),
+        tags=("local",),
     )
 
 

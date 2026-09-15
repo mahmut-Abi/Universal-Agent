@@ -6,7 +6,7 @@ from universal_agent.agentd._routes_distributed import _DISTRIBUTED_ROUTES
 from universal_agent.agentd._routes_session import _SESSION_ROUTES
 from universal_agent.agentd.app import (
     _DETAIL_GET_ROUTES,
-    _OPENAPI_ROUTE_DEFINITIONS,
+    _all_route_definitions,
 )
 from universal_agent.agentd.console_routes import _CONSOLE_ROUTES
 from universal_agent.agentd.openapi import build_agentd_openapi_schema
@@ -87,7 +87,7 @@ def test_agentd_route_tables_match_starlette_path_templates() -> None:
 
 @pytest.mark.contract
 def test_agentd_openapi_schema_is_generated_from_runtime_route_definitions() -> None:
-    schema = build_agentd_openapi_schema(_OPENAPI_ROUTE_DEFINITIONS)
+    schema = build_agentd_openapi_schema(_all_route_definitions())
     paths = schema["paths"]
     assert isinstance(paths, dict)
 

@@ -65,6 +65,11 @@ facade 复用；补一条 local profile Facade 集成测试。
 - `agentd/_routes_kubernetes.py` 是 server 组合层的 domain 特性路由接线，
   移入 domains 包会造成 domain→server 反向依赖，判定为组合层合法归属，在此记录。
 
+**后续强化（UA-AUDIT-007，2026-09-15）**：经作者裁定，上条"组合层合法归属"判定过宽。
+Domain 功能化代码（CLI 命令、agentd 路由、init 选项、remote 转发、eval suite、
+OpenAPI 元数据）必须只存在于 `domains/kubernetes`，宿主层（CLI / agentd / kernel 主包）
+一律不得提及具体 domain。已通过 entry-point 贡献制实现，见 UA-AUDIT-007。
+
 ### A3. 实际 roadmap 与 AGENTS.md §13/§19 的范围冲突未闭环 —— ✅ 已修复（2026-09-15，UA-AUDIT-003）
 
 AGENTS.md §13 规定 P0→P7 逐级演进、§19 列出 "What NOT To Build Prematurely"
@@ -125,3 +130,37 @@ AGENTS.md §13 规定 P0→P7 逐级演进、§19 列出 "What NOT To Build Prem
 3. 补 Approval/Action binding negative 测试与 ErrorCode 缺失分类；
 4. 做一次 AGENTS.md 范围决策（修订 roadmap 或冻结 experimental 层）并记录到 docs/revision；
 5. 给 coverage 设 per-module baseline。
+
+---
+
+## 后续审计：Domain 功能化代码全面下放（UA-AUDIT-007，2026-09-15）
+
+作者裁定：Kubernetes 作为 Domain 只应出现在 `universal_agent/domains/kubernetes` 中。
+全面排查发现 domains/ 之外共 **123 处引用、17 个文件**（CLI 10 文件 ~64 处、
+agentd 5 文件 ~55 处、kernel 主包 4 处）。已通过 **entry-point 贡献制** 全部消除：
+
+### 架构
+
+```text
+domain -> kernel 契约 (universal_agent/host_contracts.py) <- host (CLI / agentd)
+```
+
+- kernel 新增 `host_contracts.py`：`CliDomainContribution`、`DomainRouteContribution`、
+  `CommandOutcome`、`InitDomainOutcome`、结构化 `RemoteAgentdClient` Protocol、
+  轻量路由匹配器与 HTTP 响应类型（TYPE_CHECKING 惰性导入，保持 CLI 启动轻量）
+- 4 个 entry-point 组：`universal_agent.cli_contributions`、
+  `universal_agent.agentd_routes`、`universal_agent.default_domains`、
+  `universal_agent.evaluation_suites`（pyproject 是唯一合法的 domain 名注册点）
+- CLI：kubernetes 命令/dispatch/remote 转发/init 选项/probe 服务全部移入
+  `domains/kubernetes/{registration.py,agentd_routes.py,eval_suite.py}`；
+  删除 `remote/kubernetes.py`、`agentd/_routes_kubernetes.py`
+- agentd：路由与 OpenAPI 元数据经贡献制合并；`--kubernetes-default` 泛化为
+  `--default-domain NAME`（注册表解析）
+- evaluation：suite 经贡献制解析，fallback suite 改为中性 tags；
+  `agent eval run <suite>` 行为不变（suite 名经 entry point 解析）
+- 包边界守卫（`test_package_boundaries.py`）与启动权重契约
+  （`test_cli_startup_weight.py`）全部通过；全量套件 exit 0
+
+### 结果
+
+domains/ 之外 kubernetes 引用：**123 → 0**（pyproject entry-point 注册表除外）。

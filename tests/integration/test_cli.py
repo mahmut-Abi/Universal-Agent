@@ -5223,7 +5223,7 @@ async def test_cli_eval_list_applies_kind_and_tag_filters() -> None:
             "--kind",
             "policy",
             "--tag",
-            "kubernetes",
+            "local",
         ],
         service=service,
         stdout=output,
@@ -5232,13 +5232,13 @@ async def test_cli_eval_list_applies_kind_and_tag_filters() -> None:
 
     assert status == 0
     assert payload["suite_name"] == "local evaluation suite"
-    assert payload["suite_tags"] == ["local", "kubernetes"]
+    assert payload["suite_tags"] == ["local"]
     assert payload["scenario_count"] == 1
     assert payload["scenarios"] == [
         {
             "scenario_name": "invalid scale policy",
             "kind": "policy",
-            "tags": ["policy", "kubernetes"],
+            "tags": ["policy", "local"],
             "goal": {
                 "description": "Evaluate workload health",
                 "success_criteria": ["healthy"],
@@ -5433,14 +5433,14 @@ async def test_cli_eval_run_executes_suite_and_persists_report(tmp_path: Path) -
     assert payload["suite"]["summary"]["action_started_count"] == 1
     scenario_payload = payload["suite"]["scenarios"][0]
     assert scenario_payload["kind"] == "regression"
-    assert scenario_payload["tags"] == ["smoke", "kubernetes"]
+    assert scenario_payload["tags"] == ["smoke", "local"]
     assert scenario_payload["evidence_claims"] == ["resource", "healthy", "kind", "relation:owns"]
     assert payload["gate"]["passed"] is True
     assert payload["report_dir"] == str(report_dir)
     assert stored.suite_name == "local evaluation suite"
     assert stored.scenarios[0].kind is not None
     assert stored.scenarios[0].kind.value == "regression"
-    assert stored.scenarios[0].tags == ("smoke", "kubernetes")
+    assert stored.scenarios[0].tags == ("smoke", "local")
     assert stored.scenarios[0].evidence_claims == (
         "resource",
         "healthy",

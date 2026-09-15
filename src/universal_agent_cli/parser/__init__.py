@@ -7,16 +7,18 @@ changes stay isolated:
 - ``advanced``: observability, serve, tui, ecosystem, catalog, chat, memory
 - ``distributed``: local distributed runtime primitives
 - ``eval``: evaluation harness commands
-- ``kubernetes``: re-exports the Kubernetes Domain CLI parser
+- domain-contributed commands (e.g. a domain operator command) join via the
+  ``universal_agent.cli_contributions`` entry-point group; this package
+  never names a concrete domain.
 """
 
 from __future__ import annotations
 
 import argparse
 
-from universal_agent.domains.kubernetes.cli_parser import (
-    LOCAL_PROFILE_NAME,
-    add_kubernetes_command,
+from universal_agent_cli.contributions import (
+    CliDomainContribution,
+    load_cli_contributions,
 )
 from universal_agent_cli.parser.advanced import (
     add_catalog_parsers,
@@ -54,15 +56,49 @@ GOLDEN_PATH_COMMANDS = (
 
 __all__ = [
     "GOLDEN_PATH_COMMANDS",
-    "LOCAL_PROFILE_NAME",
     "add_evaluation_selector_arguments",
-    "add_kubernetes_command",
     "add_output_argument",
     "build_parser",
+    "domain_contribution_for_command",
+    "load_cli_contributions",
+    "local_profile_name",
 ]
 
 
+def local_profile_name() -> str:
+    """The local/operator default profile name from domain contributions."""
+
+    for contribution in load_cli_contributions():
+        if contribution.local_profile_name is not None:
+            return contribution.local_profile_name
+    return "default"
+
+
+def __getattr__(name: str) -> object:
+    # Compatibility re-export: resolved via domain contributions so this
+    # package never names a concrete domain.
+    if name == "LOCAL_PROFILE_NAME":
+        return local_profile_name()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def domain_contribution_for_command(
+    command: str,
+    contributions: tuple[CliDomainContribution, ...] | None = None,
+) -> CliDomainContribution | None:
+    """Find the domain contribution that owns an advanced command name."""
+
+    for contribution in contributions if contributions is not None else load_cli_contributions():
+        if contribution.command_name == command:
+            return contribution
+    return None
+
+
 def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
+    contributions = load_cli_contributions()
+    contributed_commands = ", ".join(
+        c.command_name for c in contributions if c.command_name is not None
+    )
     parser = argparse.ArgumentParser(
         prog=prog or "agent",
         usage="%(prog)s [options] {init,doctor,run,session,config,profile|advanced...}",
@@ -79,7 +115,8 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
             "  session   list | show | explain | resume | cancel\n"
             "  config    Show active config without secret values\n"
             "  profile   list | show configured profiles\n\n"
-            "Advanced / experimental commands remain available: serve, kubernetes, "
+            "Advanced / experimental commands remain available: serve, "
+            f"{contributed_commands}, "
             "tui, eval, ecosystem, distributed, domain-packages, memory, policies, "
             "evaluators, audit, repair, and observability commands."
         ),
@@ -103,7 +140,8 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
         type=float,
         help=(
             "Per-request timeout for --api-url calls. Long-running commands "
-            "(run/kubernetes/eval) default to 900 seconds; everything else to 30."
+            "(e.g. run, eval and domain operator commands) default to 900 "
+            "seconds; everything else to 30."
         ),
     )
     commands = parser.add_subparsers(
@@ -114,7 +152,7 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
 
     # Golden path commands first, so `agent --help` reads top-down:
     # init -> run -> session -> config -> profile -> doctor.
-    add_init_parser(commands)
+    add_init_parser(commands, contributions=contributions)
     add_run_parser(commands)
     add_session_parser(commands)
     add_config_parser(commands)
@@ -124,7 +162,9 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
     add_observability_parsers(commands)
     add_distributed_parser(commands)
     add_serve_parser(commands)
-    add_kubernetes_command(commands)
+    for contribution in contributions:
+        if contribution.add_command is not None:
+            contribution.add_command(commands)
     add_tui_parser(commands)
     add_ecosystem_parser(commands)
     add_eval_parser(commands)

@@ -53,7 +53,7 @@ def launch_embedded_runtime(
     profile_config: str | None = None,
     *,
     probe_only: bool = False,
-    kubernetes_default: bool = False,
+    domain_default: str | None = None,
     timeout_seconds: float = 20.0,
 ) -> EmbeddedRuntime:
     """Spawn the kernel's agentd server and wait for its bound port.
@@ -89,8 +89,8 @@ def launch_embedded_runtime(
     ]
     if profile_config is not None:
         command.extend(("--profile-config", profile_config))
-    if kubernetes_default:
-        command.append("--kubernetes-default")
+    if domain_default is not None:
+        command.extend(("--default-domain", domain_default))
     if probe_only:
         command.append("--probe-only")
 

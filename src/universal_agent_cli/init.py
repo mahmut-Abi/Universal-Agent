@@ -19,9 +19,6 @@ from pathlib import Path
 from typing import TextIO, cast
 
 from universal_agent.core import write_json_file
-from universal_agent.domains.kubernetes.cli import (
-    profile_domain_config as kubernetes_profile_domain_config,
-)
 from universal_agent.domains.local.cli_runtime import local_domain_config
 from universal_agent_cli.defaults import default_init_output_path, global_init_output_path
 from universal_agent_cli.io import _parse_key_value_options, _write_json, _write_text
@@ -163,7 +160,7 @@ def _runtime_data_dir(args: argparse.Namespace) -> Path:
 
 
 def _user_config_payload(args: argparse.Namespace) -> dict[str, object]:
-    domain_name = _resolved_domain_name(cast(str, args.domain_backend))
+    domain_name = _domain_settings(args)[0]
     model_settings = _resolved_model_settings(args)
     return {
         "environment": cast(str, args.environment),
@@ -188,11 +185,30 @@ def _user_config_payload(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
-def _resolved_domain_name(domain_backend: str) -> str:
-    """`fake` (default) selects the domain-neutral local domain; real
-    Kubernetes backends opt into the kubernetes domain."""
+def _domain_settings(
+    args: argparse.Namespace,
+) -> tuple[str, dict[str, object], dict[str, dict[str, object]]]:
+    """Resolve the init domain via domain contributions.
 
-    return "kubernetes" if domain_backend in {"kubectl", "kubernetes_api"} else "local"
+    Each domain contribution inspects the init arguments (e.g.
+    ``--domain-backend``) and returns its domain config and secrets; the
+    first match wins. With no contributing domain, the domain-neutral
+    local domain is used (the Golden Path default).
+    """
+
+    from universal_agent_cli.contributions import load_cli_contributions
+
+    for contribution in load_cli_contributions():
+        if contribution.init_resolve_domain is None:
+            continue
+        outcome = contribution.init_resolve_domain(args)
+        if outcome is not None:
+            return (
+                outcome.domain_name,
+                outcome.domain_config,
+                {name: dict(spec) for name, spec in outcome.secrets.items()},
+            )
+    return "local", local_domain_config(), {}
 
 
 def _runtime_payload(args: argparse.Namespace) -> dict[str, object]:
@@ -202,26 +218,7 @@ def _runtime_payload(args: argparse.Namespace) -> dict[str, object]:
         env_key=cast(str | None, args.model_api_key_env),
         file_path=cast(str | None, args.model_api_key_file),
     )
-    kubernetes_api_token_source = _single_secret_source(
-        "--kubernetes-api-token",
-        env_key=cast(str | None, args.kubernetes_api_token_env),
-        file_path=cast(str | None, args.kubernetes_api_token_file),
-    )
-    domain = (
-        kubernetes_profile_domain_config(
-            domain_backend=cast(str, args.domain_backend),
-            kubectl_namespace=cast(str, args.kubectl_namespace),
-            kubectl_context=cast(str | None, args.kubectl_context),
-            kubectl_kubeconfig=cast(str | None, args.kubectl_kubeconfig),
-            kubectl_timeout_seconds=cast(float, args.kubectl_timeout_seconds),
-            kubernetes_api_server=cast(str | None, args.kubernetes_api_server),
-            kubernetes_api_namespace=cast(str, args.kubernetes_api_namespace),
-            kubernetes_api_token_secret=cast(str | None, args.kubernetes_api_token_secret),
-            kubernetes_api_timeout_seconds=cast(float, args.kubernetes_api_timeout_seconds),
-        )
-        if cast(str, args.domain_backend) in {"kubectl", "kubernetes_api"}
-        else local_domain_config()
-    )
+    _domain_name, domain, domain_secrets = _domain_settings(args)
     model_secret_name = cast(str, args.model_api_key_secret)
     store: dict[str, str] = {"backend": cast(str, args.store_backend)}
     if cast(str, args.store_backend) != "memory":
@@ -267,12 +264,10 @@ def _runtime_payload(args: argparse.Namespace) -> dict[str, object]:
     secrets: dict[str, dict[str, object]] = {}
     if model_secret_source is not None:
         _add_secret(secrets, model_secret_name, model_secret_source)
-    if kubernetes_api_token_source is not None:
-        _add_secret(
-            secrets,
-            cast(str, args.kubernetes_api_token_secret),
-            kubernetes_api_token_source,
-        )
+    for secret_name, secret_spec in domain_secrets.items():
+        if secret_name in secrets:
+            raise ValueError(f"duplicate runtime secret: {secret_name}")
+        secrets[secret_name] = secret_spec
     if secrets:
         runtime["secrets"] = secrets
     return runtime
@@ -289,7 +284,7 @@ def _profile_config_payload(
     description = (
         "Generic local Agent profile created by `agent init`."
         if domain_name == "local"
-        else "Kubernetes Agent profile created by `agent init`."
+        else f"{domain_name.capitalize()} Agent profile created by `agent init`."
     )
     return {
         "name": profile_name,

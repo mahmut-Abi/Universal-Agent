@@ -7,7 +7,7 @@ Split by command family so each surface stays small and testable:
 - ``config``: bare ``agent config`` / ``config show``
 - ``distributed``: local distributed primitives (advanced/experimental)
 - ``eval_ecosystem``: eval harness and ecosystem registry commands
-- ``kubernetes``: Kubernetes operator commands
+- domain-contributed command forwarding (discovered via entry points)
 - ``observability``: metrics, traces, repair
 - ``run``: goal submission
 - ``session``: session lifecycle and projections

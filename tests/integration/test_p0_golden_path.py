@@ -67,7 +67,7 @@ def test_init_help_groups_first_day_and_advanced_options() -> None:
     )
     help_text = result.stdout
     assert "First-day options:" in help_text
-    assert "Advanced: Kubernetes/domain backend options:" in help_text
+    assert "Advanced: domain backend options:" in help_text
     assert "Advanced: distributed runtime options:" in help_text
     # argparse renders subcommand usage differently across Python versions
     # (3.12 prefixes the top-level usage before the subcommand), so assert

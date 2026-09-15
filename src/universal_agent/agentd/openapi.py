@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 import yaml
 from starlette.routing import BaseRoute, Route
 from starlette.schemas import SchemaGenerator
 
+from universal_agent.agentd.contributions import load_route_contributions
 from universal_agent.agentd.routing import AgentdRouteDefinition
 from universal_agent.core import JsonMapping, immutable_json
 from universal_agent.core.config_validation import parse_json_object
@@ -114,31 +115,6 @@ _ROUTE_METADATA: dict[tuple[str, str] | str, tuple[str, str, str]] = {
         "List evaluators",
         "Registered evaluators with completion semantics.",
         "Catalog",
-    ),
-    "kubernetes_preflight": (
-        "Kubernetes preflight",
-        "Run the kubernetes preflight checks for a workload.",
-        "Kubernetes",
-    ),
-    "kubernetes_model_probe": (
-        "Kubernetes model probe",
-        "Probe the configured model's decision contract for a workload.",
-        "Kubernetes",
-    ),
-    "kubernetes_check": (
-        "Kubernetes check",
-        "Run model probe followed by preflight for a workload.",
-        "Kubernetes",
-    ),
-    "kubernetes_run": (
-        "Kubernetes remediation run",
-        "Run the full kubernetes remediation operator flow for a workload.",
-        "Kubernetes",
-    ),
-    "kubernetes_evidence": (
-        "Kubernetes evidence",
-        "Run remediation and return the collected evidence for the session.",
-        "Kubernetes",
     ),
     "eval_list": ("Evaluation list", "List evaluation scenarios for a suite.", "Evaluation"),
     "eval_run": (
@@ -412,23 +388,40 @@ _REQUEST_SCHEMAS: dict[str, dict[str, Any]] = {
 def build_agentd_openapi_schema(
     route_definitions: Iterable[AgentdRouteDefinition],
 ) -> JsonMapping:
-    """Generate the agentd OpenAPI document from existing Starlette route primitives."""
+    """Generate the agentd OpenAPI document from existing Starlette route primitives.
 
-    generator = SchemaGenerator(_BASE_SCHEMA)
-    schema = generator.get_schema(_schema_routes(route_definitions))
+    Domain-contributed routes (``universal_agent.agentd_routes`` entry-point
+    group) merge their own summary/description/tag metadata and tags here, so
+    the agentd host never names a concrete domain.
+    """
+
+    metadata = dict(_ROUTE_METADATA)
+    tags = list(_BASE_SCHEMA["tags"])
+    for contribution in load_route_contributions():
+        metadata.update(contribution.openapi_metadata)
+        tags.extend(
+            {"name": name, "description": description}
+            for name, description in contribution.openapi_tags
+        )
+
+    generator = SchemaGenerator({**_BASE_SCHEMA, "tags": tags})
+    schema = generator.get_schema(_schema_routes(route_definitions, metadata))
     paths = schema.get("paths", {})
     if isinstance(paths, dict):
         schema["paths"] = dict(sorted(paths.items()))
     return immutable_json(parse_json_object(schema, "agentd openapi schema"))
 
 
-def _schema_routes(route_definitions: Iterable[AgentdRouteDefinition]) -> list[BaseRoute]:
+def _schema_routes(
+    route_definitions: Iterable[AgentdRouteDefinition],
+    metadata: Mapping[str | tuple[str, str], tuple[str, str, str]],
+) -> list[BaseRoute]:
     routes: list[BaseRoute] = []
     for route in route_definitions:
         routes.extend(
             Route(
                 route.template,
-                _schema_endpoint(route, method),
+                _schema_endpoint(route, method, metadata),
                 methods=[method],
                 name=f"{route.name}_{method.lower()}",
             )
@@ -440,19 +433,24 @@ def _schema_routes(route_definitions: Iterable[AgentdRouteDefinition]) -> list[B
 def _schema_endpoint(
     route: AgentdRouteDefinition,
     method: str,
+    metadata: Mapping[str | tuple[str, str], tuple[str, str, str]],
 ) -> Callable[..., None]:
     def endpoint(*_args: object, **_kwargs: object) -> None:
         return None
 
     endpoint.__name__ = route.name
-    endpoint.__doc__ = _route_docstring(route, method)
+    endpoint.__doc__ = _route_docstring(route, method, metadata)
     return endpoint
 
 
-def _route_docstring(route: AgentdRouteDefinition, method: str) -> str:
-    summary, description, tag = _ROUTE_METADATA.get(
-        (route.name, method.upper())
-    ) or _ROUTE_METADATA.get(route.name, (_route_summary(route.name), "", "System"))
+def _route_docstring(
+    route: AgentdRouteDefinition,
+    method: str,
+    metadata: Mapping[str | tuple[str, str], tuple[str, str, str]],
+) -> str:
+    summary, description, tag = metadata.get((route.name, method.upper())) or metadata.get(
+        route.name, (_route_summary(route.name), "", "System")
+    )
     operation: dict[str, Any] = {
         "operationId": _operation_id(route.name, method),
         "summary": summary,

@@ -13,15 +13,12 @@ from universal_agent.agentd._routes_eval import (
     handle_ecosystem_route,
     handle_eval_route,
 )
-from universal_agent.agentd._routes_kubernetes import (
-    handle_kubernetes_route,
-    kubernetes_route_definitions,
-)
 from universal_agent.agentd._routes_session import (
     _SESSION_ROUTE_DEFINITIONS,
     SessionRouteHandlers,
 )
 from universal_agent.agentd.console_routes import handle_console_route
+from universal_agent.agentd.contributions import load_route_contributions
 from universal_agent.agentd.http import (
     AgentdAuthPolicy,
     HttpRequest,
@@ -66,6 +63,7 @@ from universal_agent.agentd.routing import (
 )
 from universal_agent.core import JsonMapping, immutable_json
 from universal_agent.domain import AmbiguousDomainPackageError, DomainPackageNotFoundError
+from universal_agent.host_contracts import DomainRouteContribution
 from universal_agent.memory import MemoryKind
 from universal_agent.profile import ProfileNotFoundError
 from universal_agent.service import RuntimeService
@@ -120,13 +118,25 @@ _MEMORY_ROUTES = AgentdRouteMatcher(_MEMORY_ROUTE_DEFINITIONS)
 _OPENAPI_ROUTE_DEFINITIONS = (
     *_STATIC_GET_ROUTE_DEFINITIONS,
     *_DETAIL_GET_ROUTE_DEFINITIONS,
-    *kubernetes_route_definitions(),
     *eval_route_definitions(),
     *ecosystem_route_definitions(),
     *_MEMORY_ROUTE_DEFINITIONS,
     *_DISTRIBUTED_ROUTE_DEFINITIONS,
     *_SESSION_ROUTE_DEFINITIONS,
 )
+
+
+def _all_route_definitions() -> tuple[AgentdRouteDefinition, ...]:
+    """Base routes plus domain-contributed routes (entry-point discovered)."""
+
+    return (
+        *_OPENAPI_ROUTE_DEFINITIONS,
+        *(
+            AgentdRouteDefinition(d.name, d.template, d.methods)
+            for c in load_route_contributions()
+            for d in c.route_definitions
+        ),
+    )
 
 
 class AgentdApp:
@@ -147,6 +157,7 @@ class AgentdApp:
         self._service = service
         self._distributed = DistributedRouteHandlers(service)
         self._session = SessionRouteHandlers(service)
+        self._route_contributions: tuple[DomainRouteContribution, ...] = load_route_contributions()
         self._auth = auth or AgentdAuthPolicy()
         self._evaluation_report_dir = (
             None if evaluation_report_dir is None else str(evaluation_report_dir)
@@ -168,14 +179,19 @@ class AgentdApp:
         if static_response is not None:
             return static_response
 
-        kubernetes_response = await handle_kubernetes_route(
-            self._service,
-            request,
-            method,
-            path,
-        )
-        if kubernetes_response is not None:
-            return kubernetes_response
+        for contribution in self._route_contributions:
+            domain_response = await contribution.handle(self._service, method, path, request.body)
+            if domain_response is not None:
+                if domain_response.headers:
+                    return HttpResponse(
+                        status_code=domain_response.status_code,
+                        body=domain_response.body,
+                        headers=domain_response.headers,
+                    )
+                return json_response(
+                    domain_response.body,
+                    status_code=domain_response.status_code,
+                )
         eval_response = await handle_eval_route(self._service, request, method, path)
         if eval_response is not None:
             return eval_response
@@ -249,7 +265,7 @@ class AgentdApp:
         if not route.method_allowed:
             return method_not_allowed(route.allowed_methods)
         if route.name == "openapi":
-            return json_response(build_agentd_openapi_schema(_OPENAPI_ROUTE_DEFINITIONS))
+            return json_response(build_agentd_openapi_schema(_all_route_definitions()))
 
         sync_json_handlers: dict[str, Callable[[], JsonMapping]] = {
             "health": lambda: health_body(self._service.health()),

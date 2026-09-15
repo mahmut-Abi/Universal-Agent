@@ -93,6 +93,17 @@ def _flag(body: JsonMapping, key: str) -> bool:
     return isinstance(value, str) and value.lower() == "true"
 
 
+def _default_profile_name(service: RuntimeService) -> str:
+    """The service's first configured profile, else the generic default.
+
+    Domain-neutral: the caller's profiles define which profile evaluation
+    runs target; this module never names a concrete domain's profile.
+    """
+
+    profiles = service.profiles()
+    return profiles[0].name if profiles else "default"
+
+
 def _optional_float(value: object) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
@@ -108,10 +119,14 @@ def _optional_int(value: object) -> int | None:
     return value
 
 
-def _eval_namespace(operation: str, body: JsonMapping) -> argparse.Namespace:
+def _eval_namespace(
+    operation: str,
+    body: JsonMapping,
+    service: RuntimeService,
+) -> argparse.Namespace:
     return argparse.Namespace(
         eval_command=operation,
-        profile=_text(body, "profile") or "local-kubernetes",
+        profile=_text(body, "profile") or _default_profile_name(service),
         suite=_text(body, "suite") or "local evaluation suite",
         suite_file=_text(body, "suite_file"),
         kind=_text_list(body, "kind"),
@@ -204,7 +219,7 @@ async def handle_eval_route(
         return method_not_allowed(route.allowed_methods)
 
     operation = _EVAL_COMMAND_NAMES[route.name]
-    args = _eval_namespace(operation, request.body)
+    args = _eval_namespace(operation, request.body, service)
     out = StringIO()
     try:
         await _dispatch_eval(args, service, out)

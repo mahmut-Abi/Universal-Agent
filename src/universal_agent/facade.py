@@ -162,7 +162,7 @@ def build_configured_service(config_path: str | Path) -> RuntimeService:
     (``universal_agent.domains.profile_service``) so the kernel-side facade
     never imports a concrete domain. The dispatch: domain packages -> the
     domain-neutral Local workspace service (the `agent init` Golden Path
-    default) -> the Kubernetes profile service.
+    default) -> the matching built-in domain profile service.
     """
 
     from universal_agent.domains.profile_service import build_configured_service as build_service
