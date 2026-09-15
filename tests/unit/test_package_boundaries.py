@@ -159,3 +159,136 @@ def test_cli_shell_does_not_import_domain_packages() -> None:
         "the CLI shell must not import domain packages; consume domain "
         f"features via entry-point contributions (found: {sorted(set(violations))})"
     )
+
+
+# ---------------------------------------------------------------------------
+# Kernel-internal layering (strict: any new upward import must either fix the
+# layering or be added here as an explicit, documented seam).
+# ---------------------------------------------------------------------------
+
+_LAYER_RANKS = {
+    "core": 0,
+    "security": 1,
+    "tasks": 1,
+    "evidence": 1,
+    "policy": 1,
+    "state": 1,
+    "memory": 1,
+    "context": 1,
+    "tools": 1,
+    "world": 1,
+    "model": 1,
+    "recovery": 1,
+    "persistence": 1,
+    "observation": 1,
+    "profile": 1,
+    "goals": 1,
+    "capability": 1,
+    "coordination": 2,
+    "domain": 2,
+    "runtime": 3,
+    "evaluation": 4,
+    "operations": 4,
+    "distributed": 4,
+    "multi_agent": 5,
+    "host": 5,
+    "service": 5,
+    "ecosystem": 5,
+    "web": 6,
+    "agentd": 7,
+}
+
+# Sanctioned upward seams, each with its rationale. Keep minimal.
+_SANCTIONED_UPWARD = {
+    # UA-D1 (debt): RuntimeConfig/DomainConfig live in host.config; profile
+    # (base layer) consumes them. Remediation: move config types to a neutral
+    # module; host.config becomes a compat shim.
+    ("profile", "host"),
+    # UA-D2 (debt): event-stream helpers (filter_events/poll_event_reader)
+    # live in runtime.events; persistence backends consume them.
+    # Remediation: extract a neutral event-stream module.
+    ("persistence", "runtime"),
+    # Resource-lock/idempotency registries consumed by the action executor.
+    ("runtime", "coordination"),
+    # RuntimeBuilder assembles evaluators and lock registries into components.
+    ("domain", "coordination"),
+    ("domain", "evaluation"),
+    # domain package re-exports the root SDK facade names in the scaffold
+    # stub template (text, not a runtime import) and runtime.py re-exports
+    # evaluator contracts.
+    ("domain", "<root>"),
+    # RuntimeHost is the assembly layer: it wires services and distributed
+    # coordinators.
+    ("host", "service"),
+    ("host", "distributed"),
+    # RuntimeService aggregates the optional multi-agent read models.
+    ("service", "multi_agent"),
+    ("service", "distributed"),
+    ("service", "domain"),
+    ("service", "operations"),
+    ("service", "profile"),
+    # evaluation/dispatch.py is CLI-glue that drives suites against a live
+    # RuntimeService (application-adapter seam inside the evaluation package).
+    ("evaluation", "service"),
+    # core TYPE_CHECKING-only cycle guards (evidence/world model types).
+    ("core", "evidence"),
+    ("core", "world"),
+}
+
+
+def _kernel_subpackage_imports() -> dict[str, set[str]]:
+    """Map each kernel subpackage to the sibling subpackages it imports."""
+
+    root = SRC / KERNEL_PACKAGE
+    graph: dict[str, set[str]] = {}
+    for path in root.rglob("*.py"):
+        relative = path.relative_to(root).as_posix()
+        parts = relative.split("/")
+        sub = parts[0] if len(parts) > 1 else "<root>"
+        if sub in {"domains"}:  # composition layer + concrete domains: skip
+            continue
+        graph.setdefault(sub, set())
+        for module in _absolute_imports(path):
+            if module == KERNEL_PACKAGE:
+                graph[sub].add("<root>")
+            elif module.startswith(f"{KERNEL_PACKAGE}."):
+                target = module.split(".")[1]
+                if target != sub:
+                    graph[sub].add(target)
+    return graph
+
+
+def test_kernel_layering_has_no_new_upward_imports() -> None:
+    """Every kernel-internal upward import must be in the sanctioned seam set."""
+
+    graph = _kernel_subpackage_imports()
+    violations: list[str] = []
+    for sub, targets in sorted(graph.items()):
+        rank = _LAYER_RANKS.get(sub)
+        if rank is None:
+            continue
+        for target in sorted(targets):
+            target_rank = _LAYER_RANKS.get(target)
+            if target_rank is None or target_rank <= rank:
+                continue
+            if (sub, target) in _SANCTIONED_UPWARD:
+                continue
+            violations.append(f"{sub} -> {target}")
+    assert violations == [], (
+        "new kernel-internal upward imports detected; fix the layering or "
+        f"add an explicit sanctioned seam with rationale (found: {violations})"
+    )
+
+
+def test_sanctioned_layering_seams_still_exist() -> None:
+    """Sanctioned seams are intentional: fail when one disappears so the
+    table stays truthful (and debts become visible when fixed)."""
+
+    graph = _kernel_subpackage_imports()
+    stale: list[str] = []
+    for sub, target in sorted(_SANCTIONED_UPWARD):
+        if target not in graph.get(sub, set()):
+            stale.append(f"{sub} -> {target}")
+    assert stale == [], (
+        f"sanctioned seams no longer exist; remove them from the table (resolved: {stale})"
+    )
