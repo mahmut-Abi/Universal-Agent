@@ -8,6 +8,7 @@ from universal_agent.recovery import (
     FailureCategory,
     RecoveryManager,
     RecoveryStrategy,
+    classify_failure,
 )
 from universal_agent.recovery.rules import (
     alternative_capability_rule,
@@ -105,6 +106,33 @@ def test_unknown_returns_ask_user() -> None:
         {},
     )
     assert decision.strategy is RecoveryStrategy.ASK_USER
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("error_code", "expected_category"),
+    (
+        (ErrorCode.TRANSIENT, FailureCategory.TRANSIENT),
+        (ErrorCode.PERMISSION_DENIED, FailureCategory.PERMISSION_DENIED),
+        (ErrorCode.DEPENDENCY_MISSING, FailureCategory.DEPENDENCY_MISSING),
+        (ErrorCode.USER_REQUIRED, FailureCategory.USER_REQUIRED),
+    ),
+)
+def test_new_error_codes_classify_to_matching_categories(
+    error_code: ErrorCode, expected_category: FailureCategory
+) -> None:
+    assert classify_failure(error_code) is expected_category
+
+
+@pytest.mark.unit
+def test_user_required_asks_user_deterministically() -> None:
+    manager = RecoveryManager(default_recovery_rules())
+    decision, _ = manager.decide(
+        _failure(ErrorCode.USER_REQUIRED, FailureCategory.USER_REQUIRED),
+        {},
+    )
+    assert decision.strategy is RecoveryStrategy.ASK_USER
+    assert decision.rule_name == "ask-user-required"
 
 
 @pytest.mark.unit

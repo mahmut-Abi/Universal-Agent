@@ -15,6 +15,7 @@ class FailureCategory(StrEnum):
     DEPENDENCY_MISSING = "dependency_missing"
     TOOL_FAILURE = "tool_failure"
     EVALUATION_FAILED = "evaluation_failed"
+    USER_REQUIRED = "user_required"
     UNKNOWN = "unknown"
 
 

@@ -178,6 +178,14 @@ class ErrorCode(StrEnum):
     DOMAIN_VALIDATION_FAILED = "domain_validation_failed"
     RESOURCE_CONFLICT = "resource_conflict"
     COST_LIMIT_EXCEEDED = "cost_limit_exceeded"
+    # Coarse AGENTS.md §9 categories for producers (model adapters, tool
+    # wrappers, domain tools) that cannot or should not shoehorn a failure
+    # into the specific codes above. classify_failure maps them to matching
+    # deterministic recovery categories.
+    TRANSIENT = "transient"
+    PERMISSION_DENIED = "permission_denied"
+    DEPENDENCY_MISSING = "dependency_missing"
+    USER_REQUIRED = "user_required"
 
 
 @dataclass(frozen=True, slots=True)

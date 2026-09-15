@@ -64,6 +64,18 @@ def stop_on_policy_denied_rule() -> RecoveryRule:
     )
 
 
+def user_required_rule() -> RecoveryRule:
+    """AGENTS.md §9: UserRequired -> ask the user deterministically."""
+
+    return RecoveryRule(
+        name="ask-user-required",
+        categories=(FailureCategory.USER_REQUIRED,),
+        strategy=RecoveryStrategy.ASK_USER,
+        max_attempts=1,
+        priority=45,
+    )
+
+
 def ask_user_rule() -> RecoveryRule:
     return RecoveryRule(
         name="ask-user",
@@ -81,5 +93,6 @@ def default_recovery_rules() -> tuple[RecoveryRule, ...]:
         retry_transient_rule(),
         alternative_capability_rule(substitute_capability="escalate_to_user"),
         diagnose_health_rule(),
+        user_required_rule(),
         ask_user_rule(),
     )
