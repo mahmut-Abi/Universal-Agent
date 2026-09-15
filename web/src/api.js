@@ -83,8 +83,11 @@ const GOAL_STATUS_MAP = {
   paused: "paused",
 };
 export const STATUS_MAP = {
-  running: ["st-running", "运行中"], success: ["st-success", "已完成"],
-  failed: ["st-failed", "失败"], waiting: ["st-waiting", "待确认"], paused: ["st-paused", "已暂停"],
+  running: ["st-running", "运行中"],
+  success: ["st-success", "已完成"],
+  failed: ["st-failed", "失败"],
+  waiting: ["st-waiting", "待确认"],
+  paused: ["st-paused", "已暂停"],
 };
 
 export function normStatus(s) {
