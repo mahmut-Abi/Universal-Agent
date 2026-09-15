@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref, computed, onMounted, nextTick } from 'vue'
 import {
-  API_BASE, createState, normStatus, loadOverview, loadSessions as apiLoadSessions, loadMetrics, loadSessionDetail,
+  API_BASE, createState, normStatus, STATUS_MAP, loadOverview, loadSessions as apiLoadSessions, loadMetrics, loadSessionDetail,
   loadConfig, loadEval, loadCluster, loadMemory, memoryAdd, memoryRemove,
   loadCost, loadLogs, loadK8sOps, loadEcosystem, loadAudit, loadMulti, loadHealth,
   createSession, sendMessage, pauseSession, resumeSession, cancelSession as apiCancelSession,
