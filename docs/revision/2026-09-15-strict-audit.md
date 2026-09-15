@@ -164,3 +164,25 @@ domain -> kernel 契约 (universal_agent/host_contracts.py) <- host (CLI / agent
 ### 结果
 
 domains/ 之外 kubernetes 引用：**123 → 0**（pyproject entry-point 注册表除外）。
+
+### UA-AUDIT-008 遗留债务（kernel 内部分层，2026-09-15 边界复查发现）
+
+kernel 内部分层现已由 `test_kernel_layering_has_no_new_upward_imports` +
+`test_sanctioned_layering_seams_still_exist`（`tests/unit/test_package_boundaries.py`）
+强制：16 条已批准的向上依赖 seam 全部登记理由，新增未登记 seam 会测试失败。
+
+两笔**既有**分层债（非本次重构引入）：
+
+**UA-D1：`profile`（基础层）→ `host.config`（组装层）**
+- `profile/config.py` 消费 `RuntimeConfig`/`DomainConfig`，而这些配置类型定义在
+  `host/config.py`（组装层）—— 基础层反向依赖组装层；
+- 修复方案：配置类型下沉到中立模块（如 `universal_agent/configuration.py`），
+  `host/config.py` 保留兼容 re-export；影响面 ~15 个消费文件（service×5、domains×5 等）。
+
+**UA-D2：`persistence`（基础层）→ `runtime.events`（运行时层）**
+- file/sqlite/postgres 三个存储后端导入 `runtime.events` 的事件流助手
+  （`filter_events`/`poll_event_reader`/`EventCursorError`）—— 存储层反向依赖运行时层；
+- 修复方案：把 `runtime/events.py`（203 行，纯事件流读模型助手）抽出为中立模块
+  （如 `universal_agent/eventstream.py`），14 个消费文件机械更新，`runtime` 保留 re-export。
+
+两者均为机械性模块移动 + import 更新，风险低但影响面广，建议作为独立变更执行。
