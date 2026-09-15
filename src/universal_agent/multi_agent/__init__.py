@@ -22,6 +22,24 @@ from universal_agent.multi_agent.contracts import (
     decode_agent_task_result,
 )
 from universal_agent.multi_agent.delegation import DelegationManager
+from universal_agent.multi_agent.delegation_state import (
+    AgentDelegationBatchResult,
+    AgentDelegationBatchStatus,
+    AgentDelegationDependencyError,
+    AgentDelegationError,
+    AgentDelegationLimitError,
+    AgentDelegationSpec,
+    AgentDelegationState,
+    AgentDelegationTaskState,
+    AgentExecutorNotRegisteredError,
+    NoEligibleAgentError,
+    agent_delegation_batch_result_payload,
+    agent_delegation_spec_payload,
+    agent_delegation_state_payload,
+    decode_agent_delegation_batch_result,
+    decode_agent_delegation_spec,
+    decode_agent_delegation_state,
+)
 from universal_agent.multi_agent.evaluation import (
     MultiAgentEvaluationCheck,
     MultiAgentEvaluationExpectations,
@@ -50,25 +68,9 @@ from universal_agent.multi_agent.merge import (
     decode_agent_result_merge,
 )
 from universal_agent.multi_agent.orchestrator import (
-    AgentDelegationBatchResult,
-    AgentDelegationBatchStatus,
-    AgentDelegationDependencyError,
-    AgentDelegationError,
-    AgentDelegationLimitError,
-    AgentDelegationSpec,
-    AgentDelegationState,
-    AgentDelegationTaskState,
     AgentExecutor,
-    AgentExecutorNotRegisteredError,
     AgentOrchestrator,
-    NoEligibleAgentError,
     RuntimeAgentExecutor,
-    agent_delegation_batch_result_payload,
-    agent_delegation_spec_payload,
-    agent_delegation_state_payload,
-    decode_agent_delegation_batch_result,
-    decode_agent_delegation_spec,
-    decode_agent_delegation_state,
     rejected_agent_task_result,
 )
 from universal_agent.multi_agent.registry import (
