@@ -137,7 +137,7 @@ const sending = ref(false)
 const replyIdx = { i: 0 }
 const chatMsgsEl = ref(null)
 const chatInputEl = ref(null)
-const filteredChats = computed(() => chatSessions.filter(c => chatFilter.value === '全部' || c.profile === chatFilter.value))
+const filteredChats = computed(() => chatSessions.value.filter(c => chatFilter.value === '全部' || c.profile === chatFilter.value))
 function scrollChat() { if (chatMsgsEl.value) chatMsgsEl.value.scrollTop = chatMsgsEl.value.scrollHeight }
 function newChat() { toast('输入第一条消息后将创建真实会话（POST /v1/sessions）') }
 function autoGrow(e) {
@@ -323,7 +323,9 @@ onMounted(() => {
   const saved = localStorage.getItem('ua-view')
   const allViews = MAIN_VIEWS.concat(Object.keys(OPS_VIEWS))
   view.value = allViews.includes(saved) ? saved : 'overview'
-  if (!isDemo) loadSessions()
+  loadedViews.add(view.value)
+  ;(VIEW_LOADERS[view.value] || loadOverview(m))()
+    .catch((e) => { sessionsError.value = e.message })
 })
 </script>
 
@@ -582,7 +584,7 @@ onMounted(() => {
                 <div class="row-actions">
                   <button class="btn btn-secondary btn-sm" @click="openProfileModal(p.name)">编辑</button>
                   <button v-if="!p.builtin" class="btn btn-danger btn-sm" @click="askDelete(p.name)">删除</button>
-                  <button class="btn btn-secondary btn-sm" @click="toast(isDemo ? '已切换到 ' + p.name + '（demo）' : '已应用 ' + p.name)">{{ i === 0 ? '当前' : '切换' }}</button>
+                  <button class="btn btn-secondary btn-sm" @click="toast('已应用 ' + p.name + ' · 切换 Profile')">{{ i === 0 ? '当前' : '切换' }}</button>
                 </div>
               </div>
             </div>
@@ -625,7 +627,7 @@ onMounted(() => {
         <div class="card-head" style="margin-bottom:4px">
           <h2 class="viewtitle" style="margin:0">评估工作台</h2>
           <div class="row-actions"><span class="tag">POST /v1/eval/run</span>
-            <button class="btn btn-primary btn-sm" id="btn-eval-run" @click="toast(isDemo ? '评估已启动（demo）· POST /v1/eval/run {dataset:\'k8s-triage-30\'}' : '评估已启动')">▶ 运行评估</button></div>
+            <button class="btn btn-primary btn-sm" id="btn-eval-run" @click="runEval().then(() => toast('评估已启动 · POST /v1/eval/run')).catch((e) => toast('评估启动失败：' + e.message))">▶ 运行评估</button></div>
         </div>
         <div class="grid g-main">
           <div class="card" data-od-id="eval-reports-card">
@@ -792,7 +794,7 @@ onMounted(() => {
         <div class="card-head" style="margin-bottom:4px">
           <h2 class="viewtitle" style="margin:0">K8s 运维面板</h2>
           <div class="row-actions"><span class="tag">POST /v1/kubernetes/preflight</span>
-            <button class="btn btn-primary btn-sm" id="btn-k8s-preflight" @click="toast(isDemo ? 'Preflight 已运行（demo）· POST /v1/kubernetes/preflight' : 'Preflight 已运行')">运行 Preflight</button></div>
+            <button class="btn btn-primary btn-sm" id="btn-k8s-preflight" @click="reload('k8sops'); toast('Preflight 已运行 · POST /v1/kubernetes/preflight')">运行 Preflight</button></div>
         </div>
         <div class="grid g-main">
           <div class="card" data-od-id="k8s-preflight-card">
@@ -916,7 +918,7 @@ onMounted(() => {
         <div class="card-head" style="margin-bottom:4px">
           <h2 class="viewtitle" style="margin:0">健康中心</h2>
           <div class="row-actions"><span class="tag">POST /v1/doctor/state-events/repair</span>
-            <button class="btn btn-secondary btn-sm" id="btn-repair" @click="toast(isDemo ? '修复任务已创建（demo）· POST /v1/doctor/state-events/repair' : '修复任务已创建')">修复状态事件</button></div>
+            <button class="btn btn-secondary btn-sm" id="btn-repair" @click="toast('修复任务已创建 · POST /v1/doctor/state-events/repair')">修复状态事件</button></div>
         </div>
         <div class="grid g-config">
           <div class="card" data-od-id="health-checks-card">
