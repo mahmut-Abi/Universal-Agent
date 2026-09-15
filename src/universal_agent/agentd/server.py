@@ -50,6 +50,8 @@ class AgentdServerConfig:
     host: str = "127.0.0.1"
     port: int = 8765
     max_body_bytes: int = 1_000_000
+    access_log: bool = True
+    log_level: str = "info"
 
     def __post_init__(self) -> None:
         _validate_agentd_server_config(self)
@@ -116,9 +118,9 @@ class AgentdHttpServer:
                 build_agentd_asgi_app(app, config),
                 host=config.host,
                 port=config.port,
-                access_log=False,
+                access_log=config.access_log,
                 lifespan="off",
-                log_level="warning",
+                log_level=config.log_level,
             )
         )
 
@@ -302,4 +304,7 @@ def _bind_socket(host: str, port: int) -> socket.socket:
 
 def _socket_address(sock: socket.socket) -> tuple[str, int]:
     host, port = sock.getsockname()
-    return str(host), int(port)
+    try:
+        return str(host), int(port)
+    except (TypeError, ValueError) as exc:
+        raise OSError(f"could not resolve socket address: {host}:{port}") from exc
