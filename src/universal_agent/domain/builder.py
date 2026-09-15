@@ -29,7 +29,7 @@ from universal_agent.memory import (
     RelevanceFilter,
     StoreMemoryRetriever,
 )
-from universal_agent.policy import PolicyEngine
+from universal_agent.policy import Policy, PolicyEngine
 from universal_agent.recovery import RecoveryManager
 from universal_agent.tasks import TaskExpander
 from universal_agent.tools import ToolRegistry
@@ -165,7 +165,12 @@ class RuntimeBuilder:
         self._resource_version_factory = resource_version_factory
         self._memory_filter = memory_filter
 
-    def build(self, domain: ActiveDomain | DomainComposition) -> RuntimeComponents:
+    def build(
+        self,
+        domain: ActiveDomain | DomainComposition,
+        *,
+        extra_policies: tuple[Policy, ...] = (),
+    ) -> RuntimeComponents:
         composition = (
             domain if isinstance(domain, DomainComposition) else DomainComposition.single(domain)
         )
@@ -195,7 +200,7 @@ class RuntimeBuilder:
             capabilities=capabilities,
             tools=tools,
             resolver=CapabilityResolver(capabilities, tools),
-            policy_engine=PolicyEngine(composition.policies()),
+            policy_engine=PolicyEngine(tuple(composition.policies()) + tuple(extra_policies)),
             evaluators=evaluators,
             evidence_store=self._evidence_store_factory(),
             world_model=self._world_model_factory(),

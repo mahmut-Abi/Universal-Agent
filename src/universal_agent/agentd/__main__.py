@@ -18,6 +18,7 @@ from universal_agent.agentd.app import AgentdApp
 from universal_agent.agentd.http import AgentdAuthPolicy
 from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
 from universal_agent.core.config_validation import parse_non_empty_string
+from universal_agent.policy import Policy
 from universal_agent.profile.store import ProfileStore
 from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
@@ -47,6 +48,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--read-only-auth-token-env")
     parser.add_argument("--evaluation-report-dir")
     parser.add_argument(
+        "--deployment-config",
+        help="Path to the deployment config JSON (default: $AGENT_CONFIG_DIR/deployment.json)",
+    )
+    parser.add_argument(
         "--profiles-dir",
         help=(
             "Directory for persisted profile configs managed through the "
@@ -66,7 +71,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _build_service_from_profile(profile_config: str) -> RuntimeService:
+def _build_service_from_profile(
+    profile_config: str,
+    *,
+    extra_policies: tuple[Policy, ...] = (),
+) -> RuntimeService:
     """Build a RuntimeService from a profile config file.
 
     Delegates to the shared domains-package composition point so agentd uses
@@ -77,8 +86,62 @@ def _build_service_from_profile(profile_config: str) -> RuntimeService:
     """
 
     from universal_agent.domains.profile_service import build_configured_service
+    from universal_agent.host import RuntimeHost, build_configured_model_adapter
+    from universal_agent.profile import ProfileConfig
+    from universal_agent.security import EnvSecretProvider
 
-    return build_configured_service(profile_config)
+    profile = ProfileConfig.from_json_file(profile_config).to_profile()
+    secret_provider = EnvSecretProvider()
+    if profile.runtime.domain_package_paths:
+        return RuntimeHost.from_configured_domain_packages(
+            config=profile.runtime,
+            model=build_configured_model_adapter(profile.runtime, secret_provider=secret_provider),
+            profile=profile,
+            secret_provider=secret_provider,
+            extra_policies=extra_policies,
+        ).service
+    # For non-domain-package profiles, use the profile_service dispatch and
+    # apply config policies at the RuntimeHost level.
+    service = build_configured_service(profile_config)
+    return _with_extra_policies(service, extra_policies)
+
+
+def _build_default_with_policies(
+    domain_name: str,
+    extra_policies: tuple[Policy, ...],
+) -> RuntimeService:
+    """Build the default service and thread config-declared policies."""
+
+    from universal_agent.domains.profile_service import build_default_domain_service
+
+    service = build_default_domain_service(domain_name)
+    return _with_extra_policies(service, extra_policies)
+
+
+def _with_extra_policies(
+    service: RuntimeService,
+    extra_policies: tuple[Policy, ...],
+) -> RuntimeService:
+    """Rebuild the service's policy engine with config-declared policies.
+
+    Uses RuntimeService's runtime_api.runtime.components to access and replace
+    the PolicyEngine; no domain-specific code is involved.
+    """
+
+    if not extra_policies:
+        return service
+    from dataclasses import replace as dc_replace
+
+    from universal_agent.policy import PolicyEngine
+
+    runtime = service._runtime_api._runtime
+    old_engine = runtime._components.policy_engine
+    existing = getattr(old_engine, "policies", ())
+    merged = tuple(existing) + tuple(extra_policies)
+    new_engine = PolicyEngine(merged)
+    new_components = dc_replace(runtime._components, policy_engine=new_engine)
+    runtime._components = new_components
+    return service
 
 
 def _build_probe_service(profile_config: str) -> RuntimeService:
@@ -128,16 +191,17 @@ def main(argv: list[str] | None = None) -> int:
     if _host_requires_auth(args.host) and auth_token is None and read_only_auth_token is None:
         parser.error("agentd auth token is required when binding to non-loopback host")
     profile_config = args.profile_config
-    if profile_config is not None:
-        service = (
-            _build_probe_service(profile_config)
-            if args.probe_only
-            else _build_service_from_profile(profile_config)
-        )
-    else:
-        from universal_agent.domains.profile_service import build_default_domain_service
+    # Load deployment config (declarative policies + preferences) BEFORE
+    # building any service so policies flow into the PolicyEngine at assembly.
+    deployment_config_path = (
+        Path(os.environ.get("AGENT_CONFIG_DIR", "universal-agent")) / "deployment.json"
+    )
+    if args.deployment_config:
+        deployment_config_path = Path(args.deployment_config)
+    from universal_agent.deployment_config import DeploymentConfigStore
 
-        service = build_default_domain_service(args.default_domain)
+    config_store = DeploymentConfigStore(deployment_config_path)
+    extra_policies = config_store.load_policies()
 
     profiles_dir = (
         args.profiles_dir
@@ -145,6 +209,15 @@ def main(argv: list[str] | None = None) -> int:
         or str(Path(os.environ.get("AGENT_CONFIG_DIR", "universal-agent")) / "profiles")
     )
     profile_store = ProfileStore(profiles_dir)
+
+    if profile_config is not None:
+        service = (
+            _build_probe_service(profile_config)
+            if args.probe_only
+            else _build_service_from_profile(profile_config, extra_policies=extra_policies)
+        )
+    else:
+        service = _build_default_with_policies(args.default_domain, extra_policies)
 
     server = AgentdHttpServer(
         AgentdApp(

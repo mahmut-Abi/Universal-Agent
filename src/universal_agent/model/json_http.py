@@ -174,9 +174,7 @@ class JsonHttpModelAdapter:
                 prompt=bounded_llm_text(
                     dumps_json(redact_sensitive_mapping(dict(request_payload)))
                 ),
-                completion=bounded_llm_text(
-                    dumps_json(redact_sensitive_mapping(dict(payload)))
-                ),
+                completion=bounded_llm_text(dumps_json(redact_sensitive_mapping(dict(payload)))),
             )
         return decision
 

@@ -18,6 +18,8 @@ comes from the ``X-Acting-Principal`` header (default ``api``).
 
 from __future__ import annotations
 
+from typing import Any
+
 from universal_agent.agentd.http import (
     HttpRequest,
     HttpResponse,
@@ -29,6 +31,10 @@ from universal_agent.agentd.routing import (
     AgentdRouteMatcher,
 )
 from universal_agent.core import JsonMapping, JsonValue, immutable_json
+from universal_agent.deployment_config import (
+    DeploymentConfigStore,
+    DeploymentConfigValidationError,
+)
 from universal_agent.profile.store import (
     ProfileAlreadyExistsError,
     ProfileBuiltinError,
@@ -46,10 +52,11 @@ _CONFIG_ADMIN_ROUTE_DEFINITIONS = (
     ),
     AgentdRouteDefinition("config_validate", "/v1/config/validate", ("POST",)),
     AgentdRouteDefinition("config_audit", "/v1/config/audit", ("GET",)),
+    AgentdRouteDefinition("config_read", "/v1/config", ("PUT",)),
     AgentdRouteDefinition(
-        "config_domain_bindings",
+        "config_domain_profiles",
         "/v1/domains/{name}/profiles",
-        ("PUT",),
+        ("GET", "PUT"),
     ),
 )
 
@@ -84,6 +91,8 @@ async def handle_config_admin_route(
     request: HttpRequest,
     method: str,
     path: str,
+    *,
+    config_store: DeploymentConfigStore | None = None,
 ) -> HttpResponse | None:
     if store is None:
         return None
@@ -139,10 +148,103 @@ async def handle_config_admin_route(
             limit_raw = (request.body or {}).get("limit")  # body unused for GET
             return json_response(immutable_json(_audit_payload(store, limit_raw)))
 
-        if route.name == "config_domain_bindings":
-            name = route.path_params["name"]
+        if route.name == "config_read" and method == "PUT":
+            if config_store is None:
+                return json_response(
+                    immutable_json(
+                        {
+                            "error": {
+                                "code": "not_configured",
+                                "message": "no deployment config store",
+                            }
+                        }
+                    ),
+                    status_code=503,
+                )
+            policies_raw = body.get("policies")
+            preferences_raw = body.get("preferences")
+            policies_list: list[dict[str, Any]] = []
+            if isinstance(policies_raw, list):
+                policies_list = [dict(p) for p in policies_raw if isinstance(p, dict)]
+            prefs_dict: dict[str, Any] = (
+                dict(preferences_raw) if isinstance(preferences_raw, dict) else {}
+            )
+            result = config_store.save(policies_list, prefs_dict, actor=actor)
+            return json_response(immutable_json(result), status_code=200)
+
+        if route.name == "config_read":
+            if config_store is None:
+                return json_response(
+                    immutable_json(
+                        {
+                            "error": {
+                                "code": "not_configured",
+                                "message": "no deployment config store",
+                            }
+                        }
+                    ),
+                    status_code=503,
+                )
+            return json_response(immutable_json(dict(config_store.load())))
+
+        if route.name == "config_domain_profiles":
+            domain_name = route.path_params["name"]
+            if method == "PUT":
+                add_raw = body.get("add")
+                remove_raw = body.get("remove")
+                add_names = [str(x) for x in add_raw] if isinstance(add_raw, list) else []
+                remove_names = [str(x) for x in remove_raw] if isinstance(remove_raw, list) else []
+                settings_raw = body.get("settings")
+                settings_map: JsonMapping | None = (
+                    dict(settings_raw) if isinstance(settings_raw, dict) else None
+                )
+                results: list[dict[str, str]] = []
+                binding_errors: list[dict[str, str]] = []
+                for pname in add_names:
+                    try:
+                        store.set_domain_binding(
+                            pname,
+                            domain_name,
+                            bound=True,
+                            settings=settings_map,
+                            actor=actor,
+                        )
+                        results.append({"profile": pname, "status": "bound"})
+                    except (ProfileNotFoundError, ValueError) as exc:
+                        binding_errors.append({"profile": pname, "message": str(exc)})
+                for pname in remove_names:
+                    try:
+                        store.set_domain_binding(
+                            pname,
+                            domain_name,
+                            bound=False,
+                            actor=actor,
+                        )
+                        results.append({"profile": pname, "status": "unbound"})
+                    except (ProfileNotFoundError, ValueError) as exc:
+                        binding_errors.append({"profile": pname, "message": str(exc)})
+                response: dict[str, Any] = {
+                    "domain": domain_name,
+                    "results": results,
+                }
+                if binding_errors:
+                    response["errors"] = binding_errors
+                return json_response(immutable_json(response))
+            # GET: list profiles bound to this domain
+            bound_profiles: list[str] = []
+            for pname in store.names():
+                config = store.load(pname)
+                raw_domains = config.get("domains")
+                if not isinstance(raw_domains, list):
+                    continue
+                for d in raw_domains:
+                    if isinstance(d, dict) and str(d.get("name", "")) == domain_name:
+                        bound_profiles.append(pname)
+                        break
             return json_response(
-                immutable_json(_apply_domain_bindings(store, name, dict(body), actor=actor))
+                immutable_json(
+                    {"domain": domain_name, "profiles": [str(p) for p in bound_profiles]}
+                )
             )
 
         return not_found(f"unknown config-admin route: {route.name}")
@@ -155,6 +257,11 @@ async def handle_config_admin_route(
         return not_found(str(exc))
     except ProfileStoreValidationError as exc:
         return _validation_error_response(exc)
+    except DeploymentConfigValidationError as exc:
+        return json_response(
+            immutable_json({"status": "error", "errors": [dict(e) for e in exc.errors]}),
+            status_code=422,
+        )
     except ProfileBuiltinError as exc:
         return json_response(
             immutable_json({"error": {"code": "builtin_profile", "message": str(exc)}}),

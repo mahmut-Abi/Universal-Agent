@@ -55,6 +55,7 @@ from universal_agent.model import (
     ScriptedModelAdapter,
 )
 from universal_agent.persistence import FileRuntimeStore, SQLiteRuntimeStore
+from universal_agent.policy import Policy
 from universal_agent.profile import AgentProfile
 from universal_agent.runtime import (
     AgentRuntime,
@@ -211,6 +212,7 @@ class RuntimeHost:
         profile: AgentProfile | None = None,
         secret_provider: SecretProvider | None = None,
         domain_packages: DomainPackageRegistry | None = None,
+        extra_policies: tuple[Policy, ...] = (),
     ) -> RuntimeHost:
         if not domains:
             raise ValueError("runtime host requires at least one domain")
@@ -222,7 +224,7 @@ class RuntimeHost:
         _validate_domain_config(config, composition.identities)
         _validate_profile(profile, composition.identities)
         secret_resolution = resolve_secret_refs(config.secrets, provider=secret_provider)
-        components = RuntimeBuilder().build(composition)
+        components = RuntimeBuilder().build(composition, extra_policies=extra_policies)
         session_store, event_store = _build_stores(config)
         runtime = AgentRuntime(
             model=model,
@@ -297,6 +299,7 @@ class RuntimeHost:
         domains: tuple[DomainRuntime, ...],
         secret_provider: SecretProvider | None = None,
         domain_packages: DomainPackageRegistry | None = None,
+        extra_policies: tuple[Policy, ...] = (),
     ) -> RuntimeHost:
         return cls.build_composed(
             config=profile.runtime,
@@ -305,6 +308,7 @@ class RuntimeHost:
             profile=profile,
             secret_provider=secret_provider,
             domain_packages=domain_packages,
+            extra_policies=extra_policies,
         )
 
     @classmethod
@@ -316,6 +320,7 @@ class RuntimeHost:
         profile: AgentProfile | None = None,
         secret_provider: SecretProvider | None = None,
         verify_paths: bool = True,
+        extra_policies: tuple[Policy, ...] = (),
     ) -> RuntimeHost:
         """Build a Host by activating DomainRuntime code declared in config."""
 
@@ -333,6 +338,7 @@ class RuntimeHost:
             domain_packages=DomainPackageRegistry(
                 tuple(activation.package for activation in activations)
             ),
+            extra_policies=extra_policies,
         )
 
 

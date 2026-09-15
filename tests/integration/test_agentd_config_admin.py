@@ -215,7 +215,5 @@ async def test_builtin_profile_delete_returns_409(app: AgentdApp) -> None:
     assert error.get("code") == "builtin_profile"
 
     # PATCH is also refused
-    patched = await app.handle(
-        _request("PATCH", "/v1/profiles/checkout-sre", {"description": "x"})
-    )
+    patched = await app.handle(_request("PATCH", "/v1/profiles/checkout-sre", {"description": "x"}))
     assert patched is not None and patched.status_code == 409

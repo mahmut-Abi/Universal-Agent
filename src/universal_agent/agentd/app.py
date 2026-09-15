@@ -238,6 +238,13 @@ class AgentdApp:
 
         return not_found(f"unknown route: {path}")
 
+    @staticmethod
+    def _domain_filter_matches(request: HttpRequest, domain_name: str) -> bool:
+        """Check the ``domain`` query param against a catalog item's domain."""
+
+        query = _optional_query_value(request.path, "domain")
+        return query is None or query == domain_name
+
     def _memory_route_response(
         self,
         request: HttpRequest,
@@ -294,7 +301,13 @@ class AgentdApp:
                 {"capabilities": [capability_body(item) for item in self._service.capabilities()]}
             ),
             "tools": lambda: immutable_json(
-                {"tools": [tool_body(item) for item in self._service.tools()]}
+                {
+                    "tools": [
+                        tool_body(item)
+                        for item in self._service.tools()
+                        if self._domain_filter_matches(request, item.domain_name)
+                    ]
+                }
             ),
             "policies": lambda: immutable_json(
                 {"policies": [policy_body(item) for item in self._service.policies()]}
