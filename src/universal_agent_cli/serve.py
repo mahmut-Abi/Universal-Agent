@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import errno
+import os
 from collections.abc import Awaitable, Callable
 from inspect import isawaitable
 from typing import TextIO, cast
@@ -10,6 +11,7 @@ from universal_agent.agentd.app import AgentdApp
 from universal_agent.agentd.http import AgentdAuthPolicy
 from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
 from universal_agent.core.config_validation import parse_non_empty_string
+from universal_agent.profile.store import ProfileStore
 from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
 from universal_agent_cli.io import _write_json
@@ -47,6 +49,7 @@ async def _dispatch_serve(
                     read_only_bearer_token=read_only_auth_token,
                 ),
                 evaluation_report_dir=cast(str | None, args.evaluation_report_dir),
+                profile_store=_profiles_dir(args),
             ),
             AgentdServerConfig(host=host, port=port),
         )
@@ -103,6 +106,20 @@ def _resolve_cli_auth_token(
     if token is None:
         raise ValueError(f"agentd {label} env key is missing or empty: {env_key}")
     return token
+
+
+def _profiles_dir(args: object) -> ProfileStore | None:
+    """Construct a ProfileStore from the profiles-dir CLI flag or defaults."""
+
+    from pathlib import Path as _Path
+
+    from universal_agent.profile.store import ProfileStore as _PS
+
+    profiles_dir = getattr(args, "profiles_dir", None)
+    if profiles_dir:
+        return _PS(profiles_dir)
+    config_dir = _Path(os.environ.get("AGENT_CONFIG_DIR", "universal-agent"))
+    return _PS(config_dir / "profiles")
 
 
 def _host_requires_auth(host: str) -> bool:
