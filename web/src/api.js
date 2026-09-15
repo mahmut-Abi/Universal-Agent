@@ -149,10 +149,13 @@ export async function loadActivity(state) {
   start.setDate(start.getDate() - 6);
   let cursor = "";
   for (let page = 0; page < 5; page += 1) {
-    const d = await apiGet(`/v1/sessions?limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+    const d = await apiGet(
+      `/v1/sessions?limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+    );
     for (const s of pick(d, "sessions")) {
       const created = s.created_at ? new Date(s.created_at) : null;
-      if (created && created >= start) buckets[Math.min(6, Math.floor((created - start) / 86400000))] += 1;
+      if (created && created >= start)
+        buckets[Math.min(6, Math.floor((created - start) / 86400000))] += 1;
     }
     if (!d.next_cursor) break;
     cursor = d.next_cursor;
@@ -172,7 +175,11 @@ export async function loadMetrics(state) {
 }
 
 export async function loadOverview(state) {
-  await Promise.all([loadSessions(state), loadMetrics(state), loadActivity(state)]);
+  await Promise.all([
+    loadSessions(state),
+    loadMetrics(state),
+    loadActivity(state),
+  ]);
 }
 
 export async function loadSessionDetail(state, sid) {
@@ -260,6 +267,7 @@ export async function loadConfig(state) {
     name: d.name,
     desc: d.description || "",
     active: true,
+    version: d.version || "0.1.0",
     tools: byDomain[d.name] || [],
   }));
   state.health.checks = state.doctor;
@@ -321,7 +329,14 @@ export async function loadMemory(state) {
   }));
 }
 export function memoryAdd(text) {
-  return apiPost("/v1/memory", { text, kind: "manual" });
+  // agentd MemoryCreatePayload: kind ∈ episodic|semantic|procedural|preference
+  return apiPost("/v1/memory", {
+    kind: "semantic",
+    subject: "dashboard",
+    content: text,
+    scope: "local",
+    confidence: 0.9,
+  });
 }
 export function memoryRemove(id) {
   return apiDelete(`/v1/memory/${encodeURIComponent(id)}`);
@@ -369,7 +384,8 @@ export async function loadLogs(state) {
 /* K8s 运维视图：当前 agentd 未提供 /v1/kubernetes/* 路由，返回空并保留 UI */
 export async function loadK8sOps(state) {
   try {
-    const p = await apiPost("/v1/kubernetes/preflight");
+    // preflight 不带 workload 时必须 skip_cluster，否则 400
+    const p = await apiPost("/v1/kubernetes/preflight", { skip_cluster: true });
     state.k8sops.preflight = pick(p, "checks").map((c) => ({
       name: c.name,
       ok: Boolean(c.ok ?? c.status === "ok"),
@@ -473,13 +489,13 @@ export function profileCreate(payload) {
     name: payload.name,
     version: "0.1.0",
     description: payload.desc,
-    domains: payload.domains.map((d) => ({ name: d })),
+    domains: payload.domains,
   });
 }
 export function profilePatch(name, payload) {
   return apiPatch(`/v1/profiles/${encodeURIComponent(name)}`, {
     description: payload.desc,
-    domains: payload.domains.map((d) => ({ name: d })),
+    domains: payload.domains,
   });
 }
 export function profileRemove(name) {

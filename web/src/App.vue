@@ -201,7 +201,12 @@ function saveProfile() {
   const dup = !profileModal.editing && m.profiles.some((p) => p.name === name)
   if (!valid) { pmError.value = '名称必填，且只能含小写字母、数字与连字符'; return }
   if (dup) { pmError.value = '同名 Profile 已存在'; return }
-  const payload = { name, model: pmForm.model, domains: [...pmForm.domains], desc: pmForm.desc.trim() || '自定义 Profile · ' + pmForm.domains.join('/') }
+  // agentd 校验要求 profile domain 为 {name, version} 对象
+  const domainObjs = pmForm.domains.map((n) => ({
+    name: n,
+    version: (m.domains.find((d) => d.name === n) || {}).version || '0.1.0',
+  }))
+  const payload = { name, model: pmForm.model, domains: domainObjs, desc: pmForm.desc.trim() || '自定义 Profile · ' + pmForm.domains.join('/') }
   const op = profileModal.editing ? profilePatch(profileModal.editing, payload) : profileCreate(payload)
   op.then(() =>
     loadConfig(m).then(() => {
