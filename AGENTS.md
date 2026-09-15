@@ -786,6 +786,22 @@ Only introduce an interface when it represents a real architectural boundary.
 
 Implement incrementally.
 
+> **Scope status (2026-09-15 decision, UA-AUDIT-003):** the phases below were
+> written as an incremental build order; the repository now implements
+> foundations across all of them. Maturity labels apply:
+>
+> - **P0-P3** (Agent loop, Domain Runtime, Evidence, World Model, Memory,
+>   Multi-Domain, Profiles) — **stable**
+> - **P3.5-P3.7** (Runtime API, CLI/agentd, Event Stream, Persistence,
+>   Observability, Evaluation) — **beta**
+> - **P4** (Multi-Agent), **P5** (TUI/Web), **P6** (Distributed),
+>   **P7** (Ecosystem/Domain SDK) — **experimental, frozen**
+>
+> "Frozen" means: no new capability work in those layers; changes are limited
+> to bug fixes, security fixes, and test upkeep until the core loop is proven
+> against real tasks (§16 metrics). Rationale and alternatives considered:
+> `docs/revision/2026-09-15-agents-md-scope-reconciliation.md`.
+
 ## P0
 
 Build the smallest complete Agent Loop:
@@ -1207,6 +1223,11 @@ Do not implement these merely because they appear in Agent frameworks:
 - Kubernetes deployment of the Agent itself
 
 First prove the core loop.
+
+> **Freeze note (2026-09-15, UA-AUDIT-003):** the list above remains the
+> default posture for NEW work. The P4/P5/P6/P7 surfaces that already exist
+> are experimental and frozen — bug fixes, security fixes, and test upkeep
+> only (see the scope status in §13).
 
 ---
 

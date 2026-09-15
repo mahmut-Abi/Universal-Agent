@@ -65,15 +65,17 @@ facade 复用；补一条 local profile Facade 集成测试。
 - `agentd/_routes_kubernetes.py` 是 server 组合层的 domain 特性路由接线，
   移入 domains 包会造成 domain→server 反向依赖，判定为组合层合法归属，在此记录。
 
-### A3. 实际 roadmap 与 AGENTS.md §13/§19 的范围冲突未闭环
+### A3. 实际 roadmap 与 AGENTS.md §13/§19 的范围冲突未闭环 —— ✅ 已修复（2026-09-15，UA-AUDIT-003）
 
 AGENTS.md §13 规定 P0→P7 逐级演进、§19 列出 "What NOT To Build Prematurely"
 （multi-agent、distributed scheduler、TUI/Web、ecosystem 等）。
 当前仓库 P0–P7 全部有实现（`multi_agent/`、`distributed/`、`ecosystem/`、TUI、Web、Domain SDK）。
 `docs/index.md` 如实记录了这一现状，但 AGENTS.md 本身没有更新，两份规范现在矛盾。
-需要二选一：修订 AGENTS.md 承认当前范围，或在 docs 中标记这些层为 experimental 并冻结。
-P0 spec §1 也明文禁止在 P0 期间新增这些能力——至少要有一份决策记录（docs/revision）
-说明为何扩大范围。
+
+**决策（两者结合）**：§13 增加 Scope status 成熟度矩阵
+（P0–P3 stable / P3.5–P3.7 beta / P4–P7 experimental, frozen），
+§19 增加 freeze note（现有 experimental 层仅接受 bug fix / 安全修复 / 测试维护）。
+决策记录：`docs/revision/2026-09-15-agents-md-scope-reconciliation.md`。
 
 ---
 
