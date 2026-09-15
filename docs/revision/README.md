@@ -50,6 +50,72 @@ Use this file as the working backlog for the project.
 - `docs/revision/2026-08-26-project-status.md` — implementation status and engineering boundaries.
 - `docs/revision/2026-08-24-project-status.md` and `docs/revision/2026-08-23-project-status.md` — earlier status snapshots.
 - `docs/revision/2026-08-21-21-40-33.md` — earlier code audit record.
+- `docs/revision/2026-09-15-strict-audit.md` — strict audit vs AGENTS.md / P0 / P1 specs (facade bug, kernel domain leak, spec gaps).
+
+## 2026-09-15 Strict Audit Findings
+
+Source: `docs/revision/2026-09-15-strict-audit.md`. Full evidence and reproduction commands live there.
+
+### [x] UA-AUDIT-001 — Fix SDK Facade Golden Path for the default local profile
+
+- Priority: P0
+- Area: SDK / Facade / Product
+- Source: `docs/revision/2026-09-15-strict-audit.md` (A1), P0 spec §14/§26
+- Why: `Agent.from_profile("default")` with the `agent init` local profile fails with `configured domain local does not match kubernetes`; facade.py falls back to the Kubernetes builder while the CLI dispatches correctly. P0 spec requires a working Facade.
+- Done when:
+  - Facade reuses the CLI's local/kubernetes dispatch (shared builder, no duplicated logic).
+  - `Agent.from_profile("default")` + `run("Hello")` works for the init-created profile.
+  - Integration test covers the local-profile Facade path (currently zero coverage).
+- Evidence: shared `build_configured_service` dispatch now lives in `src/universal_agent/facade.py` (domain packages -> local -> kubernetes) and `universal_agent_cli.build_configured_service` delegates to it; new regression test `test_facade_from_profile_runs_local_default_profile` in `tests/integration/test_facade_golden_path.py`; live repro `Agent.from_profile('default').run('Hello')` returns `completed`. Gates: `uv run pytest tests/integration/test_facade_golden_path.py tests/integration/test_p0_golden_path.py -q` (11 passed), `tests/ -q -n auto` full suite exit 0, `uv run ruff check src tests` clean, `uv run mypy src tests` clean (415 files).
+
+### [ ] UA-AUDIT-002 — Remove domain imports from kernel-layer facade/evaluation dispatch
+
+- Priority: P2
+- Area: Architecture / Kernel Boundaries
+- Source: `docs/revision/2026-09-15-strict-audit.md` (A2), AGENTS.md §4.7
+- Why: `universal_agent/facade.py` imports `domains.kubernetes.*` and `evaluation/dispatch.py` hardcodes kubernetes scenario tags inside the main package.
+- Done when:
+  - No `universal_agent` (non-domains) module imports a concrete domain.
+  - Default domain resolution goes through profile/domain-package mechanisms.
+
+### [ ] UA-AUDIT-003 — Reconcile AGENTS.md roadmap with the implemented P0–P7 scope
+
+- Priority: P2
+- Area: Docs / Governance
+- Source: `docs/revision/2026-09-15-strict-audit.md` (A3), AGENTS.md §13/§19, P0 spec §1
+- Why: AGENTS.md says multi-agent/distributed/TUI/Web/ecosystem should not be built prematurely, but they are implemented; AGENTS.md and docs/index.md now disagree.
+- Done when:
+  - AGENTS.md roadmap is revised to reflect the actual phased scope, or experimental layers are explicitly frozen in AGENTS.md.
+  - Decision rationale is recorded under `docs/revision/`.
+
+### [ ] UA-AUDIT-004 — Extend ErrorCode enum toward the AGENTS.md §9 categories
+
+- Priority: P2
+- Area: Runtime / Recovery
+- Source: `docs/revision/2026-09-15-strict-audit.md`, AGENTS.md §9
+- Why: `ErrorCode` lacks `permission_denied`, `user_required`, `transient`, `dependency_missing`, so recovery rules cannot branch deterministically on those classes.
+- Done when:
+  - Missing categories are added or their omission is documented as intentional.
+  - Recovery rules map at least one new category to a deterministic strategy, with tests.
+
+### [ ] UA-AUDIT-005 — Add explicit approval/action binding negative test
+
+- Priority: P2
+- Area: Policy / Kubernetes / Tests
+- Source: `docs/revision/2026-09-15-strict-audit.md`, P1 spec §12 (M9)
+- Why: nothing proves that confirming `restart_workload` cannot execute a different mutation (e.g. `scale_workload`) on the same target.
+- Done when:
+  - A negative test shows a confirmation bound to proposal X cannot execute proposal Y.
+  - Test lives with the I1–I10 invariant suite.
+
+### [ ] UA-AUDIT-006 — Set per-module coverage baseline gate
+
+- Priority: P3
+- Area: Testing / CI
+- Source: `docs/revision/2026-09-15-strict-audit.md`, pyproject coverage config
+- Why: coverage is report-only (~86% branch); untested seams such as the facade local path shipped a P0-breaking bug.
+- Done when:
+  - Per-module baselines are agreed and enforced in CI (or a documented ratchet mechanism exists).
 
 ## Current Priority Order
 
@@ -819,4 +885,5 @@ Add entries here when items are completed.
 2026-09-12 P5-CORE-004 completed: evidence drill-down. New pure projection `agentd/evidence_drilldown.py` returns evidence records with claim/source/action/observation/task linkage, confidence, domain attribution, and subject/domain filter facets (honest verification status: confidence + source, no fabricated verdict). Console route `/console/sessions/{id}/evidence-drilldown` (200/404); web console session view gains a filterable Evidence drill-down table with explicit empty state. Evidence: `uv run pytest tests/unit/test_agentd_evidence_drilldown.py -q` (5 passed); full gate ruff format/check + mypy (509 files) clean; `uv run pytest tests/ -q` (1485 passed, 5 skipped); node --check. Main files: src/universal_agent/agentd/{evidence_drilldown.py,console_routes.py}, tests/unit/test_agentd_evidence_drilldown.py, src/universal_agent_web/static/app.js.
 2026-09-12 P5-TUI-001 completed: TUI execution timeline parity. `ua tui` now renders an Execution Timeline section from the same `agentd.timeline` projection as the web console — steps with label/action id/policy effect/observation+evidence links/decision target/event counts, `- none` for empty history, single synthetic step for opener-less events. Evidence: `uv run pytest tests/unit/test_tui.py -q` (2 passed incl. new `_timeline_lines` unit test covering grouping, empty, and 29-event long history); full gate ruff format/check + mypy (509 files) clean; `uv run pytest tests/ -q` (1486 passed, 5 skipped). Main files: src/universal_agent_tui/tui.py, tests/unit/test_tui.py.
 2026-09-12 P5-TUI-002 completed: TUI world/evidence read views. Evidence rows now render action/observation/task linkage and contributing domain from the same `evidence_drilldown_body` payload as the console; new Cross-Domain Conflicts section renders from the same `world_explorer_body` payload (subject/claim, selected value, per-candidate domain in parens). Empty/None explorer cases show explicit placeholders. Evidence: `uv run pytest tests/unit/test_tui.py -q` (3 passed incl. new shared-projection test); full gate ruff format/check + mypy (509 files) clean; `uv run pytest tests/ -q` (1487 passed, 5 skipped). Main files: src/universal_agent_tui/tui.py, tests/unit/test_tui.py.
+2026-09-15 UA-AUDIT-001 completed: fixed SDK Facade Golden Path for the default local profile. The shared profile->service dispatch (domain packages -> local workspace -> kubernetes) now lives in `universal_agent/facade.py::build_configured_service`, and `universal_agent_cli.build_configured_service` delegates to it so the CLI and SDK facade can never diverge. Regression: `Agent.from_profile('default')` on an `agent init` profile previously raised `configured domain local does not match kubernetes`; it now completes a goal and records the session. Evidence: `uv run pytest tests/integration/test_facade_golden_path.py tests/integration/test_p0_golden_path.py -q` (11 passed, incl. new `test_facade_from_profile_runs_local_default_profile`); `uv run pytest tests/ -q -n auto` exit 0; `uv run ruff check src tests` clean; `uv run mypy src tests` clean (415 files); live repro `Agent.from_profile('default').run('Hello')` -> completed. Main files: src/universal_agent/facade.py, src/universal_agent_cli/__init__.py, tests/integration/test_facade_golden_path.py.
 ```

@@ -311,3 +311,36 @@ async def test_confirmation_pauses_then_rebuilt_runtime_resumes(tmp_path: Path) 
 async def test_facade_from_profile_requires_existing_config(tmp_path: Path) -> None:
     with pytest.raises(AgentConfigurationError):
         Agent.from_profile("default", config_path=tmp_path / "missing.json")
+
+
+@pytest.mark.asyncio
+async def test_facade_from_profile_runs_local_default_profile(tmp_path: Path) -> None:
+    """P0 spec §14/§26 + UA-AUDIT-001 regression: `Agent.from_profile("default")`
+
+    must work for the domain-neutral local profile created by `agent init`.
+    The facade used to fall back to the Kubernetes builder and fail with
+    ``configured domain local does not match kubernetes``.
+    """
+
+    profile_path = await _write_profile_config(tmp_path, tmp_path / "store")
+
+    agent = Agent.from_profile("default", config_path=profile_path)
+    result = await agent.run("Analyze the demo workload", success_criteria={"healthy": True})
+
+    assert result.status == "completed"
+    events = await _event_types(agent, result.session_id)
+    assert "GoalCreated" in events
+    assert "GoalCompleted" in events
+    # Domain-neutral default: the local workspace domain serves the run and no
+    # Kubernetes capability is ever resolved (UA-TEST-002 expectation).
+    batch = await agent.events(result.session_id)
+    capabilities = [
+        str(event.data.get("capability", ""))
+        for event in batch.events
+        if "capability" in event.data
+    ]
+    assert capabilities, "the scripted local run must resolve at least one capability"
+    assert all("kubernetes" not in capability.lower() for capability in capabilities)
+
+    sessions = await agent.sessions()
+    assert result.session_id in {str(item.session_id) for item in sessions}

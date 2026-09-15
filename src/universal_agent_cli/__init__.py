@@ -85,31 +85,11 @@ def build_default_service() -> RuntimeService:
 
 
 def build_configured_service(profile_config_path: str | Path) -> RuntimeService:
-    from universal_agent.domains.kubernetes.cli import build_configured_service
-    from universal_agent.domains.local.cli_runtime import build_local_profile_service
-    from universal_agent.host.runtime import RuntimeHost, build_configured_model_adapter
-    from universal_agent.profile import ProfileConfig
-    from universal_agent.security import EnvSecretProvider
+    """Assemble a RuntimeService from a profile config via the shared SDK dispatch."""
 
-    profile = ProfileConfig.from_json_file(profile_config_path).to_profile()
-    if profile.runtime.domain_package_paths:
-        secret_provider = EnvSecretProvider()
-        return RuntimeHost.from_configured_domain_packages(
-            config=profile.runtime,
-            model=build_configured_model_adapter(
-                profile.runtime,
-                secret_provider=secret_provider,
-            ),
-            profile=profile,
-            secret_provider=secret_provider,
-        ).service
-    configured_domains = profile.runtime.configured_domains()
-    if configured_domains and configured_domains[0].name == "local":
-        return build_local_profile_service(profile_config_path)
-    return build_configured_service(
-        profile_config_path,
-        model_adapter_builder=build_configured_model_adapter,
-    )
+    from universal_agent.facade import build_configured_service as build_shared_service
+
+    return build_shared_service(profile_config_path)
 
 
 def build_configured_probe_service(profile_config_path: str | Path) -> RuntimeService:
