@@ -73,6 +73,7 @@ kubernetes = "universal_agent.domains.kubernetes.agentd_routes:kubernetes_agentd
 
 [project.entry-points."universal_agent.cli_contributions"]
 kubernetes = "universal_agent.domains.kubernetes.registration:kubernetes_cli_contribution"
+local = "universal_agent.domains.local.registration:local_cli_contribution"
 
 [project.entry-points."universal_agent.default_domains"]
 local = "universal_agent.domains.local.cli_runtime:build_local_service"

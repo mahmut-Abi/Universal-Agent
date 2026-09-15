@@ -15,10 +15,10 @@ Dispatch contract (shared by the SDK facade, the CLI and agentd):
 
 from __future__ import annotations
 
-from importlib.metadata import entry_points
 from pathlib import Path
 
 from universal_agent.host import RuntimeHost, build_configured_model_adapter
+from universal_agent.host_contracts import build_default_domain_service
 from universal_agent.profile import ProfileConfig
 from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
@@ -29,8 +29,6 @@ __all__ = [
     "build_default_service",
     "build_probe_service",
 ]
-
-DEFAULT_DOMAIN_ENTRY_POINT_GROUP = "universal_agent.default_domains"
 
 
 def build_configured_service(config_path: str | Path) -> RuntimeService:
@@ -66,26 +64,6 @@ def build_default_service(*, kubernetes_default: bool = False) -> RuntimeService
     """
 
     return build_default_domain_service("kubernetes" if kubernetes_default else "local")
-
-
-def build_default_domain_service(name: str) -> RuntimeService:
-    """Assemble the default service of one registered built-in domain.
-
-    Default-domain builders are discovered through the
-    ``universal_agent.default_domains`` entry-point group, so this
-    composition module never imports a concrete domain.
-    """
-
-    for entry_point in entry_points(group=DEFAULT_DOMAIN_ENTRY_POINT_GROUP):
-        if entry_point.name == name:
-            factory = entry_point.load()
-            service = factory()
-            if isinstance(service, RuntimeService):
-                return service
-    raise ValueError(
-        f"no default service is registered for domain {name!r} "
-        f"(entry-point group {DEFAULT_DOMAIN_ENTRY_POINT_GROUP!r})"
-    )
 
 
 def build_probe_service(config_path: str | Path) -> RuntimeService:

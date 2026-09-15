@@ -79,9 +79,9 @@ def _primary_profile_name(service: RuntimeService) -> str | None:
 def build_default_service() -> RuntimeService:
     """Golden Path default: the domain-neutral Local workspace profile."""
 
-    from universal_agent.domains.local.cli_runtime import build_local_service
+    from universal_agent.host_contracts import build_default_domain_service
 
-    return build_local_service()
+    return build_default_domain_service("local")
 
 
 def build_configured_service(profile_config_path: str | Path) -> RuntimeService:

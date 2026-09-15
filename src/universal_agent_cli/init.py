@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import TextIO, cast
 
 from universal_agent.core import write_json_file
-from universal_agent.domains.local.cli_runtime import local_domain_config
 from universal_agent_cli.defaults import default_init_output_path, global_init_output_path
 from universal_agent_cli.io import _parse_key_value_options, _write_json, _write_text
 
@@ -208,7 +207,9 @@ def _domain_settings(
                 outcome.domain_config,
                 {name: dict(spec) for name, spec in outcome.secrets.items()},
             )
-    return "local", local_domain_config(), {}
+    # No domain contribution installed: fall back to the domain-neutral
+    # local profile shape (matches domains/local's `local_domain_config`).
+    return "local", {"name": "local", "version": "0.1.0"}, {}
 
 
 def _runtime_payload(args: argparse.Namespace) -> dict[str, object]:

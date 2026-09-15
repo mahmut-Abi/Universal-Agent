@@ -209,6 +209,29 @@ def load_cli_contributions() -> tuple[CliDomainContribution, ...]:
     return tuple(sorted(contributions, key=lambda item: item.domain))
 
 
+DEFAULT_DOMAIN_ENTRY_POINT_GROUP = "universal_agent.default_domains"
+
+
+def build_default_domain_service(name: str) -> RuntimeService:
+    """Assemble the default service of one registered built-in domain.
+
+    Default-domain builders are discovered through the
+    ``universal_agent.default_domains`` entry-point group, so hosts never
+    import a concrete domain.
+    """
+
+    for entry_point in entry_points(group=DEFAULT_DOMAIN_ENTRY_POINT_GROUP):
+        if entry_point.name == name:
+            factory = entry_point.load()
+            service = factory()
+            if service is not None:
+                return service  # type: ignore[no-any-return]
+    raise ValueError(
+        f"no default service is registered for domain {name!r} "
+        f"(entry-point group {DEFAULT_DOMAIN_ENTRY_POINT_GROUP!r})"
+    )
+
+
 def single_secret_source(
     label: str,
     *,

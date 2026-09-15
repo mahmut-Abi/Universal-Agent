@@ -121,3 +121,41 @@ def test_runtime_layers_do_not_import_agentd_adapter() -> None:
         "universal_agent.agentd application adapters "
         f"(found: {sorted(set(violations))})"
     )
+
+
+def test_kernel_imports_only_the_domains_composition_root() -> None:
+    """The kernel/agentd may reference the domains package only via its
+    composition root (`universal_agent.domains.profile_service`) — never a
+    concrete domain module."""
+
+    kernel_root = SRC / KERNEL_PACKAGE
+    allowed = "universal_agent.domains.profile_service"
+    violations: list[str] = []
+    for path in kernel_root.rglob("*.py"):
+        relative = path.relative_to(SRC).as_posix()
+        if relative.startswith("universal_agent/domains/"):
+            continue
+        for module in _absolute_imports(path):
+            if module.startswith("universal_agent.domains") and module != allowed:
+                violations.append(f"{relative}: {module}")
+    assert violations == [], (
+        "kernel modules must not import concrete domain modules; route them "
+        f"through the domains composition root ({allowed}) "
+        f"(found: {sorted(set(violations))})"
+    )
+
+
+def test_cli_shell_does_not_import_domain_packages() -> None:
+    """The CLI shell consumes domains only through entry-point contributions
+    and the kernel facade — never by importing `universal_agent.domains.*`."""
+
+    violations: list[str] = []
+    for path in (SRC / "universal_agent_cli").rglob("*.py"):
+        relative = path.relative_to(SRC).as_posix()
+        for module in _absolute_imports(path):
+            if module.startswith("universal_agent.domains"):
+                violations.append(f"{relative}: {module}")
+    assert violations == [], (
+        "the CLI shell must not import domain packages; consume domain "
+        f"features via entry-point contributions (found: {sorted(set(violations))})"
+    )
