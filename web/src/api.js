@@ -63,6 +63,7 @@ export function createState() {
     ecosystem: { installed: [], catalog: [] },
     audit: { integrity: "", items: [], configHistory: [] },
     multi: { agents: [] },
+    activity: { values: [0, 0, 0, 0, 0, 0, 0], days: [], max: 0 },
     health: { checks: [], state: [] },
   };
 }
@@ -134,6 +135,31 @@ export async function loadSessions(state) {
   return state.sessions;
 }
 
+/* 近 7 日任务量：真实会话 created_at 按天聚合（跟随 next_cursor 分页，最多 5 页） */
+export async function loadActivity(state) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const buckets = Array.from({ length: 7 }, () => 0);
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - (6 - i));
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  });
+  const start = new Date(today);
+  start.setDate(start.getDate() - 6);
+  let cursor = "";
+  for (let page = 0; page < 5; page += 1) {
+    const d = await apiGet(`/v1/sessions?limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+    for (const s of pick(d, "sessions")) {
+      const created = s.created_at ? new Date(s.created_at) : null;
+      if (created && created >= start) buckets[Math.min(6, Math.floor((created - start) / 86400000))] += 1;
+    }
+    if (!d.next_cursor) break;
+    cursor = d.next_cursor;
+  }
+  state.activity = { values: buckets, days, max: Math.max(...buckets, 0) };
+}
+
 export async function loadMetrics(state) {
   const d = await apiGet("/v1/metrics");
   const total = d.session_count || 0;
@@ -146,7 +172,7 @@ export async function loadMetrics(state) {
 }
 
 export async function loadOverview(state) {
-  await Promise.all([loadSessions(state), loadMetrics(state)]);
+  await Promise.all([loadSessions(state), loadMetrics(state), loadActivity(state)]);
 }
 
 export async function loadSessionDetail(state, sid) {
@@ -385,6 +411,8 @@ export async function loadAudit(state) {
     hash: (x.hash || "").slice(0, 8) + "…",
   }));
   state.audit.integrity = integrity.root_hash ? "ok" : "";
+  state.audit.recordCount = integrity.record_count ?? state.audit.items.length;
+  state.audit.rootHash = integrity.root_hash || "";
   state.audit.configHistory = [];
 }
 
@@ -402,16 +430,15 @@ export async function loadMulti(state) {
   state.multi.agents = agents;
 }
 
-export function loadHealth(state) {
-  // doctor 检查项已由 loadConfig 填充；状态事件存储概览来自 metrics/doctor
+export async function loadHealth(state) {
+  // doctor 检查项已由 loadConfig 填充；状态事件概览来自真实 metrics 计数
+  const d = await apiGet("/v1/metrics").catch(() => ({}));
   state.health.state = [
     {
       name: "事件总数",
-      detail:
-        String((state.metrics && state.metrics.toolCalls) ?? 0) + " 条运行事件",
+      detail: `${d.event_count ?? 0} 条运行事件 · ${d.decision_generated_count ?? 0} 决策 · ${d.action_started_count ?? 0} 动作`,
     },
   ];
-  return Promise.resolve();
 }
 
 /* ── 会话生命周期 / 对话 ── */

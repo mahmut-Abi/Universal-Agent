@@ -64,8 +64,8 @@ function statusLabel(s) { return (STATUS_MAP[normStatus(s)] || [null, s])[1] }
 
 /* ── 总览 ── */
 const metricCards = computed(() => [
-  { label: '会话总数', value: String(m.metrics.sessions), sub: '较上周 +12', trend: 'up' },
-  { label: '任务成功率', value: Math.round(m.metrics.successRate * 100) + '%', sub: '近 7 日', trend: 'up' },
+  { label: '会话总数', value: String(m.metrics.sessions), sub: 'GET /v1/sessions', trend: '' },
+  { label: '任务成功率', value: Math.round(m.metrics.successRate * 100) + '%', sub: 'goal_completion_rate', trend: 'up' },
   { label: '工具调用', value: String(m.metrics.toolCalls), sub: '累计', trend: '' },
   { label: '平均单次成本', value: '$' + m.metrics.avgCost.toFixed(3), sub: 'GET /v1/cost', trend: '' },
 ])
@@ -79,9 +79,8 @@ async function loadSessions() {
   } catch (e) { sessionsError.value = e.message }
   loadingSessions.value = false
 }
-const CHART_DATA = [14, 9, 17, 11, 22, 8, 19]
-const CHART_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-const chartMax = Math.max(...CHART_DATA)
+/* 近 7 日任务量：由真实会话 created_at 聚合（loadActivity 填充） */
+const activity = computed(() => m.activity || { values: [0, 0, 0, 0, 0, 0, 0], days: [], max: 0 })
 function doRefresh() { reload('overview') }
 
 /* ── 会话详情 ── */
@@ -462,14 +461,14 @@ onMounted(() => {
             </div>
           </div>
           <div class="card" data-od-id="runs-chart-card">
-            <div class="card-head"><h3>近 7 日任务量</h3><span class="tag">GET /v1/metrics</span></div>
+            <div class="card-head"><h3>近 7 日任务量</h3><span class="tag">GET /v1/sessions · created_at 聚合</span></div>
             <div class="bars" id="runs-bars">
-              <div v-for="(v, i) in CHART_DATA" :key="i" class="bar" :class="{ hot: v === chartMax }" tabindex="0" role="img"
-                :aria-label="CHART_DAYS[i] + '：' + v + ' 个任务'" :style="{ height: Math.round(v / chartMax * 100) + '%' }">
+              <div v-for="(v, i) in activity.values" :key="i" class="bar" :class="{ hot: v === activity.max && v > 0 }" tabindex="0" role="img"
+                :aria-label="activity.days[i] + '：' + v + ' 个任务'" :style="{ height: Math.round(v / (activity.max || 1) * 100) + '%' }">
                 <span class="tip">{{ v }} 个任务</span>
               </div>
             </div>
-            <div class="bars-x" id="runs-x"><span v-for="d in CHART_DAYS" :key="d">{{ d }}</span></div>
+            <div class="bars-x" id="runs-x"><span v-for="d in activity.days" :key="d">{{ d }}</span></div>
           </div>
         </div>
       </section>
@@ -876,7 +875,7 @@ onMounted(() => {
             <div id="audit-integrity">
               <div v-if="m.audit.integrity === 'ok'" class="check-row">
                 <span class="check-ico ck-ok">✓</span>
-                <div><div class="c-name">哈希链完整</div><div class="c-detail">0 缺口 · 4,208 节点 · GET /v1/audit/integrity</div></div>
+                <div><div class="c-name">哈希链完整</div><div class="c-detail">{{ m.audit.recordCount }} 条记录 · root {{ (m.audit.rootHash || '').slice(0, 12) }}… · GET /v1/audit/integrity</div></div>
               </div>
               <div v-else class="check-row">
                 <span class="check-ico ck-fail">!</span>
