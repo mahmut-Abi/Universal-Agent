@@ -4,6 +4,7 @@ import {
   API_BASE, createState, normStatus, STATUS_MAP, loadOverview, loadSessions as apiLoadSessions, loadMetrics, loadSessionDetail,
   loadConfig, loadEval, loadCluster, loadMemory, memoryAdd, memoryRemove,
   loadCost, loadLogs, loadK8sOps, loadEcosystem, loadAudit, loadMulti, loadHealth,
+  loadModelInfo, loadRuntimeConfig,
   createSession, sendMessage, pauseSession, resumeSession, cancelSession as apiCancelSession,
   profileCreate, profilePatch, profileRemove, putConfig, runEval,
 } from './api.js'
@@ -29,7 +30,10 @@ function toast(msg) {
 const MAIN_VIEWS = ['overview', 'session', 'config', 'chat']
 const VIEW_LOADERS = {
   overview: () => loadOverview(m),
-  config: () => loadConfig(m),
+  config: () =>
+    Promise.all([loadConfig(m), apiLoadSessions(m)]).then(() =>
+      Promise.all([loadModelInfo(m), loadRuntimeConfig(m)]),
+    ),
   eval: () => loadEval(m),
   cluster: () => loadCluster(m),
   memory: () => loadMemory(m),
@@ -183,15 +187,14 @@ function onChatKeydown(e) {
 
 /* ── 配置：Profile CRUD / Domains / Policy ── */
 const profileModal = reactive({ open: false, editing: null })
-const pmForm = reactive({ name: '', model: 'scripted', desc: '', domains: [] })
+const pmForm = reactive({ name: '', desc: '', domains: [] })
 const pmError = ref('')
 function openProfileModal(name) {
   profileModal.editing = name || null
   const p = name ? m.profiles.find(x => x.name === name) : null
   pmForm.name = name || ''
-  pmForm.model = (p && p.model) || 'scripted'
   pmForm.desc = p ? p.desc.replace(/^(K8s 运维|通用离线) Profile · /, '') : ''
-  pmForm.domains = m.domains.map(d => d.name)
+  pmForm.domains = m.profiles.find(x => x.name === name)?.domains?.length ? [...m.profiles.find(x => x.name === name).domains] : m.domains.map(d => d.name)
   pmError.value = ''
   profileModal.open = true
 }
@@ -206,7 +209,7 @@ function saveProfile() {
     name: n,
     version: (m.domains.find((d) => d.name === n) || {}).version || '0.1.0',
   }))
-  const payload = { name, model: pmForm.model, domains: domainObjs, desc: pmForm.desc.trim() || '自定义 Profile · ' + pmForm.domains.join('/') }
+  const payload = { name, domains: domainObjs, desc: pmForm.desc.trim() || '自定义 Profile · ' + pmForm.domains.join('/') }
   const op = profileModal.editing ? profilePatch(profileModal.editing, payload) : profileCreate(payload)
   op.then(() =>
     loadConfig(m).then(() => {
@@ -241,8 +244,9 @@ const policies = reactive([
   { key: 'dryrun-default', label: '默认 dry-run 预检', desc: '运行前对集群执行只读预检', on: true },
   { key: 'audit-chain', label: '审计哈希链', desc: '会话事件写入可校验的审计链', on: true },
 ])
+
 function togglePolicy() {
-  putConfig(policies).then(() => toast('已保存 · PUT /v1/config')).catch((e) => toast('保存失败：' + e.message))
+  putConfig(policies).then(() => toast('已保存为本地偏好（部署级 Policy 经 deployment.json 管理）'))
 }
 function toggleDomain(i, checked) {
   const d = m.domains[i]
@@ -564,6 +568,35 @@ onMounted(() => {
       <section v-show="view === 'config'" class="view" :class="{ active: view === 'config' }" id="view-config" role="tabpanel">
         <h2 class="viewtitle">配置与运行时</h2>
         <div class="grid g-config">
+          <div class="card" data-od-id="model-card">
+            <div class="card-head"><h3>模型配置 · 运行时</h3><span class="tag">GET /v1/config → model</span></div>
+            <template v-if="m.runtimeConfig.available && m.runtimeConfig.model">
+              <div class="switch-row"><div class="s-label">Provider</div><span class="num">{{ m.runtimeConfig.model.provider }}</span></div>
+              <div class="switch-row"><div class="s-label">模型名称</div><span class="num">{{ m.runtimeConfig.model.name }}</span></div>
+              <div v-if="m.runtimeConfig.model.endpoint" class="switch-row"><div class="s-label">Endpoint</div><span class="num" style="max-width:70%;word-break:break-all">{{ m.runtimeConfig.model.endpoint }}</span></div>
+              <div v-if="m.runtimeConfig.model.api_key_secret" class="switch-row"><div class="s-label">API Key Secret</div><span class="num">{{ m.runtimeConfig.model.api_key_secret }}</span></div>
+              <div class="switch-row"><div class="s-label">超时</div><span class="num">{{ m.runtimeConfig.model.timeout_seconds }}s</span></div>
+            </template>
+            <div v-else class="empty">
+              <div class="empty-title">运行时配置不可读</div>
+              GET /v1/config 返回 503（部署未启用 deployment config store）
+            </div>
+            <div style="font-size:12.5px;color:var(--muted);margin-top:12px">
+              修改途径（需重启 agentd 生效）：<code class="num">agent init --model-provider openai_chat_completions --model-name gpt-4o-mini --model-api-key-env OPENAI_API_KEY</code>
+              或在 profile-config 的 <code class="num">model</code> 段配置；API 不提供 model 写入。
+            </div>
+          </div>
+          <div class="card" data-od-id="model-observed-card">
+            <div class="card-head"><h3>实际生效的模型调用</h3><span class="tag">GET /v1/sessions/{'{id}'}/llm-calls</span></div>
+            <div v-if="!m.modelInfo.calls.length" class="empty">暂无 LLM 调用记录（当前为 scripted 离线模型时不产生真实调用）</div>
+            <div v-for="(c, i) in m.modelInfo.calls" :key="i" class="mono-row">
+              <span class="lbl">{{ c.provider }} / {{ c.model }}</span>
+              <span style="color:var(--muted)">{{ c.sid.slice(0, 18) }}…</span>
+              <span class="num">{{ c.tokens }} tok · ${{ c.cost.toFixed(4) }}</span>
+              <span class="meta">{{ c.at }}</span>
+            </div>
+          </div>
+
           <div class="card" data-od-id="doctor-card">
             <div class="card-head"><h3>运行时体检 · doctor</h3><span class="tag">GET /v1/doctor</span></div>
             <div id="doctor-list">
@@ -961,10 +994,6 @@ onMounted(() => {
           <div class="field" :class="{ invalid: !!pmError }"><label for="pf-name">名称</label>
             <input type="text" id="pf-name" v-model="pmForm.name" :disabled="!!profileModal.editing" placeholder="如 prod-readonly" autocomplete="off" @keydown.enter="saveProfile">
             <div class="f-err">{{ pmError }}</div></div>
-          <div class="field"><label for="pf-model">模型</label>
-            <select id="pf-model" v-model="pmForm.model">
-              <option>scripted</option><option>openai-gpt4o</option><option>anthropic-claude</option><option>local-ollama</option>
-            </select></div>
           <div class="field"><label>启用 Domains</label>
             <div id="pf-domains" style="display:grid;gap:6px">
               <label v-for="d in m.domains" :key="d.name" class="check-row" style="cursor:pointer">

@@ -63,6 +63,8 @@ export function createState() {
     ecosystem: { installed: [], catalog: [] },
     audit: { integrity: "", items: [], configHistory: [] },
     multi: { agents: [] },
+    modelInfo: { calls: [] },
+    runtimeConfig: { available: false, model: null, limits: null },
     activity: { values: [0, 0, 0, 0, 0, 0, 0], days: [], max: 0 },
     health: { checks: [], state: [] },
   };
@@ -227,6 +229,42 @@ function fmtTime(iso) {
   if (!iso) return "";
   const d = new Date(iso);
   return isNaN(d) ? String(iso) : d.toTimeString().slice(0, 8);
+}
+
+/* ── 模型配置：运行时级 RuntimeConfig.model（GET /v1/config 可读，API 不可写）──
+   provider ∈ scripted | json_http | openai_chat_completions | openai_responses。
+   修改途径：agent init --model-provider … / profile-config 的 model 段，重启后生效。 */
+export async function loadRuntimeConfig(state) {
+  try {
+    const d = await apiGet("/v1/config");
+    state.runtimeConfig = { available: true, model: d.model || null, limits: d.limits || null };
+  } catch {
+    // 部署未启用 deployment config store 时 GET /v1/config → 503：展示不可用态
+    state.runtimeConfig = { available: false, model: null, limits: null };
+  }
+}
+
+/* 实际生效的 provider/model 也可从会话 llm-calls 事件观测（最近 8 个会话） */
+export async function loadModelInfo(state) {
+  const calls = [];
+  for (const s of state.sessions.slice(0, 8)) {
+    try {
+      const d = await apiGet(`/v1/sessions/${s.id}/llm-calls`);
+      for (const c of pick(d, "calls")) {
+        calls.push({
+          sid: s.id,
+          provider: c.provider || "—",
+          model: c.model || "—",
+          tokens: c.total_tokens ?? 0,
+          cost: (c.estimated_cost_micros ?? 0) / 1e6,
+          at: fmtTime(c.occurred_at),
+        });
+      }
+    } catch {
+      /* 会话已过期或路由不可用：跳过 */
+    }
+  }
+  state.modelInfo.calls = calls;
 }
 
 export async function loadConfig(state) {
@@ -502,12 +540,12 @@ export function profileRemove(name) {
   return apiDelete(`/v1/profiles/${encodeURIComponent(name)}`);
 }
 
-/* Policy 偏好经 PUT /v1/config 下发（键不存在时由 agentd 校验层裁决） */
+/* Policy 偏好为客户端本地 UI 偏好；部署级 Policy 经 deployment.json /
+   PUT /v1/config {policies:[...完整 PolicyRule 规格]} 管理 */
 export function putConfig(policyPrefs) {
-  return api("/v1/config", {
-    method: "PUT",
-    body: { policy: Object.fromEntries(policyPrefs.map((p) => [p.key, p.on])) },
-  });
+  const prefs = Object.fromEntries(policyPrefs.map((p) => [p.key, p.on]));
+  localStorage.setItem("ua-policy-prefs", JSON.stringify(prefs));
+  return Promise.resolve(prefs);
 }
 
 export async function runEval(dataset) {
