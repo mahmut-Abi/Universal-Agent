@@ -112,9 +112,7 @@ def finish(session: SessionRuntimeState) -> Transition:
     # Continuation tasks (created by continue_session) have no required
     # criteria and are trivially completable by FINISH: the model decided
     # nothing more needs to be done for this chat turn.
-    is_continuation_task = str(state.current_task.id).startswith(
-        "task:user-followup-"
-    )
+    is_continuation_task = str(state.current_task.id).startswith("task:user-followup-")
     if is_continuation_task and not state.current_task.required_criteria:
         session.tasks.complete_current()
         state.goal.status = GoalStatus.COMPLETED

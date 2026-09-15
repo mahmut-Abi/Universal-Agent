@@ -4,6 +4,7 @@
 Usage:
   AGENTD_URL=http://10.18.127.182:8765 AGENTD_TOKEN=<token> python3 scripts/smoke_web_api.py
 """
+
 from __future__ import annotations
 
 import json
@@ -42,9 +43,7 @@ def call(method: str, path: str, body: dict[str, Any] | None = None) -> tuple[An
         status = "ERR"
         payload = {"msg": str(e)}
     keys = (
-        ",".join(list(payload.keys())[:4])
-        if isinstance(payload, dict)
-        else type(payload).__name__
+        ",".join(list(payload.keys())[:4]) if isinstance(payload, dict) else type(payload).__name__
     )
     results.append((method, path, status, keys))
     return status, payload
@@ -91,11 +90,17 @@ def main() -> int:
         call("GET", p)
 
     # ── session lifecycle ──
-    st, d = call("POST", "/v1/sessions", {
-        "goal": {"description": "web api smoke test",
-                 "success_criteria": [{"key": "done", "expected": True}]},
-        "compile_goal": True,
-    })
+    st, d = call(
+        "POST",
+        "/v1/sessions",
+        {
+            "goal": {
+                "description": "web api smoke test",
+                "success_criteria": [{"key": "done", "expected": True}],
+            },
+            "compile_goal": True,
+        },
+    )
     sid = extract_id(d, "session", "session_id", "id")
     if sid:
         call("GET", f"/v1/sessions/{sid}")
@@ -109,18 +114,35 @@ def main() -> int:
         print(f"!! session create failed ({st}); skipping session-scoped endpoints")
 
     # ── profile CRUD ──
-    call("POST", "/v1/profiles", {"name": "smoke-t", "version": "0.1.0",
-                                  "description": "smoke",
-                                  "domains": [{"name": "local", "version": "0.1.0"}]})
-    call("PATCH", "/v1/profiles/smoke-t", {"description": "smoke2",
-                                          "domains": [{"name": "local", "version": "0.1.0"}]})
+    call(
+        "POST",
+        "/v1/profiles",
+        {
+            "name": "smoke-t",
+            "version": "0.1.0",
+            "description": "smoke",
+            "domains": [{"name": "local", "version": "0.1.0"}],
+        },
+    )
+    call(
+        "PATCH",
+        "/v1/profiles/smoke-t",
+        {"description": "smoke2", "domains": [{"name": "local", "version": "0.1.0"}]},
+    )
     call("DELETE", "/v1/profiles/smoke-t")
 
     # ── memory add/delete (agentd: kind/subject/content/scope/confidence) ──
-    st, d = call("POST", "/v1/memory", {
-        "kind": "semantic", "subject": "smoke", "content": "smoke memory text",
-        "scope": "local", "confidence": 0.9,
-    })
+    st, d = call(
+        "POST",
+        "/v1/memory",
+        {
+            "kind": "semantic",
+            "subject": "smoke",
+            "content": "smoke memory text",
+            "scope": "local",
+            "confidence": 0.9,
+        },
+    )
     mid = extract_id(d, "memory", "memory_id", "id")
     if mid:
         call("DELETE", f"/v1/memory/{mid}")
