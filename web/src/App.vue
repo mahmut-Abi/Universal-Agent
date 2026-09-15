@@ -344,8 +344,9 @@ onMounted(() => {
   const allViews = MAIN_VIEWS.concat(Object.keys(OPS_VIEWS))
   view.value = allViews.includes(saved) ? saved : 'overview'
   loadedViews.add(view.value)
-  ;(VIEW_LOADERS[view.value] || loadOverview(m))()
-    .catch((e) => { sessionsError.value = e.message })
+  const loader = VIEW_LOADERS[view.value]
+  const run = loader ? loader() : loadOverview(m)
+  run.catch((e) => { sessionsError.value = e.message })
 })
 </script>
 
