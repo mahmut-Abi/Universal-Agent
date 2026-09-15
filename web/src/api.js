@@ -491,12 +491,20 @@ export async function loadMulti(state) {
 }
 
 export async function loadHealth(state) {
-  // doctor 检查项已由 loadConfig 填充；状态事件概览来自真实 metrics 计数
-  const d = await apiGet("/v1/metrics").catch(() => ({}));
+  // doctor 检查项已由 loadConfig 填充；状态事件存储概览来自真实 metrics + /v1/config store 段
+  const [metrics, cfg] = await Promise.all([
+    apiGet("/v1/metrics").catch(() => ({})),
+    apiGet("/v1/config").catch(() => ({})),
+  ]);
+  const store = (cfg && cfg.store) || {};
   state.health.state = [
     {
+      name: "状态事件存储",
+      detail: `${store.backend || "未知"}${store.path ? " · " + store.path : ""}`,
+    },
+    {
       name: "事件总数",
-      detail: `${d.event_count ?? 0} 条运行事件 · ${d.decision_generated_count ?? 0} 决策 · ${d.action_started_count ?? 0} 动作`,
+      detail: `${metrics.event_count ?? 0} 条运行事件 · ${metrics.decision_generated_count ?? 0} 决策 · ${metrics.action_started_count ?? 0} 动作`,
     },
   ];
 }
