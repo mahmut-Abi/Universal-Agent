@@ -10,6 +10,9 @@ I7  Recovery must pass through Policy.
 I8  Recovery must be bounded.
 I9  Evidence must have provenance.
 I10 Session resume cannot bypass Policy or confirmation.
+
+Plus the spec §12 approval/action binding proof: a confirmation authorizes
+exactly its bound proposal - never a different mutation on the same target.
 """
 
 from __future__ import annotations
@@ -208,8 +211,73 @@ async def test_i4_confirmation_boundary_blocks_mutation_until_approved() -> None
     assert backend.mutation_calls[0][0] == "restart_workload"
 
 
+def scale_decision() -> Decision:
+    return Decision(
+        DecisionType.EXECUTE,
+        "Scale workload",
+        capability="scale_workload",
+        target="deployment/checkout",
+        arguments=immutable_json({"name": "checkout", "namespace": "default", "replicas": 3}),
+        expected_observations=("mutation_applied",),
+    )
+
+
 def finish_after_restart() -> Decision:
     return Decision(DecisionType.FINISH, "Remediation verified")
+
+
+# §12 approval/action binding: a confirmation is bound to its proposed action.
+# Approving the restart executes ONLY the bound restart; a follow-up scale
+# decision must not inherit the approval - it re-enters Policy and pauses for
+# its own confirmation. Executing it later must not re-run the restart either.
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_confirmation_binding_approval_does_not_authorize_other_mutations() -> None:
+    backend = CountingBackend()
+    decisions = [
+        inspect_decision(),
+        restart_decision(),
+        scale_decision(),
+        inspect_decision(),
+        finish_after_restart(),
+    ]
+    runtime, sink = build_runtime(backend, decisions)
+
+    waiting = await runtime.run(*health_goal())
+    assert waiting.status is ExecutionStatus.WAITING
+    assert backend.mutation_calls == [], "no mutation before approval"
+
+    resumed = await runtime.resume(waiting.session_id, confirmed=True)
+
+    # Exactly the bound restart proposal executed, with its bound arguments -
+    # not a different capability or different target.
+    assert [capability for capability, _args in backend.mutation_calls] == ["restart_workload"]
+    assert backend.mutation_calls[0][1] == immutable_json(
+        {"name": "checkout", "namespace": "default"}
+    )
+
+    # The follow-up scale did NOT inherit the restart approval: it re-entered
+    # Policy and paused for its own confirmation.
+    scale_checks = [
+        event
+        for event in sink.events
+        if event.type == "PolicyChecked" and event.data.get("capability") == "scale_workload"
+    ]
+    assert scale_checks, "post-approval scale decision must be policy-checked"
+    assert all(event.data.get("effect") == "require_confirmation" for event in scale_checks), (
+        "the scale approval must be independent of the restart approval"
+    )
+    assert resumed.status is ExecutionStatus.WAITING
+    assert [capability for capability, _args in backend.mutation_calls] == ["restart_workload"]
+
+    # Approving the second proposal executes the scale (its own binding) and
+    # never re-executes the already-approved restart.
+    completed = await runtime.resume(resumed.session_id, confirmed=True)
+    assert [capability for capability, _args in backend.mutation_calls] == [
+        "restart_workload",
+        "scale_workload",
+    ]
+    assert completed.status is ExecutionStatus.COMPLETED
 
 
 # I6: tool success does not imply task success - a mutation that leaves the
