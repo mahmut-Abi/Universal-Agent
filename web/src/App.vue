@@ -226,9 +226,21 @@ function saveProfile() {
       profileModal.open = false
       toast((profileModal.editing ? 'Profile 已更新 · PATCH /v1/profiles/' + name : 'Profile 已创建 · POST /v1/profiles') + '（需重启/重载 agentd 后生效）')
     }))
-    .catch((e) => toast('保存失败：' + e.message))
+    .catch((e) => toast(profileWriteError(e, '保存失败')))
 }
 const delModal = reactive({ open: false, name: null })
+/* Profile 写入错误分类：启动配置加载的 profile 不在 --profiles-dir 可编辑存储中 →
+   写平面 404 "profile config not found"；builtin 拒改 → "built-in"。 */
+function profileWriteError(e, prefix) {
+  const msg = e.message || String(e)
+  if (msg.includes('profile config not found')) {
+    return prefix + '：该 Profile 来自启动配置（profile-config / 内置），不在 --profiles-dir 可编辑存储中；请修改启动配置后重启 agentd'
+  }
+  if (msg.includes('built-in')) {
+    return prefix + '：内置 Profile 由部署方所有，不能通过配置 API 修改或删除'
+  }
+  return prefix + '：' + msg
+}
 const delDetail = computed(() => {
   if (!delModal.name) return ''
   const p = m.profiles.find(x => x.name === delModal.name)
@@ -240,7 +252,7 @@ function confirmDelete() {
   profileRemove(delModal.name)
     .then(() => loadConfig(m))
     .then(() => { toast('已删除 · DELETE /v1/profiles/' + delModal.name); delModal.open = false; delModal.name = null })
-    .catch((e) => toast('删除失败：' + e.message))
+    .catch((e) => toast(profileWriteError(e, '删除失败')))
 }
 const domainModal = reactive({ open: false, index: -1 })
 const domainDetail = computed(() => domainModal.index >= 0 ? m.domains[domainModal.index] : null)
