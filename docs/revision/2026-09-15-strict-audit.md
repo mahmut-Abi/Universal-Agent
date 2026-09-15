@@ -79,20 +79,18 @@ P0 spec §1 也明文禁止在 P0 期间新增这些能力——至少要有一�
 
 ## 🟡 应处理的问题
 
-1. **ErrorCode 分类缺口（AGENTS.md §9）**：
-   `core/models.py::ErrorCode` 缺少 `permission_denied`、`user_required`、`transient`、
-   `dependency_missing`。现有 `POLICY_DENIED`/`CONFIRMATION_REJECTED`/`TIMEOUT`/
-   `TOOL_FAILURE`/`INVALID_STATE` 覆盖了大部分场景，但 §9 分类表未完整映射，
-   recovery 规则因此少了几类确定性分支。
-2. **Facade 与 CLI 构建逻辑重复**（A1 的直接温床）：
-   两处 `build_configured_service` 语义已经分叉，属于 P0 spec §1 允许的
-   "合并重复 abstraction" 范畴，应收敛。
-3. **P1 spec M9（Approval/Action binding 显式 negative 测试）未见独立测试**：
-   2026-09-13 审计指出"确认 restart 不能执行 scale checkout"需要显式断言；
-   `test_p1_safety_invariants.py`（I1–I10 集中覆盖）里没有对应的 binding 交叉断言，建议补一条。
-4. **Coverage 无门槛**：`pyproject.toml` 注明 "Report-only for now: no enforcement gate"。
-   约 86% 分支覆盖率是不错的基线，但建议按模块设定 baseline gate，
-   防止 Facade 这类盲区再次出现（A1 正是"测试只覆盖 kubernetes 路径"的直接后果）。
+1. **ErrorCode 分类缺口（AGENTS.md §9）** —— ✅ 已修复（2026-09-15，UA-AUDIT-004）：
+   `ErrorCode` 新增 `TRANSIENT`/`PERMISSION_DENIED`/`DEPENDENCY_MISSING`/`USER_REQUIRED`，
+   `classify_failure` 完成映射，新增确定性 `user_required_rule`，含测试。
+2. **Facade 与 CLI 构建逻辑重复**（A1 的直接温床）—— ✅ 已修复（2026-09-15，UA-AUDIT-001/002）：
+   dispatch 收敛到 `domains/profile_service.py` 单一 composition 点，facade/CLI/agentd 三处均委托。
+3. **P1 spec M9（Approval/Action binding 显式 negative 测试）未见独立测试** —— ✅ 已修复（2026-09-15，UA-AUDIT-005）：
+   `test_confirmation_binding_approval_does_not_authorize_other_mutations`
+   加入 I1–I10 invariant suite，验证批准绑定到其提案、不可转移。
+4. **Coverage 无门槛** —— ✅ 已修复（2026-09-15，UA-AUDIT-006）：
+   `[tool.coverage.report] fail_under = 86` ratchet gate（基线实测 86.7%，2026-09-15），
+   CI coverage 步骤成为硬门，只升不降；低覆盖模块（facade.py 66%、tui_app.py 64%、sdk.py 0%）
+   可从 coverage.json 定位后续补测。
 
 ---
 

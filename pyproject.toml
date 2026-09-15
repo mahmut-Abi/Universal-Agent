@@ -107,7 +107,11 @@ source = [
 branch = true
 
 [tool.coverage.report]
-# Report-only for now: no enforcement gate until coverage baselines are known.
+# Ratchet gate (UA-AUDIT-006): fail_under is the documented baseline, measured
+# at 86.7% combined line+branch coverage on 2026-09-15 (25.9k statements).
+# Raise it when coverage improves; never lower it. Local runs bypass the gate
+# with `--cov-fail-under=0` if needed.
+fail_under = 86
 show_missing = false
 skip_empty = true
 precision = 1
