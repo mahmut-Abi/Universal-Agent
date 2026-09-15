@@ -293,8 +293,11 @@ const auditFiltered = computed(() => m.audit.items.filter(x =>
 
 /* ── 多智能体拓扑（原 SVG 绘制逻辑改为计算几何） ── */
 const topo = computed(() => {
-  const hub = m.multi.agents.find(a => a.kind === 'coordinator')
-  const workers = m.multi.agents.filter(a => a.kind === 'worker')
+  const hub = m.multi.agents.find((a) => a.kind === 'coordinator')
+  const workers = m.multi.agents.filter((a) => a.kind === 'worker')
+  if (!hub) {
+    return { boxes: [], edges: [], summary: '多智能体运行时未启用或数据未加载（GET /v1/multi-agent）' }
+  }
   const hx = 60, hy = 105, hw = 170, hh = 64
   const boxes = workers.map((w, i) => ({ x: 460, y: 30 + i * 88, w: 170, h: 64, hub: false, label: w.name, sub: w.role }))
   boxes.unshift({ x: hx, y: hy, w: hw, h: hh, hub: true, label: hub.name, sub: hub.role + ' · 中心调度' })
