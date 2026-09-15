@@ -741,6 +741,52 @@ A Domain should not require changes to the Kernel source code.
 
 If adding a Domain requires editing Kernel `if/elif` branches, the architecture is wrong.
 
+## Domain Contribution Contracts (host surfaces)
+
+Domains own their host-facing features. The Kernel and host packages (CLI,
+agentd) must never name or import a concrete domain; instead, domains
+contribute host surfaces through entry-point groups, with the contracts
+defined in the kernel (`universal_agent/host_contracts.py`):
+
+```text
+domain -> kernel contracts (host_contracts.py) <- host (CLI / agentd)
+```
+
+- `universal_agent.cli_contributions` — advanced commands, `agent init`
+  backend options, embedded dispatch, remote thin-client forwarding,
+  probe-service builders
+- `universal_agent.agentd_routes` — HTTP routes + OpenAPI metadata
+- `universal_agent.default_domains` — no-profile default services
+- `universal_agent.evaluation_suites` — named evaluation suites
+
+Rules:
+
+- Concrete domain feature code lives only in `universal_agent/domains/<name>/`.
+- `pyproject.toml` entry-point registrations are the only place a domain
+  name appears outside its own package.
+- Client packages (CLI, TUI) and kernel layers must not import
+  `universal_agent.agentd` application adapters; shared read-model
+  projections live in the kernel service layer.
+- These boundaries are enforced by `tests/unit/test_package_boundaries.py`;
+  any new exception must be added to the sanctioned seam ledger with a
+  rationale.
+
+## Client/Server Boundary
+
+agentd is the server; the CLI and TUI are clients. Client machines point at
+a remote agentd via config, and thin-client mode is the default whenever a
+server target is configured:
+
+- target resolution order: `--api-url` flag > `AGENT_API_URL` env >
+  `server.url` in the user config file; the embedded runtime is only the
+  local fallback
+- credentials are referenced by environment-variable *name* in config files
+  (e.g. `server.auth_token_env`, `store.url_env`); secret values never live
+  in config files or config projections
+- the interactive web UI is the standalone `web/` Node.js service (Docker
+  Compose `web` tier) consuming the agentd HTTP API only — never embedded
+  in the agentd process
+
 ---
 
 # 12. API Design
@@ -776,6 +822,19 @@ AgentProfile
 RuntimeService
 ```
 
+Stable host-boundary modules (2026-09-15):
+
+- `universal_agent.host_contracts` — domain contribution contracts
+  (CLI/agentd routes/default domains/eval suites) discovered via entry points
+- `universal_agent.configuration` — kernel-wide config types (RuntimeConfig,
+  StoreConfig, DomainConfig, ...)
+- `universal_agent.eventstream` — event-sink/reader/watcher protocols and
+  event-stream helpers (neutral to runtime and persistence layers)
+- `universal_agent.domains.profile_service` — the single profile →
+  RuntimeService composition root (domain packages -> local -> kubernetes)
+- `universal_agent.service.*` — shared read-model projections
+  (timeline/world_explorer/evidence_drilldown) consumed by agentd and clients
+
 Do not prematurely over-abstract.
 
 Only introduce an interface when it represents a real architectural boundary.
@@ -801,6 +860,13 @@ Implement incrementally.
 > to bug fixes, security fixes, and test upkeep until the core loop is proven
 > against real tasks (§16 metrics). Rationale and alternatives considered:
 > `docs/revision/2026-09-15-agents-md-scope-reconciliation.md`.
+>
+> Deployment notes (2026-09-15): agentd ships as a Docker image (compose
+> `agentd` service, optional `postgres` profile for durable storage); the
+> interactive web UI is the standalone `web/` Node.js tier (compose `web`
+> service) — an explicit author exception to the P5 freeze, recorded in the
+> reconciliation doc; client machines use the thin-client config resolution
+> above.
 
 ## P0
 
@@ -1299,6 +1365,9 @@ It should have:
 - typed contracts
 - documentation where appropriate
 - no architectural boundary violations
+- boundary guard tests updated when package/layer boundaries change
+  (`tests/unit/test_package_boundaries.py`: client/kernel seams, kernel
+  layering ledger, domain-contribution contracts)
 
 For Agent behavior, also verify:
 
