@@ -34,7 +34,7 @@ from universal_agent.goals import DefaultGoalCompiler, GoalCompilation, GoalComp
 from universal_agent.model import ModelAdapter, model_usage
 from universal_agent.model.errors import JsonHttpModelError
 from universal_agent.model.router import ModelRouter, ModelSelectionContext
-from universal_agent.recovery import Failure, RecoveryStrategy, classify_failure
+from universal_agent.recovery import Failure, classify_failure
 from universal_agent.runtime.actions import (
     ActionExecutor,
     ActionObserved,
@@ -53,6 +53,11 @@ from universal_agent.runtime.emission import EventEmitter
 from universal_agent.runtime.initial_state import seed_initial_state
 from universal_agent.runtime.memory import MemoryConsultant
 from universal_agent.runtime.processing import ObservationProcessor, ObservationRoutingError
+from universal_agent.runtime.recovery_planning import (
+    plan_recovery,
+    plan_recovery_for_failure,
+    plan_recovery_for_pending,
+)
 from universal_agent.runtime.session import (
     SessionHydrationError,
     SessionRuntimeState,
@@ -902,22 +907,12 @@ class AgentRuntime:
         session: SessionRuntimeState,
         outcome: ActionObserved,
     ) -> ExecutionResult | Decision:
-        state = session.state
-        pending = outcome.pending
-        observation = outcome.observation
-        error_code = observation.error_code or ErrorCode.TOOL_FAILURE
-        return await self._plan_recovery_for_failure(
+        return await plan_recovery(
+            self._components,
+            self._events,
+            self._settle,
             session,
             outcome,
-            Failure(
-                state.current_task.id,
-                error_code,
-                classify_failure(error_code),
-                observation.error or "tool execution failed",
-                pending.capability,
-                pending.arguments,
-                pending.target,
-            ),
         )
 
     async def _plan_recovery_for_failure(
@@ -926,7 +921,14 @@ class AgentRuntime:
         outcome: ActionObserved,
         failure: Failure,
     ) -> ExecutionResult | Decision:
-        return await self._plan_recovery_for_pending(session, outcome.pending, failure)
+        return await plan_recovery_for_failure(
+            self._components,
+            self._events,
+            self._settle,
+            session,
+            outcome,
+            failure,
+        )
 
     async def _plan_recovery_for_pending(
         self,
@@ -934,46 +936,14 @@ class AgentRuntime:
         pending: PendingAction,
         failure: Failure,
     ) -> ExecutionResult | Decision:
-        state = session.state
-        recovery, key = self._components.recovery_manager.decide(
-            failure,
-            state.recovery_attempts,
-        )
-        if key:
-            state.recovery_attempts[key] = recovery.attempt
-        # Persist the spent budget before retrying so a crash cannot reset it.
-        await self._events.commit_session_event(
+        return await plan_recovery_for_pending(
+            self._components,
+            self._events,
+            self._settle,
             session,
-            self._events.runtime_event(
-                state,
-                "RecoveryExhausted" if recovery.exhausted else "RecoveryPlanned",
-                action_id=pending.action_id,
-                data={"strategy": recovery.strategy.value, "rule": recovery.rule_name},
-            ),
+            pending,
+            failure,
         )
-        if recovery.strategy in {
-            RecoveryStrategy.RETRY_ACTION,
-            RecoveryStrategy.REOBSERVE,
-            RecoveryStrategy.ALTERNATIVE_CAPABILITY,
-        }:
-            return Decision(
-                DecisionType.EXECUTE,
-                f"recovery via {recovery.strategy.value}",
-                capability=recovery.capability or pending.capability,
-                target=pending.target,
-                arguments=pending.arguments,
-                expected_observations=("recovery",),
-            )
-        if recovery.strategy is RecoveryStrategy.ASK_USER:
-            return await self._settle(
-                session,
-                pause_transition(
-                    session,
-                    failure.reason,
-                    user_message=f"Recovery requires user input: {failure.reason}",
-                ),
-            )
-        return await self._settle(session, fail(session, failure.error_code, failure.reason))
 
     async def _settle(
         self,
