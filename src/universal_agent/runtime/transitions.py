@@ -109,6 +109,24 @@ def finish(session: SessionRuntimeState) -> Transition:
     The model may ask to finish at any time; only evaluator state decides.
     """
     state = session.state
+    # Continuation tasks (created by continue_session) have no required
+    # criteria and are trivially completable by FINISH: the model decided
+    # nothing more needs to be done for this chat turn.
+    is_continuation_task = str(state.current_task.id).startswith(
+        "task:user-followup-"
+    )
+    if is_continuation_task and not state.current_task.required_criteria:
+        session.tasks.complete_current()
+        state.goal.status = GoalStatus.COMPLETED
+        state.termination_reason = "session continued; model finished the turn"
+        return Transition(
+            build_result(
+                state,
+                ExecutionStatus.COMPLETED,
+                state.termination_reason,
+            ),
+            "GoalCompleted",
+        )
     evaluation = state.latest_evaluation
     if (
         session.tasks.has_unfinished()
