@@ -7,7 +7,7 @@ from typing import Protocol
 
 from universal_agent.core import EventId, RuntimeEvent, SessionId
 from universal_agent.core.config_validation import parse_positive_float, parse_positive_int
-from universal_agent.runtime.events import EventReader, heartbeat_event
+from universal_agent.eventstream import EventReader, heartbeat_event
 
 
 @dataclass(frozen=True, slots=True)

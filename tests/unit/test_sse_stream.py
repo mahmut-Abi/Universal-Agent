@@ -16,8 +16,8 @@ from universal_agent.core import (
     TaskId,
     utc_now,
 )
+from universal_agent.eventstream import filter_events
 from universal_agent.persistence import FileEventStore, SQLiteEventStore
-from universal_agent.runtime.events import filter_events
 
 
 def _make_event(

@@ -50,7 +50,7 @@ from universal_agent.service.views import (
 )
 
 if TYPE_CHECKING:
-    from universal_agent.host.config import RuntimeConfig
+    from universal_agent.configuration import RuntimeConfig
 
 
 class CatalogService:

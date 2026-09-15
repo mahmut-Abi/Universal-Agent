@@ -5,8 +5,8 @@ import asyncio
 import pytest
 
 from universal_agent.core import EventId, GoalId, RuntimeEvent, SessionId, TaskId, utc_now
+from universal_agent.eventstream import InMemoryEventSink
 from universal_agent.runtime.event_stream import BrokerBackedEventStream, InMemoryEventSignalBroker
-from universal_agent.runtime.events import InMemoryEventSink
 
 pytestmark = pytest.mark.asyncio
 

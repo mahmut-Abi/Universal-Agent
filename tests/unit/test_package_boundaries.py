@@ -200,14 +200,8 @@ _LAYER_RANKS = {
 
 # Sanctioned upward seams, each with its rationale. Keep minimal.
 _SANCTIONED_UPWARD = {
-    # UA-D1 (debt): RuntimeConfig/DomainConfig live in host.config; profile
-    # (base layer) consumes them. Remediation: move config types to a neutral
-    # module; host.config becomes a compat shim.
-    ("profile", "host"),
-    # UA-D2 (debt): event-stream helpers (filter_events/poll_event_reader)
-    # live in runtime.events; persistence backends consume them.
-    # Remediation: extract a neutral event-stream module.
-    ("persistence", "runtime"),
+    # UA-D2 resolved (2026-09-15): event-stream helpers extracted to the
+    # neutral universal_agent.eventstream module; persistence imports it.
     # Resource-lock/idempotency registries consumed by the action executor.
     ("runtime", "coordination"),
     # RuntimeBuilder assembles evaluators and lock registries into components.

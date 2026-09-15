@@ -60,7 +60,7 @@ from universal_agent.service.views import DistributedPendingActionSchedulingResu
 from universal_agent.state import StateNotFoundError
 
 if TYPE_CHECKING:
-    from universal_agent.host.config import RuntimeConfig
+    from universal_agent.configuration import RuntimeConfig
 
 
 _DISTRIBUTED_SESSION_LOCK_TTL_SECONDS = 300.0
@@ -599,7 +599,8 @@ class DistributedRuntimeController:
             return WorkHandlerResult.failed("tool_action work item missing task_id", retry=False)
         if item.action_id is None:
             return WorkHandlerResult.failed("tool_action work item missing action_id", retry=False)
-        if item.payload.get("confirmed") is not True:
+        confirmed = item.payload.get("confirmed")
+        if not isinstance(confirmed, bool) or not confirmed:
             return WorkHandlerResult.failed(
                 "tool_action work item requires confirmed=true",
                 retry=False,

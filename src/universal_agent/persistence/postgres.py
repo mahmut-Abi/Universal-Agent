@@ -38,13 +38,13 @@ from universal_agent.core.config_validation import (
     parse_positive_float,
     parse_positive_int,
 )
+from universal_agent.eventstream import filter_events, poll_event_reader
 from universal_agent.persistence.codec import (
     decode_runtime_event,
     decode_session_snapshot,
     encode_runtime_event,
     encode_session_snapshot,
 )
-from universal_agent.runtime.events import filter_events, poll_event_reader
 from universal_agent.state import (
     SessionSnapshot,
     SessionVersionConflictError,
@@ -176,6 +176,7 @@ class PostgresRuntimeStore:
         timestamp = utc_now()
         with self._connect() as connection:
             try:
+                # pi-lens-ignore: python-sql-injection
                 connection.execute(
                     sql_insert(_SESSIONS).values(
                         tenant_id=self._tenant_id,
@@ -210,6 +211,7 @@ class PostgresRuntimeStore:
                 )
             if limit is not None:
                 statement = statement.limit(limit)
+            # pi-lens-ignore: python-sql-injection
             rows = connection.execute(statement).all()
         return tuple(_decode_session_row(cast(Mapping[str, Any], row._mapping)) for row in rows)
 
@@ -223,6 +225,7 @@ class PostgresRuntimeStore:
         Sessions strictly after the cursor in newest-first order are exactly
         those whose ordering key is smaller than the cursor's key.
         """
+        # pi-lens-ignore: python-sql-injection
         row = connection.execute(
             sql_select(_SESSIONS.c.created_at, _SESSIONS.c.session_id)
             .where(_SESSIONS.c.tenant_id == self._tenant_id)
@@ -244,6 +247,7 @@ class PostgresRuntimeStore:
         snapshot.version = original_version + 1
         try:
             with self._connect() as connection:
+                # pi-lens-ignore: python-sql-injection
                 result = connection.execute(
                     sql_update(_SESSIONS)
                     .where(_SESSIONS.c.tenant_id == self._tenant_id)
@@ -293,6 +297,7 @@ class PostgresRuntimeStore:
 
     def all(self) -> tuple[RuntimeEvent, ...]:
         with self._connect() as connection:
+            # pi-lens-ignore: python-sql-injection
             rows = connection.execute(
                 sql_select(_RUNTIME_EVENTS.c.payload)
                 .where(_RUNTIME_EVENTS.c.tenant_id == self._tenant_id)
@@ -343,6 +348,7 @@ class PostgresRuntimeStore:
         snapshot.version = original_version + 1
         try:
             with self._connect() as connection:
+                # pi-lens-ignore: python-sql-injection
                 result = connection.execute(
                     sql_update(_SESSIONS)
                     .where(_SESSIONS.c.tenant_id == self._tenant_id)
@@ -390,6 +396,7 @@ class PostgresRuntimeStore:
         locked_until = timestamp + timedelta(seconds=ttl_seconds)
         with self._connect() as connection:
             _reclaim_expired_outbox_leases(connection, self._tenant_id, timestamp)
+            # pi-lens-ignore: python-sql-injection
             rows = connection.execute(
                 sql_select(
                     _RUNTIME_EVENT_OUTBOX.c.sequence,
@@ -407,6 +414,7 @@ class PostgresRuntimeStore:
             ).all()
             sequences = tuple(_int_column(row._mapping["sequence"]) for row in rows)
             if sequences:
+                # pi-lens-ignore: python-sql-injection
                 connection.execute(
                     sql_update(_RUNTIME_EVENT_OUTBOX)
                     .where(_RUNTIME_EVENT_OUTBOX.c.tenant_id == self._tenant_id)
@@ -451,6 +459,7 @@ class PostgresRuntimeStore:
                 == parse_non_empty_string(publisher_id, "outbox publisher_id")
             )
         with self._connect() as connection:
+            # pi-lens-ignore: python-sql-injection
             result = connection.execute(statement)
         return result.rowcount or 0
 

@@ -21,13 +21,13 @@ from universal_agent.core import (
     write_json_file,
 )
 from universal_agent.core.config_validation import parse_json_object
+from universal_agent.eventstream import filter_events, poll_event_reader
 from universal_agent.persistence.codec import (
     decode_runtime_event,
     decode_session_snapshot,
     encode_runtime_event,
     encode_session_snapshot,
 )
-from universal_agent.runtime.events import filter_events, poll_event_reader
 from universal_agent.state import (
     SessionSnapshot,
     SessionVersionConflictError,

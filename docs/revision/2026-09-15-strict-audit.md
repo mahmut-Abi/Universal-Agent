@@ -171,18 +171,32 @@ kernel 内部分层现已由 `test_kernel_layering_has_no_new_upward_imports` +
 `test_sanctioned_layering_seams_still_exist`（`tests/unit/test_package_boundaries.py`）
 强制：16 条已批准的向上依赖 seam 全部登记理由，新增未登记 seam 会测试失败。
 
-两笔**既有**分层债（非本次重构引入）：
+两笔**既有**分层债（非本次重构引入）—— ✅ 均已修复（2026-09-15）：
 
-**UA-D1：`profile`（基础层）→ `host.config`（组装层）**
+**UA-D1 ✅：`profile`（基础层）→ `host.config`（组装层）**
+
 - `profile/config.py` 消费 `RuntimeConfig`/`DomainConfig`，而这些配置类型定义在
   `host/config.py`（组装层）—— 基础层反向依赖组装层；
-- 修复方案：配置类型下沉到中立模块（如 `universal_agent/configuration.py`），
-  `host/config.py` 保留兼容 re-export；影响面 ~15 个消费文件（service×5、domains×5 等）。
+- ✅ 已修复：配置类型下沉到根级 `universal_agent/configuration.py`（仅依赖 core），
+  `host/config.py` 变为兼容 re-export shim；全部 11 处消费方迁移到新路径（含 profile 的 3 处）。
 
-**UA-D2：`persistence`（基础层）→ `runtime.events`（运行时层）**
+**UA-D2 ✅：`persistence`（基础层）→ `runtime.events`（运行时层）**
+
 - file/sqlite/postgres 三个存储后端导入 `runtime.events` 的事件流助手
   （`filter_events`/`poll_event_reader`/`EventCursorError`）—— 存储层反向依赖运行时层；
-- 修复方案：把 `runtime/events.py`（203 行，纯事件流读模型助手）抽出为中立模块
-  （如 `universal_agent/eventstream.py`），14 个消费文件机械更新，`runtime` 保留 re-export。
+- ✅ 已修复：`runtime/events.py` 抽出为根级 `universal_agent/eventstream.py`
+  （EventSink/EventReader/EventWatcher 协议、InMemoryEventSink、filter_events/poll_event_reader/
+  heartbeat_event），全部消费方（runtime×4、persistence×3、agentd、evaluation、operations、
+  CLI、测试）机械迁移；`runtime/__init__` 保留公开名的兼容 re-export。
 
 两者均为机械性模块移动 + import 更新，风险低但影响面广，建议作为独立变更执行。
+
+### UA-D1/D2 修复结果（2026-09-15）
+
+- 新中立模块：`universal_agent/configuration.py`（配置类型，仅依赖 core）、
+  `universal_agent/eventstream.py`（事件流协议与助手，仅依赖 core）
+- `host/config.py` 保留为兼容 re-export shim；`runtime/events.py` 移除，
+  `runtime/__init__` 保留公开名 re-export
+- sanctioned seam 台账同步收缩：`profile -> host`、`persistence -> runtime` 已移除
+  （stale-seam 守卫测试强制台账真实性）
+- 全量套件 exit 0；ruff + mypy --strict（421 文件）全绿

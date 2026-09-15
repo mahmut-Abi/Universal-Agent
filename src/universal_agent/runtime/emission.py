@@ -13,8 +13,8 @@ from universal_agent.core import (
     RuntimeEvent,
     TaskStatus,
 )
+from universal_agent.eventstream import EventSink
 from universal_agent.persistence.codec import encode_session_snapshot
-from universal_agent.runtime.events import EventSink
 from universal_agent.runtime.session import SessionRuntimeState
 from universal_agent.runtime.transitions import build_result
 from universal_agent.security import redact_sensitive_mapping

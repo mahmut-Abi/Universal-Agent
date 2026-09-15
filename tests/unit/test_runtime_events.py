@@ -4,7 +4,7 @@ from typing import cast
 
 import pytest
 
-from universal_agent.runtime.events import filter_events
+from universal_agent.eventstream import filter_events
 
 
 @pytest.mark.unit

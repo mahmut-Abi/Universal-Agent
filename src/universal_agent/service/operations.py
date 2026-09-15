@@ -39,7 +39,7 @@ from universal_agent.service.state_event_repair import (
 from universal_agent.service.views import StateEventRepairReport
 
 if TYPE_CHECKING:
-    from universal_agent.host.config import RuntimeConfig
+    from universal_agent.configuration import RuntimeConfig
     from universal_agent.service.catalog_service import CatalogService
 
 

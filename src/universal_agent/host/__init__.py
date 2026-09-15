@@ -1,4 +1,4 @@
-from universal_agent.host.config import (
+from universal_agent.configuration import (
     DomainConfig,
     ModelConfig,
     ModelProvider,

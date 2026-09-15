@@ -15,8 +15,8 @@ from universal_agent.core import (
     Task,
     TaskId,
 )
+from universal_agent.eventstream import EventCursorError
 from universal_agent.persistence import FileSessionStore, SQLiteEventStore, SQLiteSessionStore
-from universal_agent.runtime.events import EventCursorError
 from universal_agent.state import InMemorySessionStore, session_from_state
 from universal_agent.state.store import SessionStore
 

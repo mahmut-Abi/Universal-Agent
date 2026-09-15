@@ -105,7 +105,7 @@ from universal_agent.service.world_views import (
 from universal_agent.world import WorldSnapshot
 
 if TYPE_CHECKING:
-    from universal_agent.host.config import RuntimeConfig
+    from universal_agent.configuration import RuntimeConfig
 
 
 class RuntimeService:

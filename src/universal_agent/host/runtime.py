@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from universal_agent.configuration import DomainConfig, ModelProvider, RuntimeConfig, StoreBackend
 from universal_agent.core import (
     Decision,
     DomainIdentity,
@@ -36,7 +37,6 @@ from universal_agent.domain import (
     load_domain_package,
     load_domain_package_runtime,
 )
-from universal_agent.host.config import DomainConfig, ModelProvider, RuntimeConfig, StoreBackend
 from universal_agent.model import (
     JsonHttpModelAdapter,
     JsonHttpModelTransport,

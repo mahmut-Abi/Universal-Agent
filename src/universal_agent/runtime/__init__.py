@@ -1,3 +1,12 @@
+from universal_agent.eventstream import (
+    EventCursorError,
+    EventReader,
+    EventSink,
+    EventWatcher,
+    InMemoryEventSink,
+    heartbeat_event,
+    poll_event_reader,
+)
 from universal_agent.runtime.actions import (
     ActionExecutor,
     ActionObserved,
@@ -35,15 +44,6 @@ from universal_agent.runtime.event_stream import (
     EventSignalSubscription,
     EventStreamSignal,
     InMemoryEventSignalBroker,
-)
-from universal_agent.runtime.events import (
-    EventCursorError,
-    EventReader,
-    EventSink,
-    EventWatcher,
-    InMemoryEventSink,
-    heartbeat_event,
-    poll_event_reader,
 )
 from universal_agent.runtime.memory import MemoryConsultant
 from universal_agent.runtime.session import (

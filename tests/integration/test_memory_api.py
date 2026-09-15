@@ -10,6 +10,7 @@ from starlette.testclient import TestClient
 
 from universal_agent.agentd import AgentdApp
 from universal_agent.agentd.server import build_agentd_asgi_app
+from universal_agent.configuration import DomainConfig, RuntimeConfig
 from universal_agent.core import (
     Decision,
     DecisionType,
@@ -18,7 +19,6 @@ from universal_agent.core import (
 )
 from universal_agent.domain import DomainLoader, RuntimeBuilder
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
-from universal_agent.host.config import DomainConfig, RuntimeConfig
 from universal_agent.model import ScriptedModelAdapter
 from universal_agent.profile import AgentProfile
 from universal_agent.runtime import AgentRuntime, InMemoryEventSink, RuntimeAPI

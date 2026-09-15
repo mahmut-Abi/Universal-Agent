@@ -20,7 +20,7 @@ from universal_agent.core.config_validation import (
 )
 
 if TYPE_CHECKING:
-    from universal_agent.host.config import DomainConfig, RuntimeConfig
+    from universal_agent.configuration import DomainConfig, RuntimeConfig
 
 PROFILE_CONFIG_FILE = "profile.json"
 PROFILE_CONFIG_SUFFIX = ".profile.json"
@@ -335,12 +335,12 @@ def _profile_identity(profile: AgentProfile) -> str:
 
 
 def _domain_config_type() -> type[DomainConfig]:
-    from universal_agent.host.config import DomainConfig
+    from universal_agent.configuration import DomainConfig
 
     return DomainConfig
 
 
 def _runtime_config_type() -> type[RuntimeConfig]:
-    from universal_agent.host.config import RuntimeConfig
+    from universal_agent.configuration import RuntimeConfig
 
     return RuntimeConfig

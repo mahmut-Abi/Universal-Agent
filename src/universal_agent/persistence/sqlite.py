@@ -37,6 +37,7 @@ from universal_agent.core import (
     utc_now,
 )
 from universal_agent.core.config_validation import parse_json_object, parse_positive_int
+from universal_agent.eventstream import EventCursorError, poll_event_reader
 from universal_agent.persistence.codec import (
     decode_runtime_event,
     decode_session_snapshot,
@@ -44,7 +45,6 @@ from universal_agent.persistence.codec import (
     encode_session_snapshot,
 )
 from universal_agent.persistence.sqlite_engine import create_configured_sqlite_engine
-from universal_agent.runtime.events import EventCursorError, poll_event_reader
 from universal_agent.state import (
     SessionSnapshot,
     SessionVersionConflictError,

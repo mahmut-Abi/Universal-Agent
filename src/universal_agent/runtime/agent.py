@@ -29,6 +29,7 @@ from universal_agent.core import (
     new_session_id,
 )
 from universal_agent.domain import RuntimeComponents
+from universal_agent.eventstream import EventSink
 from universal_agent.goals import DefaultGoalCompiler, GoalCompilation, GoalCompiler
 from universal_agent.model import ModelAdapter, model_usage
 from universal_agent.model.errors import JsonHttpModelError
@@ -49,7 +50,6 @@ from universal_agent.runtime.controls import (
 )
 from universal_agent.runtime.decision import DecisionEngine, normalize_runtime_decision
 from universal_agent.runtime.emission import EventEmitter
-from universal_agent.runtime.events import EventSink
 from universal_agent.runtime.initial_state import seed_initial_state
 from universal_agent.runtime.memory import MemoryConsultant
 from universal_agent.runtime.processing import ObservationProcessor, ObservationRoutingError

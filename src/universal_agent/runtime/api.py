@@ -28,9 +28,9 @@ from universal_agent.core import (
     immutable_json,
     to_json_value,
 )
+from universal_agent.eventstream import EventReader, EventSink, EventWatcher, poll_event_reader
 from universal_agent.evidence import Evidence, EvidenceId
 from universal_agent.runtime.agent import AgentRuntime
-from universal_agent.runtime.events import EventReader, EventSink, EventWatcher, poll_event_reader
 from universal_agent.state import SessionSnapshot, SessionStore
 
 

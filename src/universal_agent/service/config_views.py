@@ -18,7 +18,7 @@ from universal_agent.service.views import (
 )
 
 if TYPE_CHECKING:
-    from universal_agent.host.config import DomainConfig, ModelConfig, SecretRef
+    from universal_agent.configuration import DomainConfig, ModelConfig, SecretRef
 
 
 def secret_scan_payload(
