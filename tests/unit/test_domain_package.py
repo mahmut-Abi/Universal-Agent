@@ -824,3 +824,158 @@ def test_domain_package_runtime_loader_rejects_declared_metadata_mismatch(
 
     with pytest.raises(DomainPackageRuntimeLoadError, match="capabilities mismatch"):
         load_domain_package_runtime(package)
+
+
+@pytest.mark.unit
+def test_production_loader_refuses_scaffold_stub(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """UA-CS guard: the production loader refuses generated scaffold stubs
+    unless UNIVERSAL_AGENT_ALLOW_SCAFFOLD_STUB is explicitly enabled."""
+
+    result = scaffold_domain_package(
+        tmp_path / "widget-domain",
+        DomainPackageScaffoldSpec(
+            name="widget",
+            version="1.0.0",
+            description="Widget inspection domain package",
+            capabilities=("inspect_widget",),
+            tools=("inspect_widget",),
+            evaluators=("criteria",),
+            runtime_stub=True,
+        ),
+    )
+    monkeypatch.delenv("UNIVERSAL_AGENT_ALLOW_SCAFFOLD_STUB", raising=False)
+
+    with pytest.raises(DomainPackageRuntimeLoadError, match="scaffold stub"):
+        load_domain_package_runtime(result.package)
+
+
+@pytest.mark.unit
+def test_production_loader_allows_scaffold_stub_when_explicitly_enabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = scaffold_domain_package(
+        tmp_path / "widget-domain",
+        DomainPackageScaffoldSpec(
+            name="widget",
+            version="1.0.0",
+            description="Widget inspection domain package",
+            capabilities=("inspect_widget",),
+            tools=("inspect_widget",),
+            evaluators=("criteria",),
+            runtime_stub=True,
+        ),
+    )
+    monkeypatch.setenv("UNIVERSAL_AGENT_ALLOW_SCAFFOLD_STUB", "true")
+
+    activation = load_domain_package_runtime(result.package)
+
+    assert activation.active_domain.identity == DomainIdentity("widget", "1.0.0")
+
+
+@pytest.mark.unit
+def test_production_loader_loads_real_runtimes_without_stub_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Non-scaffold domain packages are unaffected by the stub guard."""
+
+    package_root = tmp_path / "widget-domain"
+    package_root.joinpath("widget").mkdir(parents=True)
+    package_root.joinpath("widget", "__init__.py").write_text("", encoding="utf-8")
+    package_root.joinpath("widget", "domain.py").write_text(
+        "\n".join(
+            [
+                "from __future__ import annotations",
+                "",
+                "from universal_agent.core import (",
+                "    CapabilityCategory,",
+                "    CapabilityDefinition,",
+                "    DomainManifest,",
+                "    DomainMetadata,",
+                "    EvaluationContext,",
+                "    EvaluationResult,",
+                "    EvaluationStatus,",
+                "    JsonMapping,    RiskLevel,",
+                "    SideEffect,",
+                "    ToolDefinition,",
+                "    immutable_json,",
+                ")",
+                "from universal_agent.domain.runtime import BaseDomainRuntime",
+                "",
+                "",
+                "class _WidgetTool:",
+                "    definition = ToolDefinition(",
+                "        'inspect_widget',",
+                "        'Inspect a widget',",
+                "        ('inspect_widget',),",
+                "        side_effect=SideEffect.NONE,",
+                "        risk=RiskLevel.LOW,",
+                "        priority=1,",
+                "    )",
+                "",
+                "    async def execute(self, arguments: JsonMapping) -> JsonMapping:",
+                "        return immutable_json({'healthy': True})",
+                "",
+                "",
+                "class _CriteriaEvaluator:",
+                "    name = 'criteria'",
+                "",
+                "    def evaluate(self, context: EvaluationContext) -> EvaluationResult:",
+                "        return EvaluationResult(",
+                "            EvaluationStatus.COMPLETED,",
+                "            'ok',",
+                "            self.name,",
+                "            immutable_json(),",
+                "            True,",
+                "            True,",
+                "        )",
+                "",
+                "",
+                "class WidgetDomain(BaseDomainRuntime):",
+                "    manifest = DomainManifest(",
+                "        api_version='agent.nantian.dev/v1alpha1',",
+                "        kind='Domain',",
+                "        metadata=DomainMetadata('widget', '1.0.0', 'Widget domain'),",
+                "        ontology=('Widget',),",
+                "        capability_names=('inspect_widget',),",
+                "        evaluator_names=('criteria',),",
+                "    )",
+                "",
+                "    def capabilities(self):",
+                "        return (",
+                "            CapabilityDefinition(",
+                "                'inspect_widget',",
+                "                'Inspect a widget',",
+                "                CapabilityCategory.OBSERVATION,",
+                "            ),",
+                "        )",
+                "",
+                "    def tools(self):",
+                "        return (_WidgetTool(),)",
+                "",
+                "    def evaluators(self):",
+                "        return (_CriteriaEvaluator(),)",
+                "",
+                "",
+                "def build_domain() -> WidgetDomain:",
+                "    return WidgetDomain()",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    payload = package_payload(name="widget")
+    payload["capabilities"] = ["inspect_widget"]
+    payload["tools"] = ["inspect_widget"]
+    payload["evaluators"] = ["criteria"]
+    payload["entrypoint"] = "widget.domain:build_domain"
+    payload["resources"] = []
+    import json as jsonlib
+
+    package_root.joinpath("manifest.json").write_text(jsonlib.dumps(payload), encoding="utf-8")
+
+    monkeypatch.delenv("UNIVERSAL_AGENT_ALLOW_SCAFFOLD_STUB", raising=False)
+    activation = load_domain_package_runtime(package_root)
+
+    assert activation.active_domain.identity == DomainIdentity("widget", "1.0.0")

@@ -18,3 +18,6 @@ def _hermetic_agent_dirs(
 ) -> None:
     monkeypatch.setenv("AGENT_CONFIG_DIR", str(tmp_path_factory.mktemp("agent-config")))
     monkeypatch.setenv("AGENT_DATA_DIR", str(tmp_path_factory.mktemp("agent-data")))
+    # Scaffold stubs are allowed by default in tests; the production loading
+    # guard tests explicitly opt out (see test_domain_package.py).
+    monkeypatch.setenv("UNIVERSAL_AGENT_ALLOW_SCAFFOLD_STUB", "true")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -15,6 +16,10 @@ from universal_agent.domain.package_models import (
     DomainPackageRuntimeLoadError,
     DomainPackageVerificationReport,
     _format_identity,
+)
+from universal_agent.domain.package_runtime_stub import (
+    SCAFFOLD_STUB_ENV,
+    SCAFFOLD_STUB_MARKER,
 )
 from universal_agent.domain.package_verification import verify_domain_package
 from universal_agent.domain.runtime import (
@@ -53,6 +58,7 @@ def load_domain_package_runtime(
             f"domain package {_format_identity(package.identity)} has no entrypoint"
         )
 
+    _raise_for_scaffold_stub(package.root_path, entrypoint)
     runtime = _load_domain_runtime_entrypoint(package.root_path, entrypoint, context=context)
     domain_loader = loader or DomainLoader()
     active = domain_loader.load(runtime)
@@ -64,6 +70,34 @@ def load_domain_package_runtime(
         )
     _validate_package_runtime_metadata(package, active)
     return DomainPackageRuntimeActivation(package, runtime, active)
+
+
+def _raise_for_scaffold_stub(root_path: Path, entrypoint: str) -> None:
+    """Refuse to load generated scaffold stubs on the production path.
+
+    `agent domain-packages scaffold` writes a runtime stub that returns
+    INCOMPLETE evaluations and scaffold-only tools. Loading it in a real
+    deployment would silently run a do-nothing domain, so the loader rejects
+    it unless UNIVERSAL_AGENT_ALLOW_SCAFFOLD_STUB=true (development only).
+    """
+
+    if os.environ.get(SCAFFOLD_STUB_ENV, "").strip().lower() in {"1", "true", "yes"}:
+        return
+    module_name, _attrs = _parse_entrypoint(entrypoint)
+    module_file = root_path.joinpath(*module_name.split(".")).with_suffix(".py")
+    try:
+        source = module_file.read_text(encoding="utf-8")
+    except OSError:
+        return
+    if SCAFFOLD_STUB_MARKER not in source:
+        return
+    raise DomainPackageRuntimeLoadError(
+        "refusing to load a scaffold stub runtime "
+        f"({module_file}): it returns INCOMPLETE evaluations and "
+        "scaffold-only tools. Replace the generated stub with a real "
+        f"DomainRuntime implementation, or set {SCAFFOLD_STUB_ENV}=true "
+        "to allow it explicitly for development."
+    )
 
 
 def _load_domain_runtime_entrypoint(
