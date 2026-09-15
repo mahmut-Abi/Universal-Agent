@@ -537,7 +537,11 @@ function buildRuntimeModel(model) {
     throw new Error("非 scripted provider 需要填写 API Key 环境变量名");
   }
   runtime.secrets = {
-    [model.api_key_env]: { source: "env", key: model.api_key_env, required: false },
+    [model.api_key_env]: {
+      source: "env",
+      key: model.api_key_env,
+      required: false,
+    },
   };
   const m = {
     provider: model.provider,
