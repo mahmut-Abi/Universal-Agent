@@ -38,7 +38,8 @@ from universal_agent.agentd.session_representations import (
     session_explorer_body,
     session_world_body,
 )
-from universal_agent.core import SessionId
+from universal_agent.core import JsonValue, SessionId, immutable_json
+from universal_agent.operations.llm_calls import llm_calls_body
 from universal_agent.service import RuntimeService
 from universal_agent.state import StateNotFoundError
 
@@ -64,6 +65,7 @@ _SESSION_ROUTE_DEFINITIONS = (
     AgentdRouteDefinition("session_logs", "/v1/sessions/{session_id}/logs"),
     AgentdRouteDefinition("session_traces", "/v1/sessions/{session_id}/traces"),
     AgentdRouteDefinition("session_traces_otlp", "/v1/sessions/{session_id}/traces/otlp"),
+    AgentdRouteDefinition("session_llm_calls", "/v1/sessions/{session_id}/llm-calls"),
     AgentdRouteDefinition("session_pause", "/v1/sessions/{session_id}/pause", ("POST",)),
     AgentdRouteDefinition("session_resume", "/v1/sessions/{session_id}/resume", ("POST",)),
     AgentdRouteDefinition("session_cancel", "/v1/sessions/{session_id}/cancel", ("POST",)),
@@ -238,8 +240,23 @@ class SessionRouteHandlers:
                 return bad_request(str(exc))
 
         if route.name == "session_traces":
+            detail = _optional_query_value(request.path, "detail")
             try:
-                return json_response(trace_spans_body(await self._service.traces(session_id)))
+                spans = trace_spans_body(await self._service.traces(session_id))
+                if detail == "full":
+                    batch = await self._service.stream_events(session_id)
+                    merged: dict[str, JsonValue] = dict(spans)
+                    merged["llm_calls"] = dict(llm_calls_body(batch.events))
+                    merged["detail"] = "full"
+                    return json_response(immutable_json(merged))
+                return json_response(spans)
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
+
+        if route.name == "session_llm_calls":
+            try:
+                batch = await self._service.stream_events(session_id)
+                return json_response(llm_calls_body(batch.events))
             except StateNotFoundError as exc:
                 return not_found(str(exc))
         if route.name == "session_traces_otlp":

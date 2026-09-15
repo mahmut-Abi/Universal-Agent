@@ -108,7 +108,7 @@ async def test_profile_crud_round_trip(app: AgentdApp) -> None:
     assert patched is not None and patched.status_code == 200
 
     deleted = await app.handle(_request("DELETE", "/v1/profiles/checkout-sre"))
-    assert deleted is not None and deleted.status_code == 200
+    assert deleted is not None and deleted.status_code == 204
 
     missing = await app.handle(_request("DELETE", "/v1/profiles/checkout-sre"))
     assert missing is not None and missing.status_code == 404
@@ -197,8 +197,25 @@ async def test_config_admin_without_store_falls_through(tmp_path: Any) -> None:
 @pytest.mark.asyncio
 async def test_validation_error_carries_field_errors(app: AgentdApp) -> None:
     response = await app.handle(_request("POST", "/v1/profiles", {"name": "broken"}))
-    assert response is not None and response.status_code == 400
-    error = _as_dict(response.body.get("error"))
-    assert error.get("code") == "validation_error"
-    errors = _as_list(error.get("errors"))
+    assert response is not None and response.status_code == 422
+    assert _as_dict(response.body).get("status") == "error"
+    errors = _as_list(_as_dict(response.body).get("errors"))
     assert errors
+    assert all("path" in _as_dict(e) and "message" in _as_dict(e) for e in errors)
+
+
+@pytest.mark.asyncio
+async def test_builtin_profile_delete_returns_409(app: AgentdApp) -> None:
+    builtin = {**_VALID_PROFILE, "builtin": True}
+    await app.handle(_request("POST", "/v1/profiles", dict(builtin)))
+
+    response = await app.handle(_request("DELETE", "/v1/profiles/checkout-sre"))
+    assert response is not None and response.status_code == 409
+    error = _as_dict(response.body.get("error"))
+    assert error.get("code") == "builtin_profile"
+
+    # PATCH is also refused
+    patched = await app.handle(
+        _request("PATCH", "/v1/profiles/checkout-sre", {"description": "x"})
+    )
+    assert patched is not None and patched.status_code == 409

@@ -26,7 +26,6 @@ from universal_agent.model import (
     HttpxJsonHttpTransport,
     JsonHttpModelAdapter,
     JsonHttpModelError,
-    ModelUsage,
     OpenAIChatCompletionsModelAdapter,
     OpenAIResponsesModelAdapter,
     OpenAISdkModelTransport,
@@ -288,13 +287,13 @@ async def test_json_http_model_adapter_posts_context_and_decodes_decision_usage(
     assert decision.target == "deployment/api"
     assert decision.arguments == {"name": "api", "namespace": "prod"}
     assert decision.expected_observations == ("healthy", "ready_replicas")
-    assert model_usage(adapter) == ModelUsage(
-        "test-provider",
-        "runtime-model",
-        input_tokens=100,
-        output_tokens=25,
-        estimated_cost_micros=42,
-    )
+    usage = model_usage(adapter)
+    assert usage is not None
+    assert (usage.provider, usage.model) == ("test-provider", "runtime-model")
+    assert (usage.input_tokens, usage.output_tokens) == (100, 25)
+    assert usage.estimated_cost_micros == 42
+    assert usage.prompt != "" and "Verify workload health" in usage.prompt
+    assert usage.completion != "" and "inspect_workload" in usage.completion
     assert len(transport.requests) == 1
     request = transport.requests[0]
     assert request.url == "https://models.example.test/decide"
@@ -742,12 +741,11 @@ async def test_openai_chat_completions_model_adapter_posts_structured_request() 
     assert decision.type is DecisionType.EXECUTE
     assert decision.capability == "inspect_workload"
     assert decision.arguments == {"name": "api", "namespace": "prod"}
-    assert model_usage(adapter) == ModelUsage(
-        "openai_chat_completions",
-        "gpt-runtime",
-        input_tokens=130,
-        output_tokens=35,
-    )
+    usage = model_usage(adapter)
+    assert usage is not None
+    assert (usage.provider, usage.model) == ("openai_chat_completions", "gpt-runtime")
+    assert (usage.input_tokens, usage.output_tokens) == (130, 35)
+    assert usage.prompt != "" and usage.completion != ""
     request = transport.requests[0]
     assert request.url == "https://api.openai.example.test/v1/chat/completions"
     assert request.headers["Authorization"] == "Bearer openai-secret"
@@ -1044,12 +1042,11 @@ async def test_openai_responses_model_adapter_posts_structured_output_request() 
     assert decision.type is DecisionType.EXECUTE
     assert decision.capability == "inspect_workload"
     assert decision.arguments == {"name": "api", "namespace": "prod"}
-    assert model_usage(adapter) == ModelUsage(
-        "openai_responses",
-        "gpt-runtime",
-        input_tokens=120,
-        output_tokens=30,
-    )
+    usage = model_usage(adapter)
+    assert usage is not None
+    assert (usage.provider, usage.model) == ("openai_responses", "gpt-runtime")
+    assert (usage.input_tokens, usage.output_tokens) == (120, 30)
+    assert usage.prompt != "" and usage.completion != ""
     request = transport.requests[0]
     assert request.url == "https://api.openai.example.test/v1/responses"
     assert request.headers["Authorization"] == "Bearer openai-secret"

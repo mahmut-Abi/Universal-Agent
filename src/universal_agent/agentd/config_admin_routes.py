@@ -31,6 +31,7 @@ from universal_agent.agentd.routing import (
 from universal_agent.core import JsonMapping, JsonValue, immutable_json
 from universal_agent.profile.store import (
     ProfileAlreadyExistsError,
+    ProfileBuiltinError,
     ProfileNotFoundError,
     ProfileStore,
     ProfileStoreValidationError,
@@ -65,17 +66,16 @@ def _actor(request: HttpRequest) -> str:
 
 
 def _validation_error_response(error: ProfileStoreValidationError) -> HttpResponse:
+    """422 per the config-plane convention: {errors: [{path, message}]}."""
+
     return json_response(
         immutable_json(
             {
-                "error": {
-                    "code": "validation_error",
-                    "message": str(error),
-                    "errors": [dict(item) for item in error.errors],
-                }
+                "status": "error",
+                "errors": [dict(item) for item in error.errors],
             }
         ),
-        status_code=400,
+        status_code=422,
     )
 
 
@@ -104,7 +104,7 @@ async def handle_config_admin_route(
                 payload = store.patch(name, dict(body), actor=actor)
                 return json_response(immutable_json(payload))
             store.delete(name, actor=actor)
-            return json_response(immutable_json({"deleted": True, "profile": name}))
+            return HttpResponse(status_code=204, body=immutable_json())
 
         if route.name == "config_validate":
             kind = str(body.get("kind", ""))
@@ -155,6 +155,11 @@ async def handle_config_admin_route(
         return not_found(str(exc))
     except ProfileStoreValidationError as exc:
         return _validation_error_response(exc)
+    except ProfileBuiltinError as exc:
+        return json_response(
+            immutable_json({"error": {"code": "builtin_profile", "message": str(exc)}}),
+            status_code=409,
+        )
     except ValueError as exc:
         return json_response(
             immutable_json({"error": {"code": "bad_request", "message": str(exc)}}),

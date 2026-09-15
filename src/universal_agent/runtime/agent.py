@@ -556,6 +556,21 @@ class AgentRuntime:
                         "currency": usage.currency,
                     },
                 )
+                await self._emit(
+                    state,
+                    "LLMCallRecorded",
+                    data={
+                        "provider": usage.provider,
+                        "model": usage.model,
+                        "prompt": usage.prompt,
+                        "completion": usage.completion,
+                        "input_tokens": usage.input_tokens,
+                        "output_tokens": usage.output_tokens,
+                        "total_tokens": usage.total_tokens,
+                        "estimated_cost_micros": usage.estimated_cost_micros,
+                        "currency": usage.currency,
+                    },
+                )
                 state.cumulative_cost_micros += usage.estimated_cost_micros
                 state.cumulative_tokens += usage.total_tokens
                 if (

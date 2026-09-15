@@ -16,7 +16,7 @@ from universal_agent.core import (
     loads_json,
 )
 from universal_agent.core.config_validation import parse_non_empty_string, parse_positive_float
-from universal_agent.model.adapter import ModelUsage
+from universal_agent.model.adapter import ModelUsage, bounded_llm_text
 from universal_agent.model.decision_codec import (
     decision_context_payload,
     decision_payload,
@@ -28,6 +28,7 @@ from universal_agent.model.decision_codec import (
     validate_headers,
 )
 from universal_agent.model.errors import JsonHttpModelError
+from universal_agent.security import redact_sensitive_mapping
 
 
 class JsonHttpModelTransport(Protocol):
@@ -147,10 +148,11 @@ class JsonHttpModelAdapter:
         self._last_usage: ModelUsage | None = None
 
     async def decide(self, context: DecisionContext) -> Decision:
+        request_payload = self._request_payload(context)
         response = await self._transport.post_json(
             self._endpoint,
             headers=self._headers(),
-            payload=self._request_payload(context),
+            payload=request_payload,
             timeout_seconds=self._timeout_seconds,
         )
         payload = decision_payload(response)
@@ -160,7 +162,22 @@ class JsonHttpModelAdapter:
             validate_decision_against_context(decision, context)
         except ValueError as exc:
             raise JsonHttpModelError(f"invalid model decision: {exc}") from exc
-        self._last_usage = decode_usage(self._provider, self._model, response.get("usage"))
+        usage = decode_usage(self._provider, self._model, response.get("usage"))
+        if usage is not None:
+            self._last_usage = ModelUsage(
+                provider=usage.provider,
+                model=usage.model,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                estimated_cost_micros=usage.estimated_cost_micros,
+                currency=usage.currency,
+                prompt=bounded_llm_text(
+                    dumps_json(redact_sensitive_mapping(dict(request_payload)))
+                ),
+                completion=bounded_llm_text(
+                    dumps_json(redact_sensitive_mapping(dict(payload)))
+                ),
+            )
         return decision
 
     def model_usage(self) -> ModelUsage | None:

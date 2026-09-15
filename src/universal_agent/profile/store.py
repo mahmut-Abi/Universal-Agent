@@ -32,6 +32,7 @@ from universal_agent.profile import ProfileConfig
 __all__ = [
     "ConfigAuditRecord",
     "ProfileAlreadyExistsError",
+    "ProfileBuiltinError",
     "ProfileNotFoundError",
     "ProfileStore",
     "ProfileStoreValidationError",
@@ -47,6 +48,10 @@ class ProfileNotFoundError(LookupError):
 
 class ProfileAlreadyExistsError(LookupError):
     pass
+
+
+class ProfileBuiltinError(ValueError):
+    """Refusal to mutate a built-in profile via the config API."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +187,7 @@ class ProfileStore:
         actor: str | None = None,
     ) -> dict[str, JsonValue]:
         self._require_exists(name)
+        self._refuse_builtin(name)
         validated = self._validated({**payload, "name": name})
         self._write(name, validated)
         self._audit(actor or self._actor, "updated", name, {"profile": name})
@@ -210,6 +216,7 @@ class ProfileStore:
         path = self._path_for(name)
         if not path.is_file():
             raise ProfileNotFoundError(f"profile config not found: {name}")
+        self._refuse_builtin(name)
         path.unlink()
         self._audit(actor or self._actor, "deleted", name, {"profile": name})
 
@@ -318,6 +325,19 @@ class ProfileStore:
     def _require_exists(self, name: str) -> None:
         if not self._path_for(name).is_file():
             raise ProfileNotFoundError(f"profile config not found: {name}")
+
+    def _refuse_builtin(self, name: str) -> None:
+        """Built-in profiles (builtin=true) are deployment-owned: the config
+        API refuses destructive mutations with a 409-class error."""
+
+        if self._path_for(name).is_file():
+            payload = self.load(name)
+            builtin = payload.get("builtin")
+            if isinstance(builtin, bool) and builtin:
+                raise ProfileBuiltinError(
+                    f"profile {name!r} is built-in and cannot be modified or "
+                    "deleted through the config API"
+                )
 
     def _validated(self, payload: Mapping[str, Any]) -> dict[str, JsonValue]:
         materialized: dict[str, Any] = dict(payload)

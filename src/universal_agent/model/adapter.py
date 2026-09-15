@@ -24,6 +24,9 @@ class ModelUsage:
     output_tokens: int = 0
     estimated_cost_micros: int = 0
     currency: str = "USD"
+    # Bounded, redacted request/response capture for trace detail (UA-CS-006).
+    prompt: str = ""
+    completion: str = ""
 
     def __post_init__(self) -> None:
         parse_non_empty_string(self.provider, "model usage provider")
@@ -81,3 +84,14 @@ class ScriptedModelAdapter:
 # P0 Golden Path alias: `FakeModel` names the deterministic offline model used by
 # tests, doctor and the default profile (no real LLM required).
 FakeModel = ScriptedModelAdapter
+
+
+LLM_CAPTURE_MAX_CHARS = 4000
+
+
+def bounded_llm_text(text: str, *, limit: int = LLM_CAPTURE_MAX_CHARS) -> str:
+    """Bound captured LLM prompt/completion text for event-safe storage."""
+
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "...[truncated]"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Annotated, Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
@@ -23,7 +24,7 @@ from universal_agent.core.config_validation import (
     parse_non_empty_string,
     parse_positive_float,
 )
-from universal_agent.model.adapter import ModelUsage
+from universal_agent.model.adapter import ModelUsage, bounded_llm_text
 from universal_agent.model.decision_codec import (
     decision_context_payload,
     decision_payload,
@@ -42,6 +43,7 @@ from universal_agent.model.openai_transport import (
     OpenAISdkModelTransport,
     is_openai_model_transport,
 )
+from universal_agent.security import redact_sensitive_mapping
 
 _SchemaNonEmptyString = Annotated[str, StringConstraints(min_length=1)]
 
@@ -130,11 +132,12 @@ class OpenAIResponsesModelAdapter:
         self._last_usage: ModelUsage | None = None
 
     async def decide(self, context: DecisionContext) -> Decision:
+        request_payload = self._request_payload(context)
         response = await self._transport.create_response(
             self._endpoint,
             api_key=self._api_key,
             extra_headers=self._extra_headers,
-            payload=self._request_payload(context),
+            payload=request_payload,
             timeout_seconds=self._timeout_seconds,
         )
         openai_response = _openai_responses_payload(response)
@@ -150,11 +153,15 @@ class OpenAIResponsesModelAdapter:
             validate_decision_against_context(decision, context)
         except ValueError as exc:
             raise JsonHttpModelError(f"invalid OpenAI model decision: {exc}") from exc
-        self._last_usage = decode_usage(
-            "openai_responses",
-            self._model,
-            response.get("usage"),
-        )
+        usage = decode_usage("openai_responses", self._model, response.get("usage"))
+        if usage is not None:
+            self._last_usage = replace(
+                usage,
+                prompt=bounded_llm_text(
+                    dumps_json(redact_sensitive_mapping(dict(request_payload)))
+                ),
+                completion=bounded_llm_text(dumps_json(redact_sensitive_mapping(dict(payload)))),
+            )
         return decision
 
     def model_usage(self) -> ModelUsage | None:
@@ -244,11 +251,12 @@ class OpenAIChatCompletionsModelAdapter:
         self._last_usage: ModelUsage | None = None
 
     async def decide(self, context: DecisionContext) -> Decision:
+        request_payload = self._request_payload(context)
         response = await self._transport.create_chat_completion(
             self._endpoint,
             api_key=self._api_key,
             extra_headers=self._extra_headers,
-            payload=self._request_payload(context),
+            payload=request_payload,
             timeout_seconds=self._timeout_seconds,
         )
         output_text = _openai_chat_completion_content(_openai_chat_completion_payload(response))
@@ -260,11 +268,19 @@ class OpenAIChatCompletionsModelAdapter:
             validate_decision_against_context(decision, context)
         except ValueError as exc:
             raise JsonHttpModelError(f"invalid OpenAI chat completion decision: {exc}") from exc
-        self._last_usage = decode_usage(
+        usage = decode_usage(
             "openai_chat_completions",
             self._model,
             response.get("usage"),
         )
+        if usage is not None:
+            self._last_usage = replace(
+                usage,
+                prompt=bounded_llm_text(
+                    dumps_json(redact_sensitive_mapping(dict(request_payload)))
+                ),
+                completion=bounded_llm_text(dumps_json(redact_sensitive_mapping(dict(payload)))),
+            )
         return decision
 
     def model_usage(self) -> ModelUsage | None:

@@ -81,9 +81,7 @@ def build_app(decisions: tuple[Decision, ...]) -> AgentdApp:
     return AgentdApp(service)
 
 
-def _request(
-    method: str, path: str, body: Mapping[str, JsonValue] | None = None
-) -> HttpRequest:
+def _request(method: str, path: str, body: Mapping[str, JsonValue] | None = None) -> HttpRequest:
     return HttpRequest(
         method=method,
         path=path,
@@ -135,9 +133,7 @@ async def test_session_messages_continue_completed_session() -> None:
     assert events is not None and events.status_code == 200
     event_payload = events.body.get("events")
     assert isinstance(event_payload, list)
-    types = [
-        str(item.get("type")) for item in event_payload if isinstance(item, dict)
-    ]
+    types = [str(item.get("type")) for item in event_payload if isinstance(item, dict)]
     assert "SessionContinued" in types
 
 
@@ -158,9 +154,7 @@ async def test_session_messages_rejects_empty_message() -> None:
         )
     )
     assert created is not None and created.status_code == 201
-    session_id = str(
-        cast("dict[str, object]", created.body.get("result"))["session_id"]
-    )
+    session_id = str(cast("dict[str, object]", created.body.get("result"))["session_id"])
 
     response = await app.handle(
         _request("POST", f"/v1/sessions/{session_id}/messages", {"message": ""})

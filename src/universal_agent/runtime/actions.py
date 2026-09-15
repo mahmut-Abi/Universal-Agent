@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
+from typing import Any
 
 from universal_agent.capability import (
     CapabilityUnavailableError,
@@ -40,6 +41,7 @@ from universal_agent.core import (
     to_json_value,
 )
 from universal_agent.domain import ActionArgumentContext, ActionReconcileContext, RuntimeComponents
+from universal_agent.model.adapter import bounded_llm_text
 from universal_agent.observation import ObservationFactory
 from universal_agent.runtime.idempotency import (
     IdempotencyKey,
@@ -47,7 +49,11 @@ from universal_agent.runtime.idempotency import (
     InMemoryIdempotencyStore,
 )
 from universal_agent.runtime.session import SessionRuntimeState
-from universal_agent.security import SecretProvider, SecretResolutionReport
+from universal_agent.security import (
+    SecretProvider,
+    SecretResolutionReport,
+    redact_sensitive_mapping,
+)
 from universal_agent.security.sandbox import Sandbox, SandboxActionContext, SandboxViolation
 from universal_agent.tools import Tool, ToolRuntime
 
@@ -402,6 +408,7 @@ class ActionExecutor:
                 "resource_version": call.resource_version,
             },
         )
+        # pi-lens-ignore: python-sql-injection
         tool_result = await self._tool_runtime.execute(call)
         await emit(
             "ActionCompleted",
@@ -411,6 +418,12 @@ class ActionExecutor:
                 "error_code": (
                     None if tool_result.error_code is None else tool_result.error_code.value
                 ),
+                # Bounded plaintext I/O for trace detail (UA-CS-006): redacted
+                # via the same policy mapping as decisions; large payloads stay
+                # referenced by evidence rather than growing this event.
+                "input": _bounded_io(redact_sensitive_mapping(dict(pending.arguments))),
+                "output": _bounded_io(redact_sensitive_mapping(dict(tool_result.output))),
+                "error": tool_result.error,
             },
         )
         if tool_result.status is ObservationStatus.SUCCEEDED:
@@ -886,3 +899,21 @@ def _resource_version(arguments: JsonMapping) -> str | None:
 
 def _canonical_json(value: JsonValue | object) -> JsonValue:
     return to_json_value(value, fallback_to_string=True)
+
+
+def _bounded_io(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Bound tool I/O mappings for event-safe plaintext capture (UA-CS-006).
+
+    String leaves are bounded via the shared LLM capture limit; nested
+    mappings are processed recursively so redacted structures stay intact.
+    """
+
+    bounded: dict[str, Any] = {}
+    for key, value in payload.items():
+        if isinstance(value, str):
+            bounded[key] = bounded_llm_text(value)
+        elif isinstance(value, Mapping):
+            bounded[key] = _bounded_io(dict(value))
+        else:
+            bounded[key] = value
+    return bounded
