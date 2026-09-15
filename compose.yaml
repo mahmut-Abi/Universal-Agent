@@ -1,4 +1,7 @@
----
+## Universal Agent server (agentd) + standalone web chat UI.
+##
+## Start:  AGENTD_AUTH_TOKEN=<token> docker compose up --build
+## agentd: http://localhost:8765     web: http://localhost:8080
 services:
   agentd:
     build: .
@@ -16,6 +19,23 @@ services:
       - no-new-privileges:true
     mem_limit: 1g
     cpus: "1.0"
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    container_name: universal-agent-web
+    ports:
+      - "8080:8080"
+    environment:
+      AGENTD_URL: http://agentd:8765
+      AGENTD_TOKEN: ${AGENTD_AUTH_TOKEN:?set AGENTD_AUTH_TOKEN before starting agentd}
+    depends_on:
+      - agentd
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
     restart: unless-stopped
 
 volumes:

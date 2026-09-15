@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 import time
 from collections.abc import Sequence
@@ -12,6 +13,11 @@ from types import ModuleType
 from typing import TYPE_CHECKING, TextIO, cast
 
 from universal_agent.core import Goal, SessionId, Task
+from universal_agent_cli.client_config import (
+    SERVER_ENV_TOKEN,
+    resolve_client_server_target,
+    resolve_client_token,
+)
 from universal_agent_cli.io import (
     CliExit,
     _success_criteria,
@@ -166,6 +172,20 @@ async def run_cli(
     args = parser.parse_args(list(argv) if argv is not None else None)
     out = stdout or sys.stdout
     err = stderr or sys.stderr
+
+    # Client/server separation: resolve the remote agentd target from the
+    # explicit flag, then AGENT_API_URL, then the user config file. When a
+    # target is configured, thin-client mode is the default and the embedded
+    # runtime is only used as the local fallback.
+    client_target = resolve_client_server_target(cast("str | None", args.api_url))
+    if client_target is not None:
+        args.api_url = client_target.url
+        if args.api_token is None and args.api_token_env is None:
+            client_token = resolve_client_token(client_target) or os.environ.get(SERVER_ENV_TOKEN)
+            if client_token:
+                args.api_token = client_token
+            elif client_target.auth_token_env:
+                args.api_token_env = client_target.auth_token_env
 
     try:
         is_production_run = (

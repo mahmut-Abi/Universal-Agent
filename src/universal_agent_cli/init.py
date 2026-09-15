@@ -161,7 +161,7 @@ def _runtime_data_dir(args: argparse.Namespace) -> Path:
 def _user_config_payload(args: argparse.Namespace) -> dict[str, object]:
     domain_name = _domain_settings(args)[0]
     model_settings = _resolved_model_settings(args)
-    return {
+    payload: dict[str, object] = {
         "environment": cast(str, args.environment),
         "data_dir": str(_runtime_data_dir(args)),
         "profile": cast(str, args.profile),
@@ -182,6 +182,16 @@ def _user_config_payload(args: argparse.Namespace) -> dict[str, object]:
             }
         },
     }
+    # Client/server separation: a configured `server` section turns this
+    # machine into a thin client that talks to a remote agentd Runtime.
+    server_url = cast("str | None", getattr(args, "server_url", None))
+    if server_url:
+        server: dict[str, object] = {"url": server_url}
+        server_token_env = cast("str | None", getattr(args, "server_auth_token_env", None))
+        if server_token_env:
+            server["auth_token_env"] = server_token_env
+        payload["server"] = server
+    return payload
 
 
 def _domain_settings(

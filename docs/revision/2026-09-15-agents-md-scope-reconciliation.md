@@ -45,3 +45,17 @@ openly. Two normative documents disagreeing is worse than either content.
 ## Status
 
 Accepted, 2026-09-15. Implemented in `AGENTS.md` §13/§19.
+
+## Amendment (2026-09-15, same day): P5 web rebuild exception
+
+The author directed a standalone **Node.js web tier** (`web/`): a configurable,
+multi-session chat UI deployed via its own Docker Compose service, consuming the
+agentd HTTP API only — never embedded in the agentd process. This is an explicit
+author exception to the P5 freeze for this work item, alongside the client/server
+separation hardening (thin-client config file `server.url`, `AGENT_API_URL` env).
+
+- Server: agentd in Docker (existing image + compose `agentd` service).
+- Client: CLI thin-client mode is now config-driven (`universal-agent/config.json`
+  `server.url` > `AGENT_API_URL` env > `--api-url` flag).
+- Web: `web/` Node.js (zero npm dependencies) + `web/Dockerfile` + compose `web`
+  service; replaces the agentd-embedded console as the interactive surface.

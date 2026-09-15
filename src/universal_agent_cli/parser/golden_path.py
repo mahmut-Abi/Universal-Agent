@@ -113,6 +113,20 @@ def add_init_parser(
     )
     first_day.add_argument("--model-name", default="scripted")
     first_day.add_argument("--model-api-key-env")
+    first_day.add_argument(
+        "--server-url",
+        help=(
+            "Remote agentd Runtime URL for thin-client mode (client/server "
+            "separation); stored in config.json `server.url`"
+        ),
+    )
+    first_day.add_argument(
+        "--server-auth-token-env",
+        help=(
+            "Environment variable holding the agentd bearer token (name only; "
+            "the value stays out of the config file)"
+        ),
+    )
     advanced_model.add_argument("--model-endpoint")
     advanced_model.add_argument("--model-api-key-file")
     advanced_model.add_argument("--model-api-key-secret", default="model_api_key")

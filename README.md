@@ -13,8 +13,9 @@ safely.
 works with either name.
 
 - **CLI** — run an Agent and inspect sessions from your terminal.
-- **Web** — read-only observation/management UI over the same Runtime API (agentd
-  `/console/*` pages). It is not a second Runtime.
+- **Web** — two surfaces over the same Runtime API: the agentd-embedded read-only
+  console (`/console/*` pages) and the **standalone chat web UI** (`web/`, Node.js,
+  multi-session, deployed separately — see [`web/README.md`](web/README.md)).
 - **agentd** — the long-running Runtime server for server/API/multi-user
   deployments. Personal use never needs it.
 
