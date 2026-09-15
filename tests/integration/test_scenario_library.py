@@ -69,6 +69,8 @@ def test_load_canonical_scenarios() -> None:
     assert "diagnose-crashloopbackoff-pod" in all_names
     assert "detect-and-mitigate-memory-pressure" in all_names
     assert "policy-blocks-production-delete" in all_names
+    assert "diagnose-unschedulable-pending-pods" in all_names
+    assert "diagnose-readiness-probe-failures" in all_names
 
 
 @pytest.mark.unit
