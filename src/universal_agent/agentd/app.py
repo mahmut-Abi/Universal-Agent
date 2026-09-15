@@ -17,6 +17,10 @@ from universal_agent.agentd._routes_session import (
     _SESSION_ROUTE_DEFINITIONS,
     SessionRouteHandlers,
 )
+from universal_agent.agentd.config_admin_routes import (
+    config_admin_route_definitions,
+    handle_config_admin_route,
+)
 from universal_agent.agentd.console_routes import handle_console_route
 from universal_agent.agentd.contributions import load_route_contributions
 from universal_agent.agentd.http import (
@@ -66,6 +70,7 @@ from universal_agent.domain import AmbiguousDomainPackageError, DomainPackageNot
 from universal_agent.host_contracts import DomainRouteContribution
 from universal_agent.memory import MemoryKind
 from universal_agent.profile import ProfileNotFoundError
+from universal_agent.profile.store import ProfileStore
 from universal_agent.service import RuntimeService
 
 _STATIC_GET_ROUTE_DEFINITIONS = (
@@ -118,6 +123,7 @@ _MEMORY_ROUTES = AgentdRouteMatcher(_MEMORY_ROUTE_DEFINITIONS)
 _OPENAPI_ROUTE_DEFINITIONS = (
     *_STATIC_GET_ROUTE_DEFINITIONS,
     *_DETAIL_GET_ROUTE_DEFINITIONS,
+    *config_admin_route_definitions(),
     *eval_route_definitions(),
     *ecosystem_route_definitions(),
     *_MEMORY_ROUTE_DEFINITIONS,
@@ -153,6 +159,7 @@ class AgentdApp:
         auth: AgentdAuthPolicy | None = None,
         *,
         evaluation_report_dir: str | Path | None = None,
+        profile_store: ProfileStore | None = None,
     ) -> None:
         self._service = service
         self._distributed = DistributedRouteHandlers(service)
@@ -162,6 +169,7 @@ class AgentdApp:
         self._evaluation_report_dir = (
             None if evaluation_report_dir is None else str(evaluation_report_dir)
         )
+        self._profile_store = profile_store
 
     async def handle(self, request: HttpRequest) -> HttpResponse:
         method = request.method.upper()
@@ -174,6 +182,15 @@ class AgentdApp:
         memory_response = self._memory_route_response(request, method, path)
         if memory_response is not None:
             return memory_response
+
+        # Config-management write plane runs before the static GET routes so
+        # POST/PATCH/DELETE on /v1/profiles are not swallowed by the runtime
+        # read models (GET stays authoritative for loaded profiles).
+        config_admin_response = await handle_config_admin_route(
+            self._profile_store, request, method, path
+        )
+        if config_admin_response is not None:
+            return config_admin_response
 
         static_response = await self._static_get_route_response(request, method, path)
         if static_response is not None:

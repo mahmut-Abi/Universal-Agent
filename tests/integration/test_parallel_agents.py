@@ -13,10 +13,8 @@ from universal_agent.multi_agent.contracts import (
     AgentTaskUsage,
 )
 from universal_agent.multi_agent.delegation import DelegationManager
-from universal_agent.multi_agent.orchestrator import (
-    AgentDelegationSpec,
-    AgentOrchestrator,
-)
+from universal_agent.multi_agent.delegation_state import AgentDelegationSpec
+from universal_agent.multi_agent.orchestrator import AgentOrchestrator
 from universal_agent.multi_agent.registry import (
     AgentId,
     AgentInstanceRecord,

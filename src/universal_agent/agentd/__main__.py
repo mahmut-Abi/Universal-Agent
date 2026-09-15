@@ -11,12 +11,14 @@ The service is built from the same profile-config machinery the CLI uses.
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from universal_agent.agentd.app import AgentdApp
 from universal_agent.agentd.http import AgentdAuthPolicy
 from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
 from universal_agent.core.config_validation import parse_non_empty_string
+from universal_agent.profile.store import ProfileStore
 from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
 
@@ -44,6 +46,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--read-only-auth-token")
     parser.add_argument("--read-only-auth-token-env")
     parser.add_argument("--evaluation-report-dir")
+    parser.add_argument(
+        "--profiles-dir",
+        help=(
+            "Directory for persisted profile configs managed through the "
+            "config-management write API (default: $AGENT_CONFIG_DIR/profiles "
+            "or ./universal-agent/profiles)"
+        ),
+    )
     parser.add_argument(
         "--default-domain",
         default="local",
@@ -129,6 +139,13 @@ def main(argv: list[str] | None = None) -> int:
 
         service = build_default_domain_service(args.default_domain)
 
+    profiles_dir = (
+        args.profiles_dir
+        or os.environ.get("AGENT_PROFILES_DIR")
+        or str(Path(os.environ.get("AGENT_CONFIG_DIR", "universal-agent")) / "profiles")
+    )
+    profile_store = ProfileStore(profiles_dir)
+
     server = AgentdHttpServer(
         AgentdApp(
             service,
@@ -137,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
                 read_only_bearer_token=read_only_auth_token,
             ),
             evaluation_report_dir=args.evaluation_report_dir,
+            profile_store=profile_store,
         ),
         AgentdServerConfig(host=args.host, port=args.port),
     )
