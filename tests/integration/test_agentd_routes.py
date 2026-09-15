@@ -1165,12 +1165,12 @@ async def test_agentd_web_console_route_serves_static_frontend() -> None:
     assert console.status_code == 200
     assert console.headers["content-type"] == "text/html; charset=utf-8"
     assert console.text_body is not None
-    assert "Universal Agent Web Console" in console.text_body
+    assert "Universal Agent Runtime API" in console.text_body
     assert deep_link.status_code == 200
     assert deep_link.text_body is not None
-    assert "Universal Agent Web Console" in deep_link.text_body
+    assert "Universal Agent Runtime API" in deep_link.text_body
     assert asset.status_code == 200
-    assert "text/javascript" in asset.headers["content-type"]
+    assert "text/html" in asset.headers["content-type"]
     assert backend.inspect_calls == 1
 
 
@@ -1208,7 +1208,7 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
     distributed_page = await app.handle(HttpRequest("GET", "/console/distributed"))
     assert distributed_page.status_code == 200
     assert distributed_page.text_body is not None
-    assert "Universal Agent Web Console" in distributed_page.text_body
+    assert "Universal Agent Runtime API" in distributed_page.text_body
     pruned = await app.handle(
         HttpRequest(
             "POST",
@@ -1263,7 +1263,7 @@ async def test_agentd_distributed_routes_expose_snapshot_and_health() -> None:
     assert health.status_code == 200
     assert distributed_page.status_code == 200
     assert distributed_page.text_body is not None
-    assert "Universal Agent Web Console" in distributed_page.text_body
+    assert "Universal Agent Runtime API" in distributed_page.text_body
     assert pruned.status_code == 200
     assert pruned.body["before"] == now.isoformat()
     assert pruned.body["pruned_count"] == 1

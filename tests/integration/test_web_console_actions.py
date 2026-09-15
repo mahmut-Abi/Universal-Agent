@@ -5,7 +5,7 @@ the same policy/confirmation boundaries the CLI and agentd enforce: pending
 actions require explicit confirmation, rejection never executes the tool, and
 invalid transitions surface as structured JSON errors instead of silent
 no-ops. The console frontend itself is a static single-page client served
-from the universal_agent_web package.
+from the agentd console surface.
 """
 
 from __future__ import annotations

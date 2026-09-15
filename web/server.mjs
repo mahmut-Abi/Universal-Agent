@@ -23,9 +23,28 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
+import { createHmac } from "node:crypto";
+
 const PORT = Number(process.env.PORT || 8080);
 const AGENTD_URL = (process.env.AGENTD_URL || "").replace(/\/+$/, "");
 const AGENTD_TOKEN = process.env.AGENTD_TOKEN || "";
+// Optional login gate: when set, browsers must authenticate once; the
+// derived session cookie authorizes all subsequent requests.
+const WEB_PASSWORD = process.env.WEB_PASSWORD || "";
+
+function sessionCookieValue() {
+  return createHmac("sha256", "universal-agent-web").update(WEB_PASSWORD).digest("hex");
+}
+
+function isAuthorized(req) {
+  if (!WEB_PASSWORD) return true;
+  const cookies = req.headers.cookie || "";
+  const match = cookies
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("ua_web_session="));
+  return Boolean(match && match.split("=")[1] === sessionCookieValue());
+}
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(HERE, "public");
@@ -33,6 +52,7 @@ const PUBLIC_DIR = path.join(HERE, "public");
 const STATIC_FILES = {
   "/": "index.html",
   "/index.html": "index.html",
+  "/login.html": "login.html",
   "/app.js": "app.js",
   "/style.css": "style.css",
 };
@@ -131,26 +151,78 @@ async function proxy(req, res, url) {
 async function serveStatic(res, pathname) {
   const relative = STATIC_FILES[pathname];
   if (!relative) {
-    json(res, 404, { error: { code: "not_found", message: `unknown path: ${pathname}` } });
+    json(res, 404, {
+      error: { code: "not_found", message: `unknown path: ${pathname}` },
+    });
     return;
   }
   try {
     const body = await readFile(path.join(PUBLIC_DIR, relative));
     res.writeHead(200, {
-      "content-type": CONTENT_TYPES[path.extname(relative)] || "application/octet-stream",
+      "content-type":
+        CONTENT_TYPES[path.extname(relative)] || "application/octet-stream",
     });
     res.end(body);
   } catch (error) {
     json(res, 500, {
-      error: { code: "web_internal", message: `failed to read ${relative}: ${error.message}` },
+      error: {
+        code: "web_internal",
+        message: `failed to read ${relative}: ${error.message}`,
+      },
     });
   }
 }
 
+function handleLogin(req, res) {
+  if (req.method === "POST") {
+    void readBody(req).then((body) => {
+      const params = new URLSearchParams(body.toString("utf8"));
+      if (params.get("password") === WEB_PASSWORD) {
+        res.writeHead(303, {
+          location: "/",
+          "set-cookie": `ua_web_session=${sessionCookieValue()}; HttpOnly; SameSite=Strict; Path=/`,
+        });
+        res.end();
+        return;
+      }
+      res.writeHead(303, { location: "/login?error=1" });
+      res.end();
+    });
+    return;
+  }
+  serveStatic(res, "/login.html").catch((error) => {
+    json(res, 500, { error: { code: "web_internal", message: String(error) } });
+  });
+}
+
 const server = createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  if (WEB_PASSWORD && !isAuthorized(req)) {
+    if (url.pathname === "/login") {
+      handleLogin(req, res);
+      return;
+    }
+    if (url.pathname.startsWith("/api/")) {
+      json(res, 401, {
+        error: { code: "unauthorized", message: "login required" },
+      });
+      return;
+    }
+    res.writeHead(303, { location: "/login" });
+    res.end();
+    return;
+  }
+  if (url.pathname === "/login") {
+    // Already authorized: skip the login page.
+    res.writeHead(303, { location: "/" });
+    res.end();
+    return;
+  }
   if (url.pathname === "/api/config") {
-    json(res, 200, { server_configured: Boolean(AGENTD_URL), agentd_url: AGENTD_URL || null });
+    json(res, 200, {
+      server_configured: Boolean(AGENTD_URL),
+      agentd_url: AGENTD_URL || null,
+    });
     return;
   }
   if (url.pathname === "/api/health") {
@@ -159,7 +231,9 @@ const server = createServer((req, res) => {
   }
   if (url.pathname === "/api/" || url.pathname.startsWith("/api/")) {
     proxy(req, res, url).catch((error) => {
-      json(res, 500, { error: { code: "web_internal", message: String(error) } });
+      json(res, 500, {
+        error: { code: "web_internal", message: String(error) },
+      });
     });
     return;
   }
@@ -171,4 +245,5 @@ const server = createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`universal-agent-web listening on http://0.0.0.0:${PORT}`);
   console.log(`  agentd: ${AGENTD_URL || "(not configured — set AGENTD_URL)"}`);
+  console.log(`  login gate: ${WEB_PASSWORD ? "enabled (WEB_PASSWORD)" : "disabled"}`);
 });

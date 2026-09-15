@@ -66,39 +66,28 @@ async def test_unknown_console_path_outside_console_prefix_returns_none() -> Non
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_console_asset_serves_javascript_and_css_content_types() -> None:
-    js = await handle_console_route(
-        StubService(),  # type: ignore[arg-type]
-        None,
-        StubRequest(),
-        "GET",
-        "/console/app.js",
-    )
-    assert js is not None
-    assert js.status_code == 200
-    assert "text/javascript" in js.headers["content-type"]
+async def test_console_legacy_asset_paths_serve_info_page() -> None:
+    """The frontend package is gone; legacy asset paths serve the built-in
+    info page (HTML) instead of JS/CSS assets."""
 
-    css = await handle_console_route(
-        StubService(),  # type: ignore[arg-type]
-        None,
-        StubRequest(),
-        "GET",
-        "/console/style.css",
-    )
-    assert css is not None
-    assert css.status_code == 200
-    assert "text/css" in css.headers["content-type"]
+    for path in ("/console/app.js", "/console/style.css"):
+        response = await handle_console_route(
+            StubService(),  # type: ignore[arg-type]
+            None,
+            StubRequest(),
+            "GET",
+            path,
+        )
+        assert response is not None
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
 
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_console_views_render_fallback_page_without_frontend_package(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def missing_package(filename: str) -> bytes | None:
-        return None
-
-    monkeypatch.setattr(console_routes, "_asset_bytes", missing_package)
+async def test_console_views_serve_built_in_info_page() -> None:
+    """The interactive frontend is the standalone web service; console views
+    serve the built-in info page pointing at it and at the Runtime API."""
 
     for path in ("/console", "/console/sessions", "/console/world"):
         response = await handle_console_route(

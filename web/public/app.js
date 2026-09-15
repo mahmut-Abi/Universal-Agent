@@ -1,6 +1,5 @@
 /* Universal Agent chat UI — vanilla JS over the agentd API via /api proxy. */
 
-
 const $ = (id) => document.querySelector(`#${CSS.escape(id)}`);
 
 const state = {
@@ -8,6 +7,7 @@ const state = {
   selected: null, // session view (GET /v1/sessions/{id})
   events: [], // transcript events for the selected session
   eventSource: null,
+  searchQuery: "",
 };
 
 /* ------------------------------------------------------------------ */
@@ -25,7 +25,9 @@ async function api(path, options) {
   }
   if (!response.ok) {
     const message =
-      payload && payload.error ? payload.error.message : `HTTP ${response.status}`;
+      payload && payload.error
+        ? payload.error.message
+        : `HTTP ${response.status}`;
     throw new Error(message);
   }
   return payload;
@@ -53,18 +55,27 @@ const EVENT_RENDER = {
   Heartbeat: () => null,
   DecisionGenerated: (data) =>
     entry("agent", data.reason || "thinking…", "decision"),
-  DecisionRejected: (data) => entry("err", `decision rejected: ${data.reason || ""}`),
+  DecisionRejected: (data) =>
+    entry("err", `decision rejected: ${data.reason || ""}`),
   DecisionValidated: () => null,
-  ActionStarted: (data) => entry("agent", `⚙️ ${data.capability} → ${data.target || ""}`, "action"),
-  ActionCompleted: (data) => entry("agent", `✔ ${data.capability || "action"} completed`, "action"),
+  ActionStarted: (data) =>
+    entry("agent", `⚙️ ${data.capability} → ${data.target || ""}`, "action"),
+  ActionCompleted: (data) =>
+    entry("agent", `✔ ${data.capability || "action"} completed`, "action"),
   PolicyChecked: (data) => {
-    if (data.effect === "deny") return entry("err", `⛔ policy denied ${data.capability || ""}`);
+    if (data.effect === "deny")
+      return entry("err", `⛔ policy denied ${data.capability || ""}`);
     if (data.effect === "require_confirmation") return null; // confirmation banner covers it
     return null;
   },
   EvidenceRecorded: (data) =>
-    entry("agent", `🔎 evidence: ${data.claim || data.evidence_id || ""}`, "evidence"),
-  RecoveryPlanned: (data) => entry("system", `↻ recovery: ${data.strategy || ""}`),
+    entry(
+      "agent",
+      `🔎 evidence: ${data.claim || data.evidence_id || ""}`,
+      "evidence",
+    ),
+  RecoveryPlanned: (data) =>
+    entry("system", `↻ recovery: ${data.strategy || ""}`),
   RecoveryExhausted: () => entry("err", "recovery exhausted"),
   GoalCompleted: () => entry("system", "✓ goal completed"),
   GoalFailed: (data) => entry("err", `✗ goal failed: ${data.reason || ""}`),
@@ -117,7 +128,15 @@ function renderTranscript() {
 function renderSessionList() {
   const list = $("session-list");
   list.replaceChildren();
-  for (const session of state.sessions) {
+  const query = state.searchQuery.trim().toLowerCase();
+  const visible = query
+    ? state.sessions.filter(
+        (s) =>
+          (s.goal_description || "").toLowerCase().includes(query) ||
+          String(s.session_id).toLowerCase().includes(query),
+      )
+    : state.sessions;
+  for (const session of visible) {
     const li = document.createElement("li");
     li.dataset.sessionId = session.session_id;
     if (state.selected && session.session_id === state.selected.session_id) {
@@ -170,7 +189,8 @@ function renderConfirmation() {
     return;
   }
   box.classList.remove("hidden");
-  $("confirm-title").textContent = `Confirm ${pending.capability} on ${pending.target || "target"}?`;
+  $("confirm-title").textContent =
+    `Confirm ${pending.capability} on ${pending.target || "target"}?`;
   $("confirm-detail").textContent = pending.arguments
     ? `arguments: ${JSON.stringify(pending.arguments)}`
     : "";
@@ -333,6 +353,17 @@ $("composer").addEventListener("submit", async (event) => {
     $("btn-send").disabled = false;
   }
 });
+
+$("session-search").addEventListener("input", (event) => {
+  state.searchQuery = event.target.value || "";
+  renderSessionList();
+});
+
+// Live multi-session view: refresh the sidebar periodically so sessions
+// started elsewhere (CLI, another browser) appear without a manual reload.
+setInterval(() => {
+  loadSessions().catch(() => {});
+}, 5000);
 
 $("btn-confirm").addEventListener("click", () => resumeSelected(true));
 $("btn-reject").addEventListener("click", () => resumeSelected(false));

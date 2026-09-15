@@ -26,7 +26,6 @@ CLIENT_PACKAGES = (
     "universal_agent_api",
     "universal_agent_cli",
     "universal_agent_tui",
-    "universal_agent_web",
 )
 KERNEL_PACKAGE = "universal_agent"
 _IMPORT_RE = re.compile(r"^\s*import\s+(.+)$")

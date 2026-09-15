@@ -1,19 +1,15 @@
-"""Web Console routes: static client assets plus JSON operator actions.
+"""Web Console routes: JSON operator actions plus a built-in info page.
 
-The Web Console frontend lives in the ``universal_agent_web`` client package
-(static HTML/JS/CSS, a pure HTTP API client). agentd serves those assets for
-its ``/console`` routes and exposes the operator actions (pause/resume/cancel)
-as JSON POST endpoints that dispatch through the same RuntimeService methods
-the CLI and agentd use, so policy checks and the pending-action confirmation
-boundary stay identical across surfaces.
-
-The frontend package is optional: when it is not installed, the console routes
-serve a minimal fallback page pointing at the Runtime API instead.
+The interactive Web Console frontend is the standalone ``web/`` Node.js
+service (deployed separately); agentd only serves the JSON projections and
+operator actions under ``/console`` plus a built-in info page. The operator
+actions dispatch through the same RuntimeService methods the CLI and agentd
+use, so policy checks and the pending-action confirmation boundary stay
+identical across surfaces.
 """
 
 from __future__ import annotations
 
-import importlib.resources
 from typing import Any
 
 from universal_agent.agentd.evidence_drilldown import evidence_drilldown_body
@@ -99,36 +95,18 @@ _CONSOLE_SESSION_ACTION_ROUTES = {
     "console_session_cancel",
 }
 
-_ASSET_CONTENT_TYPES = {
-    "app.js": "text/javascript; charset=utf-8",
-    "style.css": "text/css; charset=utf-8",
-}
-
 _CONFIRMED_FORM_VALUES = {"true": True, "false": False}
 
-_FALLBACK_PAGE = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Universal Agent Web Console</title></head>
+_CONSOLE_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Universal Agent Runtime API</title></head>
 <body style="font-family: system-ui, sans-serif; margin: 3rem;">
-<h1>Universal Agent Runtime</h1>
-<p>The Web Console frontend package (<code>universal-agent-web</code>) is not installed.</p>
+<h1>Universal Agent Runtime API</h1>
+<p>This agentd process serves the Runtime API and JSON projections.
+The interactive multi-session chat UI is the standalone
+<code>universal-agent-web</code> Node.js service (see the repository
+<code>web/</code> directory and Docker Compose <code>web</code> service).</p>
 <p>The Runtime API remains fully available: see <a href="/openapi.json">/openapi.json</a>.</p>
 </body></html>"""
-
-
-def _asset_bytes(filename: str) -> bytes | None:
-    """Load a static console asset from the universal_agent_web package.
-
-    The frontend package is an optional data dependency: agentd reads its
-    files through importlib.resources and degrades gracefully when the
-    package is absent.
-    """
-
-    try:
-        resources = importlib.resources.files("universal_agent_web").joinpath("static")
-        asset = resources.joinpath(filename)
-        return asset.read_bytes()
-    except (ModuleNotFoundError, FileNotFoundError, NotADirectoryError):
-        return None
 
 
 def _html_response(body: str, status_code: int = 200) -> HttpResponse:
@@ -136,20 +114,14 @@ def _html_response(body: str, status_code: int = 200) -> HttpResponse:
 
 
 def _asset_response(filename: str) -> HttpResponse:
-    payload = _asset_bytes(filename)
-    if payload is None:
-        return _html_response(_FALLBACK_PAGE)
-    return text_response(
-        payload.decode("utf-8"),
-        content_type=_ASSET_CONTENT_TYPES.get(filename, "application/octet-stream"),
-    )
+    """Legacy asset path: the frontend package was replaced by the standalone
+    web service; serve the built-in console info page instead."""
+    del filename
+    return _html_response(_CONSOLE_PAGE)
 
 
 def _index_response() -> HttpResponse:
-    payload = _asset_bytes("index.html")
-    if payload is None:
-        return _html_response(_FALLBACK_PAGE)
-    return _html_response(payload.decode("utf-8"))
+    return _html_response(_CONSOLE_PAGE)
 
 
 def _json_run_response(run: Any) -> HttpResponse:

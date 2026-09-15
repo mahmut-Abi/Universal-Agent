@@ -15,6 +15,7 @@ import subprocess
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -59,7 +60,10 @@ def _free_port() -> int:
 
 
 @pytest.fixture(name="web_server")
-def web_server_fixture() -> Iterator[str]:
+def web_server_fixture(request: pytest.FixtureRequest) -> Iterator[str]:
+    web_password = ""
+    if getattr(request, "param", None):
+        web_password = request.param
     stub_port = _free_port()
     seen_auth: list[str | None] = []
 
@@ -79,6 +83,8 @@ def web_server_fixture() -> Iterator[str]:
             "AGENTD_TOKEN": "stub-token",
         }
     )
+    if web_password:
+        env["WEB_PASSWORD"] = web_password
     assert NODE is not None
     process = subprocess.Popen(
         [NODE, str(WEB_DIR / "server.mjs")],
@@ -94,6 +100,10 @@ def web_server_fixture() -> Iterator[str]:
         while deadline > 0:
             try:
                 urllib.request.urlopen(f"{base}/api/health", timeout=1)
+                ready = True
+                break
+            except urllib.error.HTTPError:
+                # Auth-gated deployments answer 401 — the server is up.
                 ready = True
                 break
             except Exception:
@@ -135,3 +145,46 @@ def test_web_proxies_agentd_error_status(web_server: str) -> None:
     with pytest.raises(urllib.error.HTTPError) as excinfo:
         urllib.request.urlopen(f"{web_server}/api/v1/missing", timeout=5)
     assert excinfo.value.code == 404
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args: object, **kwargs: object) -> None:
+        return None
+
+
+@_skip_without_node
+@pytest.mark.parametrize("web_server", ["deployment-secret"], indirect=True)
+def test_web_login_gate_blocks_and_accepts(web_server: str) -> None:
+    opener = urllib.request.build_opener(_NoRedirect)
+
+    # Unauthenticated page request redirects to /login.
+    with pytest.raises(urllib.error.HTTPError) as redirect:
+        opener.open(f"{web_server}/", timeout=5)
+    assert redirect.value.status == 303
+    assert redirect.value.headers.get("location") == "/login"
+
+    # Unauthenticated API request gets a structured 401.
+    with pytest.raises(urllib.error.HTTPError) as api_err:
+        opener.open(f"{web_server}/api/health", timeout=5)
+    assert api_err.value.status == 401
+
+    # Wrong password bounces back to the login page with an error flag.
+    body = urllib.parse.urlencode({"password": "wrong"}).encode()
+    with pytest.raises(urllib.error.HTTPError) as wrong:
+        opener.open(f"{web_server}/login", data=body, timeout=5)
+    assert wrong.value.status == 303
+    assert wrong.value.headers.get("location") == "/login?error=1"
+
+    # Correct password sets the session cookie (303 to /) and grants access.
+    body = urllib.parse.urlencode({"password": "deployment-secret"}).encode()
+    with pytest.raises(urllib.error.HTTPError) as success:
+        opener.open(f"{web_server}/login", data=body, timeout=5)
+    assert success.value.status == 303
+    set_cookie = success.value.headers.get("set-cookie") or ""
+    assert "ua_web_session=" in set_cookie
+    assert "HttpOnly" in set_cookie
+
+    cookie = set_cookie.split(";")[0]
+    authed = urllib.request.Request(f"{web_server}/", headers={"cookie": cookie})
+    with urllib.request.urlopen(authed, timeout=5) as response:
+        assert "Universal Agent" in response.read().decode("utf-8")
