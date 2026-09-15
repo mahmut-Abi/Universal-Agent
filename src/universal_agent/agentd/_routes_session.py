@@ -17,6 +17,7 @@ from universal_agent.agentd.representations import (
     event_batch_body,
     log_records_body,
     runtime_run_body,
+    runtime_run_status_code,
     session_batch_body,
     sse_event_batch_response,
     trace_spans_body,
@@ -130,7 +131,10 @@ class SessionRouteHandlers:
                     timeout_seconds=submission.timeout_seconds,
                     read_only=submission.read_only,
                 )
-            return json_response(runtime_run_body(run), status_code=201)
+            return json_response(
+                runtime_run_body(run),
+                status_code=runtime_run_status_code(run, created=True),
+            )
 
         session_id = SessionId(route.path_params["session_id"])
         if route.name == "session":
@@ -233,7 +237,10 @@ class SessionRouteHandlers:
                     message_payload.message,
                     timeout_seconds=message_payload.timeout_seconds,
                 )
-                return json_response(runtime_run_body(run))
+                return json_response(
+                    runtime_run_body(run),
+                    status_code=runtime_run_status_code(run),
+                )
             except StateNotFoundError as exc:
                 return not_found(str(exc))
             except ValueError as exc:
@@ -287,7 +294,10 @@ class SessionRouteHandlers:
                     session_id,
                     confirmed=resume_payload.confirmed,
                 )
-                return json_response(runtime_run_body(run))
+                return json_response(
+                    runtime_run_body(run),
+                    status_code=runtime_run_status_code(run),
+                )
             except ValueError as exc:
                 return bad_request(str(exc))
             except StateNotFoundError as exc:

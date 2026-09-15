@@ -2449,7 +2449,7 @@ async def test_agentd_resume_route_rejects_pending_action() -> None:
         )
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 422
     result = response.body["result"]
     session = response.body["session"]
     assert isinstance(result, dict)

@@ -15,6 +15,7 @@ from universal_agent.agentd.session_representations import event_body
 from universal_agent.core import (
     EventId,
     ExecutionResult,
+    ExecutionStatus,
     JsonMapping,
     JsonValue,
     SessionId,
@@ -72,6 +73,23 @@ from universal_agent.service import (
 
 def runtime_run_body(run: RuntimeRun) -> JsonMapping:
     return immutable_json(_object_body(run))
+
+
+def runtime_run_status_code(run: RuntimeRun, *, created: bool = False) -> int:
+    """Map a runtime run's execution status to the proper HTTP status code.
+
+    COMPLETED -> 201 (created) / 200 (existing resource)
+    WAITING   -> 200 (confirmation needed; not an error)
+    CANCELLED -> 200 (expected lifecycle outcome)
+    FAILED    -> 422 (agent turn failed; body carries the error details)
+    """
+
+    status = run.result.status
+    if status is ExecutionStatus.FAILED:
+        return 422
+    if created:
+        return 201
+    return 200
 
 
 def event_batch_body(batch: RuntimeEventBatch) -> JsonMapping:
