@@ -42,7 +42,7 @@ CLI 有正确的 local/kubernetes dispatch（`universal_agent_cli/__init__.py:87
 修复：把 CLI 的 dispatch 逻辑（local → `build_local_profile_service`）提取为共享函数，
 facade 复用；补一条 local profile Facade 集成测试。
 
-### A2. Domain 反向泄漏进 kernel 层（AGENTS.md §4.7 违规）
+### A2. Domain 反向泄漏进 kernel 层（AGENTS.md §4.7 违规）— ✅ 已修复（2026-09-15）
 
 - `src/universal_agent/facade.py` import `domains.kubernetes.*`（kernel/compat 层依赖具体 domain）；
 - `src/universal_agent/evaluation/dispatch.py` L386-404 在 kernel evaluation dispatch
@@ -52,6 +52,18 @@ facade 复用；补一条 local profile Facade 集成测试。
   "Kernel should depend on interfaces" 的标准属于违规。
   domain 注册/发现机制（`domain_package_paths`、`DomainLoader`）已存在，
   正确做法是让默认 domain 通过 profile/domain-package 解析，而不是 facade 硬编码回退。
+
+**修复结果（UA-AUDIT-002）**：
+
+- 新增 `src/universal_agent/domains/profile_service.py` 作为唯一的 profile→service
+  composition 点（`build_configured_service` / `build_default_service` / `build_probe_service`），
+  位于 domains 包内，kernel 不再 import 任何具体 domain；
+- `facade.py` 与 `agentd/__main__.py` 均委托该 composition 点，
+  同时消除了 agentd 中第三份重复的 dispatch 拷贝；
+- `evaluation/dispatch.py` 仅使用字符串 tags（无具体 domain import），
+  且 suite 名 `kubernetes` 是 P1 spec §31 的用户契约，保留并在此记录为可接受；
+- `agentd/_routes_kubernetes.py` 是 server 组合层的 domain 特性路由接线，
+  移入 domains 包会造成 domain→server 反向依赖，判定为组合层合法归属，在此记录。
 
 ### A3. 实际 roadmap 与 AGENTS.md §13/§19 的范围冲突未闭环
 

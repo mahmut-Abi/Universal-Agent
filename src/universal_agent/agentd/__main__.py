@@ -17,18 +17,6 @@ from universal_agent.agentd.app import AgentdApp
 from universal_agent.agentd.http import AgentdAuthPolicy
 from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
 from universal_agent.core.config_validation import parse_non_empty_string
-from universal_agent.domains.kubernetes.cli_runtime import build_configured_probe_service
-from universal_agent.domains.kubernetes.cli_runtime import (
-    build_configured_service as build_kubernetes_configured_service,
-)
-from universal_agent.domains.kubernetes.cli_runtime import (
-    build_default_service as build_kubernetes_default_service,
-)
-from universal_agent.domains.local.cli_runtime import (
-    build_local_profile_service,
-    build_local_service,
-)
-from universal_agent.profile import ProfileConfig
 from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
 
@@ -67,30 +55,23 @@ def build_argument_parser() -> argparse.ArgumentParser:
 def _build_service_from_profile(profile_config: str) -> RuntimeService:
     """Build a RuntimeService from a profile config file.
 
-    Mirrors the CLI's build semantics: profiles with domain_package_paths load
-    their packaged domains; local profiles use the domain-neutral local service;
-    everything else uses the Kubernetes build.
+    Delegates to the shared domains-package composition point so agentd uses
+    the same profile dispatch as the CLI and the SDK facade: profiles with
+    domain_package_paths load their packaged domains; local profiles use the
+    domain-neutral local service; everything else uses the Kubernetes build.
     """
 
-    profile = ProfileConfig.from_json_file(profile_config).to_profile()
-    if profile.runtime.domain_package_paths:
-        from universal_agent.host import build_configured_model_adapter
-        from universal_agent.host.runtime import RuntimeHost
+    from universal_agent.domains.profile_service import build_configured_service
 
-        secret_provider = EnvSecretProvider()
-        return RuntimeHost.from_configured_domain_packages(
-            config=profile.runtime,
-            model=build_configured_model_adapter(
-                profile.runtime,
-                secret_provider=secret_provider,
-            ),
-            profile=profile,
-            secret_provider=secret_provider,
-        ).service
-    configured_domains = profile.runtime.configured_domains()
-    if configured_domains and configured_domains[0].name == "local":
-        return build_local_profile_service(profile_config)
-    return build_kubernetes_configured_service(profile_config)
+    return build_configured_service(profile_config)
+
+
+def _build_probe_service(profile_config: str) -> RuntimeService:
+    """Build a probe-style RuntimeService (Kubernetes operator probe surface)."""
+
+    from universal_agent.domains.profile_service import build_probe_service
+
+    return build_probe_service(profile_config)
 
 
 def _resolve_agentd_auth_token(
@@ -133,14 +114,15 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("agentd auth token is required when binding to non-loopback host")
     profile_config = args.profile_config
     if profile_config is not None:
-        if args.probe_only:
-            service = build_configured_probe_service(profile_config)
-        else:
-            service = _build_service_from_profile(profile_config)
-    else:
         service = (
-            build_kubernetes_default_service() if args.kubernetes_default else build_local_service()
+            _build_probe_service(profile_config)
+            if args.probe_only
+            else _build_service_from_profile(profile_config)
         )
+    else:
+        from universal_agent.domains.profile_service import build_default_service
+
+        service = build_default_service(kubernetes_default=args.kubernetes_default)
 
     server = AgentdHttpServer(
         AgentdApp(

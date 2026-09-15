@@ -158,36 +158,16 @@ def _description(goal: str) -> str:
 def build_configured_service(config_path: str | Path) -> RuntimeService:
     """Assemble a RuntimeService from one profile config (shared SDK/CLI builder).
 
-    Single dispatch point for `agent init`-style profile configs:
-
-    1. domain packages -> generic ``RuntimeHost.from_configured_domain_packages``;
-    2. first configured domain is ``local`` -> the domain-neutral Local workspace
-       service (the Golden Path default created by `agent init`);
-    3. otherwise -> the Kubernetes profile service (explicit Kubernetes profiles).
-
-    The CLI delegates here so the SDK facade and the CLI can never diverge on
-    which domain a profile resolves to.
+    Delegates to the domains-package composition point
+    (``universal_agent.domains.profile_service``) so the kernel-side facade
+    never imports a concrete domain. The dispatch: domain packages -> the
+    domain-neutral Local workspace service (the `agent init` Golden Path
+    default) -> the Kubernetes profile service.
     """
 
-    profile = ProfileConfig.from_json_file(config_path).to_profile()
-    secret_provider = EnvSecretProvider()
-    if profile.runtime.domain_package_paths:
-        return RuntimeHost.from_configured_domain_packages(
-            config=profile.runtime,
-            model=build_configured_model_adapter(profile.runtime, secret_provider=secret_provider),
-            profile=profile,
-            secret_provider=secret_provider,
-        ).service
-    configured_domains = profile.runtime.configured_domains()
-    if configured_domains and configured_domains[0].name == "local":
-        from universal_agent.domains.local.cli_runtime import build_local_profile_service
+    from universal_agent.domains.profile_service import build_configured_service as build_service
 
-        return build_local_profile_service(config_path)
-    from universal_agent.domains.kubernetes.cli_runtime import (
-        build_configured_service as build_kubernetes_service,
-    )
-
-    return build_kubernetes_service(config_path)
+    return build_service(config_path)
 
 
 def _build_service(
