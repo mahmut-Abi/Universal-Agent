@@ -28,6 +28,7 @@ from universal_agent.agentd.routing import (
     _optional_positive_int_query,
     _optional_query_value,
     _optional_session_cursor,
+    _session_message_payload,
     _session_reason_payload,
     _session_resume_payload,
 )
@@ -48,6 +49,11 @@ _SESSION_ROUTE_DEFINITIONS = (
     AgentdRouteDefinition("session_evidence", "/v1/sessions/{session_id}/evidence"),
     AgentdRouteDefinition("session_world", "/v1/sessions/{session_id}/world"),
     AgentdRouteDefinition("session_events", "/v1/sessions/{session_id}/events"),
+    AgentdRouteDefinition(
+        "session_messages",
+        "/v1/sessions/{session_id}/messages",
+        ("POST",),
+    ),
     AgentdRouteDefinition("session_events_stream", "/v1/sessions/{session_id}/events/stream"),
     AgentdRouteDefinition("session_audit", "/v1/sessions/{session_id}/audit"),
     AgentdRouteDefinition(
@@ -217,6 +223,20 @@ class SessionRouteHandlers:
                 return json_response(log_records_body(await self._service.logs(session_id)))
             except StateNotFoundError as exc:
                 return not_found(str(exc))
+        if route.name == "session_messages":
+            try:
+                message_payload = _session_message_payload(request.body)
+                run = await self._service.continue_session(
+                    session_id,
+                    message_payload.message,
+                    timeout_seconds=message_payload.timeout_seconds,
+                )
+                return json_response(runtime_run_body(run))
+            except StateNotFoundError as exc:
+                return not_found(str(exc))
+            except ValueError as exc:
+                return bad_request(str(exc))
+
         if route.name == "session_traces":
             try:
                 return json_response(trace_spans_body(await self._service.traces(session_id)))

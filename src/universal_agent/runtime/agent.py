@@ -28,6 +28,7 @@ from universal_agent.core import (
     immutable_json,
     new_session_id,
 )
+from universal_agent.core.config_validation import parse_non_empty_string
 from universal_agent.domain import RuntimeComponents
 from universal_agent.eventstream import EventSink
 from universal_agent.goals import DefaultGoalCompiler, GoalCompilation, GoalCompiler
@@ -75,7 +76,11 @@ from universal_agent.runtime.transitions import (
     cancel as cancel_transition,
 )
 from universal_agent.runtime.transitions import pause as pause_transition
-from universal_agent.security import SecretProvider, SecretResolutionReport
+from universal_agent.security import (
+    SecretProvider,
+    SecretResolutionReport,
+    redact_sensitive_mapping,
+)
 from universal_agent.security.sandbox import Sandbox
 from universal_agent.state import (
     SessionSnapshot,
@@ -83,6 +88,7 @@ from universal_agent.state import (
 )
 from universal_agent.state.event_store import EventStore
 from universal_agent.tasks import TaskManager
+from universal_agent.tasks.models import TaskSpec
 
 
 class AgentRuntime:
@@ -346,6 +352,68 @@ class AgentRuntime:
                 self._events.runtime_event(state, "SessionResumed"),
             )
             return await self._continue_controlled(session, control, pending=pending)
+
+    async def continue_session(
+        self,
+        session_id: SessionId,
+        message: str,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> ExecutionResult:
+        """Continue a finished session with a follow-up user message.
+
+        Hydrates the session (world model, evidence and memory replay), appends
+        a new task carrying the user message, and re-enters the run loop with a
+        fresh iteration budget. Policy, evaluation and recovery semantics are
+        identical to a fresh run. Requires the session to be terminal
+        (COMPLETED or FAILED); running sessions use resume for confirmations.
+        """
+
+        control = self._control_for(session_id)
+        async with control.lock:
+            snapshot = await self._load_session(session_id)
+            try:
+                session = hydrate_session(snapshot, self._components)
+            except SessionHydrationError as exc:
+                return await self._reject_session(snapshot, str(exc))
+            state = session.state
+            if state.goal.status is GoalStatus.RUNNING:
+                return build_result(
+                    state,
+                    ExecutionStatus.FAILED,
+                    "session is already running",
+                    error_code=ErrorCode.INVALID_STATE,
+                )
+            if state.goal.status is GoalStatus.WAITING:
+                return build_result(
+                    state,
+                    ExecutionStatus.FAILED,
+                    "session is waiting for confirmation; use resume",
+                    error_code=ErrorCode.INVALID_STATE,
+                )
+            message_text = parse_non_empty_string(message, "message")
+            seq = len(session.tasks.all()) + 1
+            created = session.tasks.expand(
+                (TaskSpec(key=f"user-followup-{seq}", description=message_text),)
+            )
+            new_task = created[0]
+            session.tasks.set_current(new_task.id)
+            state.current_task = new_task
+            state.iteration = 0
+            state.termination_reason = None
+            state.error_code = None
+            state.goal.status = GoalStatus.RUNNING
+            mark_current_task(session, TaskStatus.RUNNING)
+            await self._events.commit_session_event(
+                session,
+                self._events.runtime_event(
+                    state,
+                    "SessionContinued",
+                    data=dict(redact_sensitive_mapping({"message": message_text})),
+                ),
+            )
+            deadline = None if timeout_seconds is None else time.monotonic() + timeout_seconds
+            return await self._continue_controlled(session, control, deadline=deadline)
 
     async def pause(
         self,

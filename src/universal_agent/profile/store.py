@@ -37,9 +37,7 @@ __all__ = [
     "ProfileStoreValidationError",
 ]
 
-PROFILE_NAME_CHARS = set(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
-)
+PROFILE_NAME_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
 AUDIT_FILE_NAME = "config-audit.jsonl"
 
 
@@ -77,9 +75,7 @@ class ConfigAuditRecord:
 def _validate_name(name: str) -> str:
     cleaned = name.strip()
     if not cleaned or not set(cleaned) <= PROFILE_NAME_CHARS:
-        raise ValueError(
-            "profile name must be non-empty and use only letters, digits, '-' or '_'"
-        )
+        raise ValueError("profile name must be non-empty and use only letters, digits, '-' or '_'")
     return cleaned
 
 
@@ -273,9 +269,7 @@ class ProfileStore:
                 item for item in runtime_domains if str(item.get("name")) != domain_name
             ]
 
-        merged = _deep_merge(
-            current, {"domains": domains, "runtime": {"domains": runtime_domains}}
-        )
+        merged = _deep_merge(current, {"domains": domains, "runtime": {"domains": runtime_domains}})
         merged["name"] = name
         validated = self.update(name, merged, actor=actor)
         self._audit(
@@ -332,9 +326,7 @@ class ProfileStore:
         except PydanticValidationError as exc:
             raise ProfileStoreValidationError(_validation_errors(exc)) from exc
         except ValueError as exc:
-            raise ProfileStoreValidationError(
-                ({"path": "<root>", "message": str(exc)},)
-            ) from exc
+            raise ProfileStoreValidationError(({"path": "<root>", "message": str(exc)},)) from exc
         return {key: value for key, value in materialized.items()}
 
     def _write(self, name: str, payload: Mapping[str, Any]) -> None:

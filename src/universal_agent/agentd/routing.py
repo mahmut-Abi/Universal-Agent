@@ -157,6 +157,11 @@ class _SessionResumePayload(ConfigPayload):
     confirmed: bool | None = None
 
 
+class _SessionMessagePayload(ConfigPayload):
+    message: PydanticNonEmptyString
+    timeout_seconds: float | None = None
+
+
 class _MemoryCreatePayload(ConfigPayload):
     kind: str
     subject: str
@@ -431,6 +436,17 @@ def _memory_create_payload(body: JsonMapping) -> _MemoryCreatePayload:
             "content": "memory content must be a string",
             "scope": "memory scope must be a string",
             "confidence": "memory confidence must be a number",
+        },
+    )
+
+
+def _session_message_payload(body: JsonMapping) -> _SessionMessagePayload:
+    return _request_model_payload(
+        _SessionMessagePayload,
+        body,
+        {
+            "message": "session message must be a non-empty string",
+            "timeout_seconds": "session timeout_seconds must be a number",
         },
     )
 

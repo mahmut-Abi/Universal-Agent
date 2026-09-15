@@ -103,6 +103,13 @@ class TaskManager:
         self._validate_acyclic()
         return tuple(created)
 
+    def set_current(self, task_id: TaskId) -> None:
+        """Make an existing task the current one (session continuation)."""
+
+        if task_id not in self._tasks:
+            raise ValueError(f"task does not exist: {task_id}")
+        self._current_id = task_id
+
     def complete_current(self) -> None:
         self.current.status = TaskStatus.COMPLETED
 

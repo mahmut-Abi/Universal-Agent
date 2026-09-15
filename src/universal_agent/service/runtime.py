@@ -525,6 +525,21 @@ class RuntimeService:
     ) -> RuntimeRun:
         return await self._runtime_api.resume_session(session_id, confirmed=confirmed)
 
+    async def continue_session(
+        self,
+        session_id: SessionId,
+        message: str,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> RuntimeRun:
+        """Continue a finished session with a follow-up user message."""
+
+        return await self._runtime_api.continue_session(
+            session_id,
+            message,
+            timeout_seconds=timeout_seconds,
+        )
+
     async def pause_session(
         self,
         session_id: SessionId,

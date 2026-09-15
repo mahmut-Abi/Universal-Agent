@@ -241,6 +241,20 @@ class RuntimeAPI:
         result = await self._runtime.resume(session_id, confirmed=confirmed)
         return RuntimeRun(result, await self.get_session(result.session_id))
 
+    async def continue_session(
+        self,
+        session_id: SessionId,
+        message: str,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> RuntimeRun:
+        result = await self._runtime.continue_session(
+            session_id,
+            message,
+            timeout_seconds=timeout_seconds,
+        )
+        return RuntimeRun(result, await self.get_session(result.session_id))
+
     async def pause_session(
         self,
         session_id: SessionId,

@@ -62,9 +62,7 @@ def build_app(tmp_path: Any, *, with_store: bool = True) -> AgentdApp:
         runtime_api=RuntimeAPI(runtime=runtime, session_store=store, event_reader=events),
         components=components,
     )
-    profile_store = (
-        ProfileStore(tmp_path / "profiles") if with_store else None
-    )
+    profile_store = ProfileStore(tmp_path / "profiles") if with_store else None
     return AgentdApp(service, profile_store=profile_store)
 
 
@@ -168,9 +166,7 @@ async def test_domain_binding_updates_stored_profile(app: AgentdApp) -> None:
     assert store is not None
     payload = store.load("checkout-sre")
     domains = _as_list(payload.get("domains"))
-    assert any(
-        _as_dict(item).get("name") == "kubernetes" for item in domains
-    )
+    assert any(_as_dict(item).get("name") == "kubernetes" for item in domains)
 
 
 @pytest.mark.asyncio
