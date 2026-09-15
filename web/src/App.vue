@@ -190,6 +190,7 @@ const profileModal = reactive({ open: false, editing: null })
 const pmForm = reactive({ name: '', desc: '', domains: [],
   model: { provider: 'scripted', name: '', endpoint: '', api_key_env: '', timeout_seconds: 30 } })
 const MODEL_PROVIDERS = ['scripted', 'json_http', 'openai_chat_completions', 'openai_responses']
+const pmError = ref('')
 function openProfileModal(name) {
   profileModal.editing = name || null
   const p = name ? m.profiles.find((x) => x.name === name) : null
