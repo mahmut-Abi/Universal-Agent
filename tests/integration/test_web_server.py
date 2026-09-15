@@ -26,9 +26,7 @@ import pytest
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 NODE = shutil.which("node")
 
-_WEB_REBUILD_SKIP = pytest.mark.skipif(
-    True, reason="web frontend under active rebuild"
-)
+_WEB_REBUILD_SKIP = pytest.mark.skipif(True, reason="web frontend under active rebuild")
 pytestmark = [pytest.mark.integration, _WEB_REBUILD_SKIP]
 
 _skip_without_node = pytest.mark.skipif(NODE is None, reason="node is not installed")
