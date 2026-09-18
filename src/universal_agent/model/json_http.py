@@ -101,11 +101,17 @@ class HttpxJsonHttpTransport:
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text.strip()
             suffix = f": {detail}" if detail else ""
+            # AGENTS.md §9 recovery taxonomy: rate limits and server-side
+            # failures are transient — a retry can plausibly resolve them.
+            transient = exc.response.status_code in {408, 429} or exc.response.status_code >= 500
             raise JsonHttpModelError(
-                f"model provider returned HTTP {exc.response.status_code}{suffix}"
+                f"model provider returned HTTP {exc.response.status_code}{suffix}",
+                transient=transient,
             ) from exc
         except httpx.RequestError as exc:
-            raise JsonHttpModelError(f"model provider request failed: {exc}") from exc
+            raise JsonHttpModelError(
+                f"model provider request failed: {exc}", transient=True
+            ) from exc
         return response
 
 

@@ -100,16 +100,14 @@ def build_service(workspace_path: Path) -> RuntimeService:
 
 
 async def print_failure_diagnostics(service: RuntimeService, run_result: object) -> None:
-    """Print the model's decisions and terminal error for a failed run."""
+    """Print model decisions and terminal error details for a failed run."""
     result = getattr(run_result, "result", run_result)
     status = getattr(result, "status", None)
     if status is not None and getattr(status, "value", None) == "completed":
         return
-    error = getattr(result, "error", None)
     error_code = getattr(result, "error_code", None)
-    if error or error_code:
+    if error_code is not None:
         print(f"    error_code: {error_code}")
-        print(f"    error: {str(error)[:200]}")
     session = getattr(run_result, "session", None)
     session_id = getattr(session, "session_id", None)
     if session_id is None:
@@ -121,12 +119,14 @@ async def print_failure_diagnostics(service: RuntimeService, run_result: object)
     for event in events:
         event_type = getattr(event, "type", None)
         data = getattr(event, "data", {})
+        text = str(dict(data)) if hasattr(data, "keys") else str(data)
         if event_type == "DecisionGenerated":
-            print(f"    decision: {str(dict(data))[:250]}")
+            print(f"    decision: {text[:250]}")
         elif event_type == "ActionFailed":
-            print(f"    action_failed: {str(dict(data))[:250]}")
-        elif event_type == "EvaluationCompleted":
-            print(f"    evaluation: {str(dict(data))[:200]}")
+            print(f"    action_failed: {text[:250]}")
+        elif "error" in text.lower() or "fail" in text.lower():
+            # Terminal/model-failure events carry the raw adapter error.
+            print(f"    {event_type}: {text[:250]}")
 
 
 # ─── Scenario definitions ────────────────────────────────────
@@ -228,6 +228,9 @@ async def main() -> None:
                     print(f"  ✗ ERROR: {type(exc).__name__}: {str(exc)[:150]}")
                     passed = False
                 results[name].append(passed)
+                # Free-tier endpoints throttle rapid sequential calls; a short
+                # gap keeps flaky-routing noise out of the measurements.
+                await asyncio.sleep(2.0)
 
     print("\n" + "=" * 60)
     print("Summary (per-scenario pass rate)")

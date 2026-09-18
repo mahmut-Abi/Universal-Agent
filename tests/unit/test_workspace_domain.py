@@ -420,21 +420,15 @@ class TestDeleteFileTool:
         self, domain_with_files: WorkspaceDomain, workspace_with_files: Path
     ) -> None:
         tools = domain_with_files.tools()
-        delete = next(
-            t for t in tools if t.definition.name == "workspace_delete_file"
-        )
+        delete = next(t for t in tools if t.definition.name == "workspace_delete_file")
         result = await delete.execute(immutable_json({"path": "hello.py"}))
         assert result["deleted"] is True
         assert not (workspace_with_files / "hello.py").exists()
 
     @pytest.mark.asyncio
-    async def test_delete_nonexistent_file(
-        self, domain: WorkspaceDomain
-    ) -> None:
+    async def test_delete_nonexistent_file(self, domain: WorkspaceDomain) -> None:
         tools = domain.tools()
-        delete = next(
-            t for t in tools if t.definition.name == "workspace_delete_file"
-        )
+        delete = next(t for t in tools if t.definition.name == "workspace_delete_file")
         result = await delete.execute(immutable_json({"path": "ghost.txt"}))
         assert result["deleted"] is False
         assert "error" in result
@@ -442,19 +436,13 @@ class TestDeleteFileTool:
     @pytest.mark.asyncio
     async def test_delete_path_escape(self, domain: WorkspaceDomain) -> None:
         tools = domain.tools()
-        delete = next(
-            t for t in tools if t.definition.name == "workspace_delete_file"
-        )
+        delete = next(t for t in tools if t.definition.name == "workspace_delete_file")
         result = await delete.execute(immutable_json({"path": "../outside.txt"}))
         assert result["deleted"] is False
 
-    def test_delete_tool_is_destructive_high_risk(
-        self, domain: WorkspaceDomain
-    ) -> None:
+    def test_delete_tool_is_destructive_high_risk(self, domain: WorkspaceDomain) -> None:
         tools = domain.tools()
-        delete = next(
-            t for t in tools if t.definition.name == "workspace_delete_file"
-        )
+        delete = next(t for t in tools if t.definition.name == "workspace_delete_file")
         assert delete.definition.side_effect == SideEffect.DESTRUCTIVE
         assert delete.definition.risk == RiskLevel.HIGH
 
@@ -782,9 +770,7 @@ class TestPolicies:
         result = engine.check(context)
         assert result.effect == PolicyEffect.REQUIRE_CONFIRMATION
 
-    def test_delete_allowed_after_confirmation(
-        self, domain: WorkspaceDomain
-    ) -> None:
+    def test_delete_allowed_after_confirmation(self, domain: WorkspaceDomain) -> None:
         policies = domain.policies()
         engine = PolicyEngine(policies)
         context = PolicyContext(

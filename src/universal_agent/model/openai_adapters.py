@@ -22,6 +22,7 @@ from universal_agent.core.config_validation import (
     PydanticJsonValue,
     parse_json_object,
     parse_non_empty_string,
+    parse_non_negative_int,
     parse_positive_float,
 )
 from universal_agent.model.adapter import ModelUsage, bounded_llm_text
@@ -46,6 +47,14 @@ from universal_agent.model.openai_transport import (
 from universal_agent.security import redact_sensitive_mapping
 
 _SchemaNonEmptyString = Annotated[str, StringConstraints(min_length=1)]
+
+_DECISION_REPAIR_PROMPT = (
+    "Your previous response was not a valid Universal Agent Runtime Decision. "
+    "Error: {error}. "
+    "Respond again with exactly one JSON object that has the required fields "
+    "(type, reason, capability, target, arguments, expected_observations, message). "
+    "Return only the JSON object with no prose, code fences, or commentary."
+)
 
 
 class _OpenAIDecisionSchemaPayload(BaseModel):
@@ -230,11 +239,13 @@ class OpenAIChatCompletionsModelAdapter:
         timeout_seconds: float = 30.0,
         response_format: str = "json_schema",
         transport: OpenAIModelTransport | JsonHttpModelTransport | None = None,
+        max_repair_retries: int = 2,
     ) -> None:
         parsed_model = parse_non_empty_string(model, "model name")
         parsed_api_key = parse_non_empty_string(api_key, "OpenAI API key")
         parsed_endpoint = parse_non_empty_string(endpoint, "OpenAI chat completions endpoint")
         parse_positive_float(timeout_seconds, "model timeout_seconds")
+        parse_non_negative_int(max_repair_retries, "model max_repair_retries")
         if response_format not in {"json_schema", "json_object", "prompt_json"}:
             raise ValueError(
                 "OpenAI chat completions response_format must be "
@@ -248,18 +259,72 @@ class OpenAIChatCompletionsModelAdapter:
         self._timeout_seconds = timeout_seconds
         self._response_format = response_format
         self._transport = _openai_model_transport(transport)
+        self._max_repair_retries = max_repair_retries
         self._last_usage: ModelUsage | None = None
 
     async def decide(self, context: DecisionContext) -> Decision:
-        request_payload = self._request_payload(context)
-        response = await self._transport.create_chat_completion(
-            self._endpoint,
-            api_key=self._api_key,
-            extra_headers=self._extra_headers,
-            payload=request_payload,
-            timeout_seconds=self._timeout_seconds,
-        )
-        output_text = _openai_chat_completion_content(_openai_chat_completion_payload(response))
+        messages = self._base_messages(context)
+        response_format = _openai_chat_response_format(self._response_format)
+        last_error: JsonHttpModelError | None = None
+        for attempt in range(self._max_repair_retries + 1):
+            payload: dict[str, JsonValue] = {
+                "model": self._model,
+                "messages": messages,
+            }
+            if response_format is not None:
+                payload["response_format"] = response_format
+            request_payload = immutable_json(payload)
+            response = await self._transport.create_chat_completion(
+                self._endpoint,
+                api_key=self._api_key,
+                extra_headers=self._extra_headers,
+                payload=request_payload,
+                timeout_seconds=self._timeout_seconds,
+            )
+            output_text = _openai_chat_completion_content(
+                _openai_chat_completion_payload(response)
+            )
+            usage = decode_usage(
+                "openai_chat_completions",
+                self._model,
+                response.get("usage"),
+            )
+            try:
+                decision, decoded_payload = self._decode_output(output_text, context)
+            except JsonHttpModelError as exc:
+                if getattr(exc, "transient", False):
+                    raise
+                last_error = exc
+                if attempt >= self._max_repair_retries:
+                    break
+                # Repair round: feed the malformed output back so the model
+                # can correct its own JSON/schema mistakes.
+                messages = [
+                    *messages,
+                    {"role": "assistant", "content": output_text},
+                    {
+                        "role": "user",
+                        "content": _DECISION_REPAIR_PROMPT.format(error=exc),
+                    },
+                ]
+                continue
+            if usage is not None:
+                self._last_usage = replace(
+                    usage,
+                    prompt=bounded_llm_text(
+                        dumps_json(redact_sensitive_mapping(dict(request_payload)))
+                    ),
+                    completion=bounded_llm_text(
+                        dumps_json(redact_sensitive_mapping(dict(decoded_payload)))
+                    ),
+                )
+            return decision
+        assert last_error is not None
+        raise last_error
+
+    def _decode_output(
+        self, output_text: str, context: DecisionContext
+    ) -> tuple[Decision, JsonMapping]:
         decoded = _loads_json_text(output_text, "OpenAI chat completion message content")
         payload = decision_payload(json_mapping(decoded, "message.content"))
         try:
@@ -268,25 +333,12 @@ class OpenAIChatCompletionsModelAdapter:
             validate_decision_against_context(decision, context)
         except ValueError as exc:
             raise JsonHttpModelError(f"invalid OpenAI chat completion decision: {exc}") from exc
-        usage = decode_usage(
-            "openai_chat_completions",
-            self._model,
-            response.get("usage"),
-        )
-        if usage is not None:
-            self._last_usage = replace(
-                usage,
-                prompt=bounded_llm_text(
-                    dumps_json(redact_sensitive_mapping(dict(request_payload)))
-                ),
-                completion=bounded_llm_text(dumps_json(redact_sensitive_mapping(dict(payload)))),
-            )
-        return decision
+        return decision, payload
 
     def model_usage(self) -> ModelUsage | None:
         return self._last_usage
 
-    def _request_payload(self, context: DecisionContext) -> JsonMapping:
+    def _base_messages(self, context: DecisionContext) -> list[JsonValue]:
         prompt = {
             "runtime_contract": (
                 "Return exactly one Universal Agent Runtime Decision as JSON. "
@@ -304,28 +356,21 @@ class OpenAIChatCompletionsModelAdapter:
             "decision_schema": _openai_decision_json_schema(),
             "context": dict(decision_context_payload(context)),
         }
-        payload: dict[str, JsonValue] = {
-            "model": self._model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a decision component inside Universal Agent Runtime. "
-                        "Return only valid JSON matching the requested schema. "
-                        "Do not call tools, invent unavailable capabilities, or decide "
-                        "that runtime state has changed."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": dumps_json(prompt),
-                },
-            ],
-        }
-        response_format = _openai_chat_response_format(self._response_format)
-        if response_format is not None:
-            payload["response_format"] = response_format
-        return immutable_json(payload)
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "You are a decision component inside Universal Agent Runtime. "
+                    "Return only valid JSON matching the requested schema. "
+                    "Do not call tools, invent unavailable capabilities, or decide "
+                    "that runtime state has changed."
+                ),
+            },
+            {
+                "role": "user",
+                "content": dumps_json(prompt),
+            },
+        ]
 
 
 class _LegacyOpenAIJsonHttpTransport:
@@ -446,9 +491,15 @@ def _openai_chat_completion_content(response: _OpenAIChatCompletionPayload) -> s
 
 
 def _loads_json_text(text: str, source: str) -> object:
-    candidates = (text, _strip_json_code_fence(text))
+    candidates = (
+        text,
+        _strip_json_code_fence(text),
+        _extract_embedded_json_object(text),
+    )
     last_error: JsonCodecError | None = None
     for candidate in dict.fromkeys(candidates):
+        if not candidate:
+            continue
         try:
             return loads_json(candidate)
         except JsonCodecError as exc:
@@ -456,6 +507,40 @@ def _loads_json_text(text: str, source: str) -> object:
     assert last_error is not None
     message = f"{source} was not JSON: {json_error_message(last_error)}"
     raise JsonHttpModelError(message) from last_error
+
+
+def _extract_embedded_json_object(text: str) -> str:
+    """Salvage the first balanced JSON object embedded in surrounding prose.
+
+    Models frequently wrap the requested JSON in sentences like
+    ``Here is the decision: { ... }``. Deterministic repair: locate the first
+    ``{`` and its matching brace, ignoring braces inside JSON strings.
+    """
+    start = text.find("{")
+    if start < 0:
+        return ""
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return ""
 
 
 def _strip_json_code_fence(text: str) -> str:
