@@ -402,8 +402,10 @@ def agentd_tui_actions(client: AgentdClient) -> TuiActions:
             body=body,
         )
 
-    async def resume(session_id: SessionId, confirmed: bool | None) -> object:
+    async def resume(session_id: SessionId, confirmed: bool | None, remember: bool) -> object:
         body: dict[str, JsonValue] = {"confirmed": confirmed} if confirmed is not None else {}
+        if remember:
+            body["remember"] = True
         return await client.post_json(
             f"/v1/sessions/{quote_path_segment(str(session_id))}/resume",
             body=body,

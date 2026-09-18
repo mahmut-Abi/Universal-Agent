@@ -119,11 +119,19 @@ class Agent:
         task_obj = Task(task or "Run goal", required)
         return SDKRunResult.from_runtime(await self._service.run_goal(goal_obj, task_obj))
 
-    async def resume(self, session_id: str, *, confirmed: bool | None = None) -> SDKRunResult:
+    async def resume(
+        self,
+        session_id: str,
+        *,
+        confirmed: bool | None = None,
+        remember: bool = False,
+    ) -> SDKRunResult:
         """Resume a waiting session (e.g. a policy confirmation) on the runtime."""
 
         return SDKRunResult.from_runtime(
-            await self._service.resume_session(SessionId(session_id), confirmed=confirmed)
+            await self._service.resume_session(
+                SessionId(session_id), confirmed=confirmed, remember=remember
+            )
         )
 
     async def cancel(

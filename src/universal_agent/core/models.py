@@ -439,6 +439,11 @@ class AgentState:
     observations: list[Observation] = field(default_factory=list)
     latest_evaluation: EvaluationResult | None = None
     pending_action: PendingAction | None = None
+    # Session-scoped approvals remembered via explicit opt-in (`remember=True`
+    # at confirmation time). Each entry is an action fingerprint
+    # (capability|target|canonical arguments) that re-enters Policy as
+    # pre-confirmed ONLY when the exact same action is proposed again.
+    approved_fingerprints: list[str] = field(default_factory=list)
     tasks: list[Task] = field(default_factory=list)
     recovery_attempts: dict[str, int] = field(default_factory=dict)
     termination_reason: str | None = None

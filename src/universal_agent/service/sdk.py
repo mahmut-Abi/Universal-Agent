@@ -171,9 +171,12 @@ class UniversalAgentRuntime:
         session_id: str,
         *,
         confirmed: bool | None = None,
+        remember: bool = False,
     ) -> SDKRunResult:
         return SDKRunResult.from_runtime(
-            await self._service.resume_session(SessionId(session_id), confirmed=confirmed)
+            await self._service.resume_session(
+                SessionId(session_id), confirmed=confirmed, remember=remember
+            )
         )
 
     async def pause_session(

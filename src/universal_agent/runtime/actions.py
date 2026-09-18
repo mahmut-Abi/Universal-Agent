@@ -235,6 +235,7 @@ class ActionExecutor:
         emit: EmitFn,
         *,
         confirmed: bool,
+        remember: bool = False,
     ) -> ActionOutcome:
         state = session.state
         try:
@@ -262,11 +263,11 @@ class ActionExecutor:
                 ErrorCode.VALIDATION_ERROR,
                 "side-effecting action requires a resource identity",
             )
-        policy_result = _read_only_policy_result(
-            state,
-            capability,
-            tool.definition,
-        ) or self.components.policy_engine.check(
+        fingerprint = _action_fingerprint(pending)
+        remembered = fingerprint in state.approved_fingerprints
+        confirmed_effective = confirmed or remembered
+        read_only_result = _read_only_policy_result(state, capability, tool.definition)
+        policy_result = read_only_result or self.components.policy_engine.check(
             PolicyContext(
                 session_id=state.session_id,
                 goal_id=state.goal.id,
@@ -277,11 +278,12 @@ class ActionExecutor:
                 target=pending.target,
                 arguments=pending.arguments,
                 environment=self.environment,
-                confirmed=confirmed,
+                confirmed=confirmed_effective,
                 goal_success_criteria=state.goal.success_criteria,
                 task_required_criteria=state.current_task.required_criteria,
             )
         )
+        approval_source = "explicit" if confirmed else ("remembered" if remembered else "none")
         await emit(
             "PolicyChecked",
             pending.action_id,
@@ -292,6 +294,7 @@ class ActionExecutor:
                 "tool_name": tool.definition.name,
                 "side_effect": tool.definition.side_effect.value,
                 "risk": tool.definition.risk.value,
+                "approval": approval_source,
             },
         )
         if policy_result.effect is PolicyEffect.DENY:
@@ -367,6 +370,16 @@ class ActionExecutor:
                 and observed.observation.status is not ObservationStatus.SUCCEEDED
             ):
                 self.idempotency_store.forget(idempotency_key)
+            # Record the approval fingerprint only after the action actually
+            # succeeded: a failed/timed-out approved action must re-enter the
+            # confirmation gate on every recovery retry ("the gate fires before
+            # every tool call"), and approval memory must never short-circuit it.
+            if (
+                confirmed_effective
+                and read_only_result is None
+                and observed.observation.status is ObservationStatus.SUCCEEDED
+            ):
+                _remember_approval(state, fingerprint)
             return observed
         except asyncio.CancelledError:
             if idempotency_recorded:
@@ -831,6 +844,28 @@ def _ensure_resource_metadata(
     if not resource_key and resource_version is None:
         return pending
     return replace(pending, resource_key=resource_key, resource_version=resource_version)
+
+
+def _action_fingerprint(pending: PendingAction) -> str:
+    """Stable identity of a proposed action: capability | target | canonical arguments.
+
+    Used for session-scoped approval memory: a remembered fingerprint matches
+    ONLY an identical re-proposal of the same action.
+    """
+
+    canonical = dumps_json(immutable_json(pending.arguments), sort_keys=True)
+    return f"{pending.capability}|{pending.target or ''}|{canonical}"
+
+
+_APPROVED_FINGERPRINT_LIMIT = 32
+
+
+def _remember_approval(state: AgentState, fingerprint: str) -> None:
+    """Record an approval fingerprint (deduplicated, most recent kept, bounded)."""
+
+    approved = [item for item in state.approved_fingerprints if item != fingerprint]
+    approved.append(fingerprint)
+    state.approved_fingerprints = approved[-_APPROVED_FINGERPRINT_LIMIT:]
 
 
 def _read_only_policy_result(

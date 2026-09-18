@@ -237,8 +237,9 @@ class RuntimeAPI:
         session_id: SessionId,
         *,
         confirmed: bool | None = None,
+        remember: bool = False,
     ) -> RuntimeRun:
-        result = await self._runtime.resume(session_id, confirmed=confirmed)
+        result = await self._runtime.resume(session_id, confirmed=confirmed, remember=remember)
         return RuntimeRun(result, await self.get_session(result.session_id))
 
     async def continue_session(

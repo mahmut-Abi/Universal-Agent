@@ -293,6 +293,7 @@ class SessionRouteHandlers:
                 run = await self._service.resume_session(
                     session_id,
                     confirmed=resume_payload.confirmed,
+                    remember=resume_payload.remember,
                 )
                 return json_response(
                     runtime_run_body(run),

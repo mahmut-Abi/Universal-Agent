@@ -150,6 +150,7 @@ class _AgentStatePayload(ConfigPayload):
     recovery_attempts: dict[str, int]
     termination_reason: str | None
     error_code: _StateErrorCodePayload
+    approved_fingerprints: list[str] = []
 
 
 class _EvidencePayload(ConfigPayload):
@@ -278,6 +279,7 @@ def _encode_agent_state(state: AgentState) -> JsonObject:
         "recovery_attempts": dict(state.recovery_attempts),
         "termination_reason": state.termination_reason,
         "error_code": state.error_code.value if state.error_code is not None else None,
+        "approved_fingerprints": list(state.approved_fingerprints),
     }
 
 
@@ -297,6 +299,7 @@ def _decode_agent_state(payload: _AgentStatePayload, tasks: Mapping[TaskId, Task
         recovery_attempts=dict(payload.recovery_attempts),
         termination_reason=payload.termination_reason,
         error_code=payload.error_code,
+        approved_fingerprints=list(payload.approved_fingerprints),
     )
     return state
 

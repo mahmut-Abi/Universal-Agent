@@ -292,6 +292,7 @@ class AgentRuntime:
         session_id: SessionId,
         *,
         confirmed: bool | None = None,
+        remember: bool = False,
     ) -> ExecutionResult:
         control = self._control_for(session_id)
         async with control.lock:
@@ -351,7 +352,9 @@ class AgentRuntime:
                 session,
                 self._events.runtime_event(state, "SessionResumed"),
             )
-            return await self._continue_controlled(session, control, pending=pending)
+            return await self._continue_controlled(
+                session, control, pending=pending, remember=remember
+            )
 
     async def continue_session(
         self,
@@ -769,6 +772,7 @@ class AgentRuntime:
         *,
         decision: Decision | None = None,
         pending: PendingAction | None = None,
+        remember: bool = False,
     ) -> ExecutionResult | None:
         """Run one action, then any recovery action it triggers.
 
@@ -787,6 +791,7 @@ class AgentRuntime:
                     pending,
                     emit,
                     confirmed=True,
+                    remember=remember,
                 )
                 pending = None
             # pi-lens-ignore: python-assert-production
@@ -849,6 +854,7 @@ class AgentRuntime:
         decision: Decision | None = None,
         pending: PendingAction | None = None,
         deadline: float | None = None,
+        remember: bool = False,
     ) -> ExecutionResult:
         current = asyncio.current_task()
         control.active_task = current
@@ -857,7 +863,9 @@ class AgentRuntime:
             if requested is not None:
                 return requested
             if pending is not None or decision is not None:
-                result = await self._drive(session, decision=decision, pending=pending)
+                result = await self._drive(
+                    session, decision=decision, pending=pending, remember=remember
+                )
                 if result is not None:
                     return result
             return await self._loop(session, deadline=deadline)

@@ -133,6 +133,7 @@ def _copy_state(state: AgentState, tasks: dict[TaskId, Task]) -> AgentState:
         recovery_attempts=dict(state.recovery_attempts),
         termination_reason=state.termination_reason,
         error_code=state.error_code,
+        approved_fingerprints=list(state.approved_fingerprints),
     )
     return copied
 

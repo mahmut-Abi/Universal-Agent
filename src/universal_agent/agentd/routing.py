@@ -155,6 +155,7 @@ class _StateEventRepairPayload(ConfigPayload):
 
 class _SessionResumePayload(ConfigPayload):
     confirmed: bool | None = None
+    remember: bool = False
 
 
 class _SessionMessagePayload(ConfigPayload):
@@ -455,7 +456,10 @@ def _session_resume_payload(body: JsonMapping) -> _SessionResumePayload:
     return _request_model_payload(
         _SessionResumePayload,
         body,
-        {"confirmed": "resume confirmed must be a boolean"},
+        {
+            "confirmed": "resume confirmed must be a boolean",
+            "remember": "resume remember must be a boolean",
+        },
     )
 
 

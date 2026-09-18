@@ -522,8 +522,11 @@ class RuntimeService:
         session_id: SessionId,
         *,
         confirmed: bool | None = None,
+        remember: bool = False,
     ) -> RuntimeRun:
-        return await self._runtime_api.resume_session(session_id, confirmed=confirmed)
+        return await self._runtime_api.resume_session(
+            session_id, confirmed=confirmed, remember=remember
+        )
 
     async def continue_session(
         self,

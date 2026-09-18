@@ -33,7 +33,7 @@ from universal_agent import (
     Task,
     immutable_json,
 )
-from universal_agent.core import ActionId, ObservationId, SessionId, TaskId
+from universal_agent.core import ActionId, ErrorCode, ObservationId, SessionId, TaskId
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
 from universal_agent.domains.kubernetes.backend import KubernetesBackend, KubernetesMutationBackend
 from universal_agent.evidence import Evidence
@@ -278,6 +278,85 @@ async def test_confirmation_binding_approval_does_not_authorize_other_mutations(
         "scale_workload",
     ]
     assert completed.status is ExecutionStatus.COMPLETED
+
+
+# Opt-in approval memory: `remember=True` at confirmation time records the
+# action fingerprint (capability|target|arguments). An IDENTICAL re-proposal
+# re-enters Policy as pre-confirmed (approval="remembered"), but the
+# idempotency/resource guard still prevents a duplicate mutation of an
+# unchanged resource - approval memory can never bypass that layer.
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_remembered_approval_passes_policy_but_not_idempotency_guard() -> None:
+    backend = CountingBackend()
+    decisions = [
+        inspect_decision(),
+        restart_decision(),
+        inspect_decision(),
+        restart_decision(),  # identical fingerprint -> remembered approval
+        inspect_decision(),
+        finish_after_restart(),
+    ]
+    runtime, sink = build_runtime(backend, decisions)
+
+    waiting = await runtime.run(*health_goal())
+    assert waiting.status is ExecutionStatus.WAITING
+    assert backend.mutation_calls == []
+
+    resumed = await runtime.resume(waiting.session_id, confirmed=True, remember=True)
+
+    # First restart executed; the identical re-proposal passed Policy via the
+    # remembered approval...
+    remembered = [
+        event
+        for event in sink.events
+        if event.type == "PolicyChecked" and event.data.get("approval") == "remembered"
+    ]
+    assert remembered, "identical re-proposal must carry remembered approval"
+    assert all(event.data.get("effect") == "allow" for event in remembered)
+
+    # ...but was NOT re-executed: the idempotency guard intercepts the
+    # duplicate and the session settles with RESOURCE_CONFLICT.
+    assert [c for c, _ in backend.mutation_calls] == ["restart_workload"]
+    assert resumed.status is ExecutionStatus.FAILED
+    assert resumed.error_code is ErrorCode.RESOURCE_CONFLICT
+
+
+# Approval memory is fingerprint-scoped: a mutation on a DIFFERENT target is
+# not covered by the remembered approval and pauses for its own confirmation.
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_remembered_approval_does_not_cover_other_targets() -> None:
+    backend = CountingBackend()
+    decisions = [
+        inspect_decision(),
+        restart_decision(),
+        inspect_decision(),
+        Decision(
+            DecisionType.EXECUTE,
+            "Restart other workload",
+            capability="restart_workload",
+            target="deployment/catalog",
+            arguments=immutable_json({"name": "catalog", "namespace": "default"}),
+            expected_observations=("mutation_applied",),
+        ),
+        inspect_decision(),
+        finish_after_restart(),
+    ]
+    runtime, sink = build_runtime(backend, decisions)
+
+    waiting = await runtime.run(*health_goal())
+    assert waiting.status is ExecutionStatus.WAITING
+
+    resumed = await runtime.resume(waiting.session_id, confirmed=True, remember=True)
+    assert [c for c, _ in backend.mutation_calls] == ["restart_workload"]
+    assert resumed.status is ExecutionStatus.WAITING, "other target must pause again"
+    remembered = [
+        event
+        for event in sink.events
+        if event.type == "PolicyChecked" and event.data.get("approval") == "remembered"
+    ]
+    assert not remembered
 
 
 # I6: tool success does not imply task success - a mutation that leaves the

@@ -44,7 +44,7 @@ class TuiActions:
     """Operator action surface: embedded RuntimeService or remote agentd client."""
 
     pause: Callable[[SessionId, str | None], Awaitable[object]]
-    resume: Callable[[SessionId, bool | None], Awaitable[object]]
+    resume: Callable[[SessionId, bool | None, bool], Awaitable[object]]
     cancel: Callable[[SessionId, str | None], Awaitable[object]]
     chat: Callable[[str], Awaitable[JsonMapping]] | None = None
 
@@ -55,8 +55,8 @@ def service_tui_actions(service: RuntimeService) -> TuiActions:
     async def pause(session_id: SessionId, reason: str | None) -> object:
         return await service.pause_session(session_id, reason=reason or "session paused")
 
-    async def resume(session_id: SessionId, confirmed: bool | None) -> object:
-        return await service.resume_session(session_id, confirmed=confirmed)
+    async def resume(session_id: SessionId, confirmed: bool | None, remember: bool) -> object:
+        return await service.resume_session(session_id, confirmed=confirmed, remember=remember)
 
     async def cancel(session_id: SessionId, reason: str | None) -> object:
         return await service.cancel_session(session_id, reason=reason or "session cancelled")
@@ -406,7 +406,9 @@ class RuntimeTuiApp(App[None]):
         if kind == "pause":
             await self._actions.pause(session_id, str(payload) if payload else None)
         elif kind == "resume":
-            await self._actions.resume(session_id, payload if isinstance(payload, bool) else None)
+            await self._actions.resume(
+                session_id, payload if isinstance(payload, bool) else None, False
+            )
         else:
             await self._actions.cancel(session_id, str(payload) if payload else None)
         self._set_hint(f"{kind} completed")
