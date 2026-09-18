@@ -67,8 +67,8 @@ h3 {
 }
 
 /* ── 布局外壳：分组侧边栏 + 主栏 ───────── */
-.app-shell { display: flex; min-height: 100vh; }
-.main-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.app-shell { display: flex; height: 100vh; }
+.main-col { flex: 1; min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; }
 .sidenav {
   width: 232px; flex: none; position: sticky; top: 0; height: 100vh;
   overflow-y: auto; padding: 20px 12px 24px;
@@ -187,7 +187,13 @@ h3 {
   width: 100%;
   margin-inline: auto;
   padding: 24px 28px 64px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
+/* 对话页锁定视口内滚动：外层不滚，消息区自己滚 */
+.shell:has(#view-chat.active) { overflow: hidden; display: flex; flex-direction: column; }
+#view-chat.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .view {
   display: none;
 }
@@ -224,6 +230,7 @@ h3 {
 }
 @media (max-width: 880px) {
   .app-shell { flex-direction: column; }
+  .main-col { flex: 1; min-height: 0; height: auto; }
   .sidenav {
     width: 100%; height: auto; position: sticky; top: 0; z-index: 30;
     display: flex; align-items: center; gap: 4px; padding: 10px 12px;
@@ -240,6 +247,10 @@ h3 {
   .topbar { padding: 10px 16px; }
   .env-pill { display: none; }
   .shell { padding: 20px 16px 56px; }
+  .shell:has(#view-chat.active) { overflow: auto; }
+  #view-chat.active { display: block; }
+  .chat-layout { height: auto; }
+  .chat-main { min-height: 420px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -1205,7 +1216,8 @@ h3 {
   grid-template-columns: 260px 1fr;
   gap: 16px;
   align-items: stretch;
-  min-height: calc(100vh - 170px);
+  min-height: 0;
+  flex: 1;
 }
 @media (max-width: 920px) {
   .chat-layout {
@@ -1306,6 +1318,7 @@ h3 {
 .chat-main {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
