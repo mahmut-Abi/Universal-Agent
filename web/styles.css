@@ -205,6 +205,9 @@ h3 {
   display: grid;
   gap: 16px;
 }
+.grid > * {
+  min-width: 0;
+}
 .g-metrics {
   grid-template-columns: repeat(4, 1fr);
 }
@@ -1758,6 +1761,16 @@ h3 {
   border-bottom: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
   font-size: 13px;
 }
+.mono-row > * {
+  min-width: 0;
+}
+.mono-row > span {
+  overflow-wrap: anywhere;
+}
+.mono-row .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .mono-row:last-child {
   border-bottom: 0;
 }
@@ -1854,6 +1867,8 @@ h3 {
 }
 .log-line .lx {
   font-family: var(--font-mono);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .log-line .lx code {
   font-family: var(--font-mono);

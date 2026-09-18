@@ -7,9 +7,7 @@ defineOptions({ name: 'CostView' })
 </script>
 <template>
 <!-- 视图七：成本分析 -->
-      <section v-show="view === 'cost'" class="view" :class="{ active: view === 'cost' }" id="view-cost" role="tabpanel">
-        <h2 class="viewtitle">成本分析</h2>
-        <div class="grid g-main">
+      <section v-show="view === 'cost'" class="view" :class="{ active: view === 'cost' }" id="view-cost" role="tabpanel">        <div class="grid g-main">
           <div class="card" data-od-id="cost-models-card">
             <div class="card-head"><h3>按模型分解</h3></div>
             <div id="cost-models">

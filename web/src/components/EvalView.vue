@@ -9,7 +9,6 @@ defineOptions({ name: 'EvalView' })
 <!-- 视图四：评估工作台 -->
       <section v-show="view === 'eval'" class="view" :class="{ active: view === 'eval' }" id="view-eval" role="tabpanel">
         <div class="card-head" style="margin-bottom:4px">
-          <h2 class="viewtitle" style="margin:0">评估工作台</h2>
           <div class="row-actions"><button class="btn btn-primary btn-sm" id="btn-eval-run" @click="runEval().then(() => toast('评估已启动')).catch((e) => toast('评估启动失败：' + e.message))">▶ 运行评估</button></div>
         </div>
         <div class="grid g-main">

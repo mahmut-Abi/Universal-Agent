@@ -7,9 +7,7 @@ defineOptions({ name: 'MultiAgentView' })
 </script>
 <template>
 <!-- 视图十二：多智能体 -->
-      <section v-show="view === 'multiagent'" class="view" :class="{ active: view === 'multiagent' }" id="view-multiagent" role="tabpanel">
-        <h2 class="viewtitle">多智能体拓扑</h2>
-        <div class="card" data-od-id="topo-card">
+      <section v-show="view === 'multiagent'" class="view" :class="{ active: view === 'multiagent' }" id="view-multiagent" role="tabpanel">        <div class="card" data-od-id="topo-card">
           <div class="card-head"><h3>协作拓扑</h3></div>
           <svg class="topo" viewBox="0 0 680 280" role="img"
             aria-label="多智能体协作拓扑图：coordinator 连接 triage、ops、audit 三个 worker" id="topo-svg">

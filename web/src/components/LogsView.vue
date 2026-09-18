@@ -13,9 +13,7 @@ const filteredLogs = computed(() =>
 </script>
 <template>
 <!-- 视图八：日志与追踪 -->
-      <section v-show="view === 'logs'" class="view" :class="{ active: view === 'logs' }" id="view-logs" role="tabpanel">
-        <h2 class="viewtitle">日志与追踪</h2>
-        <div class="grid g-main">
+      <section v-show="view === 'logs'" class="view" :class="{ active: view === 'logs' }" id="view-logs" role="tabpanel">        <div class="grid g-main">
           <div class="card" data-od-id="logs-card">
             <div class="card-head"><h3>日志流</h3>
               <div class="filter-pills" role="group" aria-label="按级别过滤日志">

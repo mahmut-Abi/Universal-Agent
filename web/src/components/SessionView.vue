@@ -11,7 +11,6 @@ const confirmRemember = ref(false)
 <!-- 视图二：会话详情 -->
       <section v-show="view === 'session'" class="view" :class="{ active: view === 'session' }" id="view-session" role="tabpanel">
         <div class="card-head" style="margin-bottom:4px">
-          <h2 class="viewtitle" style="margin:0">会话详情</h2>
           <span class="meta num" id="session-id-label">{{ currentSession && currentSession.id }}</span>
         </div>
         <div id="confirm-slot" data-od-id="confirm-banner">

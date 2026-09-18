@@ -7,9 +7,7 @@ defineOptions({ name: 'OverviewView' })
 </script>
 <template>
 <!-- 视图一：总览 -->
-      <section v-show="view === 'overview'" class="view" :class="{ active: view === 'overview' }" id="view-overview" role="tabpanel">
-        <h2 class="viewtitle">总览</h2>
-        <div class="grid g-metrics" id="metrics" data-od-id="metrics-row">
+      <section v-show="view === 'overview'" class="view" :class="{ active: view === 'overview' }" id="view-overview" role="tabpanel">        <div class="grid g-metrics" id="metrics" data-od-id="metrics-row">
           <div v-for="c in metricCards" :key="c.label" class="card metric" :data-od-id="'metric-' + c.label">
             <div class="m-label">{{ c.label }}</div>
             <div class="m-value num">{{ c.value }}</div>

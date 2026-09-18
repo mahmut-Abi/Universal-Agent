@@ -9,7 +9,6 @@ defineOptions({ name: 'K8sOpsView' })
 <!-- 视图九：K8s 运维 -->
       <section v-show="view === 'k8sops'" class="view" :class="{ active: view === 'k8sops' }" id="view-k8sops" role="tabpanel">
         <div class="card-head" style="margin-bottom:4px">
-          <h2 class="viewtitle" style="margin:0">K8s 运维面板</h2>
           <div class="row-actions"><button class="btn btn-primary btn-sm" id="btn-k8s-preflight" @click="reload('k8sops'); toast('Preflight 已运行')">运行 Preflight</button></div>
         </div>
         <div class="grid g-main">

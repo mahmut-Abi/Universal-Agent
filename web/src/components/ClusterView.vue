@@ -7,9 +7,7 @@ defineOptions({ name: 'ClusterView' })
 </script>
 <template>
 <!-- 视图五：分布式集群 -->
-      <section v-show="view === 'cluster'" class="view" :class="{ active: view === 'cluster' }" id="view-cluster" role="tabpanel">
-        <h2 class="viewtitle">分布式集群</h2>
-        <div class="grid g-main">
+      <section v-show="view === 'cluster'" class="view" :class="{ active: view === 'cluster' }" id="view-cluster" role="tabpanel">        <div class="grid g-main">
           <div class="card" data-od-id="cluster-workers-card">
             <div class="card-head"><h3>Workers</h3></div>
             <div id="cluster-workers">

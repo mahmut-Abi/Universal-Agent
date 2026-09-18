@@ -7,9 +7,7 @@ defineOptions({ name: 'EcosystemView' })
 </script>
 <template>
 <!-- 视图十：生态与包 -->
-      <section v-show="view === 'ecosystem'" class="view" :class="{ active: view === 'ecosystem' }" id="view-ecosystem" role="tabpanel">
-        <h2 class="viewtitle">生态与包管理</h2>
-        <div class="grid g-config">
+      <section v-show="view === 'ecosystem'" class="view" :class="{ active: view === 'ecosystem' }" id="view-ecosystem" role="tabpanel">        <div class="grid g-config">
           <div class="card" data-od-id="eco-installed-card">
             <div class="card-head"><h3>已安装 Domain 包</h3></div>
             <div id="eco-installed">

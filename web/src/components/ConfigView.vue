@@ -7,9 +7,7 @@ defineOptions({ name: 'ConfigView' })
 </script>
 <template>
 <!-- 视图三：配置与运行时 -->
-      <section v-show="view === 'config'" class="view" :class="{ active: view === 'config' }" id="view-config" role="tabpanel">
-        <h2 class="viewtitle">配置与运行时</h2>
-        <div class="grid g-config">
+      <section v-show="view === 'config'" class="view" :class="{ active: view === 'config' }" id="view-config" role="tabpanel">        <div class="grid g-config">
           <div class="card" data-od-id="model-card">
             <div class="card-head"><h3>模型配置 · 运行时</h3></div>
             <template v-if="m.runtimeConfig.available && m.runtimeConfig.model">

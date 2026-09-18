@@ -9,7 +9,6 @@ defineOptions({ name: 'MemoryView' })
 <!-- 视图六：记忆管理 -->
       <section v-show="view === 'memory'" class="view" :class="{ active: view === 'memory' }" id="view-memory" role="tabpanel">
         <div class="card-head" style="margin-bottom:4px">
-          <h2 class="viewtitle" style="margin:0">记忆管理</h2>
         </div>
         <div class="card" data-od-id="memory-card">
           <div style="display:flex;gap:10px;margin-bottom:8px">

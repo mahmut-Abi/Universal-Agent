@@ -7,9 +7,7 @@ defineOptions({ name: 'AuditView' })
 </script>
 <template>
 <!-- 视图十一：审计中心 -->
-      <section v-show="view === 'audit'" class="view" :class="{ active: view === 'audit' }" id="view-audit" role="tabpanel">
-        <h2 class="viewtitle">审计中心</h2>
-        <div class="grid g-main">
+      <section v-show="view === 'audit'" class="view" :class="{ active: view === 'audit' }" id="view-audit" role="tabpanel">        <div class="grid g-main">
           <div class="card" data-od-id="audit-stream-card">
             <div class="card-head"><h3>审计流</h3>
               <span id="audit-count"><span class="meta">{{ auditFiltered.length }} / {{ m.audit.items.length }} 条</span></span></div>

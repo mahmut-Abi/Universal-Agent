@@ -9,7 +9,6 @@ defineOptions({ name: 'HealthView' })
 <!-- 视图十三：健康中心 -->
       <section v-show="view === 'health'" class="view" :class="{ active: view === 'health' }" id="view-health" role="tabpanel">
         <div class="card-head" style="margin-bottom:4px">
-          <h2 class="viewtitle" style="margin:0">健康中心</h2>
           <div class="row-actions"><button class="btn btn-secondary btn-sm" id="btn-repair" @click="toast('修复任务已创建')">修复状态事件</button></div>
         </div>
         <div class="grid g-config">
