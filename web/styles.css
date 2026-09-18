@@ -35,6 +35,7 @@ html {
 }
 body {
   margin: 0;
+  overflow-x: clip;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
@@ -680,6 +681,9 @@ h3 {
 .tl-body {
   font-size: 13.5px;
   margin-top: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .tl-body code {
   font-family: var(--font-mono);
@@ -698,9 +702,8 @@ h3 {
   border-radius: 8px;
   padding: 10px 14px;
   margin: 8px 0 2px;
-  overflow-x: auto;
-  white-space: pre;
-  word-break: normal;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .tl-toggle {
   width: 22px;
@@ -1383,9 +1386,8 @@ h3 {
   border-radius: 8px;
   padding: 10px 14px;
   margin: 8px 0 2px;
-  overflow-x: auto;
-  white-space: pre;
-  word-break: normal;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .msg.user .bubble pre {
   background: oklch(100% 0 0 / 0.14);
@@ -1862,8 +1864,6 @@ h3 {
   padding: 0 5px;
   color: var(--fg);
   font-weight: 400;
-}
-  word-break: break-all;
 }
 .mem-row {
   display: flex;
