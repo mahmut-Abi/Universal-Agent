@@ -20,19 +20,24 @@ async function api(path, opts = {}) {
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   });
   if (!res.ok) {
-    let detail = "";
+    let body = null;
     try {
-      const j = await res.json();
-      detail =
-        j.error?.message ||
-        j.message ||
-        (j.errors ? JSON.stringify(j.errors) : "");
+      body = await res.json();
     } catch {
       /* non-JSON error body */
     }
-    throw new Error(
+    const detail =
+      body?.error?.message ||
+      body?.message ||
+      (body?.errors ? JSON.stringify(body.errors) : "");
+    // body/status attached so callers can recover partially-succeeded
+    // requests (e.g. POST /v1/sessions → 422 with a created session_id).
+    const err = new Error(
       `${opts.method || "GET"} ${path} → HTTP ${res.status}${detail ? " · " + detail : ""}`,
     );
+    err.status = res.status;
+    err.body = body;
+    throw err;
   }
   if (res.status === 204) return null;
   return res.json();
@@ -224,6 +229,81 @@ function escapeHtml(x) {
         c
       ],
   );
+}
+export { escapeHtml };
+
+/* ── 会话事件 → 聊天转录 ──
+ * agentd 没有 GET /messages；对话内容由事件流重建：
+ *   SessionContinued.data.message  → 用户消息（续聊）
+ *   ActionCompleted                → 工具调用气泡（能力名 + 截断输出）
+ *   GoalCompleted / GoalFailed     → 每轮 agent 结论
+ *   ConfirmationRequired / GoalWaiting → 等待人工确认
+ * firstMessage 是首轮用户消息（= goal 描述，创建会话时的输入）。 */
+export function sessionTranscript(events, firstMessage) {
+  const msgs = [];
+  if (firstMessage) msgs.push({ role: "user", text: escapeHtml(firstMessage) });
+  let turn = [];
+  const flush = () => {
+    if (turn.length) {
+      msgs.push({ role: "agent", text: turn.join(""), tools: [] });
+      turn = [];
+    }
+  };
+  for (const e of events || []) {
+    const d = e.data || {};
+    switch (e.type) {
+      case "SessionContinued":
+        flush();
+        msgs.push({ role: "user", text: escapeHtml(d.message || "") });
+        break;
+      case "ActionCompleted": {
+        let out = "";
+        if (typeof d.output === "string") out = d.output;
+        else if (d.output != null) out = JSON.stringify(d.output);
+        turn.push(
+          `<div class="msg-tool">⚙ 调用 <b>${escapeHtml(d.capability || "tool")}</b></div>` +
+            (out && out !== "None"
+              ? `<pre class="tool-out">${escapeHtml(out.slice(0, 600))}</pre>`
+              : ""),
+        );
+        break;
+      }
+      case "ActionFailed":
+        turn.push(
+          `<div class="turn-fail">⚙ ${escapeHtml(d.capability || "tool")} 执行失败${d.error_code ? " · " + escapeHtml(d.error_code) : ""}</div>`,
+        );
+        break;
+      case "ConfirmationRequired":
+      case "GoalWaiting":
+        flush();
+        msgs.push({
+          role: "agent",
+          text: '<div class="turn-wait">⏸ 等待人工确认（在会话详情中处理）</div>',
+          tools: [],
+        });
+        break;
+      case "GoalCompleted":
+        turn.push('<div class="turn-ok">✅ 本轮已完成</div>');
+        break;
+      case "GoalFailed":
+        turn.push(
+          `<div class="turn-fail">❌ ${escapeHtml(d.reason || d.error_code || "执行失败")}</div>`,
+        );
+        break;
+      case "GoalCancelled":
+        turn.push('<div class="turn-fail">⏹ 已取消</div>');
+        break;
+      case "RecoveryExhausted":
+        turn.push(
+          '<div class="turn-fail">↻ 恢复步骤已耗尽，任务终止</div>',
+        );
+        break;
+      default:
+        break;
+    }
+  }
+  flush();
+  return msgs;
 }
 function fmtTime(iso) {
   if (!iso) return "";

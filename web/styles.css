@@ -1696,3 +1696,10 @@ h3 {
   stroke: var(--border);
   stroke-width: 1.5;
 }
+
+/* 聊天转录（事件重建）附加样式 */
+.tool-out{margin:6px 0 0;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto}
+.turn-ok{color:var(--ok);font-size:13px;margin-top:2px}
+.turn-fail{color:var(--danger-text,var(--danger));font-size:13px;margin-top:2px}
+.turn-wait{color:var(--warn);font-size:13px}
+.ch-item .m .status{font-size:11px;padding:1px 6px}

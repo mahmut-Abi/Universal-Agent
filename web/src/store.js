@@ -6,6 +6,7 @@ import {
   createState,
   normStatus,
   STATUS_MAP,
+  sessionTranscript,
   loadOverview,
   loadSessions as apiLoadSessions,
   loadMetrics,
@@ -206,7 +207,7 @@ export const sessionSummary = computed(() => {
     : [];
 });
 
-/* ── 对话（真实会话：chat = agentd session，消息 = 会话事件） ── */
+/* ── 对话（真实会话：chat = agentd session，转录由事件流重建） ── */
 export const chatFilter = ref("全部");
 export const activeChatId = ref(null);
 export const chatSessions = computed(() =>
@@ -214,30 +215,23 @@ export const chatSessions = computed(() =>
     id: s.id,
     title: s.goal,
     profile: s.profile,
+    status: s.status,
     time: s.raw?.created_at
       ? new Date(s.raw.created_at).toTimeString().slice(0, 5)
       : "—",
-    msgs: chatMsgs(s),
+    msgs: sessionTranscript(chatEventCache[s.id] || [], s.goal),
   })),
 );
-export const chatEventCache = reactive({});
-export function chatMsgs(chat) {
-  const evs = chatEventCache[chat.id] || [];
-  return [
-    { role: "user", text: chat.title },
-    ...evs.map((e) => ({
-      role: "agent",
-      text: `<code>${e.type || "event"}</code>`,
-    })),
-  ];
-}
-export const CHAT_PROFILES = ["全部", "default"];
+/* Profile 过滤项由真实会话推导（不再硬编码 ["全部","default"]） */
+export const CHAT_PROFILES = computed(() => [
+  "全部",
+  ...Array.from(new Set(m.sessions.map((s) => s.profile))),
+]);
 export const activeChat = computed(
   () => chatSessions.value.find((c) => c.id === activeChatId.value) || null,
 );
 export const chatInput = ref("");
 export const sending = ref(false);
-export const replyIdx = { i: 0 };
 export const chatMsgsEl = ref(null);
 export const chatInputEl = ref(null);
 export const filteredChats = computed(() =>
@@ -249,38 +243,71 @@ export function scrollChat() {
   if (chatMsgsEl.value)
     chatMsgsEl.value.scrollTop = chatMsgsEl.value.scrollHeight;
 }
+/* 新建对话：清空选中，让第一条输入创建新会话（而非继续写入旧会话） */
 export function newChat() {
-  toast("输入第一条消息后将创建真实会话（POST /v1/sessions）");
+  activeChatId.value = null;
+  nextTick(() => chatInputEl.value && chatInputEl.value.focus());
+}
+/* 选中历史会话：首次点击时拉取事件重建转录 */
+export function selectChat(id) {
+  activeChatId.value = id;
+  if (!chatEventCache[id]) {
+    apiGetEvents(id).catch((e) => toast("事件加载失败：" + e.message));
+  }
+  nextTick(scrollChat);
 }
 export function autoGrow(e) {
   const el = e.target;
   el.style.height = "auto";
   el.style.height = Math.min(el.scrollHeight, 140) + "px";
 }
+/* 发送：新会话首条消息即 goal（POST /v1/sessions 已执行，不再重发 /messages）；
+   既有会话经 POST /messages 续聊后拉取事件刷新转录。 */
 export function sendChat() {
   const text = chatInput.value.trim();
   if (!text || sending.value) return;
   sending.value = true;
-  const ensure = activeChat.value
-    ? Promise.resolve(activeChat.value)
+  const refresh = (sid) =>
+    apiLoadSessions(m)
+      .then(() => apiGetEvents(sid))
+      .then(() => chatSessions.value.find((c) => c.id === sid));
+  const existing = activeChat.value;
+  const work = existing
+    ? sendMessage(existing.id, text)
+        .then(() => refresh(existing.id))
+        .catch((e) => {
+          // 续聊失败但会话仍存在：刷新列表展示失败状态
+          return refresh(existing.id).then((chat) => {
+            throw Object.assign(e, { recovered: chat });
+          });
+        })
     : createSession(
         text,
-        chatFilter.value === "全部" ? "default" : chatFilter.value,
-      ).then((d) => {
-        const sid = (d.session && d.session.id) || d.session_id || d.id;
-        activeChatId.value = sid;
-        return apiLoadSessions(m).then(() =>
-          chatSessions.value.find((c) => c.id === sid),
-        );
-      });
-  ensure
-    .then((chat) => {
-      if (!chat) return;
-      return sendMessage(chat.id, text)
-        .then(() => apiGetEvents(chat.id))
-        .catch((e) => toast("发送失败：" + e.message));
+        chatFilter.value === "全部" ? undefined : chatFilter.value,
+      )
+        .then((d) => {
+          const sid =
+            (d.result && d.result.session_id) || d.session_id || d.id;
+          activeChatId.value = sid;
+          return refresh(sid);
+        })
+        .catch((e) => {
+          // 422：会话已创建但首轮执行失败 —— 保留会话并展示失败记录
+          const sid = e.body?.result?.session_id;
+          if (!sid) throw e;
+          activeChatId.value = sid;
+          return refresh(sid).then((chat) => {
+            throw Object.assign(e, { recovered: chat });
+          });
+        });
+  work
+    .catch((e) => {
+      toast(
+        e.recovered
+          ? "本轮执行失败（详见对话记录）：" + (e.message || e)
+          : "发送失败：" + (e.message || e),
+      );
     })
-    .catch((e) => toast("会话创建失败：" + e.message))
     .finally(() => {
       sending.value = false;
       chatInput.value = "";
@@ -289,14 +316,10 @@ export function sendChat() {
     });
 }
 export function apiGetEvents(sid) {
-  return import("./api.js")
-    .then((mod) => mod.apiGet(`/v1/sessions/${sid}/events`))
-    .then((d) => {
-      chatEventCache[sid] = (
-        mod.pick ? mod.pick(d, "events") : d.events || []
-      ).slice(-20);
-      nextTick(scrollChat);
-    });
+  return apiGet(`/v1/sessions/${sid}/events`).then((d) => {
+    chatEventCache[sid] = (d.events || []).slice(-300);
+    nextTick(scrollChat);
+  });
 }
 export function onChatKeydown(e) {
   if (e.key === "Enter" && !e.shiftKey) {
@@ -635,7 +658,8 @@ export function initDashboard() {
   });
 }
 
-// 模板直接使用的 api.js 绑定经由 store 再导出（script setup 语义保持不变）
+export const chatEventCache = reactive({});
+/* 模板直接使用的 api.js 绑定经由 store 再导出（script setup 语义保持不变） */
 
 // 模板直接使用的 api.js 绑定经由 store 再导出（保持 script setup 语义）
 export {
