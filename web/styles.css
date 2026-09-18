@@ -1795,6 +1795,31 @@ h3 {
   font-family: var(--font-mono);
   font-weight: 500;
 }
+/* Trace 行两行式布局：ID/元信息竖排占主宽，按钮右侧独立，避免窄列竖排碎字 */
+.mono-row.col2 {
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 12px 4px;
+}
+.mono-row.col2 .mono-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mono-row.col2 .mono-main .meta {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.mono-row.col2 .btn {
+  align-self: center;
+}
+/* 日志页两栏比例：给 Trace 卡更宽的一列 */
+#view-logs .g-main {
+  grid-template-columns: 1.15fr 1fr;
+}
 .loadbar {
   height: 6px;
   border-radius: 3px;

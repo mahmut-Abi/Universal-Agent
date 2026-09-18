@@ -34,10 +34,12 @@ const filteredLogs = computed(() =>
           <div class="card" data-od-id="traces-card">
             <div class="card-head"><h3>Trace 查询</h3><span class="tag">OTLP 导出</span></div>
             <div id="traces-list">
-              <div v-for="t in m.traces" :key="t.tid" class="mono-row">
-                <span class="lbl">{{ t.tid }}</span>
-                <span>{{ t.root }}</span>
-                <span style="color:var(--muted)">{{ t.session }} · {{ t.spans }} spans · {{ t.dur }}</span>
+              <div v-for="t in m.traces" :key="t.tid" class="mono-row col2">
+                <div class="mono-main">
+                  <span class="lbl">{{ t.tid }}</span>
+                  <span class="meta">{{ t.root }} · {{ t.spans }} spans · {{ t.dur }}</span>
+                  <span class="meta">{{ t.session }}</span>
+                </div>
                 <button class="btn btn-secondary btn-sm" @click="openTraceSession(t.session)">查看会话</button>
               </div>
             </div>
