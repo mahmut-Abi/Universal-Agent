@@ -36,6 +36,8 @@ onMounted(() => {
       <div class="fe-hint">功能可能部分不可用；接入真实 agentd 时请把该信息提供给后端排查。</div>
     </div>
 
+    <SideNav />
+
     <div class="main-col">
       <TopBar />
 
