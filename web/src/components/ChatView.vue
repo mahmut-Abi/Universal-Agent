@@ -31,7 +31,13 @@ defineOptions({ name: 'ChatView' })
           </aside>
           <div class="chat-main" data-od-id="chat-main">
             <div class="chat-msgs" id="chat-msgs" ref="chatMsgsEl" data-od-id="chat-msgs" aria-live="polite">
-              <div v-if="!activeChat && !pendingUserMsg && !chatQueue.length" class="empty" style="margin:auto">输入消息开始新对话，或在左侧选择历史会话</div>
+              <div v-if="!activeChat && !pendingUserMsg && !chatQueue.length" class="chat-empty" data-od-id="chat-empty">
+                <div class="ring" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                </div>
+                <h3>开始新对话</h3>
+                <p>输入任务或问题，Agent 将执行工具调用并汇报结果；也可以在左侧选择历史会话继续。</p>
+              </div>
               <template v-if="activeChat">
                 <div v-for="(msg, mi) in activeChat.msgs" :key="mi" class="msg" :class="msg.role === 'user' ? 'user' : 'agent'">
                   <span class="who">{{ msg.role === 'user' ? '你' : 'Agent · ' + activeChat.profile }}</span>
@@ -54,13 +60,15 @@ defineOptions({ name: 'ChatView' })
               </div>
             </div>
             <div class="chat-inputbar">
-              <div class="chat-inputrow">
-                <textarea ref="chatInputEl" class="textarea" id="chat-input" rows="1" v-model="chatInput"
+              <div class="composer" data-od-id="chat-composer">
+                <textarea ref="chatInputEl" id="chat-input" rows="1" v-model="chatInput"
                   @keydown="onChatKeydown" @input="autoGrow"
                   placeholder="输入任务或问题，Agent 将执行并汇报结果…" aria-label="消息输入"></textarea>
-                <button class="btn btn-primary" id="btn-chat-send" :disabled="sending" @click="sendChat">发送</button>
+                <div class="composer-actions">
+                  <span class="chat-hint">Enter 发送 · Shift+Enter 换行 · 运行中的消息会排队</span>
+                  <button class="btn btn-primary" id="btn-chat-send" :disabled="sending" @click="sendChat">发送</button>
+                </div>
               </div>
-              <div class="chat-hint">Enter 发送 · Shift+Enter 换行 · Agent 运行中的消息会排队，结束后自动发送</div>
             </div>
           </div>
         </div>

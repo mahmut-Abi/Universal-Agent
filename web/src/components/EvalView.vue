@@ -10,12 +10,11 @@ defineOptions({ name: 'EvalView' })
       <section v-show="view === 'eval'" class="view" :class="{ active: view === 'eval' }" id="view-eval" role="tabpanel">
         <div class="card-head" style="margin-bottom:4px">
           <h2 class="viewtitle" style="margin:0">评估工作台</h2>
-          <div class="row-actions"><span class="tag">POST /v1/eval/run</span>
-            <button class="btn btn-primary btn-sm" id="btn-eval-run" @click="runEval().then(() => toast('评估已启动 · POST /v1/eval/run')).catch((e) => toast('评估启动失败：' + e.message))">▶ 运行评估</button></div>
+          <div class="row-actions"><button class="btn btn-primary btn-sm" id="btn-eval-run" @click="runEval().then(() => toast('评估已启动')).catch((e) => toast('评估启动失败：' + e.message))">▶ 运行评估</button></div>
         </div>
         <div class="grid g-main">
           <div class="card" data-od-id="eval-reports-card">
-            <div class="card-head"><h3>评估报告</h3><span class="tag">GET /v1/eval/reports</span></div>
+            <div class="card-head"><h3>评估报告</h3></div>
             <div id="eval-reports">
               <div v-for="r in m.evals.reports" :key="r.id" class="eval-row">
                 <span class="lbl">{{ r.id }}</span>
@@ -27,7 +26,7 @@ defineOptions({ name: 'EvalView' })
             </div>
           </div>
           <div class="card" data-od-id="eval-compare-card">
-            <div class="card-head"><h3>多 Profile 对比</h3><span class="tag">POST /v1/eval/compare</span></div>
+            <div class="card-head"><h3>多 Profile 对比</h3></div>
             <div id="eval-compare">
               <template v-for="(rows, ds) in evalByDataset" :key="ds">
                 <div class="eval-ds-name">{{ ds }}</div>
@@ -40,7 +39,7 @@ defineOptions({ name: 'EvalView' })
             </div>
           </div>
           <div class="card" data-od-id="eval-datasets-card">
-            <div class="card-head"><h3>数据集</h3><span class="tag">GET /v1/eval/datasets</span></div>
+            <div class="card-head"><h3>数据集</h3></div>
             <div id="eval-datasets">
               <div v-for="d in m.evals.datasets" :key="d.name" class="eval-ds-row">
                 <span class="lbl">{{ d.name }}</span>

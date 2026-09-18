@@ -10,12 +10,11 @@ defineOptions({ name: 'HealthView' })
       <section v-show="view === 'health'" class="view" :class="{ active: view === 'health' }" id="view-health" role="tabpanel">
         <div class="card-head" style="margin-bottom:4px">
           <h2 class="viewtitle" style="margin:0">健康中心</h2>
-          <div class="row-actions"><span class="tag">POST /v1/doctor/state-events/repair</span>
-            <button class="btn btn-secondary btn-sm" id="btn-repair" @click="toast('修复任务已创建 · POST /v1/doctor/state-events/repair')">修复状态事件</button></div>
+          <div class="row-actions"><button class="btn btn-secondary btn-sm" id="btn-repair" @click="toast('修复任务已创建')">修复状态事件</button></div>
         </div>
         <div class="grid g-config">
           <div class="card" data-od-id="health-checks-card">
-            <div class="card-head"><h3>逐项检查</h3><span class="tag">GET /v1/doctor</span></div>
+            <div class="card-head"><h3>逐项检查</h3></div>
             <div id="health-list">
               <div v-for="c in m.health.checks" :key="c.name" class="check-row">
                 <span class="check-ico" :class="'ck-' + c.level">{{ c.level === 'ok' ? '✓' : c.level === 'warn' ? '!' : '×' }}</span>

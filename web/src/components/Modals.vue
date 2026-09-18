@@ -65,7 +65,6 @@ defineOptions({ name: 'Modals' })
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap" id="dom-meta">
             <template v-if="domainDetail">
               <span class="status" :class="statusCls(domainDetail.active ? 'success' : 'paused')">{{ statusLabel(domainDetail.active ? 'success' : 'paused') }}</span>
-              <span class="tag">GET /v1/tools?domain={{ domainDetail.name }}</span>
             </template>
           </div>
           <div class="field"><label>Tools（<span id="dom-tool-count">{{ domainDetail ? domainDetail.tools.length : 0 }}</span>）</label>
@@ -77,7 +76,7 @@ defineOptions({ name: 'Modals' })
                 <span v-else class="pill pill-readonly">只读</span>
               </div>
             </div>
-            <div v-if="domainDetail && !domainDetail.tools.length" class="f-err" style="display:block" id="dom-empty">该 Domain 暂无注册工具（GET /v1/tools?domain=…）</div></div>
+            <div v-if="domainDetail && !domainDetail.tools.length" class="f-err" style="display:block" id="dom-empty">该 Domain 暂无注册工具</div></div>
           <div class="field"><label>引用此 Domain 的 Profiles</label>
             <div id="dom-profiles" style="display:flex;gap:6px;flex-wrap:wrap">
               <template v-if="domainDetail">

@@ -11,7 +11,7 @@ defineOptions({ name: 'ConfigView' })
         <h2 class="viewtitle">配置与运行时</h2>
         <div class="grid g-config">
           <div class="card" data-od-id="model-card">
-            <div class="card-head"><h3>模型配置 · 运行时</h3><span class="tag">GET /v1/config → model</span></div>
+            <div class="card-head"><h3>模型配置 · 运行时</h3></div>
             <template v-if="m.runtimeConfig.available && m.runtimeConfig.model">
               <div class="switch-row"><div class="s-label">Provider</div><span class="num">{{ m.runtimeConfig.model.provider }}</span></div>
               <div class="switch-row"><div class="s-label">模型名称</div><span class="num">{{ m.runtimeConfig.model.name }}</span></div>
@@ -21,7 +21,7 @@ defineOptions({ name: 'ConfigView' })
             </template>
             <div v-else class="empty">
               <div class="empty-title">运行时配置不可读</div>
-              GET /v1/config 返回 503（部署未启用 deployment config store）
+              运行时配置接口返回 503（部署未启用 deployment config store）
             </div>
             <div style="font-size:12.5px;color:var(--muted);margin-top:12px">
               修改途径（需重启 agentd 生效）：<code class="num">agent init --model-provider openai_chat_completions --model-name gpt-4o-mini --model-api-key-env OPENAI_API_KEY</code>
@@ -30,9 +30,7 @@ defineOptions({ name: 'ConfigView' })
           </div>
           <div class="card" data-od-id="model-observed-card">
             <div class="card-head"><h3>实际生效的模型调用</h3>
-              <div class="row-actions"><span class="tag">GET /v1/sessions/{'{id}'}/llm-calls</span>
               <button class="btn btn-secondary btn-sm" aria-label="刷新模型调用" @click="reload('config')">↻</button></div>
-            </div>
             <div v-if="!m.modelInfo.calls.length" class="empty">暂无 LLM 调用记录（当前为 scripted 离线模型时不产生真实调用）</div>
             <div v-for="(c, i) in m.modelInfo.calls" :key="i" class="mono-row">
               <span class="lbl">{{ c.provider }} / {{ c.model }}</span>
@@ -43,7 +41,7 @@ defineOptions({ name: 'ConfigView' })
           </div>
 
           <div class="card" data-od-id="doctor-card">
-            <div class="card-head"><h3>运行时体检 · doctor</h3><span class="tag">GET /v1/doctor</span></div>
+            <div class="card-head"><h3>运行时体检 · doctor</h3></div>
             <div id="doctor-list">
               <div v-if="!m.doctor.length" class="empty">暂无体检数据</div>
               <div v-for="c in m.doctor" :key="c.name" class="check-row">
@@ -56,7 +54,6 @@ defineOptions({ name: 'ConfigView' })
             <div class="card-head">
               <h3>Agent Profile</h3>
               <div class="row-actions">
-                <span class="tag">GET /v1/profiles</span>
                 <button class="btn btn-primary btn-sm" id="btn-new-profile" data-od-id="btn-new-profile" @click="openProfileModal(null)">＋ 新建</button>
               </div>
             </div>
@@ -77,7 +74,7 @@ defineOptions({ name: 'ConfigView' })
             </div>
           </div>
           <div class="card" data-od-id="domains-card">
-            <div class="card-head"><h3>Domains 与 Tools</h3><span class="tag">GET /v1/domains · /v1/tools</span></div>
+            <div class="card-head"><h3>Domains 与 Tools</h3></div>
             <div id="domain-list">
               <div v-for="(d, i) in m.domains" :key="d.name" class="conf-row clickable" role="button" tabindex="0"
                 :data-od-id="'domain-row-' + d.name" aria-label="查看 Domain 详情"

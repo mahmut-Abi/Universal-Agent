@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { initDashboard, view, toastMsg, fatal } from './store.js'
 import TopBar from './components/TopBar.vue'
+import SideNav from './components/SideNav.vue'
 import ChatView from './components/ChatView.vue'
 import OverviewView from './components/OverviewView.vue'
 import SessionView from './components/SessionView.vue'
@@ -24,7 +25,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div>
+  <div class="app-shell">
     <!-- 全局错误兜底 -->
     <div v-if="fatal.length" class="fatal-error" role="alert" aria-live="assertive">
       <div class="fe-head">
@@ -35,9 +36,10 @@ onMounted(() => {
       <div class="fe-hint">功能可能部分不可用；接入真实 agentd 时请把该信息提供给后端排查。</div>
     </div>
 
-    <TopBar />
+    <div class="main-col">
+      <TopBar />
 
-    <div class="shell">
+      <main class="shell">
       <ChatView v-show="view === 'chat'" />
       <OverviewView v-show="view === 'overview'" />
       <SessionView v-show="view === 'session'" />
@@ -52,10 +54,11 @@ onMounted(() => {
       <AuditView v-show="view === 'audit'" />
       <MultiAgentView v-show="view === 'multiagent'" />
       <HealthView v-show="view === 'health'" />
+      </main>
     </div>
+  </div>
 
     <div class="toast" id="toast" :class="{ show: !!toastMsg }" role="status">{{ toastMsg }}</div>
 
     <Modals />
-  </div>
 </template>

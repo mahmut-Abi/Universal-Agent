@@ -11,7 +11,7 @@ defineOptions({ name: 'EcosystemView' })
         <h2 class="viewtitle">生态与包管理</h2>
         <div class="grid g-config">
           <div class="card" data-od-id="eco-installed-card">
-            <div class="card-head"><h3>已安装 Domain 包</h3><span class="tag">GET /v1/ecosystem/registry</span></div>
+            <div class="card-head"><h3>已安装 Domain 包</h3></div>
             <div id="eco-installed">
               <div v-for="p in m.ecosystem.installed" :key="p.name" class="mono-row">
                 <span class="lbl">{{ p.name }}</span><span class="num">v{{ p.ver }}</span>
@@ -21,7 +21,7 @@ defineOptions({ name: 'EcosystemView' })
             </div>
           </div>
           <div class="card" data-od-id="eco-catalog-card">
-            <div class="card-head"><h3>目录 · 可安装</h3><span class="tag">GET /v1/ecosystem/catalog</span></div>
+            <div class="card-head"><h3>目录 · 可安装</h3></div>
             <div id="eco-catalog">
               <div v-for="p in m.ecosystem.catalog" :key="p.name" class="mono-row">
                 <div><div class="lbl">{{ p.name }}</div><div style="font-size:12px;color:var(--muted)">{{ p.desc }}</div></div>

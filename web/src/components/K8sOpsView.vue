@@ -10,8 +10,7 @@ defineOptions({ name: 'K8sOpsView' })
       <section v-show="view === 'k8sops'" class="view" :class="{ active: view === 'k8sops' }" id="view-k8sops" role="tabpanel">
         <div class="card-head" style="margin-bottom:4px">
           <h2 class="viewtitle" style="margin:0">K8s 运维面板</h2>
-          <div class="row-actions"><span class="tag">POST /v1/kubernetes/preflight</span>
-            <button class="btn btn-primary btn-sm" id="btn-k8s-preflight" @click="reload('k8sops'); toast('Preflight 已运行 · POST /v1/kubernetes/preflight')">运行 Preflight</button></div>
+          <div class="row-actions"><button class="btn btn-primary btn-sm" id="btn-k8s-preflight" @click="reload('k8sops'); toast('Preflight 已运行')">运行 Preflight</button></div>
         </div>
         <div class="grid g-main">
           <div class="card" data-od-id="k8s-preflight-card">
@@ -24,7 +23,7 @@ defineOptions({ name: 'K8sOpsView' })
             </div>
           </div>
           <div class="card" data-od-id="k8s-runs-card">
-            <div class="card-head"><h3>运行记录</h3><span class="tag">POST /v1/kubernetes/run|check</span></div>
+            <div class="card-head"><h3>运行记录</h3></div>
             <div id="k8s-runs">
               <div v-for="(r, i) in m.k8sops.runs" :key="i" class="mono-row">
                 <span>{{ r.name }}</span><span class="tag">{{ r.kind }}</span>

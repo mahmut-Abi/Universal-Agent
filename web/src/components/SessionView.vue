@@ -27,7 +27,7 @@ defineOptions({ name: 'SessionView' })
           <div class="card" data-od-id="timeline-card">
             <div class="card-head">
               <h3>运行事件</h3>
-              <span class="tag">SSE /v1/sessions/{id}/events/stream</span>
+              <span class="tag">事件流</span>
             </div>
             <ul class="timeline" id="timeline">
               <li v-for="(e, i) in m.events" :key="i" :class="'tl-ev-' + e.t">
@@ -65,7 +65,7 @@ defineOptions({ name: 'SessionView' })
               </div>
             </div>
             <div class="card" data-od-id="evidence-card">
-              <div class="card-head"><h3>Evidence</h3><span class="tag">GET /evidence</span></div>
+              <div class="card-head"><h3>Evidence</h3></div>
               <div id="evidence-list">
                 <div v-for="ev in m.evidence" :key="ev.name" class="check-row">
                   <span class="check-ico" :class="ev.ok ? 'ck-ok' : 'ck-fail'">{{ ev.ok ? '✓' : '!' }}</span>

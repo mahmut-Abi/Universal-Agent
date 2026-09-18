@@ -55,6 +55,26 @@ export const OPS_VIEWS = {
   health: "健康中心",
 };
 export const opsOpen = ref(false);
+
+/* 分组侧边栏导航（对应重构后的信息架构） */
+export const NAV_GROUPS = [
+  {
+    label: "核心",
+    views: [
+      { name: "overview", label: "总览" },
+      { name: "chat", label: "对话" },
+      { name: "session", label: "会话详情" },
+      { name: "config", label: "配置与运行时" },
+    ],
+  },
+  {
+    label: "运维中心",
+    views: Object.entries(OPS_VIEWS).map(([name, label]) => ({ name, label })),
+  },
+];
+export const VIEW_TITLES = Object.fromEntries(
+  NAV_GROUPS.flatMap((g) => g.views.map((v) => [v.name, v.label])),
+);
 export const apiHost = API_BASE.replace(/^https?:\/\//, "");
 export const fatal = ref([]);
 
@@ -117,7 +137,7 @@ export const metricCards = computed(() => [
   {
     label: "会话总数",
     value: String(m.metrics.sessions),
-    sub: "GET /v1/sessions",
+    sub: "实时统计",
     trend: "",
   },
   {
@@ -135,7 +155,7 @@ export const metricCards = computed(() => [
   {
     label: "平均单次成本",
     value: "$" + m.metrics.avgCost.toFixed(3),
-    sub: "GET /v1/cost",
+    sub: "按模型汇总",
     trend: "",
   },
 ]);
@@ -468,8 +488,8 @@ export function saveProfile() {
       profileModal.open = false;
       toast(
         (profileModal.editing
-          ? "Profile 已更新 · PATCH /v1/profiles/" + name
-          : "Profile 已创建 · POST /v1/profiles") +
+          ? "Profile 已更新"
+          : "Profile 已创建") +
           "（需重启/重载 agentd 后生效）",
       );
     }),
@@ -505,7 +525,7 @@ export function confirmDelete() {
   profileRemove(delModal.name)
     .then(() => loadConfig(m))
     .then(() => {
-      toast("已删除 · DELETE /v1/profiles/" + delModal.name);
+      toast("已删除 · " + delModal.name);
       delModal.open = false;
       delModal.name = null;
     })
@@ -598,13 +618,13 @@ export const memList = computed(() =>
 export function addMemory() {
   memoryAdd("手动新增的记忆 · " + new Date().toLocaleTimeString())
     .then(() => loadMemory(m))
-    .then(() => toast("已新增 · POST /v1/memory"))
+    .then(() => toast("记忆已新增"))
     .catch((e) => toast("新增失败：" + e.message));
 }
 export function delMemory(id) {
   memoryRemove(id)
     .then(() => loadMemory(m))
-    .then(() => toast("已删除 · DELETE /v1/memory/" + id))
+    .then(() => toast("记忆已删除"))
     .catch((e) => toast("删除失败：" + e.message));
 }
 
@@ -620,7 +640,7 @@ export function openTraceSession(sid) {
 export function installPkg(name) {
   import("./api.js")
     .then((mod) => mod.apiPost("/v1/ecosystem/install", { name }))
-    .then(() => toast("安装任务已创建 · POST /v1/ecosystem/install " + name))
+    .then(() => toast("安装任务已创建 · " + name))
     .catch((e) => toast("安装失败：" + e.message));
 }
 
@@ -650,7 +670,7 @@ export const topo = computed(() => {
     return {
       boxes: [],
       edges: [],
-      summary: "多智能体运行时未启用或数据未加载（GET /v1/multi-agent）",
+      summary: "多智能体运行时未启用或数据未加载",
     };
   }
   const hx = 60,
@@ -685,7 +705,7 @@ export const topo = computed(() => {
   return {
     boxes,
     edges,
-    summary: `1 个 coordinator + ${workers.length} 个 worker · 消息总量 ${workers.reduce((s, w) => s + w.msgs, 0)} · 通过 POST /v1/multi-agent 派发协作 goal`,
+    summary: `1 个 coordinator + ${workers.length} 个 worker · 消息总量 ${workers.reduce((s, w) => s + w.msgs, 0)} · 协作 goal 已派发`,
   };
 });
 

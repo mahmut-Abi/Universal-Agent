@@ -11,7 +11,7 @@ defineOptions({ name: 'CostView' })
         <h2 class="viewtitle">成本分析</h2>
         <div class="grid g-main">
           <div class="card" data-od-id="cost-models-card">
-            <div class="card-head"><h3>按模型分解</h3><span class="tag">GET /v1/cost</span></div>
+            <div class="card-head"><h3>按模型分解</h3></div>
             <div id="cost-models">
               <div v-for="[n, v] in m.cost.byModel" :key="n" class="costbar-row">
                 <span class="cn">{{ n }}</span>
@@ -21,7 +21,7 @@ defineOptions({ name: 'CostView' })
             </div>
           </div>
           <div class="card" data-od-id="cost-top-card">
-            <div class="card-head"><h3>成本 Top 会话</h3><span class="tag">GET /v1/sessions/{id}/cost</span></div>
+            <div class="card-head"><h3>成本 Top 会话</h3></div>
             <div id="cost-top">
               <div v-for="t in m.cost.top" :key="t.sid" class="mono-row">
                 <span class="lbl">{{ t.sid }}</span>

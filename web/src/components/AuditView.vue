@@ -11,7 +11,7 @@ defineOptions({ name: 'AuditView' })
         <h2 class="viewtitle">审计中心</h2>
         <div class="grid g-main">
           <div class="card" data-od-id="audit-stream-card">
-            <div class="card-head"><h3>审计流</h3><span class="tag">GET /v1/audit</span>
+            <div class="card-head"><h3>审计流</h3>
               <span id="audit-count"><span class="meta">{{ auditFiltered.length }} / {{ m.audit.items.length }} 条</span></span></div>
             <div class="audit-filters">
               <input class="input" id="audit-q" type="search" v-model="auditQ" placeholder="搜索主体、动作或目标…" aria-label="搜索审计流">
@@ -29,18 +29,18 @@ defineOptions({ name: 'AuditView' })
             </div>
           </div>
           <div class="card" data-od-id="audit-integrity-card">
-            <div class="card-head"><h3>完整性</h3><span class="tag">GET /v1/audit/integrity</span></div>
+            <div class="card-head"><h3>完整性</h3></div>
             <div id="audit-integrity">
               <div v-if="m.audit.integrity === 'ok'" class="check-row">
                 <span class="check-ico ck-ok">✓</span>
-                <div><div class="c-name">哈希链完整</div><div class="c-detail">{{ m.audit.recordCount }} 条记录 · root {{ (m.audit.rootHash || '').slice(0, 12) }}… · GET /v1/audit/integrity</div></div>
+                <div><div class="c-name">哈希链完整</div><div class="c-detail">{{ m.audit.recordCount }} 条记录 · root {{ (m.audit.rootHash || '').slice(0, 12) }}…</div></div>
               </div>
               <div v-else class="check-row">
                 <span class="check-ico ck-fail">!</span>
                 <div><div class="c-name">哈希链存在缺口</div><div class="c-detail">请检查 state-events 存储</div></div>
               </div>
             </div>
-            <div class="card-head" style="margin-top:14px"><h3>配置变更历史</h3><span class="tag">GET /v1/config/audit</span></div>
+            <div class="card-head" style="margin-top:14px"><h3>配置变更历史</h3></div>
             <div id="config-audit">
               <div v-for="h in m.audit.configHistory" :key="h.field" class="mono-row">
                 <span class="lbl">{{ h.field }}</span>

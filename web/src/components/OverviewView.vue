@@ -49,7 +49,7 @@ defineOptions({ name: 'OverviewView' })
             </div>
           </div>
           <div class="card" data-od-id="runs-chart-card">
-            <div class="card-head"><h3>近 7 日任务量</h3><span class="tag">GET /v1/sessions · created_at 聚合</span></div>
+            <div class="card-head"><h3>近 7 日任务量</h3></div>
             <div class="bars" id="runs-bars">
               <div v-for="(v, i) in activity.values" :key="i" class="bar" :class="{ hot: v === activity.max && v > 0 }" tabindex="0" role="img"
                 :aria-label="activity.days[i] + '：' + v + ' 个任务'" :style="{ height: Math.round(v / (activity.max || 1) * 100) + '%' }">

@@ -11,7 +11,7 @@ defineOptions({ name: 'ClusterView' })
         <h2 class="viewtitle">分布式集群</h2>
         <div class="grid g-main">
           <div class="card" data-od-id="cluster-workers-card">
-            <div class="card-head"><h3>Workers</h3><span class="tag">GET /v1/distributed/snapshot</span></div>
+            <div class="card-head"><h3>Workers</h3></div>
             <div id="cluster-workers">
               <div v-for="w in m.cluster.workers" :key="w.name" class="mono-row">
                 <span class="lbl">{{ w.name }}</span>
@@ -24,7 +24,7 @@ defineOptions({ name: 'ClusterView' })
           </div>
           <div class="stack" style="display:flex;flex-direction:column;gap:16px">
             <div class="card" data-od-id="cluster-locks-card">
-              <div class="card-head"><h3>分布式锁</h3><span class="tag">GET /v1/distributed/locks</span></div>
+              <div class="card-head"><h3>分布式锁</h3></div>
               <div id="cluster-locks">
                 <div v-for="l in m.cluster.locks" :key="l.res" class="mono-row">
                   <span class="lbl">{{ l.res }}</span>
@@ -35,7 +35,7 @@ defineOptions({ name: 'ClusterView' })
               </div>
             </div>
             <div class="card" data-od-id="cluster-goals-card">
-              <div class="card-head"><h3>Goal 调度队列</h3><span class="tag">GET /v1/distributed/goals</span></div>
+              <div class="card-head"><h3>Goal 调度队列</h3></div>
               <div id="cluster-goals">
                 <div v-for="g in m.cluster.goals" :key="g.id" class="mono-row">
                   <span class="lbl">{{ g.id }}</span><span>{{ g.title }}</span>

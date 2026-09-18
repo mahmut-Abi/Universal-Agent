@@ -232,6 +232,24 @@ function escapeHtml(x) {
 }
 export { escapeHtml };
 
+/* mdLite：把 Markdown 行内代码与围栏代码块转为 HTML（先转义，无 XSS） */
+export function mdLite(text) {
+  const esc = escapeHtml(String(text || ""));
+  const parts = esc.split(/```(?:\w*)\n?/);
+  let out = "";
+  /* 围栏必须成对：孤立 ``` 时最后一个分段按普通文本处理，不整段当代码块 */
+  const orphanText = parts.length % 2 === 0; // 分段数为偶数 ⇒ 围栏数为奇数
+  const codeEnd = orphanText ? parts.length - 2 : parts.length - 1;
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1 && i <= codeEnd) {
+      out += `<pre>${parts[i].replace(/\n$/, "")}</pre>`;
+    } else {
+      out += parts[i].replace(/`([^`\n]+)`/g, "<code>$1</code>");
+    }
+  }
+  return out;
+}
+
 /* ── 会话事件 → 聊天转录 ──
  * agentd 没有 GET /messages；对话内容由事件流重建：
  *   SessionContinued.data.message  → 用户消息（续聊）
@@ -241,7 +259,7 @@ export { escapeHtml };
  * firstMessage 是首轮用户消息（= goal 描述，创建会话时的输入）。 */
 export function sessionTranscript(events, firstMessage) {
   const msgs = [];
-  if (firstMessage) msgs.push({ role: "user", text: escapeHtml(firstMessage) });
+  if (firstMessage) msgs.push({ role: "user", text: mdLite(firstMessage) });
   let turn = [];
   const flush = () => {
     if (turn.length) {
@@ -254,7 +272,7 @@ export function sessionTranscript(events, firstMessage) {
     switch (e.type) {
       case "SessionContinued":
         flush();
-        msgs.push({ role: "user", text: escapeHtml(d.message || "") });
+        msgs.push({ role: "user", text: mdLite(d.message || "") });
         break;
       case "ActionCompleted": {
         let out = "";
@@ -283,7 +301,11 @@ export function sessionTranscript(events, firstMessage) {
         });
         break;
       case "GoalCompleted":
-        turn.push('<div class="turn-ok">✅ 本轮已完成</div>');
+        if (typeof d.summary === "string" && d.summary.trim()) {
+          turn.push(`<div class="turn-ok">✅ 本轮已完成</div>${mdLite(d.summary)}`);
+        } else {
+          turn.push('<div class="turn-ok">✅ 本轮已完成</div>');
+        }
         break;
       case "GoalFailed":
         turn.push(
