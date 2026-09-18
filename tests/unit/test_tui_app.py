@@ -297,7 +297,9 @@ async def test_chat_screen_runs_goals_via_actions() -> None:
     async def _pause(session_id: SessionId, reason: str | None) -> object:
         return {}
 
-    async def _resume(session_id: SessionId, confirmed: bool | None) -> object:
+    async def _resume(
+        session_id: SessionId, confirmed: bool | None, remember: bool = False
+    ) -> object:
         return {}
 
     async def _cancel(session_id: SessionId, reason: str | None) -> object:
