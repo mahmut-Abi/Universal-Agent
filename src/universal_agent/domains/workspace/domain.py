@@ -64,6 +64,7 @@ INSPECT_FILE_CAPABILITY = "inspect_file"
 SEARCH_FILES_CAPABILITY = "search_files"
 CREATE_FILE_CAPABILITY = "create_file"
 MODIFY_FILE_CAPABILITY = "modify_file"
+DELETE_FILE_CAPABILITY = "delete_file"
 
 ALL_CAPABILITIES = (
     INSPECT_WORKSPACE_CAPABILITY,
@@ -71,6 +72,7 @@ ALL_CAPABILITIES = (
     SEARCH_FILES_CAPABILITY,
     CREATE_FILE_CAPABILITY,
     MODIFY_FILE_CAPABILITY,
+    DELETE_FILE_CAPABILITY,
 )
 
 # ─── Tool Names ─────────────────────────────────────────────────────────────
@@ -80,11 +82,13 @@ WORKSPACE_READ_FILE_TOOL = "workspace_read_file"
 WORKSPACE_SEARCH_TOOL = "workspace_search"
 WORKSPACE_CREATE_FILE_TOOL = "workspace_create_file"
 WORKSPACE_MODIFY_FILE_TOOL = "workspace_modify_file"
+WORKSPACE_DELETE_FILE_TOOL = "workspace_delete_file"
 
 # ─── Policy Names ───────────────────────────────────────────────────────────
 
 WORKSPACE_ALLOW_READ = "workspace-allow-read"
 WORKSPACE_ALLOW_MUTATE = "workspace-allow-mutate"
+WORKSPACE_CONFIRM_DELETE = "workspace-confirm-delete"
 WORKSPACE_DENY_SENSITIVE = "workspace-deny-sensitive"
 
 # ─── Evaluator Names ────────────────────────────────────────────────────────
@@ -114,22 +118,6 @@ WORKSPACE_CONTEXT_PROVIDER = "workspace-context"
 # ─── Memory Names ───────────────────────────────────────────────────────────
 
 WORKSPACE_MEMORY_SUBJECT = "workspace-knowledge"
-
-# ─── Sensitive Paths (denied by policy) ─────────────────────────────────────
-
-_SENSITIVE_PATHS = frozenset(
-    {
-        ".env",
-        ".env.local",
-        ".env.production",
-        "secrets.json",
-        "credentials.json",
-        "private.key",
-        "id_rsa",
-        "id_ed25519",
-    }
-)
-
 
 def workspace_identity() -> DomainIdentity:
     return DomainIdentity(WORKSPACE_DOMAIN_NAME, WORKSPACE_DOMAIN_VERSION)
@@ -437,6 +425,61 @@ class WorkspaceModifyFileTool:
             )
 
 
+class WorkspaceDeleteFileTool:
+    """Destructive tool: delete a file. Requires user confirmation via policy."""
+
+    def __init__(self, workspace: Path) -> None:
+        self._workspace = workspace
+        self.definition = ToolDefinition(
+            WORKSPACE_DELETE_FILE_TOOL,
+            "Delete an existing file. Destructive: requires user confirmation.",
+            (DELETE_FILE_CAPABILITY,),
+            required_arguments=("path",),
+            side_effect=SideEffect.DESTRUCTIVE,
+            risk=RiskLevel.HIGH,
+            priority=12,
+        )
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        path_str = str(arguments.get("path", ""))
+        resolved = _safe_path(path_str, self._workspace)
+        if resolved is None:
+            return immutable_json(
+                {
+                    "resource": path_str,
+                    "deleted": False,
+                    "error": "path escapes workspace or is invalid",
+                }
+            )
+        if not resolved.is_file():
+            return immutable_json(
+                {
+                    "resource": path_str,
+                    "deleted": False,
+                    "error": "file does not exist",
+                }
+            )
+        try:
+            size = resolved.stat().st_size
+            resolved.unlink()
+            return immutable_json(
+                {
+                    "resource": path_str,
+                    "deleted": True,
+                    "healthy": True,
+                    "size_bytes": size,
+                }
+            )
+        except OSError as exc:
+            return immutable_json(
+                {
+                    "resource": path_str,
+                    "deleted": False,
+                    "error": str(exc),
+                }
+            )
+
+
 # ─── Evaluator ──────────────────────────────────────────────────────────────
 
 
@@ -489,6 +532,7 @@ class WorkspaceEvidenceExtractor:
             "readable",
             "created",
             "modified",
+            "deleted",
             "file_count",
             "directory_count",
             "line_count",
@@ -527,6 +571,19 @@ class WorkspaceEvidenceExtractor:
                     source=self.name,
                 )
             )
+        if data.get("deleted"):
+            evidence.append(
+                Evidence(
+                    session_id=context.session_id,
+                    task_id=context.task.id,
+                    action_id=context.observation.action_id,
+                    observation_id=context.observation.id,
+                    subject=subject,
+                    claim="exists",
+                    value=False,
+                    source=self.name,
+                )
+            )
         return tuple(evidence)
 
 
@@ -544,6 +601,7 @@ class WorkspaceWorldUpdater:
             "readable",
             "created",
             "modified",
+            "deleted",
             "exists",
             "file_count",
             "directory_count",
@@ -737,6 +795,7 @@ class WorkspaceDomain(BaseDomainRuntime):
             WorkspaceSearchTool(self._workspace),
             WorkspaceCreateFileTool(self._workspace),
             WorkspaceModifyFileTool(self._workspace),
+            WorkspaceDeleteFileTool(self._workspace),
         )
         self._context_provider = WorkspaceContextProvider(self._workspace)
 
@@ -791,6 +850,12 @@ class WorkspaceDomain(BaseDomainRuntime):
                 CapabilityCategory.MUTATION,
                 RiskLevel.MEDIUM,
             ),
+            CapabilityDefinition(
+                DELETE_FILE_CAPABILITY,
+                "Delete an existing file. Destructive; requires confirmation.",
+                CapabilityCategory.MUTATION,
+                RiskLevel.HIGH,
+            ),
         )
 
     def tools(self) -> tuple[Tool, ...]:
@@ -815,11 +880,10 @@ class WorkspaceDomain(BaseDomainRuntime):
                 capabilities=(CREATE_FILE_CAPABILITY, MODIFY_FILE_CAPABILITY),
             ),
             PolicyRule(
-                WORKSPACE_DENY_SENSITIVE,
-                PolicyEffect.DENY,
-                "operations on sensitive paths are denied",
-                # This is a catch-all; in practice the tool checks path safety
-                risks=(RiskLevel.HIGH,),
+                WORKSPACE_CONFIRM_DELETE,
+                PolicyEffect.REQUIRE_CONFIRMATION,
+                "file deletion is destructive and requires user confirmation",
+                capabilities=(DELETE_FILE_CAPABILITY,),
             ),
         )
 

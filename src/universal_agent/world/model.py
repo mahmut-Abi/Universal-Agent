@@ -32,7 +32,16 @@ class FactWorldUpdater:
 
 
 class InMemoryWorldModel:
-    def __init__(self) -> None:
+    # Per-(subject, claim) evidence retention. Arbitration and conflict
+    # detection only need the best observation plus one representative per
+    # distinct value; everything beyond that is redundant history for the hot
+    # path (the full history remains reconstructable from the event store).
+    DEFAULT_MAX_EVIDENCE_PER_FACT = 32
+
+    def __init__(self, *, max_evidence_per_fact: int = DEFAULT_MAX_EVIDENCE_PER_FACT) -> None:
+        if max_evidence_per_fact < 1:
+            raise ValueError("max_evidence_per_fact must be positive")
+        self._max_evidence_per_fact = max_evidence_per_fact
         self._facts: dict[tuple[SessionId, str, str], list[Evidence]] = {}
         self._subject_claims: dict[tuple[SessionId, str], set[str]] = {}
         self._entities: dict[tuple[SessionId, EntityId], WorldEntity] = {}
@@ -48,6 +57,7 @@ class InMemoryWorldModel:
         if any(item.id == evidence.id for item in values):
             return False
         values.append(evidence)
+        self._trim_fact_bucket(values)
         subject_key = (evidence.session_id, evidence.subject)
         self._subject_claims.setdefault(subject_key, set()).add(evidence.claim)
         self._refresh_entity_attributes(evidence.session_id, EntityId(evidence.subject))
@@ -217,6 +227,42 @@ class InMemoryWorldModel:
         if not subjects and not claims:
             self._snapshot_cache[session_id] = result
         return result
+
+    def _trim_fact_bucket(self, values: list[Evidence]) -> None:
+        """Bound the evidence bucket while preserving model semantics.
+
+        Arbitration picks max(confidence, observed_at, id) and conflict
+        detection needs every distinct value represented, so the trim keeps:
+
+        1. the current-best evidence (arbitration winner),
+        2. the newest observation per distinct value (conflict detection),
+        3. the most recent remaining observations up to the cap.
+
+        Bucket order carries no semantics: snapshot() re-sorts by
+        (observed_at, id) before building histories.
+        """
+        cap = self._max_evidence_per_fact
+        if len(values) <= cap:
+            return
+        newest_first = sorted(
+            values, key=lambda item: (item.observed_at, str(item.id)), reverse=True
+        )
+        best = max(values, key=lambda item: (item.confidence, item.observed_at, str(item.id)))
+        keep_ids = {best.id}
+        seen_values: set[str] = set()
+        for item in newest_first:
+            value_key = _value_key(item.value)
+            if value_key not in seen_values:
+                seen_values.add(value_key)
+                keep_ids.add(item.id)
+        kept = [item for item in values if item.id in keep_ids]
+        for item in newest_first:
+            if len(kept) >= cap:
+                break
+            if item.id not in keep_ids:
+                kept.append(item)
+                keep_ids.add(item.id)
+        values[:] = kept
 
     def _refresh_entity_attributes(self, session_id: SessionId, entity_id: EntityId) -> None:
         key = (session_id, entity_id)

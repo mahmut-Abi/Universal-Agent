@@ -19,7 +19,7 @@ from universal_agent.core import (
 from universal_agent.evidence import Evidence
 from universal_agent.memory import MemoryRecord
 from universal_agent.tasks import TaskManager
-from universal_agent.world import WorldSnapshot
+from universal_agent.world import WorldFact, WorldSnapshot
 
 
 class DomainContextProvider(Protocol):
@@ -148,6 +148,11 @@ class BasicContextCompiler:
     ) -> tuple[ContextFragment, ...]:
         if world is None:
             return ()
+        conflicting_keys = {
+            (history.subject, history.claim)
+            for history in world.fact_histories
+            if history.conflicting
+        }
         fragments = [
             *(
                 ContextFragment(
@@ -155,6 +160,7 @@ class BasicContextCompiler:
                     (
                         f"{fact.subject} {fact.claim}={fact.value!r} "
                         f"confidence={fact.confidence:.2f}"
+                        + self._conflict_note(fact, conflicting_keys)
                     ),
                     20,
                 )
@@ -178,6 +184,21 @@ class BasicContextCompiler:
             ),
         ]
         return self._budget_fragments(fragments, state_tokens=state_tokens)
+
+    @staticmethod
+    def _conflict_note(
+        fact: WorldFact, conflicting_keys: set[tuple[str, str]]
+    ) -> str:
+        """Mark facts whose evidence history disagrees on the value.
+
+        The snapshot reports the confidence-arbitrated current value only; the
+        marker tells the model (and any downstream debugging) that multiple
+        distinct values were observed, so the arbitration is not unanimous.
+        """
+        if (fact.subject, fact.claim) not in conflicting_keys:
+            return ""
+        count = len(fact.evidence_ids)
+        return f" CONFLICTING({count} observations disagree on this value)"
 
     def _stall_advisory(
         self,

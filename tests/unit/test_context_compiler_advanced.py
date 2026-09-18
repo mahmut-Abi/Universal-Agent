@@ -15,7 +15,7 @@ from universal_agent.core import (
     Task,
     TaskId,
 )
-from universal_agent.evidence import Evidence
+from universal_agent.evidence import Evidence, EvidenceId
 from universal_agent.memory import MemoryId, MemoryKind, MemoryRecord
 from universal_agent.world import WorldFact, WorldSnapshot
 
@@ -368,3 +368,40 @@ def test_non_json_content_still_head_tail_truncates() -> None:
     content = compiler._compress("a" * 100, 20)
     assert len(content) == 20
     assert "\u2026" in content
+
+
+def test_world_fragment_marks_conflicting_fact() -> None:
+    """Facts whose evidence history disagrees carry a CONFLICTING marker."""
+    from datetime import datetime
+
+    from universal_agent.world import WorldFact, WorldFactEvidence, WorldFactHistory, WorldSnapshot
+
+    compiler = BasicContextCompiler()
+    state = make_state()
+    at = datetime(2026, 1, 1, tzinfo=UTC)
+    current = WorldFact("pod/a", "ready", True, 0.9, at, ())
+    history = WorldFactHistory(
+        "pod/a",
+        "ready",
+        current,
+        (
+            WorldFactEvidence(EvidenceId("e1"), True, 0.9, at, "tool:kubectl"),
+            WorldFactEvidence(EvidenceId("e2"), False, 0.5, at, "tool:probe"),
+        ),
+        True,
+    )
+    clean = WorldFact("pod/b", "ready", True, 1.0, at, (EvidenceId("e3"),))
+    clean_history = WorldFactHistory(
+        "pod/b", "ready", clean, (), False
+    )
+    world = WorldSnapshot(
+        SessionId("session-1"),
+        facts=(current, clean),
+        fact_histories=(history, clean_history),
+    )
+
+    context = compiler.compile(state, (), (), (), world=world)
+
+    by_subject = {f.key: f.content for f in context.world_context}
+    assert "CONFLICTING" in by_subject["world.pod/a.ready"]
+    assert "CONFLICTING" not in by_subject["world.pod/b.ready"]

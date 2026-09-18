@@ -49,6 +49,7 @@ from universal_agent.domain import DomainLoader
 from universal_agent.domains.workspace import (
     ALL_CAPABILITIES,
     CREATE_FILE_CAPABILITY,
+    DELETE_FILE_CAPABILITY,
     INSPECT_FILE_CAPABILITY,
     INSPECT_WORKSPACE_CAPABILITY,
     MODIFY_FILE_CAPABILITY,
@@ -140,7 +141,7 @@ class TestManifest:
 class TestCapabilities:
     def test_capability_count(self, domain: WorkspaceDomain) -> None:
         caps = domain.capabilities()
-        assert len(caps) == 5
+        assert len(caps) == 6
 
     def test_observation_capabilities(self, domain: WorkspaceDomain) -> None:
         caps = domain.capabilities()
@@ -154,17 +155,20 @@ class TestCapabilities:
     def test_mutation_capabilities(self, domain: WorkspaceDomain) -> None:
         caps = domain.capabilities()
         mut = [c for c in caps if c.category == CapabilityCategory.MUTATION]
-        assert len(mut) == 2
+        assert len(mut) == 3
         mut_names = {c.name for c in mut}
         assert CREATE_FILE_CAPABILITY in mut_names
         assert MODIFY_FILE_CAPABILITY in mut_names
+        assert DELETE_FILE_CAPABILITY in mut_names
 
     def test_capability_risk_levels(self, domain: WorkspaceDomain) -> None:
         caps = domain.capabilities()
         for cap in caps:
             if cap.category == CapabilityCategory.OBSERVATION:
                 assert cap.risk == RiskLevel.LOW
-            elif cap.category == CapabilityCategory.MUTATION:
+            elif cap.name == DELETE_FILE_CAPABILITY:
+                assert cap.risk == RiskLevel.HIGH
+            else:
                 assert cap.risk == RiskLevel.MEDIUM
 
 
@@ -174,7 +178,7 @@ class TestCapabilities:
 class TestTools:
     def test_tool_count(self, domain: WorkspaceDomain) -> None:
         tools = domain.tools()
-        assert len(tools) == 5
+        assert len(tools) == 6
 
     def test_tool_names(self, domain: WorkspaceDomain) -> None:
         tools = domain.tools()
@@ -405,6 +409,54 @@ class TestModifyFileTool:
         )
         assert result["modified"] is False
         assert "error" in result
+
+
+# ─── Delete File Tool Tests ─────────────────────────────────────────────
+
+
+class TestDeleteFileTool:
+    @pytest.mark.asyncio
+    async def test_delete_existing_file(
+        self, domain_with_files: WorkspaceDomain, workspace_with_files: Path
+    ) -> None:
+        tools = domain_with_files.tools()
+        delete = next(
+            t for t in tools if t.definition.name == "workspace_delete_file"
+        )
+        result = await delete.execute(immutable_json({"path": "hello.py"}))
+        assert result["deleted"] is True
+        assert not (workspace_with_files / "hello.py").exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent_file(
+        self, domain: WorkspaceDomain
+    ) -> None:
+        tools = domain.tools()
+        delete = next(
+            t for t in tools if t.definition.name == "workspace_delete_file"
+        )
+        result = await delete.execute(immutable_json({"path": "ghost.txt"}))
+        assert result["deleted"] is False
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_delete_path_escape(self, domain: WorkspaceDomain) -> None:
+        tools = domain.tools()
+        delete = next(
+            t for t in tools if t.definition.name == "workspace_delete_file"
+        )
+        result = await delete.execute(immutable_json({"path": "../outside.txt"}))
+        assert result["deleted"] is False
+
+    def test_delete_tool_is_destructive_high_risk(
+        self, domain: WorkspaceDomain
+    ) -> None:
+        tools = domain.tools()
+        delete = next(
+            t for t in tools if t.definition.name == "workspace_delete_file"
+        )
+        assert delete.definition.side_effect == SideEffect.DESTRUCTIVE
+        assert delete.definition.risk == RiskLevel.HIGH
 
 
 # ─── Evaluator Tests ────────────────────────────────────────────────────────
@@ -702,6 +754,64 @@ class TestPolicies:
         result = engine.check(context)
         assert result.effect == PolicyEffect.ALLOW
 
+    def test_delete_requires_confirmation(self, domain: WorkspaceDomain) -> None:
+        policies = domain.policies()
+        engine = PolicyEngine(policies)
+        context = PolicyContext(
+            session_id=SessionId("session-1"),
+            goal_id=GoalId("goal-1"),
+            task_id=TaskId("task-1"),
+            action_id=ActionId("action-1"),
+            capability=CapabilityDefinition(
+                DELETE_FILE_CAPABILITY,
+                "test",
+                CapabilityCategory.MUTATION,
+                RiskLevel.HIGH,
+            ),
+            tool=ToolDefinition(
+                "workspace_delete_file",
+                "test",
+                (DELETE_FILE_CAPABILITY,),
+                side_effect=SideEffect.DESTRUCTIVE,
+                risk=RiskLevel.HIGH,
+            ),
+            target=None,
+            arguments=immutable_json({}),
+            confirmed=False,
+        )
+        result = engine.check(context)
+        assert result.effect == PolicyEffect.REQUIRE_CONFIRMATION
+
+    def test_delete_allowed_after_confirmation(
+        self, domain: WorkspaceDomain
+    ) -> None:
+        policies = domain.policies()
+        engine = PolicyEngine(policies)
+        context = PolicyContext(
+            session_id=SessionId("session-1"),
+            goal_id=GoalId("goal-1"),
+            task_id=TaskId("task-1"),
+            action_id=ActionId("action-1"),
+            capability=CapabilityDefinition(
+                DELETE_FILE_CAPABILITY,
+                "test",
+                CapabilityCategory.MUTATION,
+                RiskLevel.HIGH,
+            ),
+            tool=ToolDefinition(
+                "workspace_delete_file",
+                "test",
+                (DELETE_FILE_CAPABILITY,),
+                side_effect=SideEffect.DESTRUCTIVE,
+                risk=RiskLevel.HIGH,
+            ),
+            target=None,
+            arguments=immutable_json({}),
+            confirmed=True,
+        )
+        result = engine.check(context)
+        assert result.effect == PolicyEffect.ALLOW
+
 
 # ─── Domain Loader Tests ────────────────────────────────────────────────────
 
@@ -711,8 +821,8 @@ class TestDomainLoader:
         loader = DomainLoader()
         active = loader.load(domain)
         assert active.identity.name == WORKSPACE_DOMAIN_NAME
-        assert len(active.capabilities) == 5
-        assert len(active.tools) == 5
+        assert len(active.capabilities) == 6
+        assert len(active.tools) == 6
         assert len(active.evaluators) == 1
         assert len(active.policies) == 3
         assert len(active.recovery_rules) == 3

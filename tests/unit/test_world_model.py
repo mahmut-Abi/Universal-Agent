@@ -467,3 +467,44 @@ def test_world_fact_evidence_is_frozen_and_constructible() -> None:
     )
     assert evidence.evidence_id == "e1"
     assert evidence.value is True
+
+
+def test_evidence_bucket_trim_preserves_arbitration_and_conflicts() -> None:
+    """A capped bucket keeps the arbitration winner and one observation per distinct value."""
+    model = InMemoryWorldModel(max_evidence_per_fact=4)
+    # 40 same-value observations + 1 old conflicting observation.
+    for seconds in range(40):
+        model.apply_fact(make_evidence(value=True, confidence=0.5, seconds=seconds))
+    conflicting = make_evidence(value=False, confidence=0.4, seconds=100)
+    model.apply_fact(conflicting)
+    high_confidence = make_evidence(value=True, confidence=0.99, seconds=200)
+    model.apply_fact(high_confidence)
+
+    snapshot = model.snapshot(SESSION_TEST_ID)
+
+    (fact,) = snapshot.facts
+    assert fact.value is True  # arbitration winner survives the trim
+    assert fact.confidence == 0.99
+    assert len(fact.evidence_ids) <= 4
+    (history,) = snapshot.conflicting_facts()
+    assert any(candidate.value is False for candidate in history.candidates)
+    assert any(candidate.value is True for candidate in history.candidates)
+
+
+def test_evidence_bucket_trim_keeps_most_recent_observations() -> None:
+    """Beyond arbitration + distinct values, the newest observations are retained."""
+    model = InMemoryWorldModel(max_evidence_per_fact=3)
+    added = [
+        make_evidence(value=True, confidence=0.5, seconds=seconds)
+        for seconds in range(10)
+    ]
+    for item in added:
+        model.apply_fact(item)
+
+    snapshot = model.snapshot(SESSION_TEST_ID)
+    (fact,) = snapshot.facts
+    retained = {item.evidence_id for item in snapshot.fact_histories[0].candidates}
+    assert retained == set(fact.evidence_ids)
+    assert len(retained) == 3
+    # The most recent observation must be among the retained ones.
+    assert added[-1].id in retained
