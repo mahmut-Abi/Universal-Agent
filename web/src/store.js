@@ -8,6 +8,7 @@ import {
   normStatus,
   STATUS_MAP,
   sessionTranscript,
+  mdLite,
   loadOverview,
   loadSessions as apiLoadSessions,
   loadMetrics,
@@ -162,10 +163,19 @@ export const metricCards = computed(() => [
 export const sessionsError = ref("");
 export const loadingSessions = ref(false);
 export async function loadSessions() {
+  const prevWaiting = new Set(
+    m.sessions.filter((s) => s.confirm).map((s) => s.id),
+  );
   loadingSessions.value = true;
   try {
     await apiLoadSessions(m);
     sessionsError.value = "";
+    /* HITL：有会话新进入 waiting 时主动提醒（轮询/手动刷新都能触发） */
+    for (const s of m.sessions) {
+      if (s.confirm && !prevWaiting.has(s.id)) {
+        toast(`会话「${s.goal.slice(0, 24)}」等待人工确认，请在会话详情中处理`);
+      }
+    }
   } catch (e) {
     sessionsError.value = e.message;
   }
@@ -188,9 +198,9 @@ export function openSession(s) {
   for (const k in expanded) delete expanded[k];
   loadSessionDetail(m, s.id).catch((e) => toast("事件加载失败：" + e.message));
 }
-export function confirmPending(ok) {
+export function confirmPending(ok, remember = false) {
   const s = currentSession.value;
-  resumeSession(s.id, ok ? { confirmed: true } : { confirmed: false })
+  resumeSession(s.id, ok ? { confirmed: true, remember: !!remember } : { confirmed: false })
     .then(() => {
       s.confirm = false;
       s.status = ok ? "running" : "paused";
@@ -255,7 +265,7 @@ export const chatSessions = computed(() =>
     profile: s.profile,
     status: s.status,
     time: fmtRelTime(s.raw?.created_at),
-    msgs: sessionTranscript(chatEventCache[s.id] || [], s.goal),
+    msgs: sessionTranscript(chatEventCache[s.id] || [], s.goal, s.id),
   })),
 );
 /* Profile 过滤项由真实会话推导（不再硬编码 ["全部","default"]） */
@@ -391,6 +401,13 @@ export function onChatKeydown(e) {
     e.preventDefault();
     sendChat();
   }
+}
+/* HITL：对话里「等待人工确认」提示点击跳转到会话详情 */
+export function onMsgsClick(e) {
+  const el = e.target.closest("[data-wait-session]");
+  if (!el || !el.dataset.waitSession) return;
+  const s = m.sessions.find((x) => x.id === el.dataset.waitSession);
+  if (s) openSession(s);
 }
 
 /* ── 配置：Profile CRUD / Domains / Policy ── */
@@ -785,4 +802,5 @@ export {
   profileRemove,
   putConfig,
   runEval,
+  mdLite,
 };

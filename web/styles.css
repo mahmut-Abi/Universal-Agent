@@ -878,6 +878,18 @@ h3 {
 .confirm-banner .cb-title {
   font-weight: 600;
 }
+.confirm-banner .cb-remember {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.confirm-banner .cb-remember input {
+  accent-color: var(--warn);
+}
 
 /* ── Doctor 检查行 ────────────────────── */
 .check-row {
@@ -1907,8 +1919,16 @@ h3 {
 .turn-ok{color:var(--ok);font-size:13px;margin-top:2px}
 .turn-fail{color:var(--danger-text,var(--danger));font-size:13px;margin-top:2px}
 .turn-wait{color:var(--warn);font-size:13px}
+.turn-wait-link{cursor:pointer;border-radius:7px;padding:4px 8px;margin:-4px -8px;width:fit-content;transition:background var(--motion-fast) var(--ease-standard)}
+.turn-wait-link:hover{background:color-mix(in oklab, var(--warn), transparent 88%);text-decoration:underline}
+.turn-wait-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .ch-item .m .status{font-size:11px;padding:1px 6px}
 
 /* 排队中的用户消息（agent 运行期间入队） */
 .msg.user.queued .bubble{opacity:.55;border-style:dashed}
 .msg.user.queued .who{color:var(--muted)}
+
+/* 统一弹窗：AppModal 壳获得焦点时不显示默认描边 */
+.modal:focus {
+  outline: none;
+}

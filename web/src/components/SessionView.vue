@@ -1,9 +1,11 @@
 <script setup>
 // biome-ignore-all lint/correctness/noUnusedImports: shared store bindings
-import { m, view, OPS_VIEWS, opsOpen, apiHost, fatal, toastMsg, toastTimer, toast, MAIN_VIEWS, VIEW_LOADERS, loadedViews, switchView, reload, opsBtnLabel, statusCls, statusLabel, metricCards, sessionsError, loadingSessions, loadSessions, activity, doRefresh, currentSession, expanded, openSession, confirmPending, cancelSession, lifecycle, sessionSummary, chatFilter, activeChatId, chatSessions, chatEventCache, CHAT_PROFILES, activeChat, chatInput, sending, chatMsgsEl, chatInputEl, filteredChats, scrollChat, newChat, autoGrow, sendChat, apiGetEvents, onChatKeydown, profileModal, pmForm, MODEL_PROVIDERS, pmError, openProfileModal, saveProfile, delModal, profileWriteError, delDetail, askDelete, confirmDelete, domainModal, domainDetail, openDomainDetail, domainUsedBy, policies, togglePolicy, toggleDomain, evalByDataset, pct, memSearch, memList, addMemory, delMemory, costMax, openTraceSession, installPkg, auditQ, auditAct, auditActs, auditFiltered, topo, closeModal, onOverlayClick, pushFatal, initDashboard, API_BASE, createState, normStatus, STATUS_MAP, loadOverview, apiLoadSessions, loadMetrics, loadSessionDetail, loadConfig, loadEval, loadCluster, loadMemory, memoryAdd, memoryRemove, loadCost, loadLogs, loadK8sOps, loadEcosystem, loadAudit, loadMulti, loadHealth, loadModelInfo, loadRuntimeConfig, createSession, sendMessage, pauseSession, resumeSession, apiCancelSession, profileCreate, profilePatch, profileRemove, putConfig, runEval } from '../store.js'
+import { m, view, OPS_VIEWS, opsOpen, apiHost, fatal, toastMsg, toastTimer, toast, MAIN_VIEWS, VIEW_LOADERS, loadedViews, switchView, reload, opsBtnLabel, statusCls, statusLabel, metricCards, sessionsError, loadingSessions, loadSessions, activity, doRefresh, currentSession, expanded, openSession, confirmPending, cancelSession, lifecycle, sessionSummary, chatFilter, activeChatId, chatSessions, chatEventCache, CHAT_PROFILES, activeChat, chatInput, sending, chatMsgsEl, chatInputEl, filteredChats, scrollChat, newChat, autoGrow, sendChat, apiGetEvents, onChatKeydown, profileModal, pmForm, MODEL_PROVIDERS, pmError, openProfileModal, saveProfile, delModal, profileWriteError, delDetail, askDelete, confirmDelete, domainModal, domainDetail, openDomainDetail, domainUsedBy, policies, togglePolicy, toggleDomain, evalByDataset, pct, memSearch, memList, addMemory, delMemory, costMax, openTraceSession, installPkg, auditQ, auditAct, auditActs, auditFiltered, topo, closeModal, onOverlayClick, pushFatal, initDashboard, API_BASE, createState, normStatus, STATUS_MAP, loadOverview, apiLoadSessions, loadMetrics, loadSessionDetail, loadConfig, loadEval, loadCluster, loadMemory, memoryAdd, memoryRemove, loadCost, loadLogs, loadK8sOps, loadEcosystem, loadAudit, loadMulti, loadHealth, loadModelInfo, loadRuntimeConfig, createSession, sendMessage, pauseSession, resumeSession, apiCancelSession, profileCreate, profilePatch, profileRemove, putConfig, runEval, mdLite } from '../store.js'
 
 // biome-ignore-all lint/style/noNonNullAssertion: generated
 defineOptions({ name: 'SessionView' })
+import { ref } from 'vue'
+const confirmRemember = ref(false)
 </script>
 <template>
 <!-- 视图二：会话详情 -->
@@ -19,7 +21,10 @@ defineOptions({ name: 'SessionView' })
               <!-- prettier-ignore -->
               <code class="num" style="font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:1px 6px">{{ currentSession.pending.action }}</code>（{{ currentSession.pending.risk }} · Policy 拦截）
             </div>
-            <button class="btn btn-primary btn-sm" @click="confirmPending(true)">确认执行</button>
+            <label class="cb-remember" title="本次会话内，相同参数的重复操作将不再询问">
+              <input type="checkbox" v-model="confirmRemember" /> 记住批准
+            </label>
+            <button class="btn btn-primary btn-sm" @click="confirmPending(true, confirmRemember)">确认执行</button>
             <button class="btn btn-secondary btn-sm" @click="confirmPending(false)">拒绝</button>
           </div>
         </div>
@@ -42,7 +47,8 @@ defineOptions({ name: 'SessionView' })
                   <template v-if="e.d.model">
                     <div class="llm-meta"><span>{{ e.d.model }}</span><span>{{ e.d.tokens }}</span><span>{{ e.d.cost }}</span><span>{{ e.d.dur }}</span></div>
                     <div class="kv"><span class="k">Prompt</span></div><pre>{{ e.d.prompt }}</pre>
-                    <div class="kv"><span class="k">输出</span></div><pre>{{ e.d.completion }}</pre>
+                    <!-- LLM 输出经 mdLite 渲染行内代码与代码块 -->
+                    <div class="kv"><span class="k">输出</span></div><pre v-html="mdLite(e.d.completion)"></pre>
                   </template>
                   <template v-else>
                     <div class="kv"><span class="k">工具</span><span class="num">{{ e.d.tool }}</span></div>

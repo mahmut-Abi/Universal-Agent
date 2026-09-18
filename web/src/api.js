@@ -198,7 +198,7 @@ export async function loadSessionDetail(state, sid) {
     t: normEventType(e.type),
     at: fmtTime(e.occurred_at),
     text: eventText(e),
-    d: null,
+    d: eventDetail(e),
     raw: e,
   }));
   state.evidence = pick(evd, "evidence").map((e) => ({
@@ -217,9 +217,57 @@ function normEventType(type) {
   return "evidence";
 }
 function eventText(e) {
-  const data =
-    e.data && Object.keys(e.data).length ? JSON.stringify(e.data) : "";
-  return `<code>${escapeHtml(e.type || "event")}</code>${data ? " " + escapeHtml(data) : ""}`;
+  const type = String(e.type || "event");
+  const d = e.data || {};
+  /* HITL：确认/Policy 事件用结构化文案替代裸 JSON，与顶部确认横幅呼应 */
+  if (/confirm|policy|waiting/i.test(type)) {
+    const cap = d.capability || d.pending_action || "";
+    const target = d.target ? ` on ${d.target}` : "";
+    const risk = d.risk ? `<span class="tag">${escapeHtml(d.risk)}</span>` : "";
+    const reason = d.reason || d.user_message || d.rejection_reason || "";
+    if (cap || reason) {
+      return (
+        `<code>${escapeHtml(type)}</code> 待执行 ` +
+        (cap ? `<code class="num">${escapeHtml(String(cap))}${escapeHtml(String(target))}</code> ` : "") +
+        risk +
+        (reason ? ` · ${escapeHtml(String(reason))}` : "")
+      );
+    }
+  }
+  const data = d && Object.keys(d).length ? JSON.stringify(d) : "";
+  return `<code>${escapeHtml(type)}</code>${data ? " " + escapeHtml(data) : ""}`;
+}
+/* 从事件 data 解析 LLM / 工具调用详情，驱动时间线展开面板 */
+function eventDetail(e) {
+  const type = String(e.type || "");
+  const d = e.data || {};
+  if (/^LLMCallRecorded$|^ModelUsageRecorded$/i.test(type)) {
+    if (d.completion == null && d.total_tokens == null) return null;
+    const asText = (x) => (typeof x === "string" ? x : x == null ? "" : JSON.stringify(x, null, 2));
+    return {
+      llm: true,
+      model: [d.provider, d.model].filter(Boolean).join(" / ") || "—",
+      tokens: `输入 ${d.input_tokens ?? "—"} · 输出 ${d.output_tokens ?? "—"} · 共 ${d.total_tokens ?? "—"}`,
+      cost: d.estimated_cost_micros != null ? "$" + (d.estimated_cost_micros / 1e6).toFixed(5) : "—",
+      dur: "—",
+      prompt: asText(d.prompt),
+      completion: asText(d.completion),
+    };
+  }
+  if (/^Action|^Tool/i.test(type)) {
+    const asText = (x) => (typeof x === "string" ? x : x == null ? "" : JSON.stringify(x, null, 2));
+    const tool = d.capability || d.tool || d.tool_name || "";
+    if (!tool && d.output == null && d.input == null) return null;
+    return {
+      llm: false,
+      tool,
+      input: asText(d.input ?? d.arguments),
+      output: asText(d.output),
+      dur: d.duration_ms != null ? `${d.duration_ms}ms` : "—",
+      attempt: d.attempt ?? 1,
+    };
+  }
+  return null;
 }
 function escapeHtml(x) {
   return String(x).replace(
@@ -257,7 +305,7 @@ export function mdLite(text) {
  *   GoalCompleted / GoalFailed     → 每轮 agent 结论
  *   ConfirmationRequired / GoalWaiting → 等待人工确认
  * firstMessage 是首轮用户消息（= goal 描述，创建会话时的输入）。 */
-export function sessionTranscript(events, firstMessage) {
+export function sessionTranscript(events, firstMessage, sid) {
   const msgs = [];
   if (firstMessage) msgs.push({ role: "user", text: mdLite(firstMessage) });
   let turn = [];
@@ -296,7 +344,10 @@ export function sessionTranscript(events, firstMessage) {
         flush();
         msgs.push({
           role: "agent",
-          text: '<div class="turn-wait">⏸ 等待人工确认（在会话详情中处理）</div>',
+          text:
+            `<div class="turn-wait turn-wait-link" role="button" tabindex="0"` +
+            (sid ? ` data-wait-session="${escapeHtml(sid)}"` : "") +
+            `>⏸ 等待人工确认 · 点击前往会话详情处理</div>`,
           tools: [],
         });
         break;
