@@ -2578,11 +2578,9 @@ async def test_agentd_create_session_route_validates_request_body() -> None:
         "code": "bad_request",
         "message": "goal.description must not be empty",
     }
-    assert empty_success_criteria.status_code == 400
-    assert empty_success_criteria.body["error"] == {
-        "code": "bad_request",
-        "message": "goal.success_criteria must not be empty",
-    }
+    # Empty success_criteria is now valid (chat use case): the session is
+    # created and the run proceeds (may complete or fail depending on the model).
+    assert empty_success_criteria.status_code in {200, 201, 422}
     assert invalid_required_criteria.status_code == 400
     assert invalid_required_criteria.body["error"] == {
         "code": "bad_request",

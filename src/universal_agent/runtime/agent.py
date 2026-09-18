@@ -402,6 +402,7 @@ class AgentRuntime:
             state.iteration = 0
             state.termination_reason = None
             state.error_code = None
+            state.is_continuation = True
             state.goal.status = GoalStatus.RUNNING
             mark_current_task(session, TaskStatus.RUNNING)
             await self._events.commit_session_event(

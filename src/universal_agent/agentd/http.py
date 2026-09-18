@@ -26,7 +26,6 @@ from universal_agent.core.config_validation import (
     parse_non_empty_string_sequence,
     parse_optional_non_empty_string,
     parse_optional_string,
-    pydantic_error_details,
     pydantic_error_message,
 )
 
@@ -73,7 +72,7 @@ class _SuccessCriterionPayload(ConfigPayload):
 
 class _GoalPayload(ConfigPayload):
     description: PydanticNonEmptyString
-    success_criteria: list[_SuccessCriterionPayload] = Field(min_length=1)
+    success_criteria: list[_SuccessCriterionPayload] = Field(default_factory=list)
 
 
 class _TaskPayload(ConfigPayload):
@@ -268,9 +267,6 @@ def _parse_goal_submission_payload(body: JsonMapping) -> _GoalSubmissionPayload:
 
 
 def _goal_submission_payload_error_message(error: PydanticValidationError) -> str:
-    details = pydantic_error_details(error)
-    if details.path == "goal.success_criteria" and details.error_type == "too_short":
-        return "goal.success_criteria must not be empty"
     return pydantic_error_message(error, missing_template="{path} is required")
 
 

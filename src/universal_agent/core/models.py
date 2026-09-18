@@ -445,6 +445,7 @@ class AgentState:
     error_code: ErrorCode | None = None
     cumulative_cost_micros: int = 0
     cumulative_tokens: int = 0
+    is_continuation: bool = False
 
     @property
     def latest_observation(self) -> Observation | None:
