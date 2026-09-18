@@ -119,6 +119,7 @@ WORKSPACE_CONTEXT_PROVIDER = "workspace-context"
 
 WORKSPACE_MEMORY_SUBJECT = "workspace-knowledge"
 
+
 def workspace_identity() -> DomainIdentity:
     return DomainIdentity(WORKSPACE_DOMAIN_NAME, WORKSPACE_DOMAIN_VERSION)
 
