@@ -22,7 +22,8 @@ defineOptions({ name: 'Modals' })
             <template v-if="pmForm.model.provider !== 'scripted'">
               <input v-model="pmForm.model.name" class="input" placeholder="模型名，如 gpt-4o-mini" style="margin-bottom:6px" id="pm-model-name">
               <input v-model="pmForm.model.endpoint" class="input" placeholder="Endpoint（可选，如 https://api.openai.com/v1）" style="margin-bottom:6px" id="pm-model-endpoint">
-              <input v-model="pmForm.model.api_key_env" class="input" placeholder="API Key 环境变量名，如 OPENAI_API_KEY" id="pm-model-key">
+              <input v-model="pmForm.model.api_key_env" class="input" placeholder="API Key 环境变量名，如 OPENAI_API_KEY" style="margin-bottom:6px" id="pm-model-key">
+              <input v-model.number="pmForm.model.timeout_seconds" class="input" type="number" min="5" max="600" placeholder="超时秒数（默认 30）" id="pm-model-timeout">
             </template>
             <div class="hint">写入 profile 的 runtime.model + runtime.secrets；scripted 表示使用部署默认模型。需重启/重载 agentd 生效。</div>
           </div>

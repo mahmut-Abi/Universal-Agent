@@ -210,15 +210,30 @@ export const sessionSummary = computed(() => {
 /* ── 对话（真实会话：chat = agentd session，转录由事件流重建） ── */
 export const chatFilter = ref("全部");
 export const activeChatId = ref(null);
+/* 会话时间人性化：刚刚 / N 分钟前 / 今天 HH:MM / 昨天 / M/D */
+export function fmtRelTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const now = new Date();
+  const diff = (now - d) / 1000;
+  if (diff < 60) return "刚刚";
+  if (diff < 3600) return Math.floor(diff / 60) + " 分钟前";
+  if (d.toDateString() === now.toDateString())
+    return d.toTimeString().slice(0, 5);
+  const yest = new Date(now);
+  yest.setDate(now.getDate() - 1);
+  if (d.toDateString() === yest.toDateString())
+    return "昨天 " + d.toTimeString().slice(0, 5);
+  return d.getMonth() + 1 + "/" + d.getDate();
+}
 export const chatSessions = computed(() =>
   m.sessions.map((s) => ({
     id: s.id,
     title: s.goal,
     profile: s.profile,
     status: s.status,
-    time: s.raw?.created_at
-      ? new Date(s.raw.created_at).toTimeString().slice(0, 5)
-      : "—",
+    time: fmtRelTime(s.raw?.created_at),
     msgs: sessionTranscript(chatEventCache[s.id] || [], s.goal),
   })),
 );
@@ -231,6 +246,8 @@ export const activeChat = computed(
   () => chatSessions.value.find((c) => c.id === activeChatId.value) || null,
 );
 export const chatInput = ref("");
+/* 乐观显示：发送中先展示用户消息，事件回流后由转录接管 */
+export const pendingUserMsg = ref("");
 export const sending = ref(false);
 export const chatMsgsEl = ref(null);
 export const chatInputEl = ref(null);
@@ -262,16 +279,20 @@ export function autoGrow(e) {
   el.style.height = Math.min(el.scrollHeight, 140) + "px";
 }
 /* 发送：新会话首条消息即 goal（POST /v1/sessions 已执行，不再重发 /messages）；
-   既有会话经 POST /messages 续聊后拉取事件刷新转录。 */
+   既有会话经 POST /messages 续聊后拉取事件刷新转录。
+   乐观 UX：pendingUserMsg 立即上屏；纯网络失败时回填输入框避免重打。 */
 export function sendChat() {
   const text = chatInput.value.trim();
   if (!text || sending.value) return;
   sending.value = true;
+  pendingUserMsg.value = text;
   const refresh = (sid) =>
     apiLoadSessions(m)
       .then(() => apiGetEvents(sid))
       .then(() => chatSessions.value.find((c) => c.id === sid));
   const existing = activeChat.value;
+  const profile =
+    chatFilter.value === "全部" ? selectedProfile.value : chatFilter.value;
   const work = existing
     ? sendMessage(existing.id, text)
         .then(() => refresh(existing.id))
@@ -281,10 +302,7 @@ export function sendChat() {
             throw Object.assign(e, { recovered: chat });
           });
         })
-    : createSession(
-        text,
-        chatFilter.value === "全部" ? undefined : chatFilter.value,
-      )
+    : createSession(text, profile)
         .then((d) => {
           const sid =
             (d.result && d.result.session_id) || d.session_id || d.id;
@@ -301,19 +319,27 @@ export function sendChat() {
           });
         });
   work
+    .then(() => {
+      chatInput.value = "";
+    })
     .catch((e) => {
       toast(
         e.recovered
           ? "本轮执行失败（详见对话记录）：" + (e.message || e)
           : "发送失败：" + (e.message || e),
       );
+      if (!e.recovered) chatInput.value = text; // 回填输入，避免重打
     })
     .finally(() => {
       sending.value = false;
-      chatInput.value = "";
+      pendingUserMsg.value = "";
       if (chatInputEl.value) chatInputEl.value.style.height = "auto";
       nextTick(scrollChat);
     });
+}
+/* 侧栏刷新：重拉会话列表（保留事件缓存） */
+export function refreshChats() {
+  loadSessions().catch((e) => toast("刷新失败：" + e.message));
 }
 export function apiGetEvents(sid) {
   return apiGet(`/v1/sessions/${sid}/events`).then((d) => {
@@ -322,6 +348,8 @@ export function apiGetEvents(sid) {
   });
 }
 export function onChatKeydown(e) {
+  // 中文输入法组合中按 Enter 是确认候选词，不是发送
+  if (e.isComposing || e.keyCode === 229) return;
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     sendChat();
@@ -329,6 +357,15 @@ export function onChatKeydown(e) {
 }
 
 /* ── 配置：Profile CRUD / Domains / Policy ── */
+/* 当前选中的 Profile（新会话默认使用；localStorage 持久化） */
+export const selectedProfile = ref(
+  localStorage.getItem("ua-profile") || "default",
+);
+export function switchProfile(name) {
+  selectedProfile.value = name;
+  localStorage.setItem("ua-profile", name);
+  toast("新会话将使用 Profile「" + name + "」");
+}
 export const profileModal = reactive({ open: false, editing: null });
 export const pmForm = reactive({
   name: "",
@@ -471,31 +508,46 @@ export function domainUsedBy(d) {
     .map((p) => p.name);
   return used.length ? used : null;
 }
-export const policies = reactive([
-  {
-    key: "mutation-confirm",
-    label: "变更动作需人工确认",
-    desc: "删除 / 扩缩容等 mutation 触发 WAITING_FOR_CONFIRMATION",
-    on: true,
-  },
-  {
-    key: "dryrun-default",
-    label: "默认 dry-run 预检",
-    desc: "运行前对集群执行只读预检",
-    on: true,
-  },
-  {
-    key: "audit-chain",
-    label: "审计哈希链",
-    desc: "会话事件写入可校验的审计链",
-    on: true,
-  },
-]);
+/* Policy 偏好为控制台本地显示偏好（localStorage 持久化，启动时恢复）；
+   部署级 Policy 经 deployment.json / PUT /v1/config 管理 */
+const POLICY_PREFS_KEY = "ua-policy-prefs";
+const savedPolicyPrefs = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(POLICY_PREFS_KEY) || "{}");
+  } catch {
+    return {};
+  }
+})();
+export const policies = reactive(
+  [
+    {
+      key: "mutation-confirm",
+      label: "变更动作需人工确认",
+      desc: "删除 / 扩缩容等 mutation 触发 WAITING_FOR_CONFIRMATION",
+      on: true,
+    },
+    {
+      key: "dryrun-default",
+      label: "默认 dry-run 预检",
+      desc: "运行前对集群执行只读预检",
+      on: true,
+    },
+    {
+      key: "audit-chain",
+      label: "审计哈希链",
+      desc: "会话事件写入可校验的审计链",
+      on: true,
+    },
+  ].map((p) => ({
+    ...p,
+    on: typeof savedPolicyPrefs[p.key] === "boolean" ? savedPolicyPrefs[p.key] : p.on,
+  })),
+);
 
 export function togglePolicy() {
-  putConfig(policies).then(() =>
-    toast("已保存为本地偏好（部署级 Policy 经 deployment.json 管理）"),
-  );
+  const prefs = Object.fromEntries(policies.map((p) => [p.key, p.on]));
+  localStorage.setItem(POLICY_PREFS_KEY, JSON.stringify(prefs));
+  toast("已保存为控制台本地偏好");
 }
 export function toggleDomain(i, checked) {
   const d = m.domains[i];
