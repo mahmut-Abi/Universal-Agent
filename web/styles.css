@@ -777,7 +777,7 @@ h3 {
 }
 .eval-row {
   display: grid;
-  grid-template-columns: 92px minmax(0, 1fr) 170px 52px 118px;
+  grid-template-columns: minmax(0, 92px) minmax(0, 1fr) minmax(0, 170px) minmax(0, 52px) minmax(0, 118px);
   align-items: center;
   gap: 14px;
   padding: 10px 4px;
@@ -790,6 +790,7 @@ h3 {
 .eval-row .lbl {
   font-family: var(--font-mono);
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 .eval-row .scorebar {
   min-width: 0;
@@ -810,7 +811,7 @@ h3 {
 }
 .eval-ds-row {
   display: grid;
-  grid-template-columns: 132px minmax(0, 1fr) 82px 88px;
+  grid-template-columns: minmax(0, 132px) minmax(0, 1fr) minmax(0, 82px) minmax(0, 88px);
   align-items: center;
   gap: 14px;
   padding: 10px 4px;
@@ -837,7 +838,7 @@ h3 {
 }
 .eval-compare-row {
   display: grid;
-  grid-template-columns: 150px 1fr 52px;
+  grid-template-columns: minmax(0, 150px) minmax(0, 1fr) minmax(0, 52px);
   align-items: center;
   gap: 12px;
   padding: 6px 0;
@@ -1812,7 +1813,7 @@ h3 {
 }
 .costbar-row {
   display: grid;
-  grid-template-columns: 130px 1fr 64px;
+  grid-template-columns: minmax(0, 130px) minmax(0, 1fr) minmax(0, 64px);
   gap: 12px;
   align-items: center;
   padding: 9px 0;
