@@ -38,6 +38,7 @@ defineOptions({ name: 'ChatView' })
                 <h3>开始新对话</h3>
                 <p>输入任务或问题，Agent 将执行工具调用并汇报结果；也可以在左侧选择历史会话继续。</p>
               </div>
+              <div class="msgs-col" data-od-id="chat-msgs-col">
               <template v-if="activeChat">
                 <div v-for="(msg, mi) in activeChat.msgs" :key="mi" class="msg" :class="msg.role === 'user' ? 'user' : 'agent'">
                   <span class="who">{{ msg.role === 'user' ? '你' : 'Agent · ' + activeChat.profile }}</span>
@@ -57,6 +58,7 @@ defineOptions({ name: 'ChatView' })
               <div v-if="sending" class="msg agent">
                 <span class="who">Agent{{ activeChat ? ' · ' + activeChat.profile : '' }}</span>
                 <div class="bubble"><span class="typing-dots"><i></i><i></i><i></i></span></div>
+              </div>
               </div>
             </div>
             <div class="chat-inputbar">
