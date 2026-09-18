@@ -1,6 +1,6 @@
 <script setup>
 // biome-ignore-all lint/correctness/noUnusedImports: shared store bindings
-import { m, view, OPS_VIEWS, opsOpen, apiHost, fatal, toastMsg, toastTimer, toast, MAIN_VIEWS, VIEW_LOADERS, loadedViews, switchView, reload, opsBtnLabel, statusCls, statusLabel, metricCards, sessionsError, loadingSessions, loadSessions, activity, doRefresh, currentSession, expanded, openSession, confirmPending, cancelSession, lifecycle, sessionSummary, chatFilter, activeChatId, chatSessions, chatEventCache, CHAT_PROFILES, activeChat, chatInput, pendingUserMsg, sending, chatMsgsEl, chatInputEl, filteredChats, scrollChat, newChat, selectChat, refreshChats, autoGrow, sendChat, apiGetEvents, onChatKeydown, profileModal, pmForm, MODEL_PROVIDERS, pmError, openProfileModal, saveProfile, delModal, profileWriteError, delDetail, askDelete, confirmDelete, domainModal, domainDetail, openDomainDetail, domainUsedBy, policies, togglePolicy, toggleDomain, evalByDataset, pct, memSearch, memList, addMemory, delMemory, costMax, openTraceSession, installPkg, auditQ, auditAct, auditActs, auditFiltered, topo, closeModal, onOverlayClick, pushFatal, initDashboard, API_BASE, createState, normStatus, STATUS_MAP, loadOverview, apiLoadSessions, loadMetrics, loadSessionDetail, loadConfig, loadEval, loadCluster, loadMemory, memoryAdd, memoryRemove, loadCost, loadLogs, loadK8sOps, loadEcosystem, loadAudit, loadMulti, loadHealth, loadModelInfo, loadRuntimeConfig, createSession, sendMessage, pauseSession, resumeSession, apiCancelSession, profileCreate, profilePatch, profileRemove, putConfig, runEval } from '../store.js'
+import { m, view, OPS_VIEWS, opsOpen, apiHost, fatal, toastMsg, toastTimer, toast, MAIN_VIEWS, VIEW_LOADERS, loadedViews, switchView, reload, opsBtnLabel, statusCls, statusLabel, metricCards, sessionsError, loadingSessions, loadSessions, activity, doRefresh, currentSession, expanded, openSession, confirmPending, cancelSession, lifecycle, sessionSummary, chatFilter, activeChatId, chatSessions, chatEventCache, CHAT_PROFILES, activeChat, chatInput, chatQueue, pendingUserMsg, sending, chatMsgsEl, chatInputEl, filteredChats, scrollChat, newChat, selectChat, refreshChats, autoGrow, sendChat, apiGetEvents, onChatKeydown, profileModal, pmForm, MODEL_PROVIDERS, pmError, openProfileModal, saveProfile, delModal, profileWriteError, delDetail, askDelete, confirmDelete, domainModal, domainDetail, openDomainDetail, domainUsedBy, policies, togglePolicy, toggleDomain, evalByDataset, pct, memSearch, memList, addMemory, delMemory, costMax, openTraceSession, installPkg, auditQ, auditAct, auditActs, auditFiltered, topo, closeModal, onOverlayClick, pushFatal, initDashboard, API_BASE, createState, normStatus, STATUS_MAP, loadOverview, apiLoadSessions, loadMetrics, loadSessionDetail, loadConfig, loadEval, loadCluster, loadMemory, memoryAdd, memoryRemove, loadCost, loadLogs, loadK8sOps, loadEcosystem, loadAudit, loadMulti, loadHealth, loadModelInfo, loadRuntimeConfig, createSession, sendMessage, pauseSession, resumeSession, apiCancelSession, profileCreate, profilePatch, profileRemove, putConfig, runEval } from '../store.js'
 
 // biome-ignore-all lint/style/noNonNullAssertion: generated
 defineOptions({ name: 'ChatView' })
@@ -31,7 +31,7 @@ defineOptions({ name: 'ChatView' })
           </aside>
           <div class="chat-main" data-od-id="chat-main">
             <div class="chat-msgs" id="chat-msgs" ref="chatMsgsEl" data-od-id="chat-msgs" aria-live="polite">
-              <div v-if="!activeChat && !pendingUserMsg" class="empty" style="margin:auto">输入消息开始新对话，或在左侧选择历史会话</div>
+              <div v-if="!activeChat && !pendingUserMsg && !chatQueue.length" class="empty" style="margin:auto">输入消息开始新对话，或在左侧选择历史会话</div>
               <template v-if="activeChat">
                 <div v-for="(msg, mi) in activeChat.msgs" :key="mi" class="msg" :class="msg.role === 'user' ? 'user' : 'agent'">
                   <span class="who">{{ msg.role === 'user' ? '你' : 'Agent · ' + activeChat.profile }}</span>
@@ -42,6 +42,11 @@ defineOptions({ name: 'ChatView' })
               <div v-if="pendingUserMsg" class="msg user">
                 <span class="who">你</span>
                 <div class="bubble">{{ pendingUserMsg }}</div>
+              </div>
+              <!-- 排队中：agent 运行期间输入的消息，结束后自动发送 -->
+              <div v-for="(q, qi) in chatQueue" :key="'q' + qi" class="msg user queued">
+                <span class="who">你 · 排队中</span>
+                <div class="bubble">{{ q }}</div>
               </div>
               <div v-if="sending" class="msg agent">
                 <span class="who">Agent{{ activeChat ? ' · ' + activeChat.profile : '' }}</span>
@@ -55,7 +60,7 @@ defineOptions({ name: 'ChatView' })
                   placeholder="输入任务或问题，Agent 将执行并汇报结果…" aria-label="消息输入"></textarea>
                 <button class="btn btn-primary" id="btn-chat-send" :disabled="sending" @click="sendChat">发送</button>
               </div>
-              <div class="chat-hint">Enter 发送 · Shift+Enter 换行 · 中文输入法选词不会误发</div>
+              <div class="chat-hint">Enter 发送 · Shift+Enter 换行 · Agent 运行中的消息会排队，结束后自动发送</div>
             </div>
           </div>
         </div>

@@ -1703,3 +1703,7 @@ h3 {
 .turn-fail{color:var(--danger-text,var(--danger));font-size:13px;margin-top:2px}
 .turn-wait{color:var(--warn);font-size:13px}
 .ch-item .m .status{font-size:11px;padding:1px 6px}
+
+/* 排队中的用户消息（agent 运行期间入队） */
+.msg.user.queued .bubble{opacity:.55;border-style:dashed}
+.msg.user.queued .who{color:var(--muted)}

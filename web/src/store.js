@@ -3,6 +3,7 @@
 import { reactive, ref, computed, nextTick } from "vue";
 import {
   API_BASE,
+  apiGet,
   createState,
   normStatus,
   STATUS_MAP,
@@ -246,6 +247,8 @@ export const activeChat = computed(
   () => chatSessions.value.find((c) => c.id === activeChatId.value) || null,
 );
 export const chatInput = ref("");
+/* 发送队列：agent 运行中输入的消息排队，结束后自动依次发送 */
+export const chatQueue = ref([]);
 /* 乐观显示：发送中先展示用户消息，事件回流后由转录接管 */
 export const pendingUserMsg = ref("");
 export const sending = ref(false);
@@ -280,10 +283,22 @@ export function autoGrow(e) {
 }
 /* 发送：新会话首条消息即 goal（POST /v1/sessions 已执行，不再重发 /messages）；
    既有会话经 POST /messages 续聊后拉取事件刷新转录。
-   乐观 UX：pendingUserMsg 立即上屏；纯网络失败时回填输入框避免重打。 */
+   乐观 UX：pendingUserMsg 立即上屏；纯网络失败时回填输入框避免重打。
+   队列：agent 运行中输入的消息进入 chatQueue，当前轮结束后依次自动发送。 */
 export function sendChat() {
   const text = chatInput.value.trim();
-  if (!text || sending.value) return;
+  if (!text) return;
+  if (sending.value) {
+    chatQueue.value.push(text);
+    chatInput.value = "";
+    if (chatInputEl.value) chatInputEl.value.style.height = "auto";
+    nextTick(scrollChat);
+    return;
+  }
+  chatInput.value = "";
+  deliverChat(text);
+}
+function deliverChat(text) {
   sending.value = true;
   pendingUserMsg.value = text;
   const refresh = (sid) =>
@@ -319,9 +334,7 @@ export function sendChat() {
           });
         });
   work
-    .then(() => {
-      chatInput.value = "";
-    })
+    .then(() => {})
     .catch((e) => {
       toast(
         e.recovered
@@ -334,6 +347,10 @@ export function sendChat() {
       sending.value = false;
       pendingUserMsg.value = "";
       if (chatInputEl.value) chatInputEl.value.style.height = "auto";
+      if (chatQueue.value.length) {
+        const next = chatQueue.value.shift();
+        nextTick(() => deliverChat(next));
+      }
       nextTick(scrollChat);
     });
 }
