@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import heapq
+import json
 import re
 from collections.abc import Iterable
 from typing import Protocol
@@ -65,7 +67,6 @@ class BasicContextCompiler:
         self._enable_compression = enable_compression
         self._enable_dedup = enable_dedup
         self._stall_repeats = stall_repeats
-        self._precomputed_tokens: set[str] | None = None
 
     def compile(
         self,
@@ -79,12 +80,10 @@ class BasicContextCompiler:
         memories: tuple[MemoryRecord, ...] = (),
         capability_input_contracts: tuple[CapabilityInputContract, ...] = (),
     ) -> DecisionContext:
-        # Pre-compute tokens once for all fragments (optimization).
+        state_tokens: set[str] | None = None
         if self._enable_relevance_ranking:
-            self._precomputed_tokens = self._compute_state_tokens(state)
-        else:
-            self._precomputed_tokens = None
-        fragments = self._select_fragments(state, providers)
+            state_tokens = self._compute_state_tokens(state)
+        fragments = self._select_fragments(state, providers, state_tokens)
         contracts = {item.capability: item for item in capability_input_contracts}
         return DecisionContext(
             session_id=state.session_id,
@@ -101,10 +100,10 @@ class BasicContextCompiler:
             goal_success_criteria=state.goal.success_criteria,
             current_task_required_criteria=state.current_task.required_criteria,
             domain_context=(*fragments, *self._stall_advisory(evidence)),
-            world_context=self._world_fragments(world, state),
-            evidence_context=self._evidence_fragments(evidence, state),
-            task_context=self._task_fragments(tasks, state),
-            memory_context=self._memory_fragments(memories, state),
+            world_context=self._world_fragments(world, state_tokens),
+            evidence_context=self._evidence_fragments(evidence, state_tokens),
+            task_context=self._task_fragments(tasks, state_tokens),
+            memory_context=self._memory_fragments(memories, state_tokens),
             policy_summary=policy_summary,
         )
 
@@ -134,6 +133,7 @@ class BasicContextCompiler:
         self,
         state: AgentState,
         providers: tuple[DomainContextProvider, ...],
+        state_tokens: set[str] | None,
     ) -> tuple[ContextFragment, ...]:
         unique: dict[str, ContextFragment] = {}
         for provider in providers:
@@ -141,10 +141,10 @@ class BasicContextCompiler:
                 current = unique.get(fragment.key)
                 if current is None or fragment.priority < current.priority:
                     unique[fragment.key] = fragment
-        return self._budget_fragments(tuple(unique.values()), state=state)
+        return self._budget_fragments(tuple(unique.values()), state_tokens=state_tokens)
 
     def _world_fragments(
-        self, world: WorldSnapshot | None, state: AgentState | None = None
+        self, world: WorldSnapshot | None, state_tokens: set[str] | None
     ) -> tuple[ContextFragment, ...]:
         if world is None:
             return ()
@@ -177,7 +177,7 @@ class BasicContextCompiler:
                 for relation in world.relations
             ),
         ]
-        return self._budget_fragments(fragments, state=state)
+        return self._budget_fragments(fragments, state_tokens=state_tokens)
 
     def _stall_advisory(
         self,
@@ -225,24 +225,31 @@ class BasicContextCompiler:
     def _evidence_fragments(
         self,
         evidence: tuple[Evidence, ...],
-        state: AgentState | None = None,
+        state_tokens: set[str] | None,
     ) -> tuple[ContextFragment, ...]:
+        # nlargest keeps the same ordering as a full sort followed by
+        # truncation to max_fragments, but is O(n log k) instead of O(n log n).
+        top = heapq.nlargest(
+            self._max_fragments,
+            evidence,
+            key=lambda item: (item.confidence, item.observed_at, str(item.id)),
+        )
         fragments = (
             ContextFragment(
                 f"evidence.{item.id}",
                 f"{item.subject} {item.claim}={item.value!r} source={item.source}",
                 30,
             )
-            for item in sorted(
-                evidence,
-                key=lambda item: (item.confidence, item.observed_at, str(item.id)),
-                reverse=True,
-            )
+            for item in top
         )
-        return self._budget_fragments(fragments, state=state, pre_sorted=True)
+        return self._budget_fragments(
+            fragments,
+            state_tokens=state_tokens,
+            pre_sorted=True,
+        )
 
     def _task_fragments(
-        self, tasks: TaskManager | None, state: AgentState | None = None
+        self, tasks: TaskManager | None, state_tokens: set[str] | None
     ) -> tuple[ContextFragment, ...]:
         if tasks is None:
             return ()
@@ -255,13 +262,13 @@ class BasicContextCompiler:
                 )
                 for task in tasks.all()
             ),
-            state=state,
+            state_tokens=state_tokens,
         )
 
     def _memory_fragments(
         self,
         memories: tuple[MemoryRecord, ...],
-        state: AgentState | None = None,
+        state_tokens: set[str] | None,
     ) -> tuple[ContextFragment, ...]:
         # Priority 40 sits below evidence (30), world (20) and task (10):
         # memory is advisory, so it is the first to be dropped under pressure.
@@ -279,7 +286,7 @@ class BasicContextCompiler:
         )
         return self._budget_fragments(
             fragments,
-            state=state,
+            state_tokens=state_tokens,
             max_fragments=self._max_memory_fragments,
             max_characters=self._max_memory_characters,
         )
@@ -288,7 +295,7 @@ class BasicContextCompiler:
         self,
         fragments: Iterable[ContextFragment],
         *,
-        state: AgentState | None = None,
+        state_tokens: set[str] | None,
         max_fragments: int | None = None,
         max_characters: int | None = None,
         pre_sorted: bool = False,
@@ -299,11 +306,11 @@ class BasicContextCompiler:
         fragments_list = list(fragments)
 
         if not pre_sorted:
-            if self._enable_relevance_ranking and state is not None:
+            if state_tokens:
                 fragments_list.sort(
                     key=lambda f: (
                         f.priority,
-                        -self._relevance(f, state),
+                        -self._relevance(f, state_tokens),
                         f.key,
                     )
                 )
@@ -340,20 +347,12 @@ class BasicContextCompiler:
     def _tokens(self, text: str) -> set[str]:
         return {w for w in re.findall(r"[a-z0-9_]+", text.lower()) if w}
 
-    def _relevance(self, fragment: ContextFragment, state: AgentState) -> float:
-        if not self._enable_relevance_ranking:
-            return 0.0
-        # Use pre-computed tokens if available (optimization).
-        tokens = getattr(self, "_precomputed_tokens", None)
-        if tokens is None:
-            tokens = self._compute_state_tokens(state)
-        if not tokens:
+    def _relevance(self, fragment: ContextFragment, state_tokens: set[str]) -> float:
+        if not state_tokens:
             return 0.0
         frag_tokens = self._tokens(fragment.content) | self._tokens(fragment.key)
-        overlap = tokens & frag_tokens
-        overlap_count = len(overlap)
-        total_count = len(tokens)
-        return overlap_count / total_count
+        overlap_count = len(state_tokens & frag_tokens)
+        return overlap_count / len(state_tokens)
 
     def _token(self, text: str) -> str:
         return text.lower()
@@ -366,8 +365,65 @@ class BasicContextCompiler:
             return content
         if limit <= 3:
             return content[:limit]
+        if self._enable_compression and self._looks_like_json(content):
+            compressed = self._compress_json(content, limit)
+            if compressed is not None:
+                return compressed
         head = limit // 2
         tail = limit - head - 1
         if tail <= 0:
             return content[:limit]
         return content[:head] + "\u2026" + content[-tail:]
+
+    @staticmethod
+    def _looks_like_json(content: str) -> bool:
+        stripped = content.lstrip()
+        return stripped.startswith(("{", "["))
+
+    def _compress_json(self, content: str, limit: int) -> str | None:
+        """Shrink JSON content by dropping whole entries, never mid-token.
+
+        Character-level truncation of JSON produces invalid structure that the
+        model may fail to parse. Instead, drop the last entries of containers
+        (annotated with a truncation marker) until the payload fits the
+        budget. Returns None when even the skeleton cannot fit, so the caller
+        falls back to plain truncation.
+        """
+        try:
+            data = json.loads(content)
+        except ValueError:
+            return None
+        data = self._cap_json_collections(data)
+        while True:
+            rendered = dumps_json(data)
+            if len(rendered) <= limit:
+                return rendered
+            if not isinstance(data, dict):
+                return None
+            # Only drop real keys: dropping the truncation marker itself and
+            # re-adding it would not shrink the payload (infinite loop).
+            real_keys = [key for key in data if key != "__truncated_keys__"]
+            if not real_keys:
+                return None
+            remaining = dict(data)
+            del remaining[real_keys[-1]]
+            if remaining:
+                remaining["__truncated_keys__"] = remaining.get("__truncated_keys__", 0) + 1
+            data = remaining
+
+    def _cap_json_collections(self, node: object, max_items: int = 6) -> object:
+        if isinstance(node, dict):
+            trimmed = {k: self._cap_json_collections(v, max_items) for k, v in node.items()}
+            if len(trimmed) > max_items:
+                kept = dict(list(trimmed.items())[:max_items])
+                kept["__truncated_keys__"] = len(trimmed) - max_items
+                return kept
+            return trimmed
+        if isinstance(node, list):
+            trimmed_list = [self._cap_json_collections(v, max_items) for v in node]
+            if len(trimmed_list) > max_items:
+                kept_list: list[object] = trimmed_list[:max_items]
+                kept_list.append({"__truncated_items__": len(trimmed_list) - max_items})
+                return kept_list
+            return trimmed_list
+        return node

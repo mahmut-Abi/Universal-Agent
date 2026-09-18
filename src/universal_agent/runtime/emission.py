@@ -177,17 +177,17 @@ class EventEmitter:
         reason: str,
         *,
         validation_stage: str,
+        available_capabilities: tuple[str, ...] | None = None,
     ) -> None:
-        await self.emit(
-            state,
-            "DecisionRejected",
-            data={
-                **self.decision_event_data(decision),
-                "error_code": error_code.value,
-                "validation_stage": validation_stage,
-                "rejection_reason": reason,
-            },
-        )
+        data = {
+            **self.decision_event_data(decision),
+            "error_code": error_code.value,
+            "validation_stage": validation_stage,
+            "rejection_reason": reason,
+        }
+        if available_capabilities is not None:
+            data["available_capabilities"] = list(available_capabilities)
+        await self.emit(state, "DecisionRejected", data=data)
 
     async def reject_session(
         self,

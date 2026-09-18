@@ -176,7 +176,9 @@ async def test_cli_api_url_runs_goal_and_reads_remote_session() -> None:
             stdout=session_output,
         )
         events_status = await run_cli(
-            ["--api-url", base_url, "session", "events", session_id, "--limit", "20"],
+            # Wide enough to include the terminal event even with per-iteration
+            # IterationStarted events appended by the runtime loop.
+            ["--api-url", base_url, "session", "events", session_id, "--limit", "40"],
             stdout=events_output,
         )
 

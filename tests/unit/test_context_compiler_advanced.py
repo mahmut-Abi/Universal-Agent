@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from universal_agent.context.compiler import BasicContextCompiler
@@ -299,3 +300,71 @@ def test_relevance_uses_goal_and_task_and_criteria() -> None:
 
     assert "postgres" in context.domain_context[0].content
     assert "CrashLoopBackOff" in context.domain_context[0].content
+
+
+def test_compile_is_safe_for_concurrent_sessions() -> None:
+    """Regression: state tokens must not leak across interleaved compile calls.
+
+    The relevance state was previously stored on the compiler instance, so two
+    sessions sharing one compiler could observe each other's tokens and rank
+    fragments against the wrong goal/task.
+    """
+    import concurrent.futures
+
+    compiler = BasicContextCompiler(enable_relevance_ranking=True)
+    provider = FakeProvider(
+        "p",
+        (
+            fragment("k0", "unrelated info about nginx"),
+            fragment("k1", "postgres pod is in CrashLoopBackOff"),
+            fragment("k2", "kafka consumer lag is high"),
+        ),
+    )
+    state_a = make_state(goal_desc="fix postgres", task_desc="check postgres pod")
+    state_b = make_state(goal_desc="fix kafka", task_desc="check kafka consumer")
+
+    def compile_once(state: AgentState) -> str:
+        context = compiler.compile(state, (), (), (provider,))
+        return context.domain_context[0].content
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(compile_once, state) for state in (state_a, state_b) * 25]
+        results = [future.result() for future in futures]
+
+    for index, content in enumerate(results):
+        if index % 2 == 0:
+            assert "postgres" in content
+        else:
+            assert "kafka" in content
+
+
+def test_json_compression_produces_valid_json_with_marker() -> None:
+    compiler = BasicContextCompiler(
+        enable_compression=True,
+        enable_relevance_ranking=False,
+        max_fragment_characters=120,
+    )
+    payload = "{" + ",".join(f'"key{i}": "some value payload {i}"' for i in range(40)) + "}"
+    fragment = ContextFragment("big.json", payload, 50)
+
+    compiled = compiler._budget_fragments([fragment], state_tokens=None, max_characters=10_000)
+
+    content = compiled[0].content
+    assert len(content) <= 120
+    parsed = json.loads(content)  # must remain valid JSON
+    assert parsed.get("__truncated_keys__", 0) >= 1
+
+
+def test_json_compression_falls_back_when_unfixable() -> None:
+    compiler = BasicContextCompiler(max_fragment_characters=20)
+    assert (
+        compiler._compress("{not valid json at all", 20).endswith("…")
+        or len(compiler._compress("{not valid json at all", 20)) <= 20
+    )
+
+
+def test_non_json_content_still_head_tail_truncates() -> None:
+    compiler = BasicContextCompiler(max_fragment_characters=20)
+    content = compiler._compress("a" * 100, 20)
+    assert len(content) == 20
+    assert "\u2026" in content

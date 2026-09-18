@@ -513,6 +513,15 @@ class AgentRuntime:
                 return requested
             state.iteration += 1
             await self._save(session)
+            await self._emit(
+                state,
+                "IterationStarted",
+                data={
+                    "iteration": state.iteration,
+                    "task_id": state.current_task.id,
+                    "task_status": state.current_task.status.value,
+                },
+            )
             all_capabilities, all_input_contracts = self._get_capability_context()
             capabilities, input_contracts = constrain_capability_context(
                 state,
@@ -540,124 +549,27 @@ class AgentRuntime:
                     session,
                     fail(session, ErrorCode.MODEL_FAILURE, f"model failed: {exc}"),
                 )
-            usage = model_usage(usage_source)
             await self._emit(
                 state,
                 "DecisionGenerated",
                 data=self._events.decision_event_data(decision),
             )
-            if usage is not None:
-                await self._emit(
-                    state,
-                    "ModelUsageRecorded",
-                    data={
-                        "provider": usage.provider,
-                        "model": usage.model,
-                        "input_tokens": usage.input_tokens,
-                        "output_tokens": usage.output_tokens,
-                        "total_tokens": usage.total_tokens,
-                        "estimated_cost_micros": usage.estimated_cost_micros,
-                        "currency": usage.currency,
-                    },
-                )
-                await self._emit(
-                    state,
-                    "LLMCallRecorded",
-                    data={
-                        "provider": usage.provider,
-                        "model": usage.model,
-                        "prompt": usage.prompt,
-                        "completion": usage.completion,
-                        "input_tokens": usage.input_tokens,
-                        "output_tokens": usage.output_tokens,
-                        "total_tokens": usage.total_tokens,
-                        "estimated_cost_micros": usage.estimated_cost_micros,
-                        "currency": usage.currency,
-                    },
-                )
-                state.cumulative_cost_micros += usage.estimated_cost_micros
-                state.cumulative_tokens += usage.total_tokens
-                if (
-                    self._max_total_cost_micros is not None
-                    and state.cumulative_cost_micros >= self._max_total_cost_micros
-                ):
-                    limit = self._max_total_cost_micros
-                    current = state.cumulative_cost_micros
-                    return await self._settle(
-                        session,
-                        fail(
-                            session,
-                            ErrorCode.COST_LIMIT_EXCEEDED,
-                            f"cost limit reached: {current} >= {limit}",
-                        ),
-                    )
-                if (
-                    self._max_total_tokens is not None
-                    and state.cumulative_tokens >= self._max_total_tokens
-                ):
-                    limit = self._max_total_tokens
-                    current = state.cumulative_tokens
-                    return await self._settle(
-                        session,
-                        fail(
-                            session,
-                            ErrorCode.COST_LIMIT_EXCEEDED,
-                            f"token limit reached: {current} >= {limit}",
-                        ),
-                    )
+            budget_exceeded = await self._record_usage(session, usage_source)
+            if budget_exceeded is not None:
+                return await self._settle(session, budget_exceeded)
             budget_pause = await self._pause_if_budget_expired(session, deadline)
             if budget_pause is not None:
                 return budget_pause
             decision = normalize_runtime_decision(decision)
-            try:
-                decision.validate()
-            except ValueError as exc:
-                reason = f"invalid decision: {exc}"
-                await self._events.emit_decision_rejected(
-                    state,
-                    decision,
-                    ErrorCode.VALIDATION_ERROR,
-                    reason,
-                    validation_stage="contract",
-                )
-                return await self._settle(
-                    session,
-                    fail(session, ErrorCode.VALIDATION_ERROR, reason),
-                )
-            constraint_error = validate_session_constraints(state, decision, all_capabilities)
-            if constraint_error is not None:
-                error_code, reason = constraint_error
-                await self._events.emit_decision_rejected(
-                    state,
-                    decision,
-                    error_code,
-                    reason,
-                    validation_stage="session_constraints",
-                )
-                return await self._settle(session, fail(session, error_code, reason))
-            context_error = self._capability_advisor.validate_decision_context(
+            rejected = await self._validate_decision(
+                session,
                 decision,
                 capabilities,
                 input_contracts,
+                all_capabilities,
             )
-            if context_error is not None:
-                error_code, reason = context_error
-                await self._events.emit_decision_rejected(
-                    state,
-                    decision,
-                    error_code,
-                    reason,
-                    validation_stage="context",
-                )
-                return await self._settle(session, fail(session, error_code, reason))
-            await self._emit(
-                state,
-                "DecisionValidated",
-                data={
-                    **self._events.decision_event_data(decision),
-                    "available_capability_count": len(capabilities),
-                },
-            )
+            if rejected is not None:
+                return rejected
             result = await self._apply_decision(session, decision)
             if result is not None:
                 return result
@@ -685,6 +597,140 @@ class AgentRuntime:
                 event_type="SessionPaused",
             ),
         )
+
+    async def _record_usage(
+        self,
+        session: SessionRuntimeState,
+        usage_source: ModelAdapter,
+    ) -> Transition | None:
+        """Emit usage events and enforce cumulative cost/token budgets.
+
+        Returns a fail transition when a budget is exhausted, otherwise None.
+        Usage is optional: custom DecisionEngines may not report usage.
+        """
+        state = session.state
+        usage = model_usage(usage_source)
+        if usage is None:
+            return None
+        await self._emit(
+            state,
+            "ModelUsageRecorded",
+            data={
+                "provider": usage.provider,
+                "model": usage.model,
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "total_tokens": usage.total_tokens,
+                "estimated_cost_micros": usage.estimated_cost_micros,
+                "currency": usage.currency,
+            },
+        )
+        await self._emit(
+            state,
+            "LLMCallRecorded",
+            data={
+                "provider": usage.provider,
+                "model": usage.model,
+                "prompt": usage.prompt,
+                "completion": usage.completion,
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "total_tokens": usage.total_tokens,
+                "estimated_cost_micros": usage.estimated_cost_micros,
+                "currency": usage.currency,
+            },
+        )
+        state.cumulative_cost_micros += usage.estimated_cost_micros
+        state.cumulative_tokens += usage.total_tokens
+        if (
+            self._max_total_cost_micros is not None
+            and state.cumulative_cost_micros >= self._max_total_cost_micros
+        ):
+            limit = self._max_total_cost_micros
+            current = state.cumulative_cost_micros
+            return fail(
+                session,
+                ErrorCode.COST_LIMIT_EXCEEDED,
+                f"cost limit reached: {current} >= {limit}",
+            )
+        if self._max_total_tokens is not None and state.cumulative_tokens >= self._max_total_tokens:
+            limit = self._max_total_tokens
+            current = state.cumulative_tokens
+            return fail(
+                session,
+                ErrorCode.COST_LIMIT_EXCEEDED,
+                f"token limit reached: {current} >= {limit}",
+            )
+        return None
+
+    async def _validate_decision(
+        self,
+        session: SessionRuntimeState,
+        decision: Decision,
+        capabilities: tuple[CapabilityDefinition, ...],
+        input_contracts: tuple[CapabilityInputContract, ...],
+        all_capabilities: tuple[CapabilityDefinition, ...],
+    ) -> ExecutionResult | None:
+        """Run the three decision validation gates in order.
+
+        Each failure emits DecisionRejected and settles the session; returns
+        None when the decision may proceed to execution.
+        """
+        state = session.state
+        available = tuple(item.name for item in capabilities)
+        try:
+            decision.validate()
+        except ValueError as exc:
+            reason = f"invalid decision: {exc}"
+            await self._events.emit_decision_rejected(
+                state,
+                decision,
+                ErrorCode.VALIDATION_ERROR,
+                reason,
+                validation_stage="contract",
+                available_capabilities=available,
+            )
+            return await self._settle(
+                session,
+                fail(session, ErrorCode.VALIDATION_ERROR, reason),
+            )
+        constraint_error = validate_session_constraints(state, decision, all_capabilities)
+        if constraint_error is not None:
+            error_code, reason = constraint_error
+            await self._events.emit_decision_rejected(
+                state,
+                decision,
+                error_code,
+                reason,
+                validation_stage="session_constraints",
+                available_capabilities=available,
+            )
+            return await self._settle(session, fail(session, error_code, reason))
+        context_error = self._capability_advisor.validate_decision_context(
+            decision,
+            capabilities,
+            input_contracts,
+        )
+        if context_error is not None:
+            error_code, reason = context_error
+            await self._events.emit_decision_rejected(
+                state,
+                decision,
+                error_code,
+                reason,
+                validation_stage="context",
+                available_capabilities=available,
+            )
+            return await self._settle(session, fail(session, error_code, reason))
+        await self._emit(
+            state,
+            "DecisionValidated",
+            data={
+                **self._events.decision_event_data(decision),
+                "available_capability_count": len(capabilities),
+            },
+        )
+        return None
 
     async def _decide(self, context: DecisionContext) -> tuple[Decision, ModelAdapter]:
         if self._decision_engine is not None:
