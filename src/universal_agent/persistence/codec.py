@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Annotated
 
+from pydantic import Field
+
 from universal_agent.core import (
     ActionId,
     AgentState,
@@ -150,7 +152,7 @@ class _AgentStatePayload(ConfigPayload):
     recovery_attempts: dict[str, int]
     termination_reason: str | None
     error_code: _StateErrorCodePayload
-    approved_fingerprints: list[str] = []
+    approved_fingerprints: list[str] = Field(default_factory=list)
 
 
 class _EvidencePayload(ConfigPayload):
