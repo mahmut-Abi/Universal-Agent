@@ -391,9 +391,7 @@ def test_world_fragment_marks_conflicting_fact() -> None:
         True,
     )
     clean = WorldFact("pod/b", "ready", True, 1.0, at, (EvidenceId("e3"),))
-    clean_history = WorldFactHistory(
-        "pod/b", "ready", clean, (), False
-    )
+    clean_history = WorldFactHistory("pod/b", "ready", clean, (), False)
     world = WorldSnapshot(
         SessionId("session-1"),
         facts=(current, clean),

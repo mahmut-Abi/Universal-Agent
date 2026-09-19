@@ -20,11 +20,11 @@ from universal_agent import (
     immutable_json,
 )
 from universal_agent.core import JsonMapping
-from universal_agent.domains.workspace import (
+from universal_agent.domains.workspace.domain import WorkspaceDomain
+from universal_agent.domains.workspace.names import (
     INSPECT_WORKSPACE_CAPABILITY,
     WORKSPACE_DOMAIN_NAME,
     WORKSPACE_DOMAIN_VERSION,
-    WorkspaceDomain,
 )
 from universal_agent.model import ModelAdapter
 

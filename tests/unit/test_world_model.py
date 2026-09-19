@@ -494,10 +494,7 @@ def test_evidence_bucket_trim_preserves_arbitration_and_conflicts() -> None:
 def test_evidence_bucket_trim_keeps_most_recent_observations() -> None:
     """Beyond arbitration + distinct values, the newest observations are retained."""
     model = InMemoryWorldModel(max_evidence_per_fact=3)
-    added = [
-        make_evidence(value=True, confidence=0.5, seconds=seconds)
-        for seconds in range(10)
-    ]
+    added = [make_evidence(value=True, confidence=0.5, seconds=seconds) for seconds in range(10)]
     for item in added:
         model.apply_fact(item)
 

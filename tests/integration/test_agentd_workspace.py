@@ -37,9 +37,7 @@ def build_app(workspace_root: str) -> AgentdApp:
         ),
         Decision(DecisionType.FINISH, "File created"),
     )
-    components = RuntimeBuilder().build(
-        DomainLoader().load(WorkspaceDomain(Path(workspace_root)))
-    )
+    components = RuntimeBuilder().build(DomainLoader().load(WorkspaceDomain(Path(workspace_root))))
     runtime = AgentRuntime(
         model=ScriptedModelAdapter(list(decisions)),
         state_store=store,
