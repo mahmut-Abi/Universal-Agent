@@ -994,9 +994,7 @@ class TestSensitivePathPolicy:
     def test_denies_read_on_secrets(self, domain: WorkspaceDomain) -> None:
         engine = PolicyEngine(domain.policies())
         result = engine.check(
-            self._context(
-                INSPECT_FILE_CAPABILITY, CapabilityCategory.OBSERVATION, "id_rsa"
-            )
+            self._context(INSPECT_FILE_CAPABILITY, CapabilityCategory.OBSERVATION, "id_rsa")
         )
         assert result.effect == PolicyEffect.DENY
 
@@ -1013,17 +1011,13 @@ class TestSensitivePathPolicy:
         policy = SensitivePathPolicy()
         assert (
             policy.evaluate(
-                self._context(
-                    INSPECT_WORKSPACE_CAPABILITY, CapabilityCategory.OBSERVATION, None
-                )
+                self._context(INSPECT_WORKSPACE_CAPABILITY, CapabilityCategory.OBSERVATION, None)
             )
             is None
         )
         assert (
             policy.evaluate(
-                self._context(
-                    SEARCH_FILES_CAPABILITY, CapabilityCategory.OBSERVATION, ".env"
-                )
+                self._context(SEARCH_FILES_CAPABILITY, CapabilityCategory.OBSERVATION, ".env")
             )
             is None
         )

@@ -35,9 +35,7 @@ def build_workspace_evaluation_suite(name: str) -> EvaluationSuite:
     inspect_task = Task("Inspect workspace", ("healthy",))
     create_goal = Goal("Create a file", (SuccessCriterion("created", True),))
     create_task = Task("Create file", ("created",))
-    secret_goal = Goal(
-        "Write to a sensitive file", (SuccessCriterion("created", True),)
-    )
+    secret_goal = Goal("Write to a sensitive file", (SuccessCriterion("created", True),))
     secret_task = Task("Create .env", ("created",))
     return EvaluationSuite(
         name,
