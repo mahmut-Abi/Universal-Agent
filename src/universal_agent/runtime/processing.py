@@ -107,9 +107,16 @@ class ObservationProcessor:
         if evaluation.task_completed:
             previous_id = session.tasks.current.id
             complete_current_task(session)
-            start_next_task(session)
-            current = session.tasks.current
-            next_task = current if current.id != previous_id else None
+            if evaluation.goal_completed:
+                # The evaluator declares the goal achieved (AGENTS.md §4.5):
+                # dynamically expanded tasks planned for it are moot. Resolve
+                # them instead of advancing, so a later FINISH is not trapped
+                # by unfinished tasks planned for a satisfied goal.
+                session.tasks.complete_all()
+            else:
+                start_next_task(session)
+                current = session.tasks.current
+                next_task = current if current.id != previous_id else None
         session.sync_current_task()
         return ProcessingResult(extracted, evaluation, created, next_task)
 

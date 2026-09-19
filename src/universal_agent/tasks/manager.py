@@ -125,6 +125,22 @@ class TaskManager:
                 return task
         return None
 
+    def complete_all(self) -> None:
+        """Mark every unfinished task COMPLETED.
+
+        Evaluator-authorized goal settlement: when the evaluator declares the
+        goal achieved, tasks planned for it (e.g. dynamically expanded ones)
+        are moot and must not block goal completion.
+        """
+
+        for task in self._tasks.values():
+            if task.status not in {
+                TaskStatus.COMPLETED,
+                TaskStatus.FAILED,
+                TaskStatus.CANCELLED,
+            }:
+                task.status = TaskStatus.COMPLETED
+
     def has_unfinished(self) -> bool:
         return any(
             task.status not in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}

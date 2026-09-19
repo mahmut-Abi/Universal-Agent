@@ -95,7 +95,7 @@ def _build_runtime(
 async def test_cost_limit_halts_session() -> None:
     runtime, _model, _store, _events = _build_runtime(
         [execute_probe(), finish()],
-        usage=[_usage(cost=500), _usage(cost=600)],
+        usage=[_usage(cost=1500), _usage(cost=600)],
         max_total_cost_micros=1000,
     )
     goal, task = health_goal_and_task()
@@ -110,7 +110,7 @@ async def test_cost_limit_halts_session() -> None:
 async def test_token_limit_halts_session() -> None:
     runtime, _model, _store, _events = _build_runtime(
         [execute_probe(), finish()],
-        usage=[_usage(tokens=60), _usage(tokens=60)],
+        usage=[_usage(tokens=150), _usage(tokens=60)],
         max_total_tokens=100,
     )
     goal, task = health_goal_and_task()

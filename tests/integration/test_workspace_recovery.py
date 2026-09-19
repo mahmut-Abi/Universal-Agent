@@ -149,3 +149,52 @@ async def test_exhausted_retry_budget_fails_without_false_success() -> None:
 def _pending_decisions(runtime: AgentRuntime) -> list[Decision]:
     model = runtime._model
     return list(getattr(model, "_decisions", []))
+
+
+@pytest.mark.asyncio
+async def test_expanded_task_does_not_trap_goal_completion() -> None:
+    """Regression: a dynamically expanded task planned after the goal's
+    criteria were met must not reject the model's FINISH with INVALID_STATE.
+
+    Sequence: read a missing file (soft failure records exists=false +
+    target_file, the expander plans a create task) → create the file
+    (evaluation completes the goal) → FINISH must succeed.
+    """
+
+    from universal_agent.domains.workspace import INSPECT_FILE_CAPABILITY
+
+    with TemporaryDirectory() as tmpdir:
+        workspace = Path(tmpdir)
+        components = RuntimeBuilder().build(DomainLoader().load(WorkspaceDomain(workspace)))
+        events = InMemoryEventSink()
+        decisions = [
+            Decision(
+                DecisionType.EXECUTE,
+                "Read the file first",
+                capability=INSPECT_FILE_CAPABILITY,
+                target="file/ghost.txt",
+                arguments=immutable_json({"path": "ghost.txt"}),
+                expected_observations=("readable",),
+            ),
+            create_file_decision("ghost.txt", "now exists"),
+            finish_decision(),
+        ]
+        runtime = AgentRuntime(
+            model=_ScriptedModel(decisions),
+            state_store=InMemoryStateStore(),
+            components=components,
+            event_sink=events,
+        )
+        result = await runtime.run(
+            Goal(
+                "Ensure ghost.txt exists with content",
+                (SuccessCriterion("created", True),),
+            ),
+            Task("Read then create ghost.txt", ("created",)),
+        )
+
+        assert result.status is ExecutionStatus.COMPLETED
+        assert (workspace / "ghost.txt").read_text() == "now exists"
+        event_types = [event.type for event in events.events]
+        # The expander planned the create task from the failed-read evidence.
+        assert event_types.count("TaskCreated") == 2
