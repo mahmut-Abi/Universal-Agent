@@ -35,6 +35,7 @@ from universal_agent.domains.workspace.domain import (
     WorkspaceWorldUpdater,
     workspace_identity,
 )
+from universal_agent.domains.workspace.agentd_routes import workspace_agentd_contribution
 from universal_agent.domains.workspace.eval_suite import build_workspace_evaluation_suite
 from universal_agent.domains.workspace.registration import workspace_cli_contribution
 

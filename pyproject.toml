@@ -70,6 +70,7 @@ ua = "universal_agent_cli:main"
 # discover these via entry points and never import a concrete domain.
 [project.entry-points."universal_agent.agentd_routes"]
 kubernetes = "universal_agent.domains.kubernetes.agentd_routes:kubernetes_agentd_contribution"
+workspace = "universal_agent.domains.workspace.agentd_routes:workspace_agentd_contribution"
 
 [project.entry-points."universal_agent.cli_contributions"]
 kubernetes = "universal_agent.domains.kubernetes.registration:kubernetes_cli_contribution"
