@@ -281,9 +281,7 @@ class OpenAIChatCompletionsModelAdapter:
                 payload=request_payload,
                 timeout_seconds=self._timeout_seconds,
             )
-            output_text = _openai_chat_completion_content(
-                _openai_chat_completion_payload(response)
-            )
+            output_text = _openai_chat_completion_content(_openai_chat_completion_payload(response))
             usage = decode_usage(
                 "openai_chat_completions",
                 self._model,

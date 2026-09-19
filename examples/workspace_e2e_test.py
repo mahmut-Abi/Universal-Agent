@@ -96,8 +96,10 @@ async def s1_normal_execution(workspace: Path) -> bool:
     service = build_service(workspace)
     run = await asyncio.wait_for(
         service.run_goal(
-            Goal("Inspect the workspace and report whether it is healthy",
-                 (SuccessCriterion("healthy", True),)),
+            Goal(
+                "Inspect the workspace and report whether it is healthy",
+                (SuccessCriterion("healthy", True),),
+            ),
             Task("Inspect workspace", ("healthy",)),
         ),
         timeout=120,
@@ -113,8 +115,10 @@ async def s2_multi_step(workspace: Path) -> bool:
     service = build_service(workspace)
     run = await asyncio.wait_for(
         service.run_goal(
-            Goal("Create a file named notes.txt containing 'meeting at 3pm'",
-                 (SuccessCriterion("created", True),)),
+            Goal(
+                "Create a file named notes.txt containing 'meeting at 3pm'",
+                (SuccessCriterion("created", True),),
+            ),
             Task("Create notes.txt", ("created",)),
         ),
         timeout=180,
@@ -184,8 +188,10 @@ async def s4_confirmation_refused(workspace: Path) -> bool:
         and current.result.error_code is ErrorCode.CONFIRMATION_REJECTED
         and file_intact
     )
-    print(f"    final status={current.result.status.value} "
-          f"error={current.result.error_code} file_intact={file_intact}")
+    print(
+        f"    final status={current.result.status.value} "
+        f"error={current.result.error_code} file_intact={file_intact}"
+    )
     return ok
 
 
@@ -206,8 +212,10 @@ async def s5_read_only_enforcement(workspace: Path) -> bool:
     no_file = not (workspace / "hacked.txt").exists()
     guard_intact = guard.read_text() == "must not change\n"
     ok = no_file and guard_intact
-    print(f"    status={run.result.status.value} mutation_blocked={no_file} "
-          f"guard_intact={guard_intact}")
+    print(
+        f"    status={run.result.status.value} mutation_blocked={no_file} "
+        f"guard_intact={guard_intact}"
+    )
     return ok
 
 
@@ -223,8 +231,10 @@ async def s6_long_context(workspace: Path) -> bool:
     service = build_service(workspace)
     run = await asyncio.wait_for(
         service.run_goal(
-            Goal("Search Python files for the pattern 'filler_5_' and report matches",
-                 (SuccessCriterion("match_count", 20),)),
+            Goal(
+                "Search Python files for the pattern 'filler_5_' and report matches",
+                (SuccessCriterion("match_count", 20),),
+            ),
             Task("Search modules", ("match_count",)),
         ),
         timeout=180,

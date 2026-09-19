@@ -275,6 +275,74 @@ class TestReadFileTool:
         assert result["readable"] is False
 
 
+# ─── Read Truncation Tests ─────────────────────────────────────────────
+
+
+class TestReadTruncation:
+    @pytest.mark.asyncio
+    async def test_large_file_is_truncated_with_marker(
+        self, domain: WorkspaceDomain, workspace_dir: Path
+    ) -> None:
+        (workspace_dir / "big.txt").write_text("x" * 50_000)
+        tools = domain.tools()
+        read_file = next(t for t in tools if t.definition.name == "workspace_read_file")
+        result = await read_file.execute(immutable_json({"path": "big.txt"}))
+        assert result["readable"] is True
+        assert result["truncated"] is True
+        assert len(str(result["content"])) <= 20_000
+        assert int(str(result["size_bytes"])) == 50_000
+
+    @pytest.mark.asyncio
+    async def test_small_file_is_not_truncated(
+        self, domain: WorkspaceDomain, workspace_dir: Path
+    ) -> None:
+        (workspace_dir / "small.txt").write_text("tiny\n")
+        tools = domain.tools()
+        read_file = next(t for t in tools if t.definition.name == "workspace_read_file")
+        result = await read_file.execute(immutable_json({"path": "small.txt"}))
+        assert "truncated" not in result
+
+
+# ─── Search Noise Skip Tests ───────────────────────────────────────────
+
+
+class TestSearchNoiseSkip:
+    @pytest.mark.asyncio
+    async def test_search_skips_dependency_dirs(
+        self, domain: WorkspaceDomain, workspace_dir: Path
+    ) -> None:
+        (workspace_dir / "src.py").write_text("def target_marker(): pass\n")
+        noise = workspace_dir / "node_modules" / "pkg"
+        noise.mkdir(parents=True)
+        (noise / "dep.py").write_text("def target_marker(): pass\n")
+        venv = workspace_dir / ".venv" / "lib"
+        venv.mkdir(parents=True)
+        (venv / "vendored.py").write_text("def target_marker(): pass\n")
+        tools = domain.tools()
+        search = next(t for t in tools if t.definition.name == "workspace_search")
+        result = await search.execute(
+            immutable_json({"pattern": "target_marker", "glob": "*.py"})
+        )
+        assert int(str(result["match_count"])) == 1
+        files_raw = result.get("matches", [])
+        assert isinstance(files_raw, list)
+        files = [str(m.get("file")) for m in files_raw if isinstance(m, dict)]
+        assert files == ["src.py"]
+
+    @pytest.mark.asyncio
+    async def test_search_skips_oversized_files(
+        self, domain: WorkspaceDomain, workspace_dir: Path
+    ) -> None:
+        (workspace_dir / "hit.py").write_text("def find_me(): pass\n")
+        (workspace_dir / "huge.py").write_text("def find_me(): pass\n" + "x" * 30_000)
+        tools = domain.tools()
+        search = next(t for t in tools if t.definition.name == "workspace_search")
+        result = await search.execute(
+            immutable_json({"pattern": "find_me", "glob": "*.py"})
+        )
+        assert int(str(result["match_count"])) == 1
+
+
 # ─── Search Tool Tests ──────────────────────────────────────────────────────
 
 

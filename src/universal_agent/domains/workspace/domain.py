@@ -124,6 +124,14 @@ def workspace_identity() -> DomainIdentity:
     return DomainIdentity(WORKSPACE_DOMAIN_NAME, WORKSPACE_DOMAIN_VERSION)
 
 
+# Observation payloads flow into evidence and then into the model context, so
+# reads and searches are bounded to keep the context budget predictable.
+_MAX_READ_CHARS = 20_000
+_SEARCH_SKIP_DIRS = frozenset(
+    {".git", ".venv", "venv", "node_modules", "__pycache__", ".mypy_cache", "dist", "build"}
+)
+
+
 # ─── Tool Implementations ───────────────────────────────────────────────────
 
 
@@ -230,16 +238,24 @@ class WorkspaceReadFileTool:
         try:
             content = resolved.read_text(encoding="utf-8")
             lines = content.split("\n")
-            return immutable_json(
-                {
-                    "resource": path_str,
-                    "readable": True,
-                    "healthy": True,
-                    "content": content,
-                    "line_count": len(lines),
-                    "size_bytes": resolved.stat().st_size,
-                }
-            )
+            # Truncate huge files: observation payloads flow into evidence and
+            # then into the model context, so an unbounded read would blow the
+            # context budget. Keep the head plus an explicit truncation marker.
+            truncated = len(content) > _MAX_READ_CHARS
+            if truncated:
+                content = content[:_MAX_READ_CHARS]
+                lines = content.split("\n")
+            payload: dict[str, JsonValue] = {
+                "resource": path_str,
+                "readable": True,
+                "healthy": True,
+                "content": content,
+                "line_count": len(lines),
+                "size_bytes": resolved.stat().st_size,
+            }
+            if truncated:
+                payload["truncated"] = True
+            return immutable_json(payload)
         except OSError as exc:
             return immutable_json(
                 {
@@ -286,7 +302,12 @@ class WorkspaceSearchTool:
         for path in self._workspace.rglob(glob):
             if not path.is_file() or len(matches) >= max_results:
                 break
+            # Skip dependency/build noise: huge trees that never hold source.
+            if _SEARCH_SKIP_DIRS.intersection(path.relative_to(self._workspace).parts):
+                continue
             try:
+                if path.stat().st_size > _MAX_READ_CHARS:
+                    continue
                 lines = path.read_text(encoding="utf-8").split("\n")
                 for i, line in enumerate(lines, 1):
                     if regex.search(line):

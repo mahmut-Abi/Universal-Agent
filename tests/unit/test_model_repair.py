@@ -62,7 +62,7 @@ def context() -> DecisionContext:
         goal_success_criteria=(SuccessCriterion("healthy", True),),
         current_task_required_criteria=("healthy",),
         policy_summary=("read-only",),
-)
+    )
 
 
 VALID_DECISION = {
