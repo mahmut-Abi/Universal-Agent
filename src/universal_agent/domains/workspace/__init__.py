@@ -36,6 +36,7 @@ from universal_agent.domains.workspace.domain import (
     workspace_identity,
 )
 from universal_agent.domains.workspace.eval_suite import build_workspace_evaluation_suite
+from universal_agent.domains.workspace.registration import workspace_cli_contribution
 
 __all__ = [
     "ALL_CAPABILITIES",

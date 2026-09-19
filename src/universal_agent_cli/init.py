@@ -199,18 +199,33 @@ def _domain_settings(
 ) -> tuple[str, dict[str, object], dict[str, dict[str, object]]]:
     """Resolve the init domain via domain contributions.
 
-    Each domain contribution inspects the init arguments (e.g.
-    ``--domain-backend``) and returns its domain config and secrets; the
-    first match wins. With no contributing domain, the domain-neutral
-    local domain is used (the Golden Path default).
+    Resolution is two-pass so that any domain is reachable regardless of
+    alphabetical entry-point order (the domain-neutral local contribution
+    accepts unconditionally and would otherwise shadow every domain sorted
+    after it):
+
+    1. Contributions that explicitly declare the requested ``--domain-backend``
+       in their ``init_backends`` get first claim.
+    2. All remaining contributions in discovery order; the unconditional
+       local fallback still catches the default/unknown backends.
     """
 
     from universal_agent_cli.contributions import load_cli_contributions
 
-    for contribution in load_cli_contributions():
-        if contribution.init_resolve_domain is None:
+    contributions = [
+        item for item in load_cli_contributions() if item.init_resolve_domain is not None
+    ]
+    requested_backend = getattr(args, "domain_backend", None)
+    claimed = [
+        item
+        for item in contributions
+        if requested_backend is not None and requested_backend in item.init_backends
+    ]
+    for contribution in [*claimed, *(item for item in contributions if item not in claimed)]:
+        resolve = contribution.init_resolve_domain
+        if resolve is None:
             continue
-        outcome = contribution.init_resolve_domain(args)
+        outcome = resolve(args)
         if outcome is not None:
             return (
                 outcome.domain_name,

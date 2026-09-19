@@ -709,17 +709,28 @@ class WorkspaceTaskExpander:
 _SENSITIVE_BASENAMES = frozenset(
     {
         ".env",
-        ".env.local",
-        ".env.production",
-        ".env.development",
         "secrets.json",
         "credentials.json",
-        "private.key",
         "id_rsa",
         "id_ed25519",
         ".npmrc",
         ".pypirc",
     }
+)
+
+# Wildcard suffix patterns (fnmatch, case-insensitive) for credential file
+# families: dotfile env variants (.env.local, .env.production.local, ...),
+# backup copies (secrets.json.bak), and key material by extension.
+_SENSITIVE_PATTERNS = (
+    ".env*",
+    "*.env",
+    "*.key",
+    "*.pem",
+    "*.p12",
+    "*.pfx",
+    "*secret*",
+    "*credential*",
+    "*_rsa",
 )
 
 
@@ -728,12 +739,20 @@ def _is_sensitive_path(path: str) -> bool:
 
     On POSIX a Windows-style path keeps its backslashes, so both derivations
     must be checked: ``..\\env`` style payloads must not slip through the
-    POSIX reading of the string.
+    POSIX reading of the string. Exact names plus fnmatch-style wildcard
+    families (``.env*``, ``*.key``, ``*secret*``, ...) are matched against
+    each derivation.
     """
+    from fnmatch import fnmatch
     from pathlib import PurePosixPath, PureWindowsPath
 
     names = {PurePosixPath(path).name.lower(), PureWindowsPath(path).name.lower()}
-    return bool(names & _SENSITIVE_BASENAMES)
+    for name in names:
+        if name in _SENSITIVE_BASENAMES:
+            return True
+        if any(fnmatch(name, pattern) for pattern in _SENSITIVE_PATTERNS):
+            return True
+    return False
 
 
 class SensitivePathPolicy:

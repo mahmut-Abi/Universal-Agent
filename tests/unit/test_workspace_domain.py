@@ -991,6 +991,39 @@ class TestSensitivePathPolicy:
             )
             assert result is not None and result.effect == PolicyEffect.DENY, path
 
+    def test_denies_wildcard_variants(self) -> None:
+        """Bypass variants must be caught: env dotfile family, backups, keys."""
+        from universal_agent.domains.workspace import SensitivePathPolicy
+
+        policy = SensitivePathPolicy()
+        bypass_attempts = (
+            ".env.production.local",
+            "config/.env.development",
+            "secrets.json.bak",
+            "server.pem",
+            "ca.key",
+            "client.p12",
+            "api_secret.txt",
+            "my_credentials.yaml",
+            "deploy_rsa",
+            "prod.KEY",
+        )
+        for path in bypass_attempts:
+            result = policy.evaluate(
+                self._context(CREATE_FILE_CAPABILITY, CapabilityCategory.MUTATION, path)
+            )
+            assert result is not None and result.effect == PolicyEffect.DENY, path
+
+    def test_allows_ordinary_files_despite_wildcards(self) -> None:
+        from universal_agent.domains.workspace import SensitivePathPolicy
+
+        policy = SensitivePathPolicy()
+        ordinary = ("main.py", "readme.md", "data.csv", "notes.txt", "app.log")
+        for path in ordinary:
+            assert policy.evaluate(
+                self._context(CREATE_FILE_CAPABILITY, CapabilityCategory.MUTATION, path)
+            ) is None, path
+
     def test_denies_read_on_secrets(self, domain: WorkspaceDomain) -> None:
         engine = PolicyEngine(domain.policies())
         result = engine.check(
@@ -1043,3 +1076,53 @@ class TestEvaluationSuite:
         )
         assert policy_scenario.expectations.expected_error_code is ErrorCode.POLICY_DENIED
         assert policy_scenario.expectations.max_actions == 0
+
+
+# ─── CLI Contribution Tests ─────────────────────────────────────────────
+
+
+class TestCliContribution:
+    def test_contribution_registered_with_backend_claim(self) -> None:
+        from universal_agent.host_contracts import load_cli_contributions
+
+        workspace = next(
+            c for c in load_cli_contributions() if c.domain == "workspace"
+        )
+        assert "workspace" in workspace.init_backends
+        assert workspace.init_resolve_domain is not None
+        assert workspace.init_add_arguments is not None
+
+    def test_init_resolves_only_for_workspace_backend(self) -> None:
+        import argparse
+
+        from universal_agent.domains.workspace import workspace_cli_contribution
+
+        contribution = workspace_cli_contribution()
+        resolve = contribution.init_resolve_domain
+        assert resolve is not None
+
+        foreign = argparse.Namespace(domain_backend="kubectl")
+        assert resolve(foreign) is None
+
+        ours = argparse.Namespace(domain_backend="workspace", workspace_path="/tmp/sb")
+        outcome = resolve(ours)
+        assert outcome is not None
+        assert outcome.domain_name == "workspace"
+        assert outcome.domain_config["settings"] == {"workspace_path": "/tmp/sb"}
+
+    def test_domain_settings_backend_claim_beats_alphabetical_order(self) -> None:
+        """The two-pass resolver must reach 'workspace' despite 'local'
+        accepting unconditionally and sorting earlier."""
+        import argparse
+
+        from universal_agent_cli.init import _domain_settings
+
+        args = argparse.Namespace(domain_backend="workspace", workspace_path="/tmp/sb")
+        name, config, _ = _domain_settings(args)
+        assert name == "workspace"
+        assert config["name"] == "workspace"
+
+        default_args = argparse.Namespace(domain_backend="fake")
+        default_name, default_config, _ = _domain_settings(default_args)
+        assert default_name == "local"
+        assert default_config["name"] == "local"
