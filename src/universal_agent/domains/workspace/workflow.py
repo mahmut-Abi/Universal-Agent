@@ -336,5 +336,3 @@ def _inspect_workspace_sync(workspace: Path) -> JsonMapping:
             "project_markers": markers,
         }
     )
-
-

@@ -100,5 +100,3 @@ class SensitivePathPolicy:
                 self.name,
             )
         return None
-
-

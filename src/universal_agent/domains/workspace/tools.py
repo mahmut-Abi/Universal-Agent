@@ -403,5 +403,3 @@ class WorkspaceDeleteFileTool:
                     "error": str(exc),
                 }
             )
-
-

@@ -71,5 +71,3 @@ WORKSPACE_CONTEXT_PROVIDER = "workspace-context"
 # ─── Memory Names ───────────────────────────────────────────────────────────
 
 WORKSPACE_MEMORY_SUBJECT = "workspace-knowledge"
-
-
