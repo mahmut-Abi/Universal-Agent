@@ -44,10 +44,17 @@ def build_configured_service(config_path: str | Path) -> RuntimeService:
             secret_provider=secret_provider,
         ).service
     configured_domains = profile.runtime.configured_domains()
-    if configured_domains and configured_domains[0].name == "local":
+    first_domain = configured_domains[0].name if configured_domains else None
+    if first_domain == "local":
         from universal_agent.domains.local.cli_runtime import build_local_profile_service
 
         return build_local_profile_service(config_path)
+    if first_domain == "workspace":
+        from universal_agent.domains.workspace.cli_runtime import (
+            build_workspace_profile_service,
+        )
+
+        return build_workspace_profile_service(config_path)
     from universal_agent.domains.kubernetes.cli_runtime import (
         build_configured_service as build_kubernetes_service,
     )
