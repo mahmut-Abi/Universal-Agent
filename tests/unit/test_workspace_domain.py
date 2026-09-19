@@ -26,6 +26,7 @@ from universal_agent.core import (
     AgentState,
     CapabilityCategory,
     CapabilityDefinition,
+    ErrorCode,
     EvaluationContext,
     EvaluationStatus,
     Goal,
@@ -63,6 +64,7 @@ from universal_agent.domains.workspace import (
     WorkspaceRecoveryRule,
     WorkspaceTaskExpander,
     WorkspaceWorldUpdater,
+    build_workspace_evaluation_suite,
     workspace_identity,
 )
 from universal_agent.evidence import Evidence, EvidenceContext
@@ -320,9 +322,7 @@ class TestSearchNoiseSkip:
         (venv / "vendored.py").write_text("def target_marker(): pass\n")
         tools = domain.tools()
         search = next(t for t in tools if t.definition.name == "workspace_search")
-        result = await search.execute(
-            immutable_json({"pattern": "target_marker", "glob": "*.py"})
-        )
+        result = await search.execute(immutable_json({"pattern": "target_marker", "glob": "*.py"}))
         assert int(str(result["match_count"])) == 1
         files_raw = result.get("matches", [])
         assert isinstance(files_raw, list)
@@ -337,9 +337,7 @@ class TestSearchNoiseSkip:
         (workspace_dir / "huge.py").write_text("def find_me(): pass\n" + "x" * 30_000)
         tools = domain.tools()
         search = next(t for t in tools if t.definition.name == "workspace_search")
-        result = await search.execute(
-            immutable_json({"pattern": "find_me", "glob": "*.py"})
-        )
+        result = await search.execute(immutable_json({"pattern": "find_me", "glob": "*.py"}))
         assert int(str(result["match_count"])) == 1
 
 
@@ -758,7 +756,7 @@ class TestMemory:
 class TestPolicies:
     def test_policies_count(self, domain: WorkspaceDomain) -> None:
         policies = domain.policies()
-        assert len(policies) == 3
+        assert len(policies) == 4
 
     def test_read_allowed(self, domain: WorkspaceDomain) -> None:
         policies = domain.policies()
@@ -878,7 +876,7 @@ class TestDomainLoader:
         assert len(active.capabilities) == 6
         assert len(active.tools) == 6
         assert len(active.evaluators) == 1
-        assert len(active.policies) == 3
+        assert len(active.policies) == 4
         assert len(active.recovery_rules) == 3
         assert len(active.memories) == 2
 
@@ -950,3 +948,104 @@ class TestIntegration:
         # Step 3: Verify modification
         modified = await read_file.execute(immutable_json({"path": "hello.py"}))
         assert "print('modified')" in str(modified["content"])
+
+
+# ─── Sensitive Path Policy Tests ────────────────────────────────────────────
+
+
+class TestSensitivePathPolicy:
+    def _context(
+        self, capability: str, category: CapabilityCategory, path: str | None
+    ) -> PolicyContext:
+        from universal_agent.core import ToolDefinition
+
+        arguments = immutable_json({"path": path}) if path is not None else immutable_json({})
+        return PolicyContext(
+            session_id=SessionId("session-1"),
+            goal_id=GoalId("goal-1"),
+            task_id=TaskId("task-1"),
+            action_id=ActionId("action-1"),
+            capability=CapabilityDefinition(capability, "test", category),
+            tool=ToolDefinition("workspace_tool", "test", (capability,)),
+            target=None,
+            arguments=arguments,
+            confirmed=False,
+        )
+
+    def test_denies_create_on_env_file(self, domain: WorkspaceDomain) -> None:
+
+        engine = PolicyEngine(domain.policies())
+        result = engine.check(
+            self._context(CREATE_FILE_CAPABILITY, CapabilityCategory.MUTATION, ".env")
+        )
+        assert result.effect == PolicyEffect.DENY
+        assert result.policy_name == "workspace-sensitive-paths"
+
+    def test_denies_nested_and_case_insensitive(self) -> None:
+        from universal_agent.domains.workspace import SensitivePathPolicy
+
+        policy = SensitivePathPolicy()
+        for path in ("config/.env", "CONFIG/SECRETS.JSON", "..\\.env"):
+            result = policy.evaluate(
+                self._context(CREATE_FILE_CAPABILITY, CapabilityCategory.MUTATION, path)
+            )
+            assert result is not None and result.effect == PolicyEffect.DENY, path
+
+    def test_denies_read_on_secrets(self, domain: WorkspaceDomain) -> None:
+        engine = PolicyEngine(domain.policies())
+        result = engine.check(
+            self._context(
+                INSPECT_FILE_CAPABILITY, CapabilityCategory.OBSERVATION, "id_rsa"
+            )
+        )
+        assert result.effect == PolicyEffect.DENY
+
+    def test_allows_normal_paths(self, domain: WorkspaceDomain) -> None:
+        engine = PolicyEngine(domain.policies())
+        result = engine.check(
+            self._context(CREATE_FILE_CAPABILITY, CapabilityCategory.MUTATION, "app/main.py")
+        )
+        assert result.effect == PolicyEffect.ALLOW
+
+    def test_ignores_pathless_capabilities(self) -> None:
+        from universal_agent.domains.workspace import SensitivePathPolicy
+
+        policy = SensitivePathPolicy()
+        assert (
+            policy.evaluate(
+                self._context(
+                    INSPECT_WORKSPACE_CAPABILITY, CapabilityCategory.OBSERVATION, None
+                )
+            )
+            is None
+        )
+        assert (
+            policy.evaluate(
+                self._context(
+                    SEARCH_FILES_CAPABILITY, CapabilityCategory.OBSERVATION, ".env"
+                )
+            )
+            is None
+        )
+
+
+# ─── Evaluation Suite Tests ────────────────────────────────────────────────
+
+
+class TestEvaluationSuite:
+    def test_build_workspace_evaluation_suite(self) -> None:
+        suite = build_workspace_evaluation_suite("workspace-suite")
+        assert suite.name == "workspace-suite"
+        assert len(suite.scenarios) == 3
+        names = {s.name for s in suite.scenarios}
+        assert "healthy workspace" in names
+        assert "create file" in names
+        assert "sensitive path policy denial" in names
+
+    def test_policy_scenario_expects_denial(self) -> None:
+        suite = build_workspace_evaluation_suite("workspace-suite")
+        policy_scenario = next(
+            s for s in suite.scenarios if s.name == "sensitive path policy denial"
+        )
+        assert policy_scenario.expectations.expected_error_code is ErrorCode.POLICY_DENIED
+        assert policy_scenario.expectations.max_actions == 0

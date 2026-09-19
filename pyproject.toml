@@ -81,6 +81,7 @@ kubernetes = "universal_agent.domains.kubernetes.cli_runtime:build_default_servi
 
 [project.entry-points."universal_agent.evaluation_suites"]
 kubernetes = "universal_agent.domains.kubernetes.eval_suite:build_kubernetes_evaluation_suite"
+workspace = "universal_agent.domains.workspace.eval_suite:build_workspace_evaluation_suite"
 
 [tool.hatch.build.targets.wheel]
 packages = [

@@ -24,6 +24,7 @@ from universal_agent.domains.workspace.domain import (
     WORKSPACE_DELETE_FILE_TOOL,
     WORKSPACE_DOMAIN_NAME,
     WORKSPACE_DOMAIN_VERSION,
+    SensitivePathPolicy,
     WorkspaceCompletionEvaluator,
     WorkspaceContextProvider,
     WorkspaceDeleteFileTool,
@@ -34,6 +35,7 @@ from universal_agent.domains.workspace.domain import (
     WorkspaceWorldUpdater,
     workspace_identity,
 )
+from universal_agent.domains.workspace.eval_suite import build_workspace_evaluation_suite
 
 __all__ = [
     "ALL_CAPABILITIES",
@@ -47,6 +49,7 @@ __all__ = [
     "WORKSPACE_DELETE_FILE_TOOL",
     "WORKSPACE_DOMAIN_NAME",
     "WORKSPACE_DOMAIN_VERSION",
+    "SensitivePathPolicy",
     "WorkspaceCompletionEvaluator",
     "WorkspaceContextProvider",
     "WorkspaceDeleteFileTool",
@@ -55,5 +58,6 @@ __all__ = [
     "WorkspaceRecoveryRule",
     "WorkspaceTaskExpander",
     "WorkspaceWorldUpdater",
+    "build_workspace_evaluation_suite",
     "workspace_identity",
 ]

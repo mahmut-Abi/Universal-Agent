@@ -36,7 +36,9 @@ from universal_agent.core import (
     JsonMapping,
     JsonValue,
     ObservationStatus,
+    PolicyContext,
     PolicyEffect,
+    PolicyResult,
     RiskLevel,
     SideEffect,
     ToolDefinition,
@@ -699,6 +701,75 @@ class WorkspaceTaskExpander:
         return tuple(specs)
 
 
+# ─── Sensitive Path Policy ──────────────────────────────────────────────────
+
+# Basenames that must never be created, modified, read or deleted through
+# the workspace domain. Enforced by the deterministic Policy engine (before
+# any tool runs), not by prompt text (AGENTS.md §4.3).
+_SENSITIVE_BASENAMES = frozenset(
+    {
+        ".env",
+        ".env.local",
+        ".env.production",
+        ".env.development",
+        "secrets.json",
+        "credentials.json",
+        "private.key",
+        "id_rsa",
+        "id_ed25519",
+        ".npmrc",
+        ".pypirc",
+    }
+)
+
+
+def _is_sensitive_path(path: str) -> bool:
+    """Case-insensitive basename match across POSIX and Windows separators.
+
+    On POSIX a Windows-style path keeps its backslashes, so both derivations
+    must be checked: ``..\\env`` style payloads must not slip through the
+    POSIX reading of the string.
+    """
+    from pathlib import PurePosixPath, PureWindowsPath
+
+    names = {PurePosixPath(path).name.lower(), PureWindowsPath(path).name.lower()}
+    return bool(names & _SENSITIVE_BASENAMES)
+
+
+class SensitivePathPolicy:
+    """Deny any path-addressed operation whose target is a sensitive file.
+
+    A custom Policy (not a static PolicyRule) because the decision depends on
+    the action's ``path`` argument, which declarative rules cannot match.
+    Inspect/read and all mutation capabilities are covered: secrets must be
+    neither exfiltrated nor tampered with.
+    """
+
+    name = "workspace-sensitive-paths"
+
+    def __init__(self, capabilities: tuple[str, ...] = ()) -> None:
+        self._capabilities = capabilities or (
+            INSPECT_FILE_CAPABILITY,
+            CREATE_FILE_CAPABILITY,
+            MODIFY_FILE_CAPABILITY,
+            DELETE_FILE_CAPABILITY,
+        )
+
+    def evaluate(self, context: PolicyContext) -> PolicyResult | None:
+        if context.capability.name not in self._capabilities:
+            return None
+        raw_path = str(context.arguments.get("path", ""))
+        if not raw_path:
+            return None
+        if _is_sensitive_path(raw_path):
+            return PolicyResult(
+                PolicyEffect.DENY,
+                f"{raw_path} is a sensitive file: operations on it are denied",
+                self.name,
+            )
+        return None
+
+
 # ─── Recovery Rules ─────────────────────────────────────────────────────────
 
 
@@ -907,6 +978,7 @@ class WorkspaceDomain(BaseDomainRuntime):
                 "file deletion is destructive and requires user confirmation",
                 capabilities=(DELETE_FILE_CAPABILITY,),
             ),
+            SensitivePathPolicy(),
         )
 
     def evaluators(self) -> tuple[Evaluator, ...]:
