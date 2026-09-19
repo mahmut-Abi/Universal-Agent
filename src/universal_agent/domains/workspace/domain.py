@@ -91,7 +91,6 @@ WORKSPACE_DELETE_FILE_TOOL = "workspace_delete_file"
 WORKSPACE_ALLOW_READ = "workspace-allow-read"
 WORKSPACE_ALLOW_MUTATE = "workspace-allow-mutate"
 WORKSPACE_CONFIRM_DELETE = "workspace-confirm-delete"
-WORKSPACE_DENY_SENSITIVE = "workspace-deny-sensitive"
 
 # ─── Evaluator Names ────────────────────────────────────────────────────────
 

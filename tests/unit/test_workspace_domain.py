@@ -1177,7 +1177,9 @@ class TestTaskExpansionLivePath:
         expander = WorkspaceTaskExpander()
         task = Task("Ensure ghost.txt exists", ("created",))
         specs = expander.expand(
-            TaskExpansionContext(task=task, evidence=(), world=model.snapshot(SessionId("session-1")))
+            TaskExpansionContext(
+                task=task, evidence=(), world=model.snapshot(SessionId("session-1"))
+            )
         )
         assert len(specs) == 1
         assert specs[0].key == "create-ghost.txt"

@@ -89,9 +89,9 @@ def build_workspace_profile_service(profile_config_path: str | Path) -> RuntimeS
     profile = profile_config.to_profile()
     secret_provider = EnvSecretProvider()
     settings = profile_config.domain.settings if profile_config.domain else {}
-    workspace_path = str(settings.get("workspace_path", ".") or ".") if isinstance(
-        settings, dict
-    ) else "."
+    workspace_path = (
+        str(settings.get("workspace_path", ".") or ".") if isinstance(settings, dict) else "."
+    )
     model = (
         WorkspaceDecisionAdapter()
         if profile.runtime.model.provider.value == "scripted"
