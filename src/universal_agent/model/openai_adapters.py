@@ -281,13 +281,19 @@ class OpenAIChatCompletionsModelAdapter:
                 payload=request_payload,
                 timeout_seconds=self._timeout_seconds,
             )
-            output_text = _openai_chat_completion_content(_openai_chat_completion_payload(response))
             usage = decode_usage(
                 "openai_chat_completions",
                 self._model,
                 response.get("usage"),
             )
+            output_text: str | None = None
             try:
+                # Content extraction is inside the repair scope too: empty or
+                # truncated responses (reasoning models burning the token
+                # budget before content) must re-ask, not fail the goal.
+                output_text = _openai_chat_completion_content(
+                    _openai_chat_completion_payload(response)
+                )
                 decision, decoded_payload = self._decode_output(output_text, context)
             except JsonHttpModelError as exc:
                 if getattr(exc, "transient", False):
@@ -296,15 +302,19 @@ class OpenAIChatCompletionsModelAdapter:
                 if attempt >= self._max_repair_retries:
                     break
                 # Repair round: feed the malformed output back so the model
-                # can correct its own JSON/schema mistakes.
-                messages = [
-                    *messages,
-                    {"role": "assistant", "content": output_text},
+                # can correct its own JSON/schema mistakes. When content
+                # extraction failed there is nothing to feed back — just
+                # re-ask with the corrective prompt.
+                repair_messages: list[JsonValue] = [*messages]
+                if output_text is not None:
+                    repair_messages.append({"role": "assistant", "content": output_text})
+                repair_messages.append(
                     {
                         "role": "user",
                         "content": _DECISION_REPAIR_PROMPT.format(error=exc),
-                    },
-                ]
+                    }
+                )
+                messages = repair_messages
                 continue
             if usage is not None:
                 self._last_usage = replace(
