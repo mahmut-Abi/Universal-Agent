@@ -608,6 +608,34 @@ class WorkspaceEvidenceExtractor:
                     source=self.name,
                 )
             )
+        # A failed read is world knowledge too: the file does not exist (yet).
+        # Feeding exists=False + target_file into the world model lets the
+        # task expander plan the create step instead of the model guessing.
+        if data.get("readable") is False and data.get("error") == "not a file":
+            evidence.append(
+                Evidence(
+                    session_id=context.session_id,
+                    task_id=context.task.id,
+                    action_id=context.observation.action_id,
+                    observation_id=context.observation.id,
+                    subject=subject,
+                    claim="exists",
+                    value=False,
+                    source=self.name,
+                )
+            )
+            evidence.append(
+                Evidence(
+                    session_id=context.session_id,
+                    task_id=context.task.id,
+                    action_id=context.observation.action_id,
+                    observation_id=context.observation.id,
+                    subject=subject,
+                    claim="target_file",
+                    value=subject,
+                    source=self.name,
+                )
+            )
         return tuple(evidence)
 
 
@@ -627,6 +655,7 @@ class WorkspaceWorldUpdater:
             "modified",
             "deleted",
             "exists",
+            "target_file",
             "file_count",
             "directory_count",
             "line_count",
@@ -642,11 +671,12 @@ class WorkspaceWorldUpdater:
 
 
 class WorkspaceTaskExpander:
-    """Dynamic task expansion for multi-step file operations.
+    """Dynamic task expansion driven by world-model state.
 
-    Expands tasks based on world model state:
-    - If a file doesn't exist but is needed → create_file task
-    - If a file exists but needs modification → modify_file task
+    A failed file read records ``exists=False`` + ``target_file`` evidence;
+    when the goal also requires the file to exist (a ``created`` criterion),
+    the expander plans the create step as its own tracked task instead of
+    leaving the recovery implicit in the model's next decision.
     """
 
     name = WORKSPACE_TASK_EXPANDER
@@ -654,7 +684,6 @@ class WorkspaceTaskExpander:
         INSPECT_WORKSPACE_CAPABILITY,
         INSPECT_FILE_CAPABILITY,
         CREATE_FILE_CAPABILITY,
-        MODIFY_FILE_CAPABILITY,
     )
 
     def expand(self, context: TaskExpansionContext) -> tuple[TaskSpec, ...]:
@@ -663,12 +692,11 @@ class WorkspaceTaskExpander:
         depends_on = (context.task.id,)
         specs: list[TaskSpec] = []
 
-        # If we discovered a file doesn't exist and we need it
         if (
-            not facts.get("exists")
-            and facts.get("target_file") is not None
+            facts.get("exists") is False
+            and isinstance(facts.get("target_file"), str)
             and "created" in current_criteria
-            and facts.get("created") is None
+            and "created" not in facts
         ):
             target = str(facts["target_file"])
             specs.append(
@@ -676,24 +704,6 @@ class WorkspaceTaskExpander:
                     f"create-{target}",
                     f"Create file {target}",
                     ("created",),
-                    depends_on,
-                )
-            )
-
-        # If a file exists but needs modification
-        if (
-            bool(facts.get("exists"))
-            and bool(facts.get("needs_modification"))
-            and facts.get("target_file") is not None
-            and "modified" in current_criteria
-            and facts.get("modified") is None
-        ):
-            target = str(facts["target_file"])
-            specs.append(
-                TaskSpec(
-                    f"modify-{target}",
-                    f"Modify file {target}",
-                    ("modified",),
                     depends_on,
                 )
             )

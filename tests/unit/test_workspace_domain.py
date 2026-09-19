@@ -1020,9 +1020,12 @@ class TestSensitivePathPolicy:
         policy = SensitivePathPolicy()
         ordinary = ("main.py", "readme.md", "data.csv", "notes.txt", "app.log")
         for path in ordinary:
-            assert policy.evaluate(
-                self._context(CREATE_FILE_CAPABILITY, CapabilityCategory.MUTATION, path)
-            ) is None, path
+            assert (
+                policy.evaluate(
+                    self._context(CREATE_FILE_CAPABILITY, CapabilityCategory.MUTATION, path)
+                )
+                is None
+            ), path
 
     def test_denies_read_on_secrets(self, domain: WorkspaceDomain) -> None:
         engine = PolicyEngine(domain.policies())
@@ -1085,9 +1088,7 @@ class TestCliContribution:
     def test_contribution_registered_with_backend_claim(self) -> None:
         from universal_agent.host_contracts import load_cli_contributions
 
-        workspace = next(
-            c for c in load_cli_contributions() if c.domain == "workspace"
-        )
+        workspace = next(c for c in load_cli_contributions() if c.domain == "workspace")
         assert "workspace" in workspace.init_backends
         assert workspace.init_resolve_domain is not None
         assert workspace.init_add_arguments is not None
@@ -1126,3 +1127,68 @@ class TestCliContribution:
         default_name, default_config, _ = _domain_settings(default_args)
         assert default_name == "local"
         assert default_config["name"] == "local"
+
+
+# ─── Task Expansion Live-Path Tests ────────────────────────────────────
+
+
+class TestTaskExpansionLivePath:
+    def _failed_read_observation(self) -> Observation:
+        return Observation(
+            id=ObservationId("obs-1"),
+            action_id=ActionId("action-1"),
+            task_id=TaskId("task-1"),
+            source="workspace_read_file",
+            status=ObservationStatus.SUCCEEDED,
+            data=immutable_json(
+                {"resource": "ghost.txt", "readable": False, "error": "not a file"}
+            ),
+            observed_at=utc_now(),
+        )
+
+    def test_failed_read_produces_expansion_facts(self) -> None:
+        extractor = WorkspaceEvidenceExtractor()
+        context = EvidenceContext(
+            session_id=SessionId("session-1"),
+            task=Task("t", ("t",)),
+            observation=self._failed_read_observation(),
+        )
+        evidence = extractor.extract(context)
+        claims = {(e.claim, e.value) for e in evidence}
+        assert ("exists", False) in claims
+        assert ("target_file", "ghost.txt") in claims
+
+    def test_world_facts_drive_expansion(self) -> None:
+        """Full chain: failed read evidence → world model → create task."""
+        from universal_agent.domains.workspace import WorkspaceTaskExpander
+        from universal_agent.tasks import TaskExpansionContext
+        from universal_agent.world import InMemoryWorldModel
+
+        model = InMemoryWorldModel()
+        extractor = WorkspaceEvidenceExtractor()
+        context = EvidenceContext(
+            session_id=SessionId("session-1"),
+            task=Task("t", ("t",)),
+            observation=self._failed_read_observation(),
+        )
+        for evidence in extractor.extract(context):
+            assert WorkspaceWorldUpdater().apply(model, evidence)
+
+        expander = WorkspaceTaskExpander()
+        task = Task("Ensure ghost.txt exists", ("created",))
+        specs = expander.expand(
+            TaskExpansionContext(task=task, evidence=(), world=model.snapshot(SessionId("session-1")))
+        )
+        assert len(specs) == 1
+        assert specs[0].key == "create-ghost.txt"
+        assert specs[0].required_criteria == ("created",)
+
+        # No create criterion → no expansion (diagnostics-only goals).
+        no_create = expander.expand(
+            TaskExpansionContext(
+                task=Task("Probe file", ()),
+                evidence=(),
+                world=model.snapshot(SessionId("session-1")),
+            )
+        )
+        assert no_create == ()
