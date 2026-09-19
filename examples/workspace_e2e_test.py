@@ -141,16 +141,21 @@ async def s3_confirmation_approved(workspace: Path) -> bool:
         ),
         timeout=180,
     )
-    if run.result.status is not ExecutionStatus.WAITING:
-        print(f"    expected WAITING, got {run.result.status.value}")
-        return False
-    print("    paused for confirmation as designed")
-    resumed = await asyncio.wait_for(
-        service.resume_session(run.result.session_id, confirmed=True),
-        timeout=180,
-    )
-    ok = resumed.result.status is ExecutionStatus.COMPLETED and not target.exists()
-    print(f"    resumed status={resumed.result.status.value} file_removed={not target.exists()}")
+    # The model may pause via ask_user (no pending action) or via policy
+    # confirmation (pending action) depending on the routed model; keep
+    # confirming until the delete executes.
+    current = run
+    for _ in range(4):
+        if current.result.status is not ExecutionStatus.WAITING:
+            break
+        view = await service.get_session(current.result.session_id)
+        print(f"    waiting (pending={view.pending_action is not None}) → confirming")
+        current = await asyncio.wait_for(
+            service.resume_session(current.result.session_id, confirmed=True),
+            timeout=180,
+        )
+    ok = current.result.status is ExecutionStatus.COMPLETED and not target.exists()
+    print(f"    final status={current.result.status.value} file_removed={not target.exists()}")
     return ok
 
 
