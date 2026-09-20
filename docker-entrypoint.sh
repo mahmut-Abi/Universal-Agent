@@ -51,7 +51,9 @@ else
 fi
 
 echo "[entrypoint] starting agentd..."
+# Note: `agent serve` does not accept --deployment-config (that flag belongs
+# to the standalone agentd entrypoint); config-management routes degrade
+# gracefully when no deployment config store is wired.
 exec agent --profile-config /config/profile.json serve \
   --host 0.0.0.0 --port 8765 \
-  --auth-token-env AGENTD_AUTH_TOKEN \
-  --deployment-config /config/deployment.json
+  --auth-token-env AGENTD_AUTH_TOKEN
