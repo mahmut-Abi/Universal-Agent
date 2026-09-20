@@ -24,7 +24,7 @@ from universal_agent.service import RuntimeService
 
 
 class _StubService:
-    def profiles(self):  # pragma: no cover - only used for default profile
+    def profiles(self) -> tuple[()]:  # pragma: no cover - only used for default profile
         return ()
 
 
