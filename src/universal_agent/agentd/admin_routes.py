@@ -30,6 +30,7 @@ from universal_agent.agentd.http import (
 from universal_agent.agentd.routing import (
     AgentdRouteDefinition,
     AgentdRouteMatcher,
+    _optional_query_value,
 )
 from universal_agent.core import JsonValue, immutable_json
 from universal_agent.security import (
@@ -40,22 +41,35 @@ from universal_agent.security import (
     PrincipalNotFoundError,
     RequestPrincipal,
     Role,
+    TenantStatus,
+    UserAccountStatus,
 )
 
 _ADMIN_ROUTE_DEFINITIONS = (
-    AgentdRouteDefinition("admin_tenant_create", "/v1/admin/tenants", ("POST",)),
-    AgentdRouteDefinition("admin_user_create", "/v1/admin/users", ("POST",)),
+    AgentdRouteDefinition("admin_tenant_write", "/v1/admin/tenants", ("POST", "GET")),
     AgentdRouteDefinition(
-        "admin_member_set_role",
-        "/v1/admin/tenants/{tenant}/members/{user}",
+        "admin_tenant_status",
+        "/v1/admin/tenants/{tenant}/status",
         ("PUT",),
     ),
+    AgentdRouteDefinition("admin_user_write", "/v1/admin/users", ("POST", "GET")),
+    AgentdRouteDefinition("admin_user_status", "/v1/admin/users/{user}/status", ("PUT",)),
+
     AgentdRouteDefinition(
         "admin_members_list",
         "/v1/admin/tenants/{tenant}/members",
         ("GET",),
     ),
-    AgentdRouteDefinition("admin_credential_create", "/v1/admin/credentials", ("POST",)),
+    AgentdRouteDefinition(
+        "admin_member_write",
+        "/v1/admin/tenants/{tenant}/members/{user}",
+        ("PUT", "DELETE"),
+    ),
+    AgentdRouteDefinition(
+        "admin_credential_write",
+        "/v1/admin/credentials",
+        ("POST", "GET"),
+    ),
     AgentdRouteDefinition(
         "admin_credential_revoke",
         "/v1/admin/credentials/{credential}",
@@ -134,7 +148,8 @@ def handle_admin_route(
     actor = principal.subject if principal is not None else "bootstrap"
     try:
         response = _dispatch(
-            admin_store, match.name, request, match.path_params, audit_recorder=audit
+            admin_store, match.name, request, match.path_params,
+            method=method, audit_recorder=audit,
         )
     except PrincipalAlreadyExistsError as exc:
         return json_response(
@@ -148,8 +163,10 @@ def handle_admin_route(
             immutable_json({"error": {"code": "bad_request", "message": str(exc)}}),
             status_code=400,
         )
-    if audit is not None and match.name != "admin_audit":
-        _record_mutation(audit, actor, match.name, request, response, match.path_params)
+    if audit is not None:
+        _record_mutation(
+            audit, actor, match.name, request, response, match.path_params, method_arg=method
+        )
     return response
 
 
@@ -157,13 +174,28 @@ def _optional_str(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def path_for_query(request: HttpRequest) -> str:
+    """The full request path including the query string."""
+
+    return request.path
+
+
+# Merged write routes resolve their audit event by HTTP method; read-only
+# routes are not audited.
 _AUDIT_EVENT_NAMES = {
-    "admin_tenant_create": "tenant_created",
-    "admin_user_create": "user_created",
-    "admin_member_set_role": "membership_changed",
-    "admin_credential_create": "credential_issued",
-    "admin_credential_revoke": "credential_revoked",
+    "admin_tenant_write": {"POST": "tenant_created"},
+    "admin_user_write": {"POST": "user_created"},
+    "admin_member_write": {"PUT": "membership_changed", "DELETE": "member_removed"},
+    "admin_user_status": {"PUT": "user_status_changed"},
+    "admin_tenant_status": {"PUT": "tenant_status_changed"},
+    "admin_credential_write": {"POST": "credential_issued"},
+    "admin_credential_revoke": {"DELETE": "credential_revoked"},
 }
+
+
+def _audit_event_name(route: str, method: str) -> str | None:
+    by_method = _AUDIT_EVENT_NAMES.get(route)
+    return by_method.get(method.upper()) if by_method else None
 
 
 def _record_mutation(
@@ -173,8 +205,9 @@ def _record_mutation(
     request: HttpRequest,
     response: HttpResponse,
     params: object,
+    method_arg: str = "",
 ) -> None:
-    event_name = _AUDIT_EVENT_NAMES.get(route)
+    event_name = _audit_event_name(route, method_arg)
     if event_name is None:
         return
     path_params: dict[str, str] = {}
@@ -200,6 +233,7 @@ def _dispatch(
     request: HttpRequest,
     params: object,
     *,
+    method: str,
     audit_recorder: AuditRecorder | None = None,
 ) -> HttpResponse:
     path_params: dict[str, str] = {}
@@ -216,7 +250,100 @@ def _dispatch(
             immutable_json({"events": [event.to_json() for event in events]})
         )
 
-    if route == "admin_tenant_create":
+    if route == "admin_tenant_write" and method == "GET":
+        tenants = store.list_tenants()
+        return json_response(
+            immutable_json(
+                {
+                    "tenants": [
+                        {"tenant_id": t.tenant_id, "name": t.name, "status": t.status.value}
+                        for t in tenants
+                    ]
+                }
+            )
+        )
+
+    if route == "admin_tenant_status":
+        tenant_id = path_params.get("tenant")
+        status = _required_string(request.body, "status")
+        if tenant_id is None or status not in ("active", "disabled"):
+            raise ValueError("status is required and must be active or disabled")
+        tenant = store.set_tenant_status(
+            tenant_id=tenant_id, status=TenantStatus(status)
+        )
+        return json_response(
+            immutable_json(
+                {"tenant_id": tenant.tenant_id, "status": tenant.status.value}
+            )
+        )
+
+    if route == "admin_user_write" and method == "GET":
+        users = store.list_users()
+        return json_response(
+            immutable_json(
+                {
+                    "users": [
+                        {
+                            "user_id": u.user_id,
+                            "email": u.email,
+                            "display_name": u.display_name,
+                            "status": u.status.value,
+                        }
+                        for u in users
+                    ]
+                }
+            )
+        )
+
+    if route == "admin_user_status":
+        user_id = path_params.get("user")
+        status = _required_string(request.body, "status")
+        if user_id is None or status not in ("active", "disabled"):
+            raise ValueError("status is required and must be active or disabled")
+        updated_user = store.set_user_status(
+            user_id=user_id, status=UserAccountStatus(status)
+        )
+        return json_response(
+            immutable_json(
+                {"user_id": updated_user.user_id, "status": updated_user.status.value}
+            )
+        )
+
+    if route == "admin_credential_write" and method == "GET":
+        user_id = _optional_query_value(path_for_query(request), "user_id")
+        tenant_id = _optional_query_value(path_for_query(request), "tenant_id")
+        credentials = store.list_credentials(user_id=user_id, tenant_id=tenant_id)
+        return json_response(
+            immutable_json(
+                {
+                    "credentials": [
+                        {
+                            "credential_id": c.credential_id,
+                            "user_id": c.user_id,
+                            "tenant_id": c.tenant_id,
+                            "scope": c.scope.value,
+                            "revoked": c.revoked_at is not None,
+                            "created_at": c.created_at.isoformat() if c.created_at else None,
+                        }
+                        for c in credentials
+                    ]
+                }
+            )
+        )
+
+    if route == "admin_member_write" and method == "DELETE":
+        tenant_id = path_params.get("tenant")
+        user_id = path_params.get("user")
+        if tenant_id is None or user_id is None:
+            raise ValueError("tenant and user are required")
+        removed = store.remove_member(tenant_id=tenant_id, user_id=user_id)
+        return json_response(
+            immutable_json(
+                {"tenant_id": tenant_id, "user_id": user_id, "removed": removed}
+            )
+        )
+
+    if route == "admin_tenant_write" and method == "POST":
         tenant_id = _required_string(request.body, "tenant_id")
         name = _required_string(request.body, "name")
         if tenant_id is None or name is None:
@@ -229,7 +356,7 @@ def _dispatch(
             status_code=201,
         )
 
-    if route == "admin_user_create":
+    if route == "admin_user_write" and method == "POST":
         user_id = _required_string(request.body, "user_id")
         email = _required_string(request.body, "email")
         display_name = _required_string(request.body, "display_name")
@@ -248,7 +375,7 @@ def _dispatch(
             status_code=201,
         )
 
-    if route == "admin_member_set_role":
+    if route == "admin_member_write" and method == "PUT":
         tenant_id = path_params.get("tenant")
         user_id = path_params.get("user")
         role = _parse_role(request.body)
@@ -273,7 +400,7 @@ def _dispatch(
             )
         )
 
-    if route == "admin_credential_create":
+    if route == "admin_credential_write" and method == "POST":
         user_id = _required_string(request.body, "user_id")
         tenant_id = _required_string(request.body, "tenant_id")
         role = _parse_role(request.body)

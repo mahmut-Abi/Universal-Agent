@@ -715,3 +715,90 @@ async def test_cli_admin_cross_tenant_principal_is_refused() -> None:
     assert status == 2
     payload = json.loads(error.getvalue())
     assert "cross_tenant" in payload["error"]["message"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_cli_admin_user_disable_blocks_authentication() -> None:
+    admin_store = InMemoryCredentialStore()
+    app, _ = build_app(
+        [],
+        auth=AgentdAuthPolicy(
+            bearer_token="bootstrap-admin-token",
+            credential_store=admin_store,
+            tenant_id="acme",
+        ),
+        admin_store=admin_store,
+    )
+    error = StringIO()
+
+    # Bootstrap: while no admin membership exists, the legacy shared token
+    # keeps full access. It provisions the first admin credential, then all
+    # further calls use that credential.
+    admin_token = "bootstrap-admin-token"
+    with running_server(app) as base_url:
+        async def admin_call(*cli_args: str, token: str = admin_token) -> dict[str, Any]:
+            buffer = StringIO()
+            err = StringIO()
+            status = await run_cli(
+                ["--api-url", base_url, "--api-token", token, *cli_args],
+                stdout=buffer,
+                stderr=err,
+            )
+            assert status == 0, f"{status}: {err.getvalue()} {buffer.getvalue()}"
+            return read_json(buffer)
+
+        await admin_call("admin", "tenant", "create", "--tenant-id", "acme", "--name", "Acme")
+        await admin_call("admin", "user", "create", "--user-id", "alice", "--email", "a@acme.test")
+        issued = await admin_call(
+            "admin", "credential", "create",
+            "--user", "alice", "--tenant", "acme", "--role", "admin",
+        )
+        alice_token = str(issued["token"])
+
+        # A second admin (root) survives alice's disable and performs the
+        # disable / re-enable lifecycle. From here on the closed bootstrap
+        # window no longer accepts the shared token: use alice's credential.
+        await admin_call(
+            "admin", "user", "create", "--user-id", "root", "--email", "root@acme.test",
+            token=alice_token,
+        )
+        issued_root = await admin_call(
+            "admin", "credential", "create",
+            "--user", "root", "--tenant", "acme", "--role", "admin",
+            token=alice_token,
+        )
+        root_token = str(issued_root["token"])
+
+        # The user can authenticate before being disabled (config show is
+        # authenticated; /health is deliberately public).
+        status = await run_cli(
+            ["--api-url", base_url, "--api-token=" + alice_token, "config", "show"],
+            stdout=StringIO(),
+        )
+        assert status == 0
+
+        await admin_call("admin", "user", "disable", "--user", "alice", token=root_token)
+
+        # Disabled: the same credential is refused (401).
+        status = await run_cli(
+            ["--api-url", base_url, "--api-token=" + alice_token, "config", "show"],
+            stderr=error,
+        )
+        assert status == 2
+        payload = json.loads(error.getvalue())
+        assert payload["error"]["code"] == "unauthorized"
+
+        # Re-enable restores access with the same credential.
+        await admin_call("admin", "user", "enable", "--user", "alice", token=root_token)
+        status = await run_cli(
+            ["--api-url", base_url, "--api-token=" + alice_token, "config", "show"],
+            stdout=StringIO(),
+        )
+        assert status == 0
+
+        # The credential listing reflects the still-active credential.
+        audit = await admin_call(
+            "admin", "credential", "list", "--user", "alice", token=root_token
+        )
+        assert isinstance(audit["credentials"], list) and len(audit["credentials"]) == 1

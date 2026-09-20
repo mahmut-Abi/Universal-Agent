@@ -213,6 +213,11 @@ def add_admin_parser(
     tenant_create = tenant_sub.add_parser("create")
     tenant_create.add_argument("--tenant-id", required=True)
     tenant_create.add_argument("--name", required=True)
+    tenant_sub.add_parser("list")
+    tenant_status = tenant_sub.add_parser("disable")
+    tenant_status.add_argument("--tenant", required=True)
+    tenant_enable = tenant_sub.add_parser("enable")
+    tenant_enable.add_argument("--tenant", required=True)
 
     user = admin_sub.add_parser("user")
     user_sub = user.add_subparsers(dest="admin_verb", required=True)
@@ -220,6 +225,11 @@ def add_admin_parser(
     user_create.add_argument("--user-id", required=True)
     user_create.add_argument("--email", required=True)
     user_create.add_argument("--display-name")
+    user_sub.add_parser("list")
+    user_disable = user_sub.add_parser("disable")
+    user_disable.add_argument("--user", required=True)
+    user_enable = user_sub.add_parser("enable")
+    user_enable.add_argument("--user", required=True)
 
     role = admin_sub.add_parser("role")
     role_sub = role.add_subparsers(dest="admin_verb", required=True)
@@ -236,6 +246,9 @@ def add_admin_parser(
     member_sub = member.add_subparsers(dest="admin_verb", required=True)
     member_list = member_sub.add_parser("list")
     member_list.add_argument("--tenant", required=True)
+    member_remove = member_sub.add_parser("remove")
+    member_remove.add_argument("--tenant", required=True)
+    member_remove.add_argument("--user", required=True)
 
     credential = admin_sub.add_parser("credential")
     credential_sub = credential.add_subparsers(dest="admin_verb", required=True)
@@ -249,6 +262,9 @@ def add_admin_parser(
     )
     credential_revoke = credential_sub.add_parser("revoke")
     credential_revoke.add_argument("--credential-id", required=True)
+    credential_list = credential_sub.add_parser("list")
+    credential_list.add_argument("--user")
+    credential_list.add_argument("--tenant")
 
 
 def add_memory_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

@@ -25,6 +25,46 @@ def _admin_request(
     command = cast(str, args.admin_command)
     verb = cast(str, args.admin_verb)
 
+    if command == "tenant" and verb == "list":
+        return ("GET", "/v1/admin/tenants", {})
+
+    if command == "tenant" and verb in ("disable", "enable"):
+        status = "disabled" if verb == "disable" else "active"
+        return (
+            "PUT",
+            f"/v1/admin/tenants/{_required(args, 'tenant')}/status",
+            {"status": status},
+        )
+
+    if command == "user" and verb == "list":
+        return ("GET", "/v1/admin/users", {})
+
+    if command == "user" and verb in ("disable", "enable"):
+        status = "disabled" if verb == "disable" else "active"
+        return (
+            "PUT",
+            f"/v1/admin/users/{_required(args, 'user')}/status",
+            {"status": status},
+        )
+
+    if command == "member" and verb == "remove":
+        return (
+            "DELETE",
+            f"/v1/admin/tenants/{_required(args, 'tenant')}/members/{_required(args, 'user')}",
+            {},
+        )
+
+    if command == "credential" and verb == "list":
+        from urllib.parse import urlencode
+
+        filters = {
+            key: value
+            for key in ("user", "tenant")
+            if (value := cast(str | None, getattr(args, key, None)))
+        }
+        query = f"?{urlencode({k + '_id': v for k, v in filters.items()})}" if filters else ""
+        return ("GET", "/v1/admin/credentials" + query, {})
+
     if command == "tenant" and verb == "create":
         return (
             "POST",

@@ -33,13 +33,17 @@ from universal_agent.security.credentials import (
     Credential,
     PrincipalAlreadyExistsError,
     PrincipalNotFoundError,
+    UserAccount,
     hash_credential,
 )
 from universal_agent.security.principal import (
     RequestPrincipal,
     Role,
     RoleBinding,
+    Scope,
     Tenant,
+    TenantStatus,
+    UserAccountStatus,
     UserPrincipal,
 )
 
@@ -212,6 +216,7 @@ class PostgresCredentialStore:
                     set_={"role": role.value},
                 )
             )
+        issued_at = utc_now()
         return raw_token, Credential(
             credential_id=credential_id,
             tenant_id=tenant_id,
@@ -219,6 +224,7 @@ class PostgresCredentialStore:
             token_hash=hash_credential(raw_token),
             scope=role_scope(role),
             role=role,
+            created_at=issued_at,
         )
 
     def revoke_credential(self, credential_id: str) -> bool:
@@ -243,6 +249,140 @@ class PostgresCredentialStore:
             RoleBinding(tenant_id=tenant_id, user_id=str(row.user_id), role=Role(str(row.role)))
             for row in rows
         )
+
+    def list_users(self) -> tuple[UserAccount, ...]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                select(
+                    _USERS.c.user_id,
+                    _USERS.c.email,
+                    _USERS.c.display_name,
+                    _USERS.c.status,
+                    _USERS.c.created_at,
+                ).order_by(_USERS.c.user_id)
+            ).all()
+        return tuple(
+            UserAccount(
+                user_id=str(row.user_id),
+                email=str(row.email),
+                display_name=row.display_name,
+                status=UserAccountStatus(str(row.status)),
+                created_at=row.created_at,
+            )
+            for row in rows
+        )
+
+    def set_user_status(self, *, user_id: str, status: UserAccountStatus) -> UserAccount:
+        with self._connect() as connection:
+            result = connection.execute(
+                update(_USERS)
+                .where(_USERS.c.user_id == user_id)
+                .values(status=status.value)
+            )
+            if int(result.rowcount or 0) != 1:
+                raise PrincipalNotFoundError(f"user not found: {user_id}")
+            row = connection.execute(
+                select(
+                    _USERS.c.email,
+                    _USERS.c.display_name,
+                    _USERS.c.created_at,
+                ).where(_USERS.c.user_id == user_id)
+            ).one()
+        return UserAccount(
+            user_id=user_id,
+            email=str(row.email),
+            display_name=row.display_name,
+            status=status,
+            created_at=row.created_at,
+        )
+
+    def list_tenants(self) -> tuple[Tenant, ...]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                select(
+                    _TENANTS.c.tenant_id,
+                    _TENANTS.c.name,
+                    _TENANTS.c.status,
+                ).order_by(_TENANTS.c.tenant_id)
+            ).all()
+        return tuple(
+            Tenant(
+                tenant_id=str(row.tenant_id),
+                name=str(row.name),
+                status=TenantStatus(str(row.status)),
+            )
+            for row in rows
+        )
+
+    def set_tenant_status(self, *, tenant_id: str, status: TenantStatus) -> Tenant:
+        with self._connect() as connection:
+            result = connection.execute(
+                update(_TENANTS)
+                .where(_TENANTS.c.tenant_id == tenant_id)
+                .values(status=status.value)
+            )
+            if int(result.rowcount or 0) != 1:
+                raise PrincipalNotFoundError(f"tenant not found: {tenant_id}")
+            row = connection.execute(
+                select(_TENANTS.c.name).where(_TENANTS.c.tenant_id == tenant_id)
+            ).one()
+        return Tenant(tenant_id=tenant_id, name=str(row.name), status=status)
+
+    def list_credentials(
+        self,
+        *,
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> tuple[Credential, ...]:
+        statement = select(
+            _CREDENTIALS.c.credential_id,
+            _CREDENTIALS.c.tenant_id,
+            _CREDENTIALS.c.user_id,
+            _CREDENTIALS.c.scope,
+            _CREDENTIALS.c.created_at,
+            _CREDENTIALS.c.revoked_at,
+        )
+        if user_id is not None:
+            statement = statement.where(_CREDENTIALS.c.user_id == user_id)
+        if tenant_id is not None:
+            statement = statement.where(_CREDENTIALS.c.tenant_id == tenant_id)
+        with self._connect() as connection:
+            rows = connection.execute(
+                statement.order_by(_CREDENTIALS.c.credential_id)
+            ).all()
+        return tuple(
+            Credential(
+                credential_id=str(row.credential_id),
+                tenant_id=str(row.tenant_id),
+                user_id=str(row.user_id),
+                token_hash="",  # never surfaced through the listing API
+                scope=Scope(str(row.scope)),
+                revoked_at=row.revoked_at,
+                created_at=row.created_at,
+            )
+            for row in rows
+        )
+
+    def remove_member(self, *, tenant_id: str, user_id: str) -> bool:
+        from sqlalchemy import delete
+
+        with self._connect() as connection:
+            self._require_member_principals(connection, tenant_id=tenant_id, user_id=user_id)
+            result = connection.execute(
+                delete(_MEMBERSHIPS)
+                .where(_MEMBERSHIPS.c.tenant_id == tenant_id)
+                .where(_MEMBERSHIPS.c.user_id == user_id)
+            )
+            return int(result.rowcount or 0) == 1
+
+    def has_any_admin(self) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                select(_MEMBERSHIPS.c.user_id)
+                .where(_MEMBERSHIPS.c.role == Role.ADMIN.value)
+                .limit(1)
+            ).first()
+        return row is not None
 
     # -- internal guards ------------------------------------------------------
 

@@ -320,3 +320,131 @@ def test_bootstrap_mutations_record_anonymous_actor() -> None:
     assert len(events) == 1
     assert events[0].event == "user_created"
     assert events[0].actor == "bootstrap"
+
+
+# -- lifecycle basics (disable/enable/list/remove) ---------------------------
+
+
+def test_user_disable_stops_authentication_and_enable_restores() -> None:
+    store = _provisioned_store()
+    admin = _principal(Role.ADMIN)
+    raw, _ = store.issue(user_id="alice", tenant_id="acme", role=Role.OPERATOR)
+    assert store.resolve(raw) is not None
+
+    disabled = handle_admin_route(
+        store, admin,
+        _request("PUT", "/v1/admin/users/alice/status", {"status": "disabled"}),
+        "PUT", "/v1/admin/users/alice/status",
+    )
+    assert disabled is not None and disabled.status_code == 200
+    assert store.resolve(raw) is None  # disabled user stops authenticating
+
+    enabled = handle_admin_route(
+        store, admin,
+        _request("PUT", "/v1/admin/users/alice/status", {"status": "active"}),
+        "PUT", "/v1/admin/users/alice/status",
+    )
+    assert enabled is not None
+    assert store.resolve(raw) is not None  # re-enabled: same credential works
+
+
+def test_tenant_disable_blocks_all_its_credentials() -> None:
+    store = _provisioned_store()
+    admin = _principal(Role.ADMIN)
+    raw, _ = store.issue(user_id="alice", tenant_id="acme", role=Role.OPERATOR)
+
+    handle_admin_route(
+        store, admin,
+        _request("PUT", "/v1/admin/tenants/acme/status", {"status": "disabled"}),
+        "PUT", "/v1/admin/tenants/acme/status",
+    )
+    assert store.resolve(raw) is None
+
+    handle_admin_route(
+        store, admin,
+        _request("PUT", "/v1/admin/tenants/acme/status", {"status": "active"}),
+        "PUT", "/v1/admin/tenants/acme/status",
+    )
+    assert store.resolve(raw) is not None
+
+
+def test_member_remove_revokes_tenant_access() -> None:
+    store = _provisioned_store()
+    admin = _principal(Role.ADMIN)
+    raw, _ = store.issue(user_id="alice", tenant_id="acme", role=Role.OPERATOR)
+    assert store.resolve(raw) is not None
+
+    removed = handle_admin_route(
+        store, admin,
+        _request("DELETE", "/v1/admin/tenants/acme/members/alice"),
+        "DELETE", "/v1/admin/tenants/acme/members/alice",
+    )
+    assert removed is not None and removed.body["removed"] is True
+    assert store.resolve(raw) is None  # membership gone: credential stops resolving
+
+
+def test_list_endpoints_return_stored_records() -> None:
+    store = _provisioned_store()
+    admin = _principal(Role.ADMIN)
+
+    users = handle_admin_route(
+        store, admin, _request("GET", "/v1/admin/users"), "GET", "/v1/admin/users"
+    )
+    assert users is not None
+    assert users.body["users"] == [
+        {"user_id": "alice", "email": "alice@acme.test", "display_name": None, "status": "active"}
+    ]
+
+    tenants = handle_admin_route(
+        store, admin, _request("GET", "/v1/admin/tenants"), "GET", "/v1/admin/tenants"
+    )
+    assert tenants is not None
+    assert tenants.body["tenants"] == [{"tenant_id": "acme", "name": "Acme", "status": "active"}]
+
+    store.issue(user_id="alice", tenant_id="acme", role=Role.READ_ONLY)
+    creds = handle_admin_route(
+        store, admin,
+        _request("GET", "/v1/admin/credentials?user_id=alice"),
+        "GET", "/v1/admin/credentials?user_id=alice",
+    )
+    assert creds is not None
+    listed = creds.body["credentials"]
+    assert isinstance(listed, list) and len(listed) == 1
+    first = listed[0]
+    assert isinstance(first, dict)
+    assert first["user_id"] == "alice" and first["scope"] == "read_only"
+    assert first["revoked"] is False
+    assert "token_hash" not in first  # hashes never surface through listings
+
+
+def test_lifecycle_mutations_are_audited() -> None:
+    from universal_agent.security import InMemoryAuditRecorder
+
+    store = _provisioned_store()
+    audit = InMemoryAuditRecorder()
+    admin = _principal(Role.ADMIN)
+
+    handle_admin_route(
+        store, admin,
+        _request("PUT", "/v1/admin/users/alice/status", {"status": "disabled"}),
+        "PUT", "/v1/admin/users/alice/status",
+        audit=audit,
+    )
+    handle_admin_route(
+        store, admin,
+        _request("DELETE", "/v1/admin/tenants/acme/members/alice"),
+        "DELETE", "/v1/admin/tenants/acme/members/alice",
+        audit=audit,
+    )
+    assert [e.event for e in audit.events()] == ["user_status_changed", "member_removed"]
+
+
+def test_status_validation_rejects_unknown_values() -> None:
+    store = _provisioned_store()
+    admin = _principal(Role.ADMIN)
+    response = handle_admin_route(
+        store, admin,
+        _request("PUT", "/v1/admin/users/alice/status", {"status": "paused"}),
+        "PUT", "/v1/admin/users/alice/status",
+    )
+    assert response is not None and response.status_code == 400

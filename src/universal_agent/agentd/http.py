@@ -32,7 +32,7 @@ from universal_agent.security import (
     AuditEvent,
     AuditRecorder,
     AuthorizationEvaluator,
-    CredentialStore,
+    CredentialAdminStore,
     RequestPrincipal,
 )
 
@@ -107,7 +107,7 @@ class AgentdAuthPolicy:
     # When set, bearer tokens are resolved through this CredentialStore to a
     # RequestPrincipal, and role/scope (and tenant) gate each request. Falls
     # back to the legacy shared-token model when absent.
-    credential_store: CredentialStore | None = None
+    credential_store: CredentialAdminStore | None = None
     # The tenant this agentd process is scoped to (the store's tenant). When a
     # credential resolves to a different tenant, the request is refused even if
     # the credential itself is valid (cross-tenant denial at the agentd layer).
@@ -266,6 +266,15 @@ def _authenticate(
     if policy.credential_store is not None:
         principal = policy.credential_store.resolve(token)
         if principal is None:
+            # Fresh-install bootstrap: while no admin membership exists, the
+            # legacy shared bearer token keeps full access so the first admin
+            # can be provisioned. As soon as an admin exists it is rejected
+            # like any other unknown token.
+            if (
+                _token_matches(token, policy.bearer_token)
+                and not policy.credential_store.has_any_admin()
+            ):
+                return AuthOutcome()
             _record_denial("unauthorized")
             return AuthOutcome(response=unauthorized())
         if policy.tenant_id is not None and principal.tenant_id != policy.tenant_id:

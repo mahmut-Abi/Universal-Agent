@@ -17,6 +17,7 @@ from universal_agent.security.credentials import (
     InMemoryCredentialStore,
     PrincipalAlreadyExistsError,
     PrincipalNotFoundError,
+    UserAccount,
     hash_credential,
 )
 from universal_agent.security.oidc import (
@@ -88,6 +89,7 @@ __all__ = [
     "Tenant",
     "TenantStatus",
     "TokenValidator",
+    "UserAccount",
     "UserAccountStatus",
     "UserPrincipal",
     "default_tenant",

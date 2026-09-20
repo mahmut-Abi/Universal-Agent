@@ -53,6 +53,17 @@ class PrincipalNotFoundError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class UserAccount:
+    """A stored user record (adds the email the principal model omits)."""
+
+    user_id: str
+    email: str
+    display_name: str | None = None
+    status: UserAccountStatus = UserAccountStatus.ACTIVE
+    created_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Credential:
     credential_id: str
     tenant_id: str
@@ -61,6 +72,7 @@ class Credential:
     scope: Scope = Scope.READ_WRITE
     role: Role = Role.OPERATOR
     revoked_at: datetime | None = None
+    created_at: datetime | None = None
 
     @property
     def active(self) -> bool:
@@ -128,6 +140,52 @@ class CredentialAdminStore(CredentialStore, Protocol):
         """List a tenant's membership bindings."""
         ...
 
+    def list_users(self) -> tuple[UserAccount, ...]:
+        """List stored user accounts."""
+        ...
+
+    def set_user_status(
+        self,
+        *,
+        user_id: str,
+        status: UserAccountStatus,
+    ) -> UserAccount:
+        """Enable or disable a user; disabled users stop authenticating."""
+        ...
+
+    def list_tenants(self) -> tuple[Tenant, ...]:
+        """List stored tenants."""
+        ...
+
+    def set_tenant_status(
+        self,
+        *,
+        tenant_id: str,
+        status: TenantStatus,
+    ) -> Tenant:
+        """Enable or disable a tenant; disabled tenants stop authenticating."""
+        ...
+
+    def list_credentials(
+        self,
+        *,
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> tuple[Credential, ...]:
+        """List credential metadata (never token hashes' inputs)."""
+        ...
+
+    def remove_member(self, *, tenant_id: str, user_id: str) -> bool:
+        """Remove a membership binding; the user's credentials for that
+        tenant stop resolving. True when a binding was removed."""
+        ...
+
+    def has_any_admin(self) -> bool:
+        """Whether any active admin membership exists (fresh-install
+        bootstrap detection: the legacy shared token bootstrap window closes
+        as soon as an admin exists)."""
+        ...
+
 
 class InMemoryCredentialStore:
     """Trivial in-memory credential registry for tests and embedded use.
@@ -139,6 +197,8 @@ class InMemoryCredentialStore:
     def __init__(self) -> None:
         self._users: dict[str, UserPrincipal] = {}
         self._emails: dict[str, str] = {}
+        self._email_by_user: dict[str, str] = {}
+        self._user_created: dict[str, datetime] = {}
         self._tenants: dict[str, Tenant] = {}
         self._memberships: dict[tuple[str, str], Role] = {}
         self._by_hash: dict[str, Credential] = {}
@@ -167,6 +227,8 @@ class InMemoryCredentialStore:
         principal = UserPrincipal(user_id=user_id, display_name=display_name)
         self._users[user_id] = principal
         self._emails[email] = user_id
+        self._email_by_user[user_id] = email
+        self._user_created[user_id] = utc_now()
         return principal
 
     def set_role(self, *, tenant_id: str, user_id: str, role: Role) -> None:
@@ -200,6 +262,72 @@ class InMemoryCredentialStore:
             for (t_id, u_id), r in sorted(self._memberships.items())
             if t_id == tenant_id
         )
+
+    def list_users(self) -> tuple[UserAccount, ...]:
+        return tuple(
+            UserAccount(
+                user_id=user_id,
+                email=self._email_by_user.get(user_id, ""),
+                display_name=principal.display_name,
+                status=principal.status,
+                created_at=self._user_created.get(user_id),
+            )
+            for user_id, principal in sorted(self._users.items())
+        )
+
+    def set_user_status(
+        self,
+        *,
+        user_id: str,
+        status: UserAccountStatus,
+    ) -> UserAccount:
+        principal = self._users.get(user_id)
+        if principal is None:
+            raise PrincipalNotFoundError(f"user not found: {user_id}")
+        updated = UserPrincipal(user_id=user_id, display_name=principal.display_name, status=status)
+        self._users[user_id] = updated
+        return UserAccount(
+            user_id=user_id,
+            email=self._email_by_user.get(user_id, ""),
+            display_name=principal.display_name,
+            status=status,
+            created_at=self._user_created.get(user_id),
+        )
+
+    def list_tenants(self) -> tuple[Tenant, ...]:
+        return tuple(self._tenants[t] for t in sorted(self._tenants))
+
+    def set_tenant_status(self, *, tenant_id: str, status: TenantStatus) -> Tenant:
+        tenant = self._tenants.get(tenant_id)
+        if tenant is None:
+            raise PrincipalNotFoundError(f"tenant not found: {tenant_id}")
+        updated = Tenant(tenant_id=tenant_id, name=tenant.name, status=status)
+        self._tenants[tenant_id] = updated
+        return updated
+
+    def list_credentials(
+        self,
+        *,
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> tuple[Credential, ...]:
+        selected = [
+            c
+            for c in self._by_id.values()
+            if (user_id is None or c.user_id == user_id)
+            and (tenant_id is None or c.tenant_id == tenant_id)
+        ]
+        return tuple(sorted(selected, key=lambda c: c.credential_id))
+
+    def remove_member(self, *, tenant_id: str, user_id: str) -> bool:
+        if tenant_id not in self._tenants:
+            raise PrincipalNotFoundError(f"tenant not found: {tenant_id}")
+        if user_id not in self._users:
+            raise PrincipalNotFoundError(f"user not found: {user_id}")
+        return self._memberships.pop((tenant_id, user_id), None) is not None
+
+    def has_any_admin(self) -> bool:
+        return any(role is Role.ADMIN for role in self._memberships.values())
 
     # -- registration helpers (convenience for tests/embedded use) ---------
 
