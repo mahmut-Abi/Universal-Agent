@@ -41,6 +41,7 @@ async def _dispatch_serve(
     if _host_requires_auth(host) and auth_token is None and read_only_auth_token is None:
         raise ValueError("agentd auth token is required when binding to non-loopback host")
     try:
+        profile_store = _profiles_dir(args)
         server = AgentdHttpServer(
             AgentdApp(
                 service,
@@ -49,7 +50,8 @@ async def _dispatch_serve(
                     read_only_bearer_token=read_only_auth_token,
                 ),
                 evaluation_report_dir=cast(str | None, args.evaluation_report_dir),
-                profile_store=_profiles_dir(args),
+                profile_store=profile_store,
+                profile_service_factory=_profile_service_factory(profile_store),
             ),
             AgentdServerConfig(host=host, port=port),
         )
@@ -120,6 +122,33 @@ def _profiles_dir(args: object) -> ProfileStore | None:
         return _PS(profiles_dir)
     config_dir = _Path(os.environ.get("AGENT_CONFIG_DIR", "universal-agent"))
     return _PS(config_dir / "profiles")
+
+
+def _profile_service_factory(
+    profile_store: ProfileStore | None,
+) -> Callable[[str], RuntimeService] | None:
+    """Lazy per-profile service builder for the hot-swap registry.
+
+    Builds a RuntimeService from a persisted profile config the first time a
+    request names it via the ``X-Profile`` header. Returns None when no
+    profile store is configured, which disables hot-swap (the app answers
+    with a structured bad_request).
+    """
+
+    if profile_store is None:
+        return None
+
+    def factory(profile_name: str) -> RuntimeService:
+        from universal_agent.facade import build_configured_service
+
+        config_path = profile_store.config_path(profile_name)
+        if not config_path.is_file():
+            from universal_agent.profile import ProfileConfigNotFoundError
+
+            raise ProfileConfigNotFoundError(f"profile config not found: {profile_name}")
+        return build_configured_service(str(config_path))
+
+    return factory
 
 
 def _host_requires_auth(host: str) -> bool:

@@ -65,8 +65,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 # First boot: the entrypoint script generates /config/profile.json via agent
-# init, honoring AGENT_DOMAIN_BACKEND (fake|kubectl|kubernetes_api|workspace)
-# and the domain-specific environment variables documented in the script.
+# init, honoring AGENT_DOMAIN_BACKEND (fake | kubectl | api | workspace) and
+# the domain-specific environment variables documented in the script.
 # Persistence is selected with AGENTD_STORE_BACKEND (memory|file|sqlite;
 # postgres via the postgres profile + AGENTD_PG_URL) and AGENTD_STORE_PATH;
 # the generated profile is written only once, edit /config/profile.json to

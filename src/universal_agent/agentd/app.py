@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from universal_agent.agentd._routes_distributed import (
@@ -65,11 +67,11 @@ from universal_agent.agentd.routing import (
     _normalize_path,
     _optional_query_value,
 )
-from universal_agent.core import JsonMapping, immutable_json
+from universal_agent.core import GoalStatus, JsonMapping, immutable_json
 from universal_agent.domain import AmbiguousDomainPackageError, DomainPackageNotFoundError
 from universal_agent.host_contracts import DomainRouteContribution
 from universal_agent.memory import MemoryKind
-from universal_agent.profile import ProfileNotFoundError
+from universal_agent.profile import ProfileConfigNotFoundError, ProfileNotFoundError
 from universal_agent.profile.store import ProfileStore
 from universal_agent.service import RuntimeService
 
@@ -145,6 +147,31 @@ def _all_route_definitions() -> tuple[AgentdRouteDefinition, ...]:
     )
 
 
+_PROFILE_HEADER = "x-profile"
+_ACTIVE_GOAL_STATUSES = frozenset({GoalStatus.RUNNING, GoalStatus.WAITING})
+
+
+@dataclass(slots=True)
+class _ServiceBundle:
+    """A RuntimeService plus its bound route handlers.
+
+    The startup service is the default bundle; hot-swapped profiles get their
+    own bundle built lazily through ``profile_service_factory``.
+    """
+
+    service: RuntimeService
+    session: SessionRouteHandlers
+    distributed: DistributedRouteHandlers
+
+    @classmethod
+    def build(cls, service: RuntimeService) -> _ServiceBundle:
+        return cls(
+            service,
+            SessionRouteHandlers(service),
+            DistributedRouteHandlers(service),
+        )
+
+
 class AgentdApp:
     """Runtime API route adapter for the agentd process.
 
@@ -160,16 +187,111 @@ class AgentdApp:
         *,
         evaluation_report_dir: str | Path | None = None,
         profile_store: ProfileStore | None = None,
+        profile_service_factory: Callable[[str], RuntimeService] | None = None,
     ) -> None:
-        self._service = service
-        self._distributed = DistributedRouteHandlers(service)
-        self._session = SessionRouteHandlers(service)
+        self._default_bundle = _ServiceBundle.build(service)
+        self._default_profile_names = frozenset(item.name for item in service.profiles())
+        self._profile_service_factory = profile_service_factory
+        self._profile_bundles: dict[str, _ServiceBundle] = {}
+        self._bundle_lock = threading.Lock()
         self._route_contributions: tuple[DomainRouteContribution, ...] = load_route_contributions()
         self._auth = auth or AgentdAuthPolicy()
         self._evaluation_report_dir = (
             None if evaluation_report_dir is None else str(evaluation_report_dir)
         )
         self._profile_store = profile_store
+
+    @property
+    def service(self) -> RuntimeService:
+        """The default (startup) service, for hosts/tests that need it directly."""
+
+        return self._default_bundle.service
+
+    def _bundle_for(self, request: HttpRequest) -> tuple[_ServiceBundle, HttpResponse | None]:
+        """Resolve the service bundle for a request.
+
+        Requests without an ``X-Profile`` header — or naming a profile the
+        startup service already hosts — use the default bundle. Other profile
+        names are built lazily through ``profile_service_factory`` and cached.
+        """
+
+        profile = request.headers.get(_PROFILE_HEADER)
+        if not profile:
+            return self._default_bundle, None
+        if profile in self._default_profile_names:
+            return self._default_bundle, None
+        if self._profile_service_factory is None:
+            return (
+                self._default_bundle,
+                bad_request("profile hot-swap is not configured on this server"),
+            )
+        with self._bundle_lock:
+            bundle = self._profile_bundles.get(profile)
+            if bundle is None:
+                try:
+                    bundle = _ServiceBundle.build(self._profile_service_factory(profile))
+                except ProfileConfigNotFoundError:
+                    return self._default_bundle, not_found(f"profile config not found: {profile}")
+                except Exception as exc:
+                    return self._default_bundle, bad_request(
+                        f"failed to build service for profile {profile!r}: {exc}"
+                    )
+                self._profile_bundles[profile] = bundle
+            return bundle, None
+
+    async def _has_active_sessions(self, bundle: _ServiceBundle) -> bool:
+        """Whether the bundle's service has running or waiting sessions."""
+
+        summaries = await bundle.service.list_sessions()
+        return any(item.goal_status in _ACTIVE_GOAL_STATUSES for item in summaries)
+
+    async def _profile_mutation_guard(
+        self,
+        request: HttpRequest,
+        method: str,
+        path: str,
+    ) -> HttpResponse | None:
+        """Refuse profile mutations that would strand an active service.
+
+        A hot-swapped bundle holds runtime state (sessions). Mutating its
+        profile while a session is RUNNING/WAITING would silently orphan the
+        execution (AGENTS.md §4.9: agents are autonomous execution
+        boundaries), so the mutation is rejected with 409 until the session
+        settles. PATCH/DELETE on a settled profile invalidate the cached
+        bundle so the next request rebuilds from the new config.
+        """
+
+        if method not in {"PATCH", "DELETE"}:
+            return None
+        prefix = "/v1/profiles/"
+        if not path.startswith(prefix):
+            return None
+        profile = path[len(prefix) :].split("/", 1)[0]
+        if not profile:
+            return None
+        bundle = self._profile_bundles.get(profile)
+        if bundle is None:
+            return None
+        if await self._has_active_sessions(bundle):
+            return json_response(
+                immutable_json(
+                    {
+                        "error": {
+                            "code": "profile_in_use",
+                            "message": (
+                                f"profile {profile!r} has running or waiting sessions; "
+                                "settle them before changing the profile"
+                            ),
+                        }
+                    }
+                ),
+                status_code=409,
+            )
+        # Settled: drop the cached bundle so the next request picks up the
+        # updated profile config.
+        with self._bundle_lock:
+            self._profile_bundles.pop(profile, None)
+        return None
 
     async def handle(self, request: HttpRequest) -> HttpResponse:
         method = request.method.upper()
@@ -179,25 +301,35 @@ class AgentdApp:
         if auth_response is not None:
             return auth_response
 
-        memory_response = self._memory_route_response(request, method, path)
+        bundle, bundle_error = self._bundle_for(request)
+        if bundle_error is not None:
+            return bundle_error
+        service = bundle.service
+
+        memory_response = self._memory_route_response(request, method, path, service)
         if memory_response is not None:
             return memory_response
 
         # Config-management write plane runs before the static GET routes so
         # POST/PATCH/DELETE on /v1/profiles are not swallowed by the runtime
-        # read models (GET stays authoritative for loaded profiles).
+        # read models (GET stays authoritative for loaded profiles). Mutations
+        # on hot-swapped profiles are guarded first: an active session blocks
+        # the change with 409 instead of being stranded by the rebuild.
+        mutation_guard = await self._profile_mutation_guard(request, method, path)
+        if mutation_guard is not None:
+            return mutation_guard
         config_admin_response = await handle_config_admin_route(
             self._profile_store, request, method, path
         )
         if config_admin_response is not None:
             return config_admin_response
 
-        static_response = await self._static_get_route_response(request, method, path)
+        static_response = await self._static_get_route_response(request, method, path, service)
         if static_response is not None:
             return static_response
 
         for contribution in self._route_contributions:
-            domain_response = await contribution.handle(self._service, method, path, request.body)
+            domain_response = await contribution.handle(service, method, path, request.body)
             if domain_response is not None:
                 if domain_response.headers:
                     return HttpResponse(
@@ -209,14 +341,14 @@ class AgentdApp:
                     domain_response.body,
                     status_code=domain_response.status_code,
                 )
-        eval_response = await handle_eval_route(self._service, request, method, path)
+        eval_response = await handle_eval_route(service, request, method, path)
         if eval_response is not None:
             return eval_response
-        ecosystem_response = handle_ecosystem_route(self._service, request, method, path)
+        ecosystem_response = handle_ecosystem_route(service, request, method, path)
         if ecosystem_response is not None:
             return ecosystem_response
         console_response = await handle_console_route(
-            self._service,
+            service,
             self._evaluation_report_dir,
             request,
             method,
@@ -224,15 +356,15 @@ class AgentdApp:
         )
         if console_response is not None:
             return console_response
-        detail_response = await self._detail_get_route_response(method, path)
+        detail_response = await self._detail_get_route_response(method, path, service)
         if detail_response is not None:
             return detail_response
 
-        distributed_response = await self._distributed.route_response(request, method, path)
+        distributed_response = await bundle.distributed.route_response(request, method, path)
         if distributed_response is not None:
             return distributed_response
 
-        session_response = await self._session.route_response(request, method, path)
+        session_response = await bundle.session.route_response(request, method, path)
         if session_response is not None:
             return session_response
 
@@ -250,6 +382,7 @@ class AgentdApp:
         request: HttpRequest,
         method: str,
         path: str,
+        service: RuntimeService,
     ) -> HttpResponse | None:
         route = _MEMORY_ROUTES.match(path, method)
         if route is None or not route.method_allowed:
@@ -258,7 +391,7 @@ class AgentdApp:
         if route.name == "memory_create":
             try:
                 payload = _memory_create_payload(request.body)
-                view = self._service.create_memory(
+                view = service.create_memory(
                     kind=MemoryKind(payload.kind),
                     subject=payload.subject,
                     content=payload.content,
@@ -269,11 +402,11 @@ class AgentdApp:
                 return bad_request(str(exc))
             return json_response(memory_body(view), status_code=201)
         assert memory_id is not None
-        existing = self._service.get_memory(memory_id)
+        existing = service.get_memory(memory_id)
         if existing is None:
             return not_found(f"memory record not found: {memory_id}")
         if method == "DELETE":
-            self._service.delete_memory(memory_id)
+            service.delete_memory(memory_id)
             return json_response({"deleted": True, "memory_id": memory_id})
         return json_response(memory_body(existing))
 
@@ -282,6 +415,7 @@ class AgentdApp:
         request: HttpRequest,
         method: str,
         path: str,
+        service: RuntimeService,
     ) -> HttpResponse | None:
         route = _STATIC_GET_ROUTES.match(path, method)
         if route is None:
@@ -292,37 +426,37 @@ class AgentdApp:
             return json_response(build_agentd_openapi_schema(_all_route_definitions()))
 
         sync_json_handlers: dict[str, Callable[[], JsonMapping]] = {
-            "health": lambda: health_body(self._service.health()),
-            "ready": lambda: ready_body(self._service.ready()),
+            "health": lambda: health_body(service.health()),
+            "ready": lambda: ready_body(service.ready()),
             "domains": lambda: immutable_json(
-                {"domains": [domain_body(item) for item in self._service.domains()]}
+                {"domains": [domain_body(item) for item in service.domains()]}
             ),
             "capabilities": lambda: immutable_json(
-                {"capabilities": [capability_body(item) for item in self._service.capabilities()]}
+                {"capabilities": [capability_body(item) for item in service.capabilities()]}
             ),
             "tools": lambda: immutable_json(
                 {
                     "tools": [
                         tool_body(item)
-                        for item in self._service.tools()
+                        for item in service.tools()
                         if self._domain_filter_matches(request, item.domain_name)
                     ]
                 }
             ),
             "policies": lambda: immutable_json(
-                {"policies": [policy_body(item) for item in self._service.policies()]}
+                {"policies": [policy_body(item) for item in service.policies()]}
             ),
             "evaluators": lambda: immutable_json(
-                {"evaluators": [evaluator_body(item) for item in self._service.evaluators()]}
+                {"evaluators": [evaluator_body(item) for item in service.evaluators()]}
             ),
             "memory": lambda: immutable_json(
-                {"memories": [memory_body(item) for item in self._service.memories()]}
+                {"memories": [memory_body(item) for item in service.memories()]}
             ),
             "profiles": lambda: immutable_json(
-                {"profiles": [profile_body(item) for item in self._service.profiles()]}
+                {"profiles": [profile_body(item) for item in service.profiles()]}
             ),
-            "multi_agent": lambda: multi_agent_body(self._service.multi_agent()),
-            "config": lambda: config_body(self._service.config()),
+            "multi_agent": lambda: multi_agent_body(service.multi_agent()),
+            "config": lambda: config_body(service.config()),
         }
         if handler := sync_json_handlers.get(route.name):
             return json_response(handler())
@@ -337,50 +471,52 @@ class AgentdApp:
                     {
                         "domain_packages": [
                             domain_package_body(item)
-                            for item in self._service.domain_packages(tag=tag)
+                            for item in service.domain_packages(tag=tag)
                         ]
                     }
                 )
             )
         if route.name == "distributed_snapshot":
-            distributed_snapshot = self._service.distributed_snapshot()
+            distributed_snapshot = service.distributed_snapshot()
             if distributed_snapshot is None:
                 return not_found("distributed runtime coordinator is not configured")
             return json_response(distributed_snapshot_body(distributed_snapshot))
         if route.name == "distributed_health":
-            health = self._service.distributed_health()
+            health = service.distributed_health()
             if health is None:
                 return not_found("distributed runtime coordinator is not configured")
             return json_response(distributed_health_body(health))
         if route.name == "prometheus_scrape":
             return text_response(
-                await self._service.prometheus_metrics(),
+                await service.prometheus_metrics(),
                 content_type="text/plain; version=0.0.4; charset=utf-8",
             )
         if route.name == "metrics":
-            return json_response(metrics_body(await self._service.metrics()))
+            return json_response(metrics_body(await service.metrics()))
         if route.name == "metrics_prometheus":
             return text_response(
-                await self._service.prometheus_metrics(),
+                await service.prometheus_metrics(),
                 content_type="text/plain; version=0.0.4; charset=utf-8",
             )
         if route.name == "cost":
-            return json_response(cost_body(await self._service.cost()))
+            return json_response(cost_body(await service.cost()))
         if route.name == "logs":
-            return json_response(log_records_body(await self._service.logs()))
+            return json_response(log_records_body(await service.logs()))
         if route.name == "traces":
-            return json_response(trace_spans_body(await self._service.traces()))
+            return json_response(trace_spans_body(await service.traces()))
         if route.name == "traces_otlp":
-            return json_response(await self._service.opentelemetry_traces())
+            return json_response(await service.opentelemetry_traces())
         if route.name == "doctor":
-            return json_response(doctor_body(await self._service.doctor()))
+            return json_response(doctor_body(await service.doctor()))
         if route.name == "audit":
-            return json_response(audit_records_body(await self._service.audit_records()))
+            return json_response(audit_records_body(await service.audit_records()))
         if route.name == "audit_integrity":
-            return json_response(audit_integrity_body(await self._service.audit_integrity()))
+            return json_response(audit_integrity_body(await service.audit_integrity()))
         return None
 
-    async def _detail_get_route_response(self, method: str, path: str) -> HttpResponse | None:
+    async def _detail_get_route_response(
+        self, method: str, path: str, service: RuntimeService
+    ) -> HttpResponse | None:
         route = _DETAIL_GET_ROUTES.match(path, method)
         if route is None:
             return None
@@ -390,7 +526,7 @@ class AgentdApp:
         if route.name == "profile":
             try:
                 return json_response(
-                    profile_body(self._service.profile(route.path_params["profile"]))
+                    profile_body(service.profile(route.path_params["profile"]))
                 )
             except ProfileNotFoundError as exc:
                 return not_found(str(exc))
@@ -398,7 +534,7 @@ class AgentdApp:
             try:
                 return json_response(
                     domain_package_body(
-                        self._service.domain_package(
+                        service.domain_package(
                             route.path_params["name"],
                             route.path_params.get("version"),
                         )

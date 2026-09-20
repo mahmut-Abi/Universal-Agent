@@ -322,6 +322,11 @@ class ProfileStore:
     def _path_for(self, name: str) -> Path:
         return self._root / f"{_validate_name(name)}.json"
 
+    def config_path(self, name: str) -> Path:
+        """Public path to a persisted profile config (for hot-swap builders)."""
+
+        return self._path_for(name)
+
     def _require_exists(self, name: str) -> None:
         if not self._path_for(name).is_file():
             raise ProfileNotFoundError(f"profile config not found: {name}")

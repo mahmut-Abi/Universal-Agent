@@ -11,13 +11,18 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.mark.unit
 def test_container_image_uses_generic_agentd_entrypoint() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    entrypoint = (ROOT / "docker-entrypoint.sh").read_text(encoding="utf-8")
 
-    assert 'ENTRYPOINT ["sh", "-c"]' in dockerfile
-    assert "agent init" in dockerfile
-    assert "--profile-config /config/profile.json" in dockerfile
-    assert "--host 0.0.0.0" in dockerfile
-    assert "--port 8765" in dockerfile
-    assert "--auth-token-env AGENTD_AUTH_TOKEN" in dockerfile
+    assert 'ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]' in dockerfile
+    assert 'ENTRYPOINT ["sh", "-c"]' not in dockerfile
+    assert "COPY docker-entrypoint.sh" in dockerfile
+    # First-boot init lives in the entrypoint script (moved out of the
+    # inline CMD so AGENT_DOMAIN_BACKEND selection works in the container).
+    assert "agent init" in entrypoint
+    assert "--profile-config /config/profile.json" in entrypoint
+    assert "--host 0.0.0.0" in entrypoint
+    assert "--port 8765" in entrypoint
+    assert "--auth-token-env AGENTD_AUTH_TOKEN" in entrypoint
     assert "HEALTHCHECK" in dockerfile
     assert "/health" in dockerfile
     assert "/ready" not in dockerfile
