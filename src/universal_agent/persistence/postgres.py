@@ -20,6 +20,7 @@ from sqlalchemy import (
     Table,
     UniqueConstraint,
     create_engine,
+    text,
     tuple_,
 )
 from sqlalchemy import insert as sql_insert
@@ -31,7 +32,15 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError as SQLAlchemyIntegrityError
 from sqlalchemy.schema import CreateTable
 
-from universal_agent.core import AgentState, EventId, JsonMapping, RuntimeEvent, SessionId, utc_now
+from universal_agent.core import (
+    DEFAULT_TENANT_ID,
+    AgentState,
+    EventId,
+    JsonMapping,
+    RuntimeEvent,
+    SessionId,
+    utc_now,
+)
 from universal_agent.core.config_validation import (
     parse_json_object,
     parse_non_empty_string,
@@ -54,8 +63,8 @@ from universal_agent.state import (
 from universal_agent.state.event_store import SESSION_STATE_EVENT
 from universal_agent.state.session import with_state
 
-POSTGRES_SCHEMA_VERSION = 1
-POSTGRES_DEFAULT_TENANT_ID = "default"
+POSTGRES_SCHEMA_VERSION = 2
+POSTGRES_DEFAULT_TENANT_ID = DEFAULT_TENANT_ID
 POSTGRES_OUTBOX_PENDING = "pending"
 POSTGRES_OUTBOX_PUBLISHING = "publishing"
 POSTGRES_OUTBOX_PUBLISHED = "published"
@@ -77,6 +86,7 @@ _SESSIONS = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
     Column("payload", JSONB, nullable=False),
+    Column("user_id", String, nullable=False, server_default="system"),
     PrimaryKeyConstraint("tenant_id", "session_id"),
 )
 _RUNTIME_EVENTS = Table(
@@ -155,18 +165,24 @@ class PostgresRuntimeStore:
         *,
         engine: Engine | None = None,
         tenant_id: str = POSTGRES_DEFAULT_TENANT_ID,
+        user_id: str = "system",
         auto_migrate: bool = True,
     ) -> None:
         if url is None and engine is None:
             raise ValueError("postgres runtime store requires a URL or engine")
         self._engine = engine if engine is not None else create_engine(cast(str | URL, url))
         self._tenant_id = parse_non_empty_string(tenant_id, "postgres tenant_id")
+        self._user_id = parse_non_empty_string(user_id, "postgres user_id")
         if auto_migrate:
             self.migrate()
 
     @property
     def tenant_id(self) -> str:
         return self._tenant_id
+
+    @property
+    def user_id(self) -> str:
+        return self._user_id
 
     def migrate(self) -> PostgresMigrationReport:
         return apply_postgres_migrations(self._engine)
@@ -185,6 +201,7 @@ class PostgresRuntimeStore:
                         created_at=snapshot.state.goal.created_at,
                         updated_at=timestamp,
                         payload=encode_session_snapshot(snapshot),
+                        user_id=self._user_id,
                     )
                 )
             except SQLAlchemyIntegrityError as exc:
@@ -535,27 +552,64 @@ class PostgresRuntimeStore:
 
 
 def apply_postgres_migrations(engine: Engine) -> PostgresMigrationReport:
+    """Apply pending schema migrations in version order and report what ran.
+
+    Table/materialized ``_METADATA`` definition drives CREATE for missing
+    tables, but **never ALTERs existing tables**. Schema shape changes on
+    existing tables must therefore be real DDL steps (see v2 below). Steps are
+    recorded per-version in ``ua_schema_migrations``, so re-running is idempotent.
+    """
+
     timestamp = utc_now()
+    applied: list[int] = []
     with engine.begin() as connection:
         _METADATA.create_all(connection)
-        existing = tuple(
+        existing = {
             _int_column(row._mapping["version"])
             for row in connection.execute(
-                sql_select(_SCHEMA_MIGRATIONS.c.version).order_by(
-                    _SCHEMA_MIGRATIONS.c.version.asc()
-                )
+                sql_select(_SCHEMA_MIGRATIONS.c.version)
             ).all()
-        )
-        if POSTGRES_SCHEMA_VERSION in existing:
-            return PostgresMigrationReport(POSTGRES_SCHEMA_VERSION, ())
+        }
+        for version in range(1, POSTGRES_SCHEMA_VERSION + 1):
+            if version in existing:
+                continue
+            _apply_migration_step(connection, version)
+            connection.execute(
+                sql_insert(_SCHEMA_MIGRATIONS).values(
+                    version=version,
+                    name=_MIGRATION_NAMES.get(version, f"migration_v{version}"),
+                    applied_at=timestamp,
+                )
+            )
+            applied.append(version)
+    return PostgresMigrationReport(POSTGRES_SCHEMA_VERSION, tuple(applied))
+
+
+_MIGRATION_NAMES = {
+    1: "initial_runtime_store",
+    2: "session_user_id",
+}
+
+
+def _apply_migration_step(connection: Connection, version: int) -> None:
+    """Idempotent per-version DDL that shape-changes existing tables.
+
+    v1 was the original store creation; it has no incremental DDL because
+    ``_METADATA.create_all`` already guarantees its tables exist.
+    """
+
+    if version == 2:
+        # ua_sessions gained a NOT NULL ownership column (Phase 0). The
+        # server_default backfills every legacy row to 'system'; IF NOT EXISTS
+        # keeps the step a no-op when the table was freshly created from the
+        # updated _SESSIONS metadata definition.
         connection.execute(
-            sql_insert(_SCHEMA_MIGRATIONS).values(
-                version=POSTGRES_SCHEMA_VERSION,
-                name="initial_runtime_store",
-                applied_at=timestamp,
+            text(
+                "ALTER TABLE ua_sessions "
+                "ADD COLUMN IF NOT EXISTS "
+                "user_id VARCHAR NOT NULL DEFAULT 'system'"
             )
         )
-        return PostgresMigrationReport(POSTGRES_SCHEMA_VERSION, (POSTGRES_SCHEMA_VERSION,))
 
 
 def postgres_schema_table_names() -> tuple[str, ...]:

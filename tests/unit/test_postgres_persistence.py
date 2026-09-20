@@ -12,7 +12,7 @@ from universal_agent.persistence.postgres import PostgresRuntimeStore
 
 @pytest.mark.contract
 def test_postgres_schema_declares_runtime_tables_and_migration_version() -> None:
-    assert POSTGRES_SCHEMA_VERSION == 1
+    assert POSTGRES_SCHEMA_VERSION == 2
     assert postgres_schema_table_names() == (
         "ua_runtime_event_outbox",
         "ua_runtime_events",
@@ -29,6 +29,17 @@ def test_postgres_schema_uses_jsonb_and_tenant_scoped_keys() -> None:
     assert "PRIMARY KEY (tenant_id, session_id)" in ddl
     assert "UNIQUE (tenant_id, event_id)" in ddl
     assert "ua_schema_migrations" in ddl
+
+
+@pytest.mark.contract
+def test_postgres_session_schema_declares_user_owner_column() -> None:
+    """ua_sessions gains a NOT NULL ownership column in schema v2 (Phase 0)."""
+
+    sessions = next(item for item in postgres_schema_ddl() if "ua_sessions" in item)
+
+    assert "user_id" in sessions
+    assert "NOT NULL" in sessions
+    assert "DEFAULT 'system'" in sessions
 
 
 @pytest.mark.contract

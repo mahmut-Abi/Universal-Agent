@@ -1,3 +1,10 @@
+from universal_agent.security.principal import (
+    Tenant,
+    TenantStatus,
+    UserAccountStatus,
+    UserPrincipal,
+    default_tenant,
+)
 from universal_agent.security.secrets import (
     EnvSecretProvider,
     FileSecretProvider,
@@ -30,6 +37,11 @@ __all__ = [
     "SecretResolutionReport",
     "SecretResolutionStatus",
     "SecretScanReport",
+    "Tenant",
+    "TenantStatus",
+    "UserAccountStatus",
+    "UserPrincipal",
+    "default_tenant",
     "is_sensitive_key",
     "redact_sensitive_mapping",
     "redact_sensitive_text",

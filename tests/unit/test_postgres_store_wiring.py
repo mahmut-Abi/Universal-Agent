@@ -9,6 +9,7 @@ Live-connection behavior requires a real Postgres and stays out of unit CI.
 from __future__ import annotations
 
 import sys
+import types
 
 import pytest
 
@@ -71,3 +72,51 @@ def test_build_stores_postgres_env_resolution_precedes_extra_import(
 
     with pytest.raises(ValueError, match=r"postgres.*extra"):
         _build_stores(config)
+
+
+def test_build_stores_postgres_forwards_tenant_id_to_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_postgres_store` forwards the config tenant scope to the store instead
+    of silently falling back to the canonical default (Phase 0 §2). The real
+    store class is swapped for a recording stub to avoid a live connection."""
+
+    captured: list[dict[str, object]] = []
+
+    class _FakePostgresRuntimeStore:
+        def __init__(self, url: str, *, tenant_id: str = "default") -> None:
+            captured.append({"url_scheme": url.split("://", 1)[0], "tenant_id": tenant_id})
+
+    fake_module = types.SimpleNamespace(PostgresRuntimeStore=_FakePostgresRuntimeStore)
+    monkeypatch.setitem(sys.modules, "universal_agent.persistence", fake_module)
+
+    config = _runtime_config(
+        StoreConfig(StoreBackend.POSTGRES, url_env="AGENTD_PG_URL", tenant_id="acme")
+    )
+    monkeypatch.setenv("AGENTD_PG_URL", "postgresql://u:p@127.0.0.1:1/db")
+
+    _, _ = _build_stores(config)
+
+    assert len(captured) == 1
+    assert captured[0]["tenant_id"] == "acme"
+    assert captured[0]["url_scheme"] == "postgresql"
+
+
+def test_build_stores_postgres_defaults_tenant_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[dict[str, object]] = []
+
+    class _FakePostgresRuntimeStore:
+        def __init__(self, url: str, *, tenant_id: str = "default") -> None:
+            captured.append({"tenant_id": tenant_id})
+
+    fake_module = types.SimpleNamespace(PostgresRuntimeStore=_FakePostgresRuntimeStore)
+    monkeypatch.setitem(sys.modules, "universal_agent.persistence", fake_module)
+
+    config = _runtime_config(StoreConfig(StoreBackend.POSTGRES, url_env="AGENTD_PG_URL"))
+    monkeypatch.setenv("AGENTD_PG_URL", "postgresql://u:p@127.0.0.1:1/db")
+
+    _build_stores(config)
+
+    assert captured == [{"tenant_id": "default"}]

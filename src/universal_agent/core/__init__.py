@@ -65,7 +65,15 @@ from universal_agent.core.models import (
 )
 from universal_agent.core.time import DateTimeParseError, parse_iso_datetime
 
+# Canonical default tenant identifier for single-tenant / implicit-tenancy
+# deployments. It lives in ``core`` so both ``configuration`` (StoreConfig) and
+# ``persistence`` (PostgresRuntimeStore) can reference the same literal without
+# creating a sibling cross-import. See
+# docs/phase0-principal-implementation.md.
+DEFAULT_TENANT_ID = "default"
+
 __all__ = [
+    "DEFAULT_TENANT_ID",
     "ActionId",
     "AgentState",
     "ArgumentSchemaError",

@@ -206,6 +206,31 @@ def _json_payload(out: StringIO) -> JsonMapping:
     return immutable_json(loaded) if isinstance(loaded, dict) else immutable_json({"value": loaded})
 
 
+_EVAL_REQUIRED_DIR_PARAMS = {
+    "reports": "report_dir",
+    "datasets": "dataset_dir",
+    "recordings": "recording_dir",
+    "replay": "recording_dir",
+}
+
+
+def _missing_required_dir(operation: str, args: argparse.Namespace) -> str | None:
+    """Reject directory-backed eval operations before dispatch.
+
+    Without this check a missing path reaches the store constructors as None
+    and surfaces as a 500 TypeError; a structured 400 names the parameter.
+    """
+
+    param = _EVAL_REQUIRED_DIR_PARAMS.get(operation)
+    if param is not None and not getattr(args, param, None):
+        return f"{param} is required for eval {operation}"
+    if operation == "compare" and (
+        not getattr(args, "expected", None) or not getattr(args, "actual", None)
+    ):
+        return "expected and actual report paths are required for eval compare"
+    return None
+
+
 async def handle_eval_route(
     service: RuntimeService,
     request: HttpRequest,
@@ -220,6 +245,9 @@ async def handle_eval_route(
 
     operation = _EVAL_COMMAND_NAMES[route.name]
     args = _eval_namespace(operation, request.body, service)
+    missing = _missing_required_dir(operation, args)
+    if missing is not None:
+        return bad_request(missing)
     out = StringIO()
     try:
         await _dispatch_eval(args, service, out)

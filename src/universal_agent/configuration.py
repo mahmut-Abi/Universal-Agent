@@ -9,6 +9,7 @@ from typing import Annotated
 from pydantic import Field
 
 from universal_agent.core import (
+    DEFAULT_TENANT_ID,
     DomainIdentity,
     JsonMapping,
     JsonValue,
@@ -69,6 +70,9 @@ class _StoreConfigPayload(ConfigPayload):
     # Name of the environment variable holding the Postgres DSN. The URL
     # itself (which contains credentials) never lives in the config file.
     url_env: str | None = None
+    # Optional tenant scope for the Postgres backend. Only POSTGRES supports
+    # tenancy; FILE/SQLITE/MEMORY are single implicit tenant (default).
+    tenant_id: str | None = None
 
 
 class _RuntimeLimitsConfigPayload(ConfigPayload):
@@ -147,6 +151,7 @@ class StoreConfig:
     backend: StoreBackend = StoreBackend.MEMORY
     path: str | None = None
     url_env: str | None = None
+    tenant_id: str | None = None
 
     @classmethod
     def memory(cls) -> StoreConfig:
@@ -163,9 +168,19 @@ class StoreConfig:
     @classmethod
     def from_mapping(cls, values: Mapping[str, JsonValue]) -> StoreConfig:
         payload = parse_payload(_StoreConfigPayload, values)
-        config = cls(payload.backend, payload.path, payload.url_env)
+        config = cls(payload.backend, payload.path, payload.url_env, payload.tenant_id)
         config.validate()
         return config
+
+    @property
+    def effective_tenant_id(self) -> str:
+        """The tenant scope applied when this store config is materialized.
+
+        Only meaningful for the POSTGRES backend (the sole tenancy-capable
+        backend). Falls back to ``DEFAULT_TENANT_ID`` when unset.
+        """
+
+        return self.tenant_id or DEFAULT_TENANT_ID
 
     def validate(self) -> None:
         if self.backend is StoreBackend.FILE:
@@ -200,6 +215,17 @@ class StoreConfig:
                 self.url_env,
                 "postgres store url_env",
                 empty_template="postgres store requires url_env",
+            )
+            if self.tenant_id is not None:
+                parse_non_empty_string(
+                    self.tenant_id,
+                    "store tenant_id",
+                    empty_template="store tenant_id must be non-empty",
+                )
+        elif self.tenant_id is not None:
+            raise ValueError(
+                "tenant_id is only supported by the postgres store backend; "
+                f"backend {self.backend!r} is single implicit tenant"
             )
 
 
