@@ -321,6 +321,7 @@ Decision(想执行 capability C)
 - **出口条件**：不做 IdP/RBAC，仅凭 tenant 作用域已能隔离多套部署。
 
 ### Phase 1 —— agentd 认证升级 + 基础 RBAC
+> **✅ 已实现（2026-09-20）**：RBAC 核心（`Role`/`Scope`/`RequestPrincipal`/`RoleBinding` + `security/authorization.AuthorizationEvaluator`）、凭据模块（`security/credentials.py`：SHA-256 哈希 + `CredentialStore` Protocol + `InMemoryCredentialStore`）、schema v3（`ua_users`/`ua_tenants`/`ua_tenant_memberships`/`ua_credentials`）、agentd 认证升级（`AgentdAuthPolicy(credential_store=, tenant_id=)`；令牌→主体 + 跨租户拒绝 + read_only 写操作 403 reason=rbac，向后兼容共享令牌）。尚未做：CLI 用户管理面（Phase 2）、deny 事件写入事件流（当前为 HTTP 403 拒绝；事件化审计在 Phase 2/3）。
 - 目标：从共享 token 变为"令牌 → 主体"，引入 `admin/operator/read_only`。
 - 改动：`security/credentials.py`（哈希）、`agentd/http.py`（主体解析）、`security/authorization.py`（`AuthorizationEvaluator`）、`ua_credentials`/`ua_tenant_memberships` 迁移。
 - 落点：agentd 中间件把解析出的 principal 绑定到 service bundle。
@@ -330,6 +331,8 @@ Decision(想执行 capability C)
   - `deny` 事件进入事件流且区分 rbac/policy。
 
 ### Phase 2 —— 用户管理面 + OIDC
+> **✅ 已实现（2026-09-20，HTTP 面 + CLI）**：`persistence/credentials.py`（`PostgresCredentialStore`：解析 + create_tenant/create_user/set_role/issue_credential/revoke_credential/list_members，角色权威在 membership）、`security/credentials.py` 扩展（`CredentialAdminStore` Protocol + InMemory 管理面 + `PrincipalAlreadyExistsError`/`PrincipalNotFoundError`）、`security/oidc.py`（`TokenValidator` Protocol + `StaticClaimsTokenValidator` mock IdP + `OidcClaimsPrincipalMapper`）、`agentd/admin_routes.py`（`/v1/admin/*` 六条路由，admin 门禁 + legacy 共享令牌 bootstrap，凭证 token 仅回显一次）、`agentd/__main__.py`（`--admin-store memory|postgres` + `--admin-store-url-env` + `--tenant-id`）、CLI `agent admin` 命令组（tenant/user/role/member/credential，走 remote thin-client，`AgentdClient` 新增 put/delete）——含端到端集成测试（provision→resolve→revoke 闭环、operator 403 rbac、跨租户 403）。
+> **待完成**：Web 用户管理视图；embedded 子进程的 durable admin store 需 `--admin-store postgres`（内存店不跨进程存活，仅 dev/test）。
 - 目标：Admin 管理 API/CLI 落地；可插入 OIDC。
 - 改动：`agentd` 用户/租户/角色路由；CLI admin 命令；`security/oidc.py`（`TokenValidator` Protocol）。
 - 验收：
