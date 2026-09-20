@@ -158,6 +158,20 @@
 | 11.5 | `config show` / `audit` / `cost` / `logs` / `metrics` / `doctor` | ✅ 全部 |
 | 11.6 | resume on completed（友好错误） | ✅ 422 + 行动建议（英文提示，原中文被 RUF001 替换） |
 
+## 12. 空 body 全端点探测（同类缺陷扫描）
+
+对全部 38 个 POST 端点发送空 `{}` body，验证缺参数时是否返回结构化 4xx（而非 500）：
+
+| 结果 | 端点 |
+|---|---|
+| ✅ 结构化 400/404（31 个） | sessions 全族、memory、profiles、config/validate、distributed 全族（locks/expire/prune/workers）、workspace、kubernetes、repair、ecosystem/export |
+| ❌ 500（6 个，同一缺陷族） | `eval/{reports,datasets,dataset,recordings,replay,compare}`——**已在 7e732bb 修复为 400，远端镜像待更新** |
+| ⚠️ 200 + error 体（5 个） | `ecosystem/{registry,verify,install,store}`、`eval/run`（空参时降级执行/兜底 error 体；建议统一为 400，待改进） |
+
+**探测事故与清理**：对 `/v1/distributed/sessions/{sid}/schedule` 的探测将已完成会话真实入队（work-1, agent_session）。已通过 `POST /v1/distributed/work-items/work-1/cancel` 取消，快照确认 queued=0。此操作已写入分布式审计。
+
+**复核确认**：pause/resume/cancel 对终态会话均返回结构化 invalid_state（HTTP 200/422 + result.error_code），无 500；`eval/run` 空 body 会真实执行内置 2 场景套件并返回完整 gate 报告（passed=false 为评估结果，非错误）。
+
 ## 汇总
 
 **统计**（截至 2026-09-20）：共测 **72 项**——✅ 通过 55 · ⚠️ 通过但有备注 4 · ⏭️ 跳过 13 · ❌ 失败 0（测试中发现 1 个服务端缺陷已当场修复，见下）。
