@@ -56,7 +56,9 @@ async def dispatch_remote_chat(args: object, out: TextIO, client: AgentdClient) 
         status = str(result.get("status") or "unknown")
         reason = str(result.get("reason") or "")
         session_id = str(result.get("session_id") or "")
-        print(f"[{status}] {reason}" + (f"  (session {session_id})" if session_id else ""), flush=True)
+        print(
+            f"[{status}] {reason}" + (f"  (session {session_id})" if session_id else ""), flush=True
+        )
         if show_events and session_id:
             try:
                 batch = await client.get_json(
