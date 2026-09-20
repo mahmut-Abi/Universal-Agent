@@ -20,7 +20,7 @@ defineOptions({ name: 'ClusterView' })
               </div>
             </div>
           </div>
-          <div class="stack" style="display:flex;flex-direction:column;gap:16px">
+          <div class="stack">
             <div class="card" data-od-id="cluster-locks-card">
               <div class="card-head"><h3>分布式锁</h3></div>
               <div id="cluster-locks">

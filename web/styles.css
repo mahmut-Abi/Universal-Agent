@@ -201,6 +201,14 @@ h3 {
 .view.active {
   display: block;
 }
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.stack > * {
+  min-width: 0;
+}
 .grid {
   display: grid;
   gap: 16px;

@@ -59,7 +59,7 @@ const confirmRemember = ref(false)
               </li>
             </ul>
           </div>
-          <div class="stack" style="display:flex;flex-direction:column;gap:16px">
+          <div class="stack">
             <div class="card" data-od-id="session-summary-card">
               <h3 style="margin-bottom:10px">会话摘要</h3>
               <div id="session-summary">
