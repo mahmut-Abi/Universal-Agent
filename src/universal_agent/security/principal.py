@@ -29,6 +29,29 @@ class UserAccountStatus(StrEnum):
     DISABLED = "disabled"
 
 
+class Role(StrEnum):
+    """Per-tenant role granted through a membership binding.
+
+    Roles are the input to RBAC: they decide *whether a user may request* a
+    capability or operation. They do NOT decide whether an action is safe to
+    execute — that stays the job of the runtime ``Policy``.
+    """
+
+    ADMIN = "admin"
+    OPERATOR = "operator"
+    READ_ONLY = "read_only"
+
+
+class Scope(StrEnum):
+    """Effective request scope derived from a role (or a credential).
+
+    ``READ_WRITE`` permits mutating operations; ``READ_ONLY`` only reads.
+    """
+
+    READ_WRITE = "read_write"
+    READ_ONLY = "read_only"
+
+
 @dataclass(frozen=True, slots=True)
 class Tenant:
     """A data-isolation and organizational boundary.
@@ -71,6 +94,55 @@ class UserPrincipal:
         """Canonical subject key used for ownership columns and audit."""
 
         return self.user_id
+
+
+@dataclass(frozen=True, slots=True)
+class RoleBinding:
+    """A user's membership and role within a tenant.
+
+    The canonical RBAC edge: (tenant_id, user_id) -> role. A user may hold a
+    binding in many tenants; each binding is independent.
+    """
+
+    tenant_id: str
+    user_id: str
+    role: Role = Role.OPERATOR
+
+    def __post_init__(self) -> None:
+        parse_non_empty_string(self.tenant_id, "role binding tenant_id")
+        parse_non_empty_string(self.user_id, "role binding user_id")
+
+
+@dataclass(frozen=True, slots=True)
+class RequestPrincipal:
+    """A fully-resolved subject for a single request: who + which tenant +
+    which role/scope they act under.
+
+    Produced by a CredentialStore at authentication time and carried through
+    authorization. Not persisted itself — it is derived from credentials and
+    memberships on every request.
+    """
+
+    user: UserPrincipal
+    tenant: Tenant
+    role: Role = Role.OPERATOR
+    scope: Scope = Scope.READ_WRITE
+
+    @property
+    def user_id(self) -> str:
+        return self.user.user_id
+
+    @property
+    def tenant_id(self) -> str:
+        return self.tenant.tenant_id
+
+    @property
+    def subject(self) -> str:
+        return self.user.subject
+
+    @property
+    def is_read_only(self) -> bool:
+        return self.scope is Scope.READ_ONLY
 
 
 def default_tenant() -> Tenant:

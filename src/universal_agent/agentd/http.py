@@ -28,6 +28,7 @@ from universal_agent.core.config_validation import (
     parse_optional_string,
     pydantic_error_message,
 )
+from universal_agent.security import AuthorizationEvaluator, CredentialStore, RequestPrincipal
 
 
 def _empty_json() -> JsonMapping:
@@ -36,6 +37,9 @@ def _empty_json() -> JsonMapping:
 
 def _default_headers() -> Mapping[str, str]:
     return MappingProxyType({"content-type": "application/json"})
+
+
+_EVALUATOR = AuthorizationEvaluator()
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +98,14 @@ class AgentdAuthPolicy:
     bearer_token: str | None = None
     read_only_bearer_token: str | None = None
     public_paths: tuple[str, ...] = ("/health", "/ready")
+    # When set, bearer tokens are resolved through this CredentialStore to a
+    # RequestPrincipal, and role/scope (and tenant) gate each request. Falls
+    # back to the legacy shared-token model when absent.
+    credential_store: CredentialStore | None = None
+    # The tenant this agentd process is scoped to (the store's tenant). When a
+    # credential resolves to a different tenant, the request is refused even if
+    # the credential itself is valid (cross-tenant denial at the agentd layer).
+    tenant_id: str | None = None
 
     def __post_init__(self) -> None:
         _validate_bearer_token(self.bearer_token, "agentd bearer token")
@@ -107,6 +119,8 @@ class AgentdAuthPolicy:
             and hmac.compare_digest(self.bearer_token, self.read_only_bearer_token)
         ):
             raise ValueError("agentd bearer token and read-only bearer token must differ")
+        if self.tenant_id is not None:
+            parse_optional_non_empty_string(self.tenant_id, "agentd tenant_id")
         public_paths = parse_non_empty_string_sequence(
             self.public_paths,
             "agentd public paths",
@@ -118,7 +132,11 @@ class AgentdAuthPolicy:
 
     @property
     def enabled(self) -> bool:
-        return self.bearer_token is not None or self.read_only_bearer_token is not None
+        return (
+            self.bearer_token is not None
+            or self.read_only_bearer_token is not None
+            or self.credential_store is not None
+        )
 
 
 def json_response(body: JsonMapping, *, status_code: int = 200) -> HttpResponse:
@@ -196,25 +214,57 @@ def error_body(code: str, message: str) -> JsonMapping:
     return immutable_json({"error": {"code": code, "message": message}})
 
 
+@dataclass(frozen=True, slots=True)
+class AuthOutcome:
+    """Result of authenticating a request: an optional refusal response plus
+    the resolved principal (when the credential store produced one).
+
+    ``principal is None`` means either the request was public, or legacy
+    shared-token authentication matched — legacy tokens keep full (admin-equivalent)
+    access for backward compatibility until credentials are provisioned.
+    """
+
+    response: HttpResponse | None = None
+    principal: RequestPrincipal | None = None
+
+
 def _authenticate(
     policy: AgentdAuthPolicy,
     request: HttpRequest,
     path: str,
     *,
     method: str,
-) -> HttpResponse | None:
+) -> AuthOutcome:
     if not policy.enabled or path in policy.public_paths:
-        return None
+        return AuthOutcome()
     token = _bearer_token(_authorization_header(request.headers))
     if token is None:
-        return unauthorized()
+        return AuthOutcome(response=unauthorized())
+    # Principal-aware path: resolve the bearer token to a RequestPrincipal and
+    # enforce role/scope + cross-tenant denial (RBAC). Kept on the legacy
+    # shared-token model when no credential store is configured.
+    if policy.credential_store is not None:
+        principal = policy.credential_store.resolve(token)
+        if principal is None:
+            return AuthOutcome(response=unauthorized())
+        if policy.tenant_id is not None and principal.tenant_id != policy.tenant_id:
+            return AuthOutcome(
+                response=forbidden(
+                    f"cross_tenant: subject {principal.subject} is not a member of "
+                    f"the server tenant {policy.tenant_id}"
+                )
+            )
+        decision = _EVALUATOR.authorize_request(principal, method=method)
+        if not decision.allowed:
+            return AuthOutcome(response=forbidden(f"rbac: {decision.message}"))
+        return AuthOutcome(principal=principal)
     if _token_matches(token, policy.bearer_token):
-        return None
+        return AuthOutcome()
     if _token_matches(token, policy.read_only_bearer_token):
         if method == "GET":
-            return None
-        return forbidden("insufficient bearer token scope")
-    return unauthorized()
+            return AuthOutcome()
+        return AuthOutcome(response=forbidden("insufficient bearer token scope"))
+    return AuthOutcome(response=unauthorized())
 
 
 def _validate_bearer_token(value: str | None, field: str) -> None:

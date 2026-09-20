@@ -143,10 +143,10 @@ def test_migrate_fresh_schema_applies_v1_and_v2_once() -> None:
     assert store.tenant_id == DEFAULT_TENANT_ID
     assert store.user_id == "system"
     first = store.migrate()
-    assert first.current_version == 2
-    assert first.applied_versions == (1, 2)
+    assert first.current_version == 3
+    assert first.applied_versions == (1, 2, 3)
     second = store.migrate()
-    assert second.current_version == 2
+    assert second.current_version == 3
     assert second.applied_versions == ()
 
     store._engine.dispose()
@@ -190,9 +190,9 @@ def test_migrate_v2_from_legacy_v1_schema_backfills_user_id() -> None:
         )
     engine.dispose()
 
-    # Migrate the legacy DB to v2.
+    # Migrate the legacy DB to v3.
     store = PostgresRuntimeStore(url=target)
-    assert store.migrate().current_version == 2
+    assert store.migrate().current_version == 3
 
     # Legacy session is readable by the default-tenant store.
     loaded = asyncio.run(store.load_session(SessionId("legacy-session")))

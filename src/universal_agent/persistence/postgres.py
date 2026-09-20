@@ -63,7 +63,7 @@ from universal_agent.state import (
 from universal_agent.state.event_store import SESSION_STATE_EVENT
 from universal_agent.state.session import with_state
 
-POSTGRES_SCHEMA_VERSION = 2
+POSTGRES_SCHEMA_VERSION = 3
 POSTGRES_DEFAULT_TENANT_ID = DEFAULT_TENANT_ID
 POSTGRES_OUTBOX_PENDING = "pending"
 POSTGRES_OUTBOX_PUBLISHING = "publishing"
@@ -134,6 +134,54 @@ Index(
     _RUNTIME_EVENT_OUTBOX.c.status,
     _RUNTIME_EVENT_OUTBOX.c.available_at,
     _RUNTIME_EVENT_OUTBOX.c.sequence,
+)
+
+
+# --- Principal / identity tables (schema v3, Phase 1) --------------------
+# These are brand-new tables; ``create_all`` builds them, so migration step 3
+# is a no-op that simply records the version. They underpin the credential -
+# > principal -> RBAC resolution added in Phase 1.
+
+_UA_USERS = Table(
+    "ua_users",
+    _METADATA,
+    Column("user_id", String, primary_key=True),
+    Column("email", String, nullable=False, unique=True),
+    Column("display_name", String),
+    Column("status", String, nullable=False, server_default="active"),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+_UA_TENANTS = Table(
+    "ua_tenants",
+    _METADATA,
+    Column("tenant_id", String, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("status", String, nullable=False, server_default="active"),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+_UA_TENANT_MEMBERSHIPS = Table(
+    "ua_tenant_memberships",
+    _METADATA,
+    Column("tenant_id", String, nullable=False),
+    Column("user_id", String, nullable=False),
+    Column("role", String, nullable=False, server_default="operator"),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("tenant_id", "user_id"),
+)
+
+_UA_CREDENTIALS = Table(
+    "ua_credentials",
+    _METADATA,
+    Column("credential_id", String, primary_key=True),
+    Column("tenant_id", String, nullable=False),
+    Column("user_id", String, nullable=False),
+    # Only the hash of a credential is ever stored; the raw token never is.
+    Column("token_hash", String, nullable=False, unique=True),
+    Column("scope", String, nullable=False, server_default="read_write"),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("revoked_at", DateTime(timezone=True)),
 )
 
 
@@ -586,6 +634,7 @@ def apply_postgres_migrations(engine: Engine) -> PostgresMigrationReport:
 _MIGRATION_NAMES = {
     1: "initial_runtime_store",
     2: "session_user_id",
+    3: "security_principals",
 }
 
 
@@ -608,10 +657,23 @@ def _apply_migration_step(connection: Connection, version: int) -> None:
                 "user_id VARCHAR NOT NULL DEFAULT 'system'"
             )
         )
+    # v3 adds brand-new principal tables (ua_users, ua_tenants,
+    # ua_tenant_memberships, ua_credentials). They are constructed by
+    # create_all, so step 3 needs no extra DDL here.
 
 
 def postgres_schema_table_names() -> tuple[str, ...]:
     return tuple(table.name for table in _METADATA.sorted_tables)
+
+
+def postgres_principal_tables() -> tuple[Table, Table, Table, Table]:
+    """The (users, tenants, memberships, credentials) principal tables.
+
+    Public accessor so the credential store implementation can share this
+    exact DDL without duplicating it (or importing private names).
+    """
+
+    return _UA_USERS, _UA_TENANTS, _UA_TENANT_MEMBERSHIPS, _UA_CREDENTIALS
 
 
 def postgres_schema_ddl() -> tuple[str, ...]:

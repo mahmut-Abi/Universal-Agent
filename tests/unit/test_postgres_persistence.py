@@ -12,13 +12,17 @@ from universal_agent.persistence.postgres import PostgresRuntimeStore
 
 @pytest.mark.contract
 def test_postgres_schema_declares_runtime_tables_and_migration_version() -> None:
-    assert POSTGRES_SCHEMA_VERSION == 2
-    assert postgres_schema_table_names() == (
+    assert POSTGRES_SCHEMA_VERSION == 3
+    assert set(postgres_schema_table_names()) == {
+        "ua_credentials",
         "ua_runtime_event_outbox",
         "ua_runtime_events",
         "ua_schema_migrations",
         "ua_sessions",
-    )
+        "ua_tenants",
+        "ua_tenant_memberships",
+        "ua_users",
+    }
 
 
 @pytest.mark.contract
@@ -40,6 +44,23 @@ def test_postgres_session_schema_declares_user_owner_column() -> None:
     assert "user_id" in sessions
     assert "NOT NULL" in sessions
     assert "DEFAULT 'system'" in sessions
+
+
+@pytest.mark.contract
+def test_postgres_principal_tables_declare_security_shape() -> None:
+    """Schema v3 adds the principal/identity tables (Phase 1)."""
+
+    credentials = next(item for item in postgres_schema_ddl() if "ua_credentials" in item)
+    memberships = next(item for item in postgres_schema_ddl() if "ua_tenant_memberships" in item)
+    users = next(item for item in postgres_schema_ddl() if "ua_users" in item)
+    tenants = next(item for item in postgres_schema_ddl() if "ua_tenants" in item)
+
+    assert "token_hash" in credentials
+    assert "UNIQUE" in credentials  # token_hash unique
+    assert "revoked_at" in credentials
+    assert "PRIMARY KEY (tenant_id, user_id)" in memberships
+    assert "email" in users
+    assert "tenant_id" in tenants
 
 
 @pytest.mark.contract

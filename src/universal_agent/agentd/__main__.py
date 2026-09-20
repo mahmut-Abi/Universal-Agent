@@ -21,7 +21,7 @@ from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
 from universal_agent.core.config_validation import parse_non_empty_string
 from universal_agent.policy import Policy
 from universal_agent.profile.store import ProfileStore
-from universal_agent.security import EnvSecretProvider
+from universal_agent.security import CredentialAdminStore, EnvSecretProvider
 from universal_agent.service import RuntimeService
 
 
@@ -48,6 +48,30 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--read-only-auth-token")
     parser.add_argument("--read-only-auth-token-env")
     parser.add_argument("--evaluation-report-dir")
+    parser.add_argument(
+        "--admin-store",
+        choices=("memory", "postgres"),
+        help=(
+            "Enable the admin plane (/v1/admin/*) backed by a credential store. "
+            "memory: in-process (dev/test only, not durable). postgres: durable "
+            "schema v3 principal tables; requires --admin-store-url-env. When "
+            "set, bearer tokens resolve to principals and RBAC applies."
+        ),
+    )
+    parser.add_argument(
+        "--admin-store-url-env",
+        help=(
+            "Name of the environment variable holding the Postgres DSN "
+            "for --admin-store postgres."
+        ),
+    )
+    parser.add_argument(
+        "--tenant-id",
+        help=(
+            "Tenant this server's store is scoped to; requests resolving to a "
+            "different tenant are refused (cross-tenant denial)."
+        ),
+    )
     parser.add_argument(
         "--deployment-config",
         help="Path to the deployment config JSON (default: $AGENT_CONFIG_DIR/deployment.json)",
@@ -203,6 +227,42 @@ def _host_requires_auth(host: str) -> bool:
     return normalized not in {"127.0.0.1", "localhost", "::1"}
 
 
+def _build_admin_store(args: argparse.Namespace) -> CredentialAdminStore | None:
+    """Build the optional admin credential store from server flags.
+
+    memory: in-process, not durable (dev/test). postgres: durable schema v3
+    principal tables; the DSN is read from the environment variable named by
+    ``--admin-store-url-env`` (never from config files or argv).
+    """
+
+    admin_store = getattr(args, "admin_store", None)
+    url_env = getattr(args, "admin_store_url_env", None)
+    if admin_store is None:
+        if url_env is not None:
+            raise ValueError("--admin-store-url-env requires --admin-store postgres")
+        return None
+    if admin_store == "memory":
+        from universal_agent.security import InMemoryCredentialStore
+
+        return InMemoryCredentialStore()
+    if url_env is None:
+        raise ValueError("--admin-store postgres requires --admin-store-url-env")
+    url = os.environ.get(url_env)
+    if not url:
+        raise ValueError(
+            f"admin store url_env {url_env!r} is not set in the environment; "
+            "export the Postgres DSN"
+        )
+    try:
+        from universal_agent.persistence.credentials import PostgresCredentialStore
+    except ImportError as exc:
+        raise ValueError(
+            "--admin-store postgres requires the optional 'postgres' extra: "
+            "pip install 'universal-agent-runtime[postgres]'"
+        ) from exc
+    return PostgresCredentialStore(url)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_argument_parser()
     args = parser.parse_args(argv)
@@ -247,16 +307,22 @@ def main(argv: list[str] | None = None) -> int:
     else:
         service = _build_default_with_policies(args.default_domain, extra_policies)
 
+    admin_store = _build_admin_store(args)
+    auth_policy = AgentdAuthPolicy(
+        bearer_token=auth_token,
+        read_only_bearer_token=read_only_auth_token,
+        credential_store=admin_store,
+        tenant_id=args.tenant_id,
+    )
+
     server = AgentdHttpServer(
         AgentdApp(
             service,
-            auth=AgentdAuthPolicy(
-                bearer_token=auth_token,
-                read_only_bearer_token=read_only_auth_token,
-            ),
+            auth=auth_policy,
             evaluation_report_dir=args.evaluation_report_dir,
             profile_store=profile_store,
             profile_service_factory=_profile_service_factory(profile_store, extra_policies),
+            admin_store=admin_store,
         ),
         AgentdServerConfig(host=args.host, port=args.port),
     )

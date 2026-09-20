@@ -19,6 +19,10 @@ from universal_agent.agentd._routes_session import (
     _SESSION_ROUTE_DEFINITIONS,
     SessionRouteHandlers,
 )
+from universal_agent.agentd.admin_routes import (
+    admin_route_definitions,
+    handle_admin_route,
+)
 from universal_agent.agentd.config_admin_routes import (
     config_admin_route_definitions,
     handle_config_admin_route,
@@ -73,6 +77,7 @@ from universal_agent.host_contracts import DomainRouteContribution
 from universal_agent.memory import MemoryKind
 from universal_agent.profile import ProfileConfigNotFoundError, ProfileNotFoundError
 from universal_agent.profile.store import ProfileStore
+from universal_agent.security import CredentialAdminStore
 from universal_agent.service import RuntimeService
 
 _STATIC_GET_ROUTE_DEFINITIONS = (
@@ -125,6 +130,7 @@ _MEMORY_ROUTES = AgentdRouteMatcher(_MEMORY_ROUTE_DEFINITIONS)
 _OPENAPI_ROUTE_DEFINITIONS = (
     *_STATIC_GET_ROUTE_DEFINITIONS,
     *_DETAIL_GET_ROUTE_DEFINITIONS,
+    *admin_route_definitions(),
     *config_admin_route_definitions(),
     *eval_route_definitions(),
     *ecosystem_route_definitions(),
@@ -188,6 +194,7 @@ class AgentdApp:
         evaluation_report_dir: str | Path | None = None,
         profile_store: ProfileStore | None = None,
         profile_service_factory: Callable[[str], RuntimeService] | None = None,
+        admin_store: CredentialAdminStore | None = None,
     ) -> None:
         self._default_bundle = _ServiceBundle.build(service)
         self._default_profile_names = frozenset(item.name for item in service.profiles())
@@ -200,6 +207,7 @@ class AgentdApp:
             None if evaluation_report_dir is None else str(evaluation_report_dir)
         )
         self._profile_store = profile_store
+        self._admin_store = admin_store
 
     @property
     def service(self) -> RuntimeService:
@@ -297,9 +305,15 @@ class AgentdApp:
         method = request.method.upper()
         path = _normalize_path(request.path)
 
-        auth_response = _authenticate(self._auth, request, path, method=method)
-        if auth_response is not None:
-            return auth_response
+        auth = _authenticate(self._auth, request, path, method=method)
+        if auth.response is not None:
+            return auth.response
+
+        admin_response = handle_admin_route(
+            self._admin_store, auth.principal, request, method, path
+        )
+        if admin_response is not None:
+            return admin_response
 
         bundle, bundle_error = self._bundle_for(request)
         if bundle_error is not None:

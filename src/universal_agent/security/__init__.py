@@ -1,4 +1,28 @@
+from universal_agent.security.authorization import (
+    AuthorizationDecision,
+    AuthorizationEvaluator,
+    method_is_read,
+    role_scope,
+)
+from universal_agent.security.credentials import (
+    Credential,
+    CredentialAdminStore,
+    CredentialStore,
+    InMemoryCredentialStore,
+    PrincipalAlreadyExistsError,
+    PrincipalNotFoundError,
+    hash_credential,
+)
+from universal_agent.security.oidc import (
+    OidcClaimsPrincipalMapper,
+    StaticClaimsTokenValidator,
+    TokenValidator,
+)
 from universal_agent.security.principal import (
+    RequestPrincipal,
+    Role,
+    RoleBinding,
+    Scope,
     Tenant,
     TenantStatus,
     UserAccountStatus,
@@ -27,8 +51,21 @@ from universal_agent.security.secrets import (
 )
 
 __all__ = [
+    "AuthorizationDecision",
+    "AuthorizationEvaluator",
+    "Credential",
+    "CredentialAdminStore",
+    "CredentialStore",
     "EnvSecretProvider",
     "FileSecretProvider",
+    "InMemoryCredentialStore",
+    "OidcClaimsPrincipalMapper",
+    "PrincipalAlreadyExistsError",
+    "PrincipalNotFoundError",
+    "RequestPrincipal",
+    "Role",
+    "RoleBinding",
+    "Scope",
     "SecretFinding",
     "SecretProvider",
     "SecretReference",
@@ -37,17 +74,22 @@ __all__ = [
     "SecretResolutionReport",
     "SecretResolutionStatus",
     "SecretScanReport",
+    "StaticClaimsTokenValidator",
     "Tenant",
     "TenantStatus",
+    "TokenValidator",
     "UserAccountStatus",
     "UserPrincipal",
     "default_tenant",
+    "hash_credential",
     "is_sensitive_key",
+    "method_is_read",
     "redact_sensitive_mapping",
     "redact_sensitive_text",
     "redact_sensitive_value",
     "resolve_secret_arguments",
     "resolve_secret_refs",
     "resolve_secret_value",
+    "role_scope",
     "scan_for_secrets",
 ]
