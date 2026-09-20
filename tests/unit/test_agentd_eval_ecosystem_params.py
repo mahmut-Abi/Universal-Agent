@@ -19,8 +19,8 @@ from universal_agent.agentd._routes_eval import (
     handle_ecosystem_route,
 )
 from universal_agent.agentd.http import HttpRequest
-from universal_agent.service import RuntimeService
 from universal_agent.core import immutable_json
+from universal_agent.service import RuntimeService
 
 
 class _StubService:
