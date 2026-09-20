@@ -13,7 +13,6 @@ from collections.abc import Mapping
 from typing import TextIO, cast
 
 from universal_agent.core import JsonValue
-
 from universal_agent_api.client import AgentdClient
 
 
@@ -46,7 +45,7 @@ async def dispatch_remote_chat(args: object, out: TextIO, client: AgentdClient) 
             payload = await client.post_json(
                 "/v1/sessions", body=cast(Mapping[str, JsonValue], body)
             )
-        except Exception as exc:  # noqa: BLE001 - REPL keeps running after errors
+        except Exception as exc:
             print(f"[error] {exc}", flush=True)
             continue
         result = payload.get("result") if isinstance(payload, dict) else None
@@ -64,7 +63,7 @@ async def dispatch_remote_chat(args: object, out: TextIO, client: AgentdClient) 
                 batch = await client.get_json(
                     f"/v1/sessions/{session_id}/events", query={"limit": 8}
                 )
-            except Exception:  # noqa: BLE001 - events are best-effort
+            except Exception:
                 continue
             events = batch.get("events") if isinstance(batch, dict) else None
             event_list = events if isinstance(events, list) else []

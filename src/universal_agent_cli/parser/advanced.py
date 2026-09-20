@@ -181,7 +181,6 @@ def add_catalog_parsers(commands: argparse._SubParsersAction[argparse.ArgumentPa
 
 def add_chat_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     # Lazy import: parser/__init__ imports this module during its own init.
-    from universal_agent_cli.parser import local_profile_name
 
     chat = commands.add_parser("chat", help="(advanced) Interactive conversation with the runtime")
     # Default None → the dispatch resolves the service's primary profile, so

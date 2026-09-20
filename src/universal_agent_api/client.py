@@ -301,8 +301,8 @@ def _raise_http_error(response: httpx.Response) -> None:
         # resume on a completed session is a common slip: the server rejects
         # with the full result payload, which buries the actionable hint.
         message = (
-            "session is not waiting — resume 仅适用于等待确认（waiting）的会话；"
-            "已完成会话继续对话请用 `agent chat` 或 Web Chat"
+            "session is not waiting - resume is only for sessions waiting on confirmation;"
+            "continue a completed session via chat or Web Chat (POST /v1/sessions/{id}/messages)"
         )
     prefix = f"agentd returned HTTP {response.status_code}"
     if code is not None:
