@@ -536,6 +536,9 @@ export const delModal = reactive({ open: false, name: null });
    写平面 404 "profile config not found"；builtin 拒改 → "built-in"。 */
 export function profileWriteError(e, prefix) {
   const msg = e.message || String(e);
+  if (e.status === 409 || msg.includes("already exists")) {
+    return prefix + "：该 Profile 已存在（可能之前已创建）。可在顶栏直接切换使用，或换一个名称";
+  }
   if (msg.includes("profile config not found")) {
     return (
       prefix +

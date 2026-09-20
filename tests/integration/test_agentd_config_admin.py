@@ -217,3 +217,17 @@ async def test_builtin_profile_delete_returns_409(app: AgentdApp) -> None:
     # PATCH is also refused
     patched = await app.handle(_request("PATCH", "/v1/profiles/checkout-sre", {"description": "x"}))
     assert patched is not None and patched.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_config_profiles_lists_store_entries(tmp_path: Any) -> None:
+    """GET /v1/config/profiles lists store-backed profiles, loaded or not."""
+    app = build_app(tmp_path)
+    profile_store: ProfileStore = app._profile_store  # type: ignore[assignment]
+    profile_store.create(immutable_json(dict(_VALID_PROFILE)))
+
+    response = await app.handle(_request("GET", "/v1/config/profiles"))
+
+    assert response.status_code == 200
+    stored = response.body["stored_profiles"]
+    assert isinstance(stored, list) and "checkout-sre" in stored

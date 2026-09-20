@@ -51,6 +51,7 @@ _CONFIG_ADMIN_ROUTE_DEFINITIONS = (
         ("PATCH", "DELETE"),
     ),
     AgentdRouteDefinition("config_validate", "/v1/config/validate", ("POST",)),
+    AgentdRouteDefinition("config_profiles_list", "/v1/config/profiles", ("GET",)),
     AgentdRouteDefinition("config_audit", "/v1/config/audit", ("GET",)),
     AgentdRouteDefinition("config_read", "/v1/config", ("PUT",)),
     AgentdRouteDefinition(
@@ -86,6 +87,16 @@ def _validation_error_response(error: ProfileStoreValidationError) -> HttpRespon
     )
 
 
+def _config_profiles_list(store: ProfileStore) -> HttpResponse:
+    """Store-backed listing: profiles persisted through the config API.
+
+    Includes profiles not loaded into the running service. Complements
+    GET /v1/profiles (loaded-only) so clients can show the full set.
+    """
+
+    return json_response(immutable_json({"stored_profiles": list(store.names())}))
+
+
 async def handle_config_admin_route(
     store: ProfileStore | None,
     request: HttpRequest,
@@ -106,6 +117,9 @@ async def handle_config_admin_route(
         if route.name == "config_profiles_create":
             payload = store.create(dict(body), actor=actor)
             return json_response(immutable_json(payload), status_code=201)
+
+        if route.name == "config_profiles_list":
+            return _config_profiles_list(store)
 
         if route.name == "config_profile_write":
             name = route.path_params["profile"]

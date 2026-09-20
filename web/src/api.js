@@ -460,11 +460,14 @@ export async function loadModelInfo(state) {
 }
 
 export async function loadConfig(state) {
-  const [doc, prof, dom, tools] = await Promise.all([
+  const [doc, prof, dom, tools, stored] = await Promise.all([
     apiGet("/v1/doctor"),
     apiGet("/v1/profiles"),
     apiGet("/v1/domains"),
     apiGet("/v1/tools"),
+    // Store-backed listing: profiles created via the config API but not
+    // loaded into the running service (usable via profile hot-swap).
+    apiGet("/v1/config/profiles").catch(() => ({ stored_profiles: [] })),
   ]);
   state.doctor = pick(doc, "checks").map((c) => ({
     level:
@@ -476,7 +479,20 @@ export async function loadConfig(state) {
     name: c.name,
     detail: c.message || "",
   }));
-  state.profiles = pick(prof, "profiles").map((p) => ({
+  const loadedNames = new Set(pick(prof, "profiles").map((p) => p.name));
+  const storedOnly = pick(stored, "stored_profiles")
+    .filter((name) => !loadedNames.has(name))
+    .map((name) => ({
+      name,
+      desc: "已创建（未加载到运行时）· 可通过顶栏热切换使用",
+      builtin: false,
+      domains: [],
+      model: "",
+      version: "",
+      storedOnly: true,
+    }));
+  state.profiles = [
+    ...pick(prof, "profiles").map((p) => ({
     name: p.name,
     desc: p.description || (p.domains || []).map((d) => d.name).join("/"),
     builtin: p.name === "default",
@@ -486,7 +502,9 @@ export async function loadConfig(state) {
       : "",
     version: p.version,
     raw: p,
-  }));
+    })),
+    ...storedOnly,
+  ];
   const byDomain = {};
   for (const t of pick(tools, "tools")) {
     (byDomain[t.domain_name] = byDomain[t.domain_name] || []).push({
