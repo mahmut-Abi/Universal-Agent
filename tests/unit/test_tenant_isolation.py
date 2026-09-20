@@ -77,6 +77,8 @@ def _make_event(session_id: str) -> RuntimeEvent:
 def test_cross_tenant_access_matrix() -> None:
     dsn = _require_pg()
     target = _fresh_database(dsn)
+    t1: PostgresRuntimeStore | None = None
+    t2: PostgresRuntimeStore | None = None
     try:
         t1 = PostgresRuntimeStore(url=target, tenant_id="t1")
         t2 = PostgresRuntimeStore(url=target, tenant_id="t2")
@@ -108,6 +110,8 @@ def test_cross_tenant_access_matrix() -> None:
         assert str(evt.id) in {e.event_id for e in t1.pending_outbox_events()}
         assert str(evt.id) not in {e.event_id for e in t2.pending_outbox_events()}
     finally:
-        t1._engine.dispose()
-        t2._engine.dispose()
+        if t1 is not None:
+            t1._engine.dispose()
+        if t2 is not None:
+            t2._engine.dispose()
         _drop_database(dsn, target)
