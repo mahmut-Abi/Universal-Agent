@@ -240,9 +240,12 @@ async def run_cli(
             from universal_agent_cli.doctor import run_doctor_command
 
             return await run_doctor_command(args, out)
-        if command_supports_agentd(args):
+        if command_supports_agentd(args) and cast(str, args.command) != "chat":
             # Production path without an injected runtime: serve the runtime
             # in an isolated subprocess and talk to it over its HTTP API.
+            # Chat is excluded: locally it runs in-process against the
+            # --profile-selected service (the embedded server's startup
+            # profile need not match chat's profile).
             from universal_agent_cli.embedded import (
                 EmbeddedRuntimeError,
                 launch_embedded_runtime,
@@ -559,7 +562,15 @@ async def _dispatch_chat(
 ) -> None:
     """Interactive conversation: each line becomes a goal run on the runtime."""
 
-    profile = cast(str, args.profile)
+    profile = cast("str | None", args.profile)
+    if profile is None:
+        # Follow the service's primary profile so chat works against any
+        # runtime (embedded, remote, or user-config mismatch).
+        primary = _primary_profile_name(service)
+        if primary is None:
+            raise ValueError("service exposes no profiles; pass --profile explicitly")
+        profile = primary
+        args.profile = profile
     if not service.accepts_profile(profile):
         raise ValueError(f"unknown profile: {profile}")
     show_events = cast(bool, args.show_events)

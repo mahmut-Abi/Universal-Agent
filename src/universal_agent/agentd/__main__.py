@@ -106,6 +106,33 @@ def _build_service_from_profile(
     return _with_extra_policies(service, extra_policies)
 
 
+def _profile_service_factory(
+    profile_store: ProfileStore | None,
+    extra_policies: tuple[Policy, ...],
+):
+    """Lazy per-profile service builder for the hot-swap registry.
+
+    Mirrors the CLI serve factory: persisted profile configs are built through
+    the shared composition point and wrapped with the deployment's extra
+    policies. Returns None when no profile store is configured, which leaves
+    hot-swap disabled (the app answers with a structured bad_request).
+    """
+
+    if profile_store is None:
+        return None
+
+    def factory(profile_name: str) -> RuntimeService:
+        from universal_agent.profile import ProfileConfigNotFoundError
+
+        config_path = profile_store.config_path(profile_name)
+        if not config_path.is_file():
+            raise ProfileConfigNotFoundError(f"profile config not found: {profile_name}")
+        service = _build_service_from_profile(str(config_path), extra_policies=extra_policies)
+        return _with_extra_policies(service, extra_policies)
+
+    return factory
+
+
 def _build_default_with_policies(
     domain_name: str,
     extra_policies: tuple[Policy, ...],
@@ -228,6 +255,7 @@ def main(argv: list[str] | None = None) -> int:
             ),
             evaluation_report_dir=args.evaluation_report_dir,
             profile_store=profile_store,
+            profile_service_factory=_profile_service_factory(profile_store, extra_policies),
         ),
         AgentdServerConfig(host=args.host, port=args.port),
     )

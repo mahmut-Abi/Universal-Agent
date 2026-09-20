@@ -213,7 +213,12 @@ async def test_cli_chat_rejects_unknown_profile(monkeypatch: pytest.MonkeyPatch)
 
     out = StringIO()
     err = StringIO()
-    status = await run_cli(["chat"], service=service, stdout=out, stderr=err)
+    # Explicit unknown profile is still rejected; the default now follows the
+    # service's primary profile (the old local_profile_name default broke
+    # chat whenever the user config named a profile the service didn't host).
+    status = await run_cli(
+        ["chat", "--profile", "no-such-profile"], service=service, stdout=out, stderr=err
+    )
 
     assert status == 2
     assert "unknown profile" in err.getvalue()

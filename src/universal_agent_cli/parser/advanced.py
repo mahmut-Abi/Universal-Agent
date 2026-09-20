@@ -184,7 +184,9 @@ def add_chat_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser
     from universal_agent_cli.parser import local_profile_name
 
     chat = commands.add_parser("chat", help="(advanced) Interactive conversation with the runtime")
-    chat.add_argument("--profile", default=local_profile_name())
+    # Default None → the dispatch resolves the service's primary profile, so
+    # chat works against any runtime regardless of the user config file.
+    chat.add_argument("--profile", default=None)
     chat.add_argument(
         "--show-events",
         action="store_true",
