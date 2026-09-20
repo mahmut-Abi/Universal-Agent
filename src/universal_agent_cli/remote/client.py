@@ -48,8 +48,31 @@ async def dispatch_agentd_cli(args: argparse.Namespace, out: TextIO) -> None:
         cast(str, args.api_url),
         bearer_token=_agentd_api_token(args),
         timeout_seconds=_client_timeout_seconds(args),
+        extra_headers=_profile_headers(args),
     ) as client:
         await dispatch_agentd_commands(args, out, client)
+
+
+def _profile_headers(args: argparse.Namespace) -> dict[str, str]:
+    """X-Profile routing header for hot-swapped profiles.
+
+    Sources, in order: the command's ``--profile`` flag (run/chat) and the
+    ``AGENT_PROFILE`` environment variable (works for every command, e.g.
+    ``AGENT_PROFILE=workspace agent session list``). Empty/absent means the
+    agentd startup profile, matching the server's default routing.
+    """
+
+    import os
+
+    selected = (
+        getattr(args, "profile_option", None)
+        or getattr(args, "profile", None)
+        or os.environ.get("AGENT_PROFILE", "")
+    )
+    selected = str(selected or "").strip()
+    if not selected:
+        return {}
+    return {"X-Profile": selected}
 
 
 async def dispatch_agentd_commands(
@@ -68,6 +91,11 @@ async def dispatch_agentd_commands(
         return
     if command == "tui":
         await _dispatch_remote_tui(args, client)
+        return
+    if command == "chat":
+        from universal_agent_cli.remote.chat import dispatch_remote_chat
+
+        await dispatch_remote_chat(args, out, client)
         return
     from universal_agent_cli.parser import domain_contribution_for_command
 
@@ -169,6 +197,8 @@ def command_supports_agentd(args: argparse.Namespace) -> bool:
         return cast(str, args.profile_command) in {"list", "show"}
     if command == "domain-packages":
         return cast(str, args.domain_packages_command) in {"list", "show"}
+    if command == "chat":
+        return True
     return True
 
 

@@ -70,11 +70,13 @@ class AgentdClient:
         timeout_seconds: float = 30.0,
         client: httpx.AsyncClient | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        extra_headers: Mapping[str, str] | None = None,
     ) -> None:
         self._base_url = _base_url(base_url)
         self._bearer_token = _bearer_token(bearer_token)
         parse_positive_float(timeout_seconds, "agentd client timeout_seconds")
         self._timeout_seconds = timeout_seconds
+        self._extra_headers = dict(extra_headers or {})
         self._client = client or httpx.AsyncClient(transport=transport)
         self._owns_client = client is None
 
@@ -222,7 +224,7 @@ class AgentdClient:
             raise AgentdClientError(f"agentd request failed: {exc}") from exc
 
     def _headers(self, has_body: bool) -> dict[str, str]:
-        headers = {"Accept": "application/json"}
+        headers = {"Accept": "application/json", **self._extra_headers}
         if has_body:
             headers["Content-Type"] = "application/json"
         if self._bearer_token is not None:
@@ -295,6 +297,13 @@ def _raise_http_error(response: httpx.Response) -> None:
                 message = raw_message
     if not message:
         message = response.reason_phrase
+    if response.status_code == 422 and "session is not waiting" in message:
+        # resume on a completed session is a common slip: the server rejects
+        # with the full result payload, which buries the actionable hint.
+        message = (
+            "session is not waiting — resume 仅适用于等待确认（waiting）的会话；"
+            "已完成会话继续对话请用 `agent chat` 或 Web Chat"
+        )
     prefix = f"agentd returned HTTP {response.status_code}"
     if code is not None:
         prefix += f" {code}"

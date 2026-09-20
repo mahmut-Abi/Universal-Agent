@@ -167,6 +167,7 @@ async def run_cli(
         dispatch_agentd_cli,
         dispatch_agentd_commands,
     )
+    from universal_agent_cli.remote.client import _profile_headers
 
     parser = build_parser(prog)
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -215,6 +216,7 @@ async def run_cli(
                     embedded.base_url,
                     bearer_token=_agentd_api_token(args),
                     timeout_seconds=_client_timeout_seconds(args),
+                    extra_headers=_profile_headers(args),
                 ) as embedded_client:
                     await dispatch_agentd_commands(args, out, embedded_client)
             finally:
@@ -264,6 +266,7 @@ async def run_cli(
                     embedded.base_url,
                     bearer_token=_agentd_api_token(args),
                     timeout_seconds=_client_timeout_seconds(args),
+                    extra_headers=_profile_headers(args),
                 ) as embedded_client:
                     await dispatch_agentd_commands(args, out, embedded_client)
             finally:
