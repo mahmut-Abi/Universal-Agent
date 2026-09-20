@@ -1368,9 +1368,10 @@ h3 {
 .msg.user .bubble {
   background: var(--surface);
   color: var(--fg);
-  padding: 10px 16px;
+  padding: 9px 14px;
   border-radius: 18px;
-  max-width: 85%;
+  font-size: 13.5px;
+  max-width: 72%;
 }
 .msg.agent .bubble {
   background: transparent;
@@ -1385,7 +1386,7 @@ h3 {
   padding: 1px 6px;
 }
 .msg.agent .bubble code {
-  background: var(--surface);
+  background: color-mix(in oklab, var(--border), oklch(100% 0 0) 55%);
 }
 .msg .bubble pre {
   font-family: var(--font-mono);
@@ -1400,11 +1401,11 @@ h3 {
   word-break: break-word;
 }
 .msg.user .bubble pre {
-  background: color-mix(in oklch, var(--fg) 8%, transparent);
+  background: color-mix(in oklab, var(--border), oklch(100% 0 0) 30%);
   color: var(--fg);
 }
 .msg.user .bubble code {
-  background: color-mix(in oklch, var(--fg) 7%, transparent);
+  background: color-mix(in oklab, var(--border), oklch(100% 0 0) 30%);
   border-color: transparent;
 }
 .msg.user.queued .bubble {
