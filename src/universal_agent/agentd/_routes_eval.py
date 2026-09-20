@@ -273,6 +273,27 @@ async def handle_eval_route(
     return json_response(payload)
 
 
+_ECOSYSTEM_REQUIRED_PARAMS = {
+    "registry": "manifest",
+    "install": "manifest",
+    "store": "store_dir",
+}
+
+
+def _missing_ecosystem_required(operation: str, args: argparse.Namespace) -> str | None:
+    """Reject ecosystem operations whose required paths are missing.
+
+    Without this check a missing path reaches the store/loader constructors
+    as None and surfaces as a 200-wrapped TypeError instead of a structured
+    400 naming the parameter.
+    """
+
+    param = _ECOSYSTEM_REQUIRED_PARAMS.get(operation)
+    if param is not None and not getattr(args, param, None):
+        return f"{param} is required for ecosystem {operation}"
+    return None
+
+
 def handle_ecosystem_route(
     service: RuntimeService,
     request: HttpRequest,
@@ -286,8 +307,12 @@ def handle_ecosystem_route(
         return method_not_allowed(route.allowed_methods)
 
     operation = _ECOSYSTEM_COMMAND_NAMES[route.name]
+    args = _ecosystem_namespace(operation, request.body)
+    missing = _missing_ecosystem_required(operation, args)
+    if missing is not None:
+        return bad_request(missing)
     try:
-        payload = _run_ecosystem_dispatch(_ecosystem_namespace(operation, request.body))
+        payload = _run_ecosystem_dispatch(args)
     except ValueError as exc:
         return bad_request(str(exc))
     return json_response(payload, status_code=200)
