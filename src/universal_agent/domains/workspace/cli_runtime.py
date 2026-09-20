@@ -9,24 +9,29 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from universal_agent import (
-    AgentRuntime,
-    DomainLoader,
-    InMemoryEventSink,
-    InMemoryStateStore,
-    RuntimeAPI,
-    RuntimeBuilder,
-    RuntimeService,
+from universal_agent.core import (
+    Decision,
+    DecisionContext,
+    DecisionType,
+    JsonMapping,
     immutable_json,
 )
-from universal_agent.core import JsonMapping
+from universal_agent.domain import DomainLoader, RuntimeBuilder
 from universal_agent.domains.workspace.domain import WorkspaceDomain
 from universal_agent.domains.workspace.names import (
     INSPECT_WORKSPACE_CAPABILITY,
     WORKSPACE_DOMAIN_NAME,
     WORKSPACE_DOMAIN_VERSION,
 )
+from universal_agent.eventstream import InMemoryEventSink
 from universal_agent.model import ModelAdapter
+
+# Concrete imports: the lazy `universal_agent.__getattr__` surface resolves to
+# Any under pyright, which breaks callability checks in this module.
+from universal_agent.runtime import AgentRuntime
+from universal_agent.runtime.api import RuntimeAPI
+from universal_agent.service import RuntimeService
+from universal_agent.state import InMemoryStateStore
 
 
 class WorkspaceDecisionAdapter:
@@ -35,9 +40,7 @@ class WorkspaceDecisionAdapter:
     def __init__(self) -> None:
         self._inspected = False
 
-    async def decide(self, context: object) -> object:
-        from universal_agent.core import Decision, DecisionType
-
+    async def decide(self, context: DecisionContext) -> Decision:
         if not self._inspected:
             self._inspected = True
             return Decision(

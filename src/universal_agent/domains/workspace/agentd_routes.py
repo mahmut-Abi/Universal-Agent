@@ -13,6 +13,7 @@ concrete domain, and this module never imports the agentd adapter.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import cast
 
 from universal_agent.core import (
@@ -64,9 +65,12 @@ def _criteria(body: JsonMapping) -> tuple[SuccessCriterion, ...]:
         return ()
     criteria: list[SuccessCriterion] = []
     for item in raw:
-        if not isinstance(item, dict) or not isinstance(item.get("key"), str):
+        if not isinstance(item, dict):
             continue
-        key: str = item["key"]
+        raw_key = item.get("key")
+        if not isinstance(raw_key, str):
+            continue
+        key = raw_key
         expected: JsonValue = item.get("expected", True)
         criteria.append(SuccessCriterion(key, expected))
     return tuple(criteria)
@@ -79,7 +83,7 @@ def _task_criteria(body: JsonMapping) -> tuple[str, ...]:
     return tuple(str(item) for item in raw if isinstance(item, str) and item)
 
 
-def _evidence_claims(events: tuple) -> JsonValue:
+def _evidence_claims(events: Iterable[object]) -> JsonValue:
     claims: list[dict[str, JsonValue]] = []
     for event in events:
         if getattr(event, "type", None) != "EvidenceRecorded":
