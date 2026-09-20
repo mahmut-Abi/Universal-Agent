@@ -470,8 +470,7 @@ class AgentdApp:
                 immutable_json(
                     {
                         "domain_packages": [
-                            domain_package_body(item)
-                            for item in service.domain_packages(tag=tag)
+                            domain_package_body(item) for item in service.domain_packages(tag=tag)
                         ]
                     }
                 )
@@ -525,9 +524,7 @@ class AgentdApp:
 
         if route.name == "profile":
             try:
-                return json_response(
-                    profile_body(service.profile(route.path_params["profile"]))
-                )
+                return json_response(profile_body(service.profile(route.path_params["profile"])))
             except ProfileNotFoundError as exc:
                 return not_found(str(exc))
         if route.name in {"domain_package", "domain_package_version"}:
