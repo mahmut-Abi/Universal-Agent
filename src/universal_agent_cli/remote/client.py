@@ -112,6 +112,11 @@ async def dispatch_agentd_commands(
     if command == "ecosystem":
         await _dispatch_remote_ecosystem(args, out, client)
         return
+    if command == "admin":
+        from universal_agent_cli.remote.admin import dispatch_remote_admin
+
+        await dispatch_remote_admin(args, out, client)
+        return
     if command in _REMOTE_STATIC_JSON_ROUTES:
         if command == "audit" and cast(bool, args.integrity):
             _write_json(out, await client.get_json("/v1/audit/integrity"))

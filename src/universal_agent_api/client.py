@@ -118,6 +118,29 @@ class AgentdClient:
         )
         return _response_json(response)
 
+    async def put_json(
+        self,
+        path: str,
+        *,
+        body: Mapping[str, JsonValue] | None = None,
+        query: Mapping[str, object] | None = None,
+        timeout_seconds: float | None = None,
+    ) -> JsonMapping:
+        response = await self._request(
+            "PUT", path, body=body, query=query, timeout_seconds=timeout_seconds
+        )
+        return _response_json(response)
+
+    async def delete_json(
+        self,
+        path: str,
+        *,
+        query: Mapping[str, object] | None = None,
+        timeout_seconds: float | None = None,
+    ) -> JsonMapping:
+        response = await self._request("DELETE", path, query=query, timeout_seconds=timeout_seconds)
+        return _response_json(response)
+
     async def get_text(
         self,
         path: str,

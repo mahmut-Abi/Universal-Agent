@@ -21,6 +21,7 @@ from universal_agent_cli.contributions import (
     load_cli_contributions,
 )
 from universal_agent_cli.parser.advanced import (
+    add_admin_parser,
     add_catalog_parsers,
     add_chat_parser,
     add_ecosystem_parser,
@@ -171,5 +172,6 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
     add_catalog_parsers(commands)
     add_chat_parser(commands)
     add_memory_parser(commands)
+    add_admin_parser(commands)
 
     return parser

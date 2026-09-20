@@ -30,6 +30,7 @@ from universal_agent import (
 from universal_agent.agentd import AgentdApp, AgentdAuthPolicy, AgentdHttpServer, AgentdServerConfig
 from universal_agent.core import JsonMapping, JsonValue
 from universal_agent.domains.kubernetes import KubernetesRemediationDomain
+from universal_agent.security import InMemoryCredentialStore, Role
 from universal_agent_cli import run_cli
 
 
@@ -81,6 +82,7 @@ def build_app(
     *,
     auth: AgentdAuthPolicy | None = None,
     distributed_coordinator: DistributedRuntimeCoordinator | None = None,
+    admin_store: InMemoryCredentialStore | None = None,
 ) -> tuple[AgentdApp, RemoteCliBackend]:
     backend = RemoteCliBackend()
     store = InMemoryStateStore()
@@ -102,7 +104,7 @@ def build_app(
         config=cli_profile().runtime,
         distributed_coordinator=distributed_coordinator,
     )
-    return AgentdApp(service, auth=auth), backend
+    return AgentdApp(service, auth=auth, admin_store=admin_store), backend
 
 
 @contextmanager
@@ -571,3 +573,145 @@ async def test_cli_api_url_runs_ecosystem_catalog_remotely(tmp_path: Path) -> No
     payload = read_json(output)
     assert status == 0
     assert payload["summary"]["evaluation_dataset_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Admin plane (Phase 2): `agent admin ...` against a remote agentd
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_cli_admin_provisions_tenant_user_credential_end_to_end() -> None:
+    admin_store = InMemoryCredentialStore()
+    app, _ = build_app([], admin_store=admin_store)
+
+    with running_server(app) as base_url:
+        async def admin_call(*cli_args: str) -> dict[str, Any]:
+            buffer = StringIO()
+            status = await run_cli(["--api-url", base_url, *cli_args], stdout=buffer)
+            assert status == 0, buffer.getvalue()
+            return read_json(buffer)
+
+        payload = await admin_call(
+            "admin", "tenant", "create",
+            "--tenant-id", "acme", "--name", "Acme Corp",
+        )
+        assert payload["tenant_id"] == "acme"
+
+        payload = await admin_call(
+            "admin", "user", "create",
+            "--user-id", "alice", "--email", "alice@acme.test",
+            "--display-name", "Alice",
+        )
+        assert payload["user_id"] == "alice"
+
+        payload = await admin_call(
+            "admin", "role", "set",
+            "--tenant", "acme", "--user", "alice", "--role", "read_only",
+        )
+        assert payload["role"] == "read_only"
+
+        output = StringIO()
+        status = await run_cli(
+            [
+                "--api-url", base_url,
+                "admin", "credential", "create",
+                "--user", "alice", "--tenant", "acme", "--role", "read_only",
+            ],
+            stdout=output,
+        )
+        assert status == 0, output.getvalue()
+        payload = read_json(output)
+        token = str(payload["token"])
+        assert payload["scope"] == "read_only"
+        # The token authenticates as a read-only principal...
+        principal = admin_store.resolve(token)
+        assert principal is not None
+        assert principal.role is Role.READ_ONLY
+        assert principal.is_read_only is True
+        # ...and the CLI marks that it is shown only once.
+        assert "shown only once" in str(payload.get("note"))
+        credential_id = str(payload["credential_id"])
+
+        payload = await admin_call("admin", "member", "list", "--tenant", "acme")
+        assert payload["members"] == [{"user_id": "alice", "role": "read_only"}]
+
+        credential_id_value = credential_id
+        output = StringIO()
+        status = await run_cli(
+            [
+                "--api-url", base_url,
+                "admin", "credential", "revoke", "--credential-id", credential_id_value,
+            ],
+            stdout=output,
+        )
+        assert status == 0, output.getvalue()
+        assert read_json(output)["revoked"] is True
+
+    # Revocation propagates: the issued token no longer resolves.
+    assert admin_store.resolve(token) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_cli_admin_denied_for_non_admin_principal() -> None:
+    admin_store = InMemoryCredentialStore()
+    admin_store.create_tenant(tenant_id="acme", name="Acme")
+    admin_store.create_user(user_id="alice", email="alice@acme.test")
+    operator_token, _ = admin_store.issue_credential(
+        user_id="alice", tenant_id="acme", role=Role.OPERATOR
+    )
+    app, _ = build_app(
+        [],
+        auth=AgentdAuthPolicy(credential_store=admin_store, tenant_id="acme"),
+        admin_store=admin_store,
+    )
+    error = StringIO()
+
+    with running_server(app) as base_url:
+        status = await run_cli(
+            [
+                "--api-url", base_url,
+                "--api-token=" + operator_token,
+                "admin", "tenant", "create", "--tenant-id", "beta", "--name", "Beta",
+            ],
+            stderr=error,
+        )
+
+    assert status == 2
+    payload = json.loads(error.getvalue())
+    assert payload["error"]["code"] == "forbidden"
+    assert "rbac" in payload["error"]["message"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_cli_admin_cross_tenant_principal_is_refused() -> None:
+    admin_store = InMemoryCredentialStore()
+    admin_store.create_tenant(tenant_id="acme", name="Acme")
+    admin_store.create_tenant(tenant_id="other", name="Other")
+    admin_store.create_user(user_id="mallory", email="mallory@other.test")
+    intruder_token, _ = admin_store.issue_credential(
+        user_id="mallory", tenant_id="other", role=Role.ADMIN
+    )
+    app, _ = build_app(
+        [],
+        auth=AgentdAuthPolicy(credential_store=admin_store, tenant_id="acme"),
+        admin_store=admin_store,
+    )
+    error = StringIO()
+
+    with running_server(app) as base_url:
+        status = await run_cli(
+            [
+                "--api-url", base_url,
+                "--api-token=" + intruder_token,
+                "admin", "tenant", "create", "--tenant-id", "beta", "--name", "Beta",
+            ],
+            stderr=error,
+        )
+
+    assert status == 2
+    payload = json.loads(error.getvalue())
+    assert "cross_tenant" in payload["error"]["message"]

@@ -193,6 +193,64 @@ def add_chat_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser
     )
 
 
+def add_admin_parser(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """(advanced) User / tenant / role / credential management plane.
+
+    Talks to the agentd admin API (``/v1/admin/*``); the server must have an
+    admin credential store configured. Denials surface as CLI errors.
+    """
+
+    admin = commands.add_parser(
+        "admin",
+        help="(advanced) Manage users, tenants, roles and credentials via agentd.",
+    )
+    admin_sub = admin.add_subparsers(dest="admin_command", required=True)
+
+    tenant = admin_sub.add_parser("tenant")
+    tenant_sub = tenant.add_subparsers(dest="admin_verb", required=True)
+    tenant_create = tenant_sub.add_parser("create")
+    tenant_create.add_argument("--tenant-id", required=True)
+    tenant_create.add_argument("--name", required=True)
+
+    user = admin_sub.add_parser("user")
+    user_sub = user.add_subparsers(dest="admin_verb", required=True)
+    user_create = user_sub.add_parser("create")
+    user_create.add_argument("--user-id", required=True)
+    user_create.add_argument("--email", required=True)
+    user_create.add_argument("--display-name")
+
+    role = admin_sub.add_parser("role")
+    role_sub = role.add_subparsers(dest="admin_verb", required=True)
+    role_set = role_sub.add_parser("set")
+    role_set.add_argument("--tenant", required=True)
+    role_set.add_argument("--user", required=True)
+    role_set.add_argument(
+        "--role",
+        required=True,
+        choices=("admin", "operator", "read_only"),
+    )
+
+    member = admin_sub.add_parser("member")
+    member_sub = member.add_subparsers(dest="admin_verb", required=True)
+    member_list = member_sub.add_parser("list")
+    member_list.add_argument("--tenant", required=True)
+
+    credential = admin_sub.add_parser("credential")
+    credential_sub = credential.add_subparsers(dest="admin_verb", required=True)
+    credential_create = credential_sub.add_parser("create")
+    credential_create.add_argument("--user", required=True)
+    credential_create.add_argument("--tenant", required=True)
+    credential_create.add_argument(
+        "--role",
+        required=True,
+        choices=("admin", "operator", "read_only"),
+    )
+    credential_revoke = credential_sub.add_parser("revoke")
+    credential_revoke.add_argument("--credential-id", required=True)
+
+
 def add_memory_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     memory = commands.add_parser("memory")
     memory_sub = memory.add_subparsers(dest="memory_command", required=False)
