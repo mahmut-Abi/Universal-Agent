@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 from universal_agent.agentd.app import AgentdApp
@@ -109,7 +110,7 @@ def _build_service_from_profile(
 def _profile_service_factory(
     profile_store: ProfileStore | None,
     extra_policies: tuple[Policy, ...],
-):
+) -> Callable[[str], RuntimeService] | None:
     """Lazy per-profile service builder for the hot-swap registry.
 
     Mirrors the CLI serve factory: persisted profile configs are built through
