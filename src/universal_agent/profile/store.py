@@ -26,7 +26,7 @@ from uuid import uuid4
 
 from pydantic import ValidationError as PydanticValidationError
 
-from universal_agent.core import JsonMapping, JsonValue, utc_now
+from universal_agent.core import DEFAULT_TENANT_ID, JsonMapping, JsonValue, utc_now
 from universal_agent.profile import ProfileConfig
 
 __all__ = [
@@ -144,10 +144,26 @@ class ProfileStore:
 
     # -- reads ----------------------------------------------------------
 
-    def names(self) -> tuple[str, ...]:
+    def names(self, *, tenant_id: str | None = None) -> tuple[str, ...]:
+        """List persisted profile names.
+
+        With ``tenant_id`` set, only profiles owned by that tenant are
+        returned; profiles without ownership metadata belong to the implicit
+        default tenant, so unscoped (single-tenant) deployments are unaffected.
+        """
+
         if not self._root.is_dir():
             return ()
-        return tuple(sorted(path.stem for path in self._root.glob("*.json")))
+        all_names = tuple(sorted(path.stem for path in self._root.glob("*.json")))
+        if tenant_id is None:
+            return all_names
+        filtered: list[str] = []
+        for name in all_names:
+            owner = self.load(name).get("tenant_id")
+            profile_tenant = owner if isinstance(owner, str) and owner else DEFAULT_TENANT_ID
+            if profile_tenant == tenant_id:
+                filtered.append(name)
+        return tuple(filtered)
 
     def load(self, name: str) -> dict[str, JsonValue]:
         path = self._path_for(name)

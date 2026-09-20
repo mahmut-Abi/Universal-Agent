@@ -21,7 +21,7 @@ from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
 from universal_agent.core.config_validation import parse_non_empty_string
 from universal_agent.policy import Policy
 from universal_agent.profile.store import ProfileStore
-from universal_agent.security import CredentialAdminStore, EnvSecretProvider
+from universal_agent.security import AuditRecorder, CredentialAdminStore, EnvSecretProvider
 from universal_agent.service import RuntimeService
 
 
@@ -63,6 +63,13 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help=(
             "Name of the environment variable holding the Postgres DSN "
             "for --admin-store postgres."
+        ),
+    )
+    parser.add_argument(
+        "--audit-log",
+        help=(
+            "Append-only JSONL audit sink for security events "
+            "(default: in-memory when the admin plane is on)."
         ),
     )
     parser.add_argument(
@@ -263,6 +270,22 @@ def _build_admin_store(args: argparse.Namespace) -> CredentialAdminStore | None:
     return PostgresCredentialStore(url)
 
 
+def _build_audit_recorder(args: argparse.Namespace, *, admin_store: object) -> AuditRecorder | None:
+    """Build the security audit sink: JSONL file when configured, otherwise an
+    in-memory ring when the admin plane is enabled, else disabled."""
+
+    audit_log = getattr(args, "audit_log", None)
+    if audit_log is not None:
+        from universal_agent.security import FileAuditRecorder
+
+        return FileAuditRecorder(audit_log)
+    if admin_store is not None:
+        from universal_agent.security import InMemoryAuditRecorder
+
+        return InMemoryAuditRecorder()
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_argument_parser()
     args = parser.parse_args(argv)
@@ -308,6 +331,7 @@ def main(argv: list[str] | None = None) -> int:
         service = _build_default_with_policies(args.default_domain, extra_policies)
 
     admin_store = _build_admin_store(args)
+    audit_recorder = _build_audit_recorder(args, admin_store=admin_store)
     auth_policy = AgentdAuthPolicy(
         bearer_token=auth_token,
         read_only_bearer_token=read_only_auth_token,
@@ -323,6 +347,7 @@ def main(argv: list[str] | None = None) -> int:
             profile_store=profile_store,
             profile_service_factory=_profile_service_factory(profile_store, extra_policies),
             admin_store=admin_store,
+            audit_recorder=audit_recorder,
         ),
         AgentdServerConfig(host=args.host, port=args.port),
     )

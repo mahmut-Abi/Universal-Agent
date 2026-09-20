@@ -28,7 +28,13 @@ from universal_agent.core.config_validation import (
     parse_optional_string,
     pydantic_error_message,
 )
-from universal_agent.security import AuthorizationEvaluator, CredentialStore, RequestPrincipal
+from universal_agent.security import (
+    AuditEvent,
+    AuditRecorder,
+    AuthorizationEvaluator,
+    CredentialStore,
+    RequestPrincipal,
+)
 
 
 def _empty_json() -> JsonMapping:
@@ -234,11 +240,25 @@ def _authenticate(
     path: str,
     *,
     method: str,
+    audit: AuditRecorder | None = None,
 ) -> AuthOutcome:
+    def _record_denial(reason: str, actor: str = "anonymous") -> None:
+        if audit is not None:
+            audit.record(
+                AuditEvent(
+                    event="denied",
+                    actor=actor,
+                    reason=reason,
+                    resource=path,
+                    details={"method": method},
+                )
+            )
+
     if not policy.enabled or path in policy.public_paths:
         return AuthOutcome()
     token = _bearer_token(_authorization_header(request.headers))
     if token is None:
+        _record_denial("unauthorized")
         return AuthOutcome(response=unauthorized())
     # Principal-aware path: resolve the bearer token to a RequestPrincipal and
     # enforce role/scope + cross-tenant denial (RBAC). Kept on the legacy
@@ -246,8 +266,10 @@ def _authenticate(
     if policy.credential_store is not None:
         principal = policy.credential_store.resolve(token)
         if principal is None:
+            _record_denial("unauthorized")
             return AuthOutcome(response=unauthorized())
         if policy.tenant_id is not None and principal.tenant_id != policy.tenant_id:
+            _record_denial("cross_tenant", actor=principal.subject)
             return AuthOutcome(
                 response=forbidden(
                     f"cross_tenant: subject {principal.subject} is not a member of "
@@ -256,6 +278,7 @@ def _authenticate(
             )
         decision = _EVALUATOR.authorize_request(principal, method=method)
         if not decision.allowed:
+            _record_denial("rbac", actor=principal.subject)
             return AuthOutcome(response=forbidden(f"rbac: {decision.message}"))
         return AuthOutcome(principal=principal)
     if _token_matches(token, policy.bearer_token):
@@ -264,6 +287,7 @@ def _authenticate(
         if method == "GET":
             return AuthOutcome()
         return AuthOutcome(response=forbidden("insufficient bearer token scope"))
+    _record_denial("unauthorized")
     return AuthOutcome(response=unauthorized())
 
 

@@ -55,6 +55,11 @@ class _ProfileConfigPayload(ConfigPayload):
     domain: dict[str, PydanticJsonValue] = Field(default_factory=dict)
     runtime: dict[str, PydanticJsonValue] = Field(default_factory=dict)
     domains: list[dict[str, PydanticJsonValue]] | None = None
+    # Optional ownership metadata (Phase 3): which tenant/user a profile
+    # belongs to. Unset means the implicit default tenant (single-tenant
+    # deployments are unaffected).
+    tenant_id: str | None = None
+    owner_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +77,8 @@ class AgentProfile:
     domain: DomainConfig
     runtime: RuntimeConfig
     domains: tuple[DomainConfig, ...] = ()
+    tenant_id: str | None = None
+    owner_id: str | None = None
 
     def configured_domains(self) -> tuple[DomainConfig, ...]:
         return self.domains or (self.domain,)
@@ -85,6 +92,8 @@ class ProfileConfig:
     domain: DomainConfig = field(default_factory=lambda: _domain_config_type()())
     runtime: RuntimeConfig = field(default_factory=lambda: _runtime_config_type()())
     domains: tuple[DomainConfig, ...] = ()
+    tenant_id: str | None = None
+    owner_id: str | None = None
 
     @classmethod
     def from_json_file(cls, path: str | Path) -> ProfileConfig:
@@ -108,6 +117,8 @@ class ProfileConfig:
             domain=domain,
             runtime=runtime_config.from_mapping(json_mapping(payload.runtime)),
             domains=domains,
+            tenant_id=payload.tenant_id,
+            owner_id=payload.owner_id,
         )
         config.validate()
         return config
@@ -136,6 +147,8 @@ class ProfileConfig:
             self.domain,
             self.runtime,
             self.configured_domains(),
+            self.tenant_id,
+            self.owner_id,
         )
 
     def configured_domains(self) -> tuple[DomainConfig, ...]:

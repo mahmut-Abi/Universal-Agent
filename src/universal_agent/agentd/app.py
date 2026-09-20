@@ -77,7 +77,7 @@ from universal_agent.host_contracts import DomainRouteContribution
 from universal_agent.memory import MemoryKind
 from universal_agent.profile import ProfileConfigNotFoundError, ProfileNotFoundError
 from universal_agent.profile.store import ProfileStore
-from universal_agent.security import CredentialAdminStore
+from universal_agent.security import AuditRecorder, CredentialAdminStore
 from universal_agent.service import RuntimeService
 
 _STATIC_GET_ROUTE_DEFINITIONS = (
@@ -195,6 +195,7 @@ class AgentdApp:
         profile_store: ProfileStore | None = None,
         profile_service_factory: Callable[[str], RuntimeService] | None = None,
         admin_store: CredentialAdminStore | None = None,
+        audit_recorder: AuditRecorder | None = None,
     ) -> None:
         self._default_bundle = _ServiceBundle.build(service)
         self._default_profile_names = frozenset(item.name for item in service.profiles())
@@ -208,6 +209,7 @@ class AgentdApp:
         )
         self._profile_store = profile_store
         self._admin_store = admin_store
+        self._audit_recorder = audit_recorder
 
     @property
     def service(self) -> RuntimeService:
@@ -305,12 +307,15 @@ class AgentdApp:
         method = request.method.upper()
         path = _normalize_path(request.path)
 
-        auth = _authenticate(self._auth, request, path, method=method)
+        auth = _authenticate(
+            self._auth, request, path, method=method, audit=self._audit_recorder
+        )
         if auth.response is not None:
             return auth.response
 
         admin_response = handle_admin_route(
-            self._admin_store, auth.principal, request, method, path
+            self._admin_store, auth.principal, request, method, path,
+            audit=self._audit_recorder,
         )
         if admin_response is not None:
             return admin_response

@@ -240,3 +240,83 @@ def test_admin_validation_errors(body: dict[str, JsonValue], status: int) -> Non
     )
     assert response is not None
     assert response.status_code == status
+
+
+# -- audit trail (Phase 3) ---------------------------------------------------
+
+
+def test_admin_mutations_are_audited() -> None:
+    from universal_agent.security import InMemoryAuditRecorder
+
+    store = _provisioned_store()
+    audit = InMemoryAuditRecorder()
+    admin = _principal(Role.ADMIN)
+
+    handle_admin_route(
+        store, admin,
+        _request("POST", "/v1/admin/tenants", {"tenant_id": "beta", "name": "Beta"}),
+        "POST", "/v1/admin/tenants",
+        audit=audit,
+    )
+    handle_admin_route(
+        store, admin,
+        _request("PUT", "/v1/admin/tenants/acme/members/alice", {"role": "operator"}),
+        "PUT", "/v1/admin/tenants/acme/members/alice",
+        audit=audit,
+    )
+    handle_admin_route(
+        store, admin,
+        _request("GET", "/v1/admin/tenants/acme/members"),
+        "GET", "/v1/admin/tenants/acme/members",
+        audit=audit,
+    )  # reads are not audited
+
+    events = audit.events()
+    assert [(e.event, e.actor) for e in events] == [
+        ("tenant_created", "boss"),
+        ("membership_changed", "boss"),
+    ]
+    assert events[0].tenant_id == "beta"
+
+
+def test_admin_audit_route_lists_events() -> None:
+    from universal_agent.security import InMemoryAuditRecorder
+
+    store = _provisioned_store()
+    audit = InMemoryAuditRecorder()
+    admin = _principal(Role.ADMIN)
+
+    handle_admin_route(
+        store, admin,
+        _request("POST", "/v1/admin/tenants", {"tenant_id": "beta", "name": "Beta"}),
+        "POST", "/v1/admin/tenants",
+        audit=audit,
+    )
+    listed = handle_admin_route(
+        store, admin,
+        _request("GET", "/v1/admin/audit"),
+        "GET", "/v1/admin/audit",
+        audit=audit,
+    )
+    assert listed is not None
+    events = listed.body["events"]
+    assert isinstance(events, list) and len(events) == 1
+    first = events[0]
+    assert isinstance(first, dict) and first["event"] == "tenant_created"
+
+
+def test_bootstrap_mutations_record_anonymous_actor() -> None:
+    from universal_agent.security import InMemoryAuditRecorder
+
+    store = _provisioned_store()
+    audit = InMemoryAuditRecorder()
+    handle_admin_route(
+        store, None,
+        _request("POST", "/v1/admin/users", {"user_id": "bob", "email": "b@b.test"}),
+        "POST", "/v1/admin/users",
+        audit=audit,
+    )
+    events = audit.events()
+    assert len(events) == 1
+    assert events[0].event == "user_created"
+    assert events[0].actor == "bootstrap"

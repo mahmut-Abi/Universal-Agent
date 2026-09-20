@@ -33,6 +33,8 @@ from universal_agent.agentd.routing import (
 )
 from universal_agent.core import JsonValue, immutable_json
 from universal_agent.security import (
+    AuditEvent,
+    AuditRecorder,
     CredentialAdminStore,
     PrincipalAlreadyExistsError,
     PrincipalNotFoundError,
@@ -59,6 +61,7 @@ _ADMIN_ROUTE_DEFINITIONS = (
         "/v1/admin/credentials/{credential}",
         ("DELETE",),
     ),
+    AgentdRouteDefinition("admin_audit", "/v1/admin/audit", ("GET",)),
 )
 
 _ADMIN_ROUTES = AgentdRouteMatcher(_ADMIN_ROUTE_DEFINITIONS)
@@ -112,6 +115,8 @@ def handle_admin_route(
     request: HttpRequest,
     method: str,
     path: str,
+    *,
+    audit: AuditRecorder | None = None,
 ) -> HttpResponse | None:
     """Dispatch /v1/admin/* routes; fall through when the plane is absent."""
 
@@ -126,8 +131,11 @@ def handle_admin_route(
     if gate is not None:
         return gate
 
+    actor = principal.subject if principal is not None else "bootstrap"
     try:
-        return _dispatch(admin_store, match.name, request, match.path_params)
+        response = _dispatch(
+            admin_store, match.name, request, match.path_params, audit_recorder=audit
+        )
     except PrincipalAlreadyExistsError as exc:
         return json_response(
             immutable_json({"error": {"code": "already_exists", "message": str(exc)}}),
@@ -140,6 +148,50 @@ def handle_admin_route(
             immutable_json({"error": {"code": "bad_request", "message": str(exc)}}),
             status_code=400,
         )
+    if audit is not None and match.name != "admin_audit":
+        _record_mutation(audit, actor, match.name, request, response, match.path_params)
+    return response
+
+
+def _optional_str(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+_AUDIT_EVENT_NAMES = {
+    "admin_tenant_create": "tenant_created",
+    "admin_user_create": "user_created",
+    "admin_member_set_role": "membership_changed",
+    "admin_credential_create": "credential_issued",
+    "admin_credential_revoke": "credential_revoked",
+}
+
+
+def _record_mutation(
+    audit: AuditRecorder,
+    actor: str,
+    route: str,
+    request: HttpRequest,
+    response: HttpResponse,
+    params: object,
+) -> None:
+    event_name = _AUDIT_EVENT_NAMES.get(route)
+    if event_name is None:
+        return
+    path_params: dict[str, str] = {}
+    if isinstance(params, dict):
+        path_params = {str(k): str(v) for k, v in params.items()}
+    details: dict[str, JsonValue] = {str(k): v for k, v in dict(request.body).items()}
+    details.update({f"param_{k}": v for k, v in path_params.items()})
+    details["status_code"] = response.status_code
+    audit.record(
+        AuditEvent(
+            event=event_name,
+            actor=actor,
+            tenant_id=_optional_str(details.get("tenant_id") or path_params.get("tenant")),
+            resource=_optional_str(path_params.get("credential") or details.get("user_id")),
+            details=details,
+        )
+    )
 
 
 def _dispatch(
@@ -147,10 +199,22 @@ def _dispatch(
     route: str,
     request: HttpRequest,
     params: object,
+    *,
+    audit_recorder: AuditRecorder | None = None,
 ) -> HttpResponse:
     path_params: dict[str, str] = {}
     if isinstance(params, dict):
         path_params = {str(k): str(v) for k, v in params.items()}
+
+    if route == "admin_audit":
+        if audit_recorder is None:
+            return json_response(immutable_json({"events": []}))
+        limit_raw = request.body.get("limit") if isinstance(request.body, Mapping) else None
+        limit = int(limit_raw) if isinstance(limit_raw, (int, float)) and limit_raw >= 0 else None
+        events = audit_recorder.events(limit=limit)
+        return json_response(
+            immutable_json({"events": [event.to_json() for event in events]})
+        )
 
     if route == "admin_tenant_create":
         tenant_id = _required_string(request.body, "tenant_id")

@@ -1,3 +1,9 @@
+from universal_agent.security.audit import (
+    AuditEvent,
+    AuditRecorder,
+    FileAuditRecorder,
+    InMemoryAuditRecorder,
+)
 from universal_agent.security.authorization import (
     AuthorizationDecision,
     AuthorizationEvaluator,
@@ -51,13 +57,17 @@ from universal_agent.security.secrets import (
 )
 
 __all__ = [
+    "AuditEvent",
+    "AuditRecorder",
     "AuthorizationDecision",
     "AuthorizationEvaluator",
     "Credential",
     "CredentialAdminStore",
     "CredentialStore",
     "EnvSecretProvider",
+    "FileAuditRecorder",
     "FileSecretProvider",
+    "InMemoryAuditRecorder",
     "InMemoryCredentialStore",
     "OidcClaimsPrincipalMapper",
     "PrincipalAlreadyExistsError",

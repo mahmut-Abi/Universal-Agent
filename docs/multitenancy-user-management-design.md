@@ -341,6 +341,7 @@ Decision(想执行 capability C)
   - Web UI 的用户管理视图走同一套 RBAC，无旁路。
 
 ### Phase 3 —— 归属贯通 + 审计加固（可选）
+> **✅ 已实现（2026-09-20）**：审计事件化（`security/audit.py`：`AuditEvent` + `AuditRecorder` Protocol + `InMemoryAuditRecorder`/`FileAuditRecorder` JSONL sink；agentd 记录 `denied(rbac|cross_tenant|unauthorized)` 与全部 admin 变更 `tenant_created`/`user_created`/`membership_changed`/`credential_issued`/`credential_revoked`，暴露 `GET /v1/admin/audit`；`agentd serve --audit-log <path>`）；Profile 归属（`ProfileConfig`/`AgentProfile` 可选 `tenant_id`/`owner_id`，`ProfileStore.names(tenant_id=)` 按租户过滤，无归属元数据的 profile 归隐式默认租户，单租户部署不受影响）。防篡改/可导出的审计存储后端仍 Deferred。
 - 目标：Profile 归属 `owner_id`/`tenant_id`、每个 tenant 独立 profile 列表；审计事件完整。
 - 改动：`profile/config.py`、`profile/store.py`。
 - 验收：每个用户在租户内只见自己的 profile；`ua_audit` 覆盖 §10 全事件。

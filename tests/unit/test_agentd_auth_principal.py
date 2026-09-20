@@ -116,3 +116,44 @@ def test_policy_enabled_with_credential_store_alone() -> None:
     store = _make_store()
     policy = AgentdAuthPolicy(credential_store=store)
     assert policy.enabled is True
+
+
+# -- audit trail (Phase 3) ---------------------------------------------------
+
+
+def test_auth_denials_are_recorded_with_reasons() -> None:
+    from universal_agent.security import InMemoryAuditRecorder
+
+    recorder = InMemoryAuditRecorder()
+    store = _make_store()
+    token, _ = store.issue(user_id="alice", tenant_id="acme", role=sec.Role.READ_ONLY)
+    policy = _policy(store, tenant_id="acme")
+
+    # rbac denial
+    _authenticate(policy, _req("POST", f"Bearer {token}"), "/v1/s", method="POST", audit=recorder)
+    # cross-tenant denial
+    intruder, _ = store.issue(user_id="mallory", tenant_id="other")
+    _authenticate(policy, _req("GET", f"Bearer {intruder}"), "/v1/s", method="GET", audit=recorder)
+    # unauthorized
+    _authenticate(policy, _req("GET", "Bearer bogus"), "/v1/s", method="GET", audit=recorder)
+
+    denials = recorder.events()
+    assert [(e.event, e.reason) for e in denials] == [
+        ("denied", "rbac"),
+        ("denied", "cross_tenant"),
+        ("denied", "unauthorized"),
+    ]
+    assert denials[0].actor == "alice"
+    assert denials[1].actor == "mallory"
+
+
+def test_allowed_requests_do_not_record_denials() -> None:
+    from universal_agent.security import InMemoryAuditRecorder
+
+    recorder = InMemoryAuditRecorder()
+    store = _make_store()
+    token, _ = store.issue(user_id="alice", tenant_id="acme", role=sec.Role.OPERATOR)
+    policy = _policy(store, tenant_id="acme")
+
+    _authenticate(policy, _req("POST", f"Bearer {token}"), "/v1/s", method="POST", audit=recorder)
+    assert recorder.events() == ()
