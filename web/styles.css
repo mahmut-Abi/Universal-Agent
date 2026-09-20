@@ -499,7 +499,7 @@ h3 {
 }
 .btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: oklch(100% 0 0);
 }
 .btn-primary:hover {
   background: var(--accent-press);
@@ -609,7 +609,7 @@ h3 {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #fff;
+  background: oklch(100% 0 0);
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
   transition: left 0.18s ease;
 }
@@ -933,7 +933,7 @@ h3 {
   display: grid;
   place-items: center;
   font-size: 11px;
-  color: #fff;
+  color: oklch(100% 0 0);
   margin-top: 1px;
 }
 .ck-ok {
