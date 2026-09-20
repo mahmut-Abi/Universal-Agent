@@ -450,18 +450,18 @@ export function sessionTranscript(events, firstMessage, sid) {
         break;
       case "GoalCompleted":
         if (typeof d.summary === "string" && d.summary.trim()) {
-          turn.push(`<div class="turn-ok">✅ 本轮已完成</div>${mdLite(d.summary)}`);
+          turn.push(`<div class="turn-ok">本轮已完成</div>${mdLite(d.summary)}`);
         } else {
-          turn.push('<div class="turn-ok">✅ 本轮已完成</div>');
+          turn.push('<div class="turn-ok">本轮已完成</div>');
         }
         break;
       case "GoalFailed":
         turn.push(
-          `<div class="turn-fail">❌ ${escapeHtml(d.reason || d.error_code || "执行失败")}</div>`,
+          `<div class="turn-fail">${escapeHtml(d.reason || d.error_code || "执行失败")}</div>`,
         );
         break;
       case "GoalCancelled":
-        turn.push('<div class="turn-fail">⏹ 已取消</div>');
+        turn.push('<div class="turn-fail">已取消</div>');
         break;
       case "RecoveryExhausted":
         turn.push(
@@ -806,28 +806,88 @@ export function cancelSession(sid) {
 /* ── Profile 配置写入（422 校验错误会带 errors，抛给 toast） ── */
 /* ── Profile 配置写入（支持 per-profile 模型：runtime.model + runtime.secrets）──
    新建/修改后的 Profile 需重启/重载 agentd 才进入运行时 read model。 */
-function buildRuntimeModel(model) {
+function buildRuntimeModel(model, advanced) {
   const runtime = {};
-  if (!model || model.provider === "scripted") return runtime;
-  if (!model.api_key_env) {
-    throw new Error("非 scripted provider 需要填写 API Key 环境变量名");
+  if (model && model.provider !== "scripted") {
+    if (!model.api_key_env) {
+      throw new Error("非 scripted provider 需要填写 API Key 环境变量名");
+    }
+    runtime.secrets = {
+      [model.api_key_env]: {
+        source: "env",
+        key: model.api_key_env,
+        // Fail fast at service build when the key is missing, instead of
+        // mid-run (matches `agent init` semantics).
+        required: model.secret_required !== false,
+      },
+    };
+    const m = {
+      provider: model.provider,
+      name: model.name || "default",
+      timeout_seconds: Number(model.timeout_seconds) || 30,
+      api_key_secret: model.api_key_env,
+    };
+    if (model.endpoint) m.endpoint = model.endpoint;
+    if (model.response_format) m.response_format = model.response_format;
+    const headers = parseHeaderLines(model.headers);
+    if (headers) m.headers = headers;
+    runtime.model = m;
   }
-  runtime.secrets = {
-    [model.api_key_env]: {
-      source: "env",
-      key: model.api_key_env,
-      required: false,
-    },
-  };
-  const m = {
-    provider: model.provider,
-    name: model.name || "default",
-    timeout_seconds: Number(model.timeout_seconds) || 30,
-    api_key_secret: model.api_key_env,
-  };
-  if (model.endpoint) m.endpoint = model.endpoint;
-  runtime.model = m;
+  if (!advanced) return runtime;
+  if (advanced.store_backend && advanced.store_backend !== "memory") {
+    runtime.store = {
+      backend: advanced.store_backend,
+      path: advanced.store_path || defaultStorePath(advanced.store_backend),
+    };
+  }
+  for (const [key, backendField, pathField] of [
+    ["distributed_queue", "dist_queue_backend", "dist_queue_path"],
+    ["distributed_locks", "dist_locks_backend", "dist_locks_path"],
+    ["distributed_workers", "dist_workers_backend", "dist_workers_path"],
+  ]) {
+    const backend = advanced[backendField];
+    if (backend && backend !== "memory") {
+      runtime[key] = {
+        backend,
+        path: advanced[pathField] || defaultStorePath(backend),
+      };
+    }
+  }
+  const limits = {};
+  for (const k of [
+    "max_iterations",
+    "max_recovery_steps",
+    "max_total_cost_micros",
+    "max_total_tokens",
+  ]) {
+    const v = advanced[k];
+    if (v !== undefined && v !== null && String(v) !== "") limits[k] = Number(v);
+  }
+  if (Object.keys(limits).length) runtime.limits = limits;
   return runtime;
+}
+
+function defaultStorePath(backend) {
+  return `/data/${backend === "sqlite" ? "state.db" : "runtime"}`;
+}
+
+function parseHeaderLines(text) {
+  if (!text || !String(text).trim()) return null;
+  const headers = {};
+  for (const line of String(text).split("\n")) {
+    const idx = line.indexOf(":");
+    if (idx <= 0) continue;
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    if (key && value) headers[key] = value;
+  }
+  return Object.keys(headers).length ? headers : null;
+}
+
+function parseDomainSettings(text) {
+  if (!text || !String(text).trim()) return {};
+  const parsed = JSON.parse(text); // caller maps SyntaxError to a form error
+  return typeof parsed === "object" && parsed !== null ? parsed : {};
 }
 
 export function profileCreate(payload) {
@@ -837,7 +897,10 @@ export function profileCreate(payload) {
     description: payload.desc,
     domains: payload.domains,
   };
-  const runtime = buildRuntimeModel(payload.model);
+  const runtime = buildRuntimeModel(payload.model, payload.advanced);
+  if (payload.domainSettingsJson) {
+    body.settings = parseDomainSettings(payload.domainSettingsJson);
+  }
   if (Object.keys(runtime).length) body.runtime = runtime;
   return apiPost("/v1/profiles", body);
 }
@@ -846,8 +909,13 @@ export function profilePatch(name, payload) {
     description: payload.desc,
     domains: payload.domains,
   };
-  const runtime = buildRuntimeModel(payload.model);
+  // Model and advanced runtime sections participate in edits as well —
+  // previously model changes were silently dropped on PATCH.
+  const runtime = buildRuntimeModel(payload.model, payload.advanced);
   if (Object.keys(runtime).length) body.runtime = runtime;
+  if (payload.domainSettingsJson) {
+    body.settings = parseDomainSettings(payload.domainSettingsJson);
+  }
   return apiPatch(`/v1/profiles/${encodeURIComponent(name)}`, body);
 }
 export function profileRemove(name) {

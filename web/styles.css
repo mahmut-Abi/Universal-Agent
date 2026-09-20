@@ -1356,6 +1356,7 @@ h3 {
 .msgs-col {
   width: 100%;
   max-width: 760px;
+  min-width: 0;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -1374,6 +1375,8 @@ h3 {
   font-size: 14.5px;
   line-height: 1.6;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .msg.user {
   align-self: flex-end;
@@ -2001,8 +2004,10 @@ h3 {
 
 /* 聊天转录（事件重建）附加样式 */
 .tool-out{margin:6px 0 0;padding:10px 14px;background:var(--fg);color:oklch(100% 0 0);border:0;border-radius:8px;font-family:var(--font-mono);font-size:12px;line-height:1.55;white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto}
-.turn-ok{color:var(--ok);font-size:13px;margin-top:2px}
-.turn-fail{color:var(--danger-text,var(--danger));font-size:13px;margin-top:2px}
+.turn-ok{color:var(--ok);font-size:13px;margin-top:2px;display:flex;align-items:center;gap:6px}
+.turn-ok::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--ok);flex-shrink:0}
+.turn-fail{color:var(--danger-text,var(--danger));font-size:13px;margin-top:2px;display:flex;align-items:center;gap:6px}
+.turn-fail::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--danger);flex-shrink:0}
 .turn-wait{color:var(--warn);font-size:13px}
 .turn-wait-link{cursor:pointer;border-radius:7px;padding:4px 8px;margin:-4px -8px;width:fit-content;transition:background var(--motion-fast) var(--ease-standard)}
 .turn-wait-link:hover{background:color-mix(in oklab, var(--warn), transparent 88%);text-decoration:underline}
