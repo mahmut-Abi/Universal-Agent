@@ -18,6 +18,11 @@ services:
       AGENT_DOMAIN_BACKEND: ${AGENT_DOMAIN_BACKEND:-fake}
       AGENT_KUBERNETES_API_SERVER: ${AGENT_KUBERNETES_API_SERVER:-}
       AGENT_KUBERNETES_API_NAMESPACE: ${AGENT_KUBERNETES_API_NAMESPACE:-default}
+      # Workspace domain backend: sandboxed directory mounted into the
+      # container. Note: profile.json is generated on first boot only —
+      # delete the config volume (or /config/profile.json) when switching
+      # AGENT_DOMAIN_BACKEND so agent init regenerates the profile.
+      AGENT_WORKSPACE_PATH: ${AGENT_WORKSPACE_PATH:-/data/workspace}
       AGENTD_PG_URL: ${AGENTD_PG_URL:-}
       # First-boot store selection (profile.json is generated once):
       # memory (default) | file | sqlite; use AGENTD_STORE_PATH to place the

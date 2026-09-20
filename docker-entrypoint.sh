@@ -2,16 +2,23 @@
 set -e
 
 # Domain configuration via environment variables (UA-CS-008):
-#   AGENT_DOMAIN_BACKEND: fake (default) | kubectl | kubernetes_api
+#   AGENT_DOMAIN_BACKEND: fake (default) | kubectl | kubernetes_api | workspace
 #   AGENT_KUBERNETES_API_SERVER: kubernetes API server URL (for kubernetes_api)
 #   AGENT_KUBERNETES_API_NAMESPACE: namespace (default: default)
 #   AGENT_KUBERNETES_API_TOKEN_SECRET: secret name for the API token
+#   AGENT_WORKSPACE_PATH: sandboxed directory for the workspace domain
+#                         (default: /data/workspace; mount a volume there)
 
 INIT_ARGS=""
 BACKEND="${AGENT_DOMAIN_BACKEND:-fake}"
 
 if [ "$BACKEND" != "fake" ]; then
   INIT_ARGS="$INIT_ARGS --domain-backend $BACKEND"
+  if [ "$BACKEND" = "workspace" ]; then
+    WORKSPACE_DIR="${AGENT_WORKSPACE_PATH:-/data/workspace}"
+    mkdir -p "$WORKSPACE_DIR"
+    INIT_ARGS="$INIT_ARGS --workspace-path $WORKSPACE_DIR"
+  fi
   if [ -n "$AGENT_KUBERNETES_API_SERVER" ]; then
     INIT_ARGS="$INIT_ARGS --kubernetes-api-server $AGENT_KUBERNETES_API_SERVER"
   fi
