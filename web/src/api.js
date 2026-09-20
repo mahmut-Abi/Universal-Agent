@@ -13,9 +13,42 @@
 
 export const API_BASE = (window.UA_API_BASE || "/api").replace(/\/+$/, "");
 
+/* ── Profile 热切换（X-Profile 路由）──
+ * activeProfile 为空 → 请求走 agentd 启动 profile；非空 → 全部请求携带
+ * X-Profile header，目录/会话数据都反映所选 profile 的域组合。
+ * hotSwapAvailable 在服务端明确拒绝（400 hot-swap not configured）后置灰。
+ */
+import { ref } from "vue";
+
+export const activeProfile = ref("");
+export const hotSwapAvailable = ref(true);
+export const PROFILE_HEADER = "X-Profile";
+
+function _profileErrorNote(status, detail) {
+  // Structured hints for the hot-swap specific failures so the UI can react
+  // (TopBar disables the selector; ConfigView surfaces the 409 reason).
+  if (status === 400 && /hot-swap is not configured/i.test(detail || "")) {
+    hotSwapAvailable.value = false;
+    return "；服务端未启用 profile 热切换";
+  }
+  if (status === 409 && /profile_in_use/i.test(detail || "")) {
+    return "；该 profile 有运行中/待确认会话，先处理会话再修改";
+  }
+  if (status === 404 && /profile config not found/i.test(detail || "")) {
+    if (activeProfile.value) {
+      const stale = activeProfile.value;
+      activeProfile.value = ""; // 已选 profile 配置被删：回落默认并提示
+      return `；profile “${stale}” 的配置已不存在，已回落默认 profile`;
+    }
+  }
+  return "";
+}
+
 async function api(path, opts = {}) {
+  const headers = { "Content-Type": "application/json", ...opts.headers };
+  if (activeProfile.value) headers[PROFILE_HEADER] = activeProfile.value;
   const res = await fetch(API_BASE + path, {
-    headers: { "Content-Type": "application/json" },
+    headers,
     ...opts,
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   });
@@ -30,13 +63,15 @@ async function api(path, opts = {}) {
       body?.error?.message ||
       body?.message ||
       (body?.errors ? JSON.stringify(body.errors) : "");
+    const hint = _profileErrorNote(res.status, `${body?.error?.code || ""} ${detail}`);
     // body/status attached so callers can recover partially-succeeded
     // requests (e.g. POST /v1/sessions → 422 with a created session_id).
     const err = new Error(
-      `${opts.method || "GET"} ${path} → HTTP ${res.status}${detail ? " · " + detail : ""}`,
+      `${opts.method || "GET"} ${path} → HTTP ${res.status}${detail ? " · " + detail : ""}${hint}`,
     );
     err.status = res.status;
     err.body = body;
+    if (body?.error?.code) err.code = body.error.code;
     throw err;
   }
   if (res.status === 204) return null;

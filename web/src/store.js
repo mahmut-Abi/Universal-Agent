@@ -38,10 +38,14 @@ import {
   profileRemove,
   putConfig,
   runEval,
+  activeProfile,
+  hotSwapAvailable,
 } from "./api.js";
 
 /* ── 全局状态（由真实 agentd API 填充） ── */
 export const m = reactive(createState());
+// Profile 热切换状态：api.js 持有，store 转发导出供组件使用
+export { activeProfile, hotSwapAvailable };
 export const view = ref("overview");
 export const OPS_VIEWS = {
   eval: "评估工作台",
@@ -109,6 +113,21 @@ export const VIEW_LOADERS = {
   chat: () => loadSessions(m),
 };
 export const loadedViews = new Set();
+
+/* ── Profile 热切换 ──
+ * 切换后清空已加载视图缓存并重载当前视图，目录/会话数据随即反映
+ * 所选 profile 的域组合（agentd 按 X-Profile header 路由）。
+ */
+export function setActiveProfile(name) {
+  const next = String(name || "");
+  if (next === activeProfile.value) return;
+  activeProfile.value = next;
+  loadedViews.clear();
+  if (VIEW_LOADERS[view.value]) {
+    VIEW_LOADERS[view.value]().catch((e) => toast("切换 profile 后加载失败：" + e.message));
+  }
+}
+
 export function switchView(name) {
   view.value = name;
   opsOpen.value = false;
