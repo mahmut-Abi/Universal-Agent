@@ -38,7 +38,14 @@ echo "[entrypoint] init args: $INIT_ARGS"
 
 if [ ! -f /config/profile.json ]; then
   echo "[entrypoint] creating profile config..."
-  agent init $INIT_ARGS
+  # First boot: persistence is selected with AGENTD_STORE_BACKEND
+  # (memory|file|sqlite; postgres via the compose postgres profile +
+  # AGENTD_PG_URL) and AGENTD_STORE_PATH; the profile is written once —
+  # edit /config/profile.json to change it later.
+  agent init \
+    --store-backend "${AGENTD_STORE_BACKEND:-memory}" \
+    --store-path "${AGENTD_STORE_PATH:-/data/state.db}" \
+    $INIT_ARGS
 else
   echo "[entrypoint] using existing profile config"
 fi

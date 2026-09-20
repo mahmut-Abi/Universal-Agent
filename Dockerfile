@@ -51,6 +51,9 @@ RUN agent version >/tmp/agent-version.json \
 RUN mkdir -p /data /config \
     && chown -R agent:agent /app /data /config
 
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 USER agent
 
 EXPOSE 8765
@@ -60,9 +63,11 @@ STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import json, os, urllib.request; response = urllib.request.urlopen(os.environ.get('AGENTD_HEALTH_URL', 'http://127.0.0.1:8765/health'), timeout=3); data = json.load(response); raise SystemExit(0 if data.get('status') == 'ok' else 1)"
 
-ENTRYPOINT ["sh", "-c"]
-# First boot: generate /config/profile.json via agent init. Persistence is
-# selected with AGENTD_STORE_BACKEND (memory|file|sqlite; postgres via the
-# postgres profile + AGENTD_PG_URL) and AGENTD_STORE_PATH; the generated
-# profile is only written once, edit /config/profile.json to change it later.
-CMD ["test -f /config/profile.json || agent init --store-backend ${AGENTD_STORE_BACKEND:-memory} --store-path ${AGENTD_STORE_PATH:-/data/state.db}; exec agent --profile-config /config/profile.json serve --host 0.0.0.0 --port 8765 --auth-token-env AGENTD_AUTH_TOKEN"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+# First boot: the entrypoint script generates /config/profile.json via agent
+# init, honoring AGENT_DOMAIN_BACKEND (fake|kubectl|kubernetes_api|workspace)
+# and the domain-specific environment variables documented in the script.
+# Persistence is selected with AGENTD_STORE_BACKEND (memory|file|sqlite;
+# postgres via the postgres profile + AGENTD_PG_URL) and AGENTD_STORE_PATH;
+# the generated profile is written only once, edit /config/profile.json to
+# change it later.
