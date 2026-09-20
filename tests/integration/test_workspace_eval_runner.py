@@ -19,12 +19,11 @@ from universal_agent import (
     Decision,
     DecisionType,
     DomainLoader,
-    Goal,
     RuntimeBuilder,
     ScriptedModelAdapter,
     immutable_json,
 )
-from universal_agent.core import ExecutionStatus, Goal
+from universal_agent.core import ExecutionStatus
 from universal_agent.domains.workspace import (
     CREATE_FILE_CAPABILITY,
     INSPECT_WORKSPACE_CAPABILITY,
