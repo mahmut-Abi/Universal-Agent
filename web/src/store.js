@@ -40,6 +40,8 @@ import {
   runEval,
   activeProfile,
   hotSwapAvailable,
+  openEventStream,
+  loadSessionWorld,
 } from "./api.js";
 
 /* ── 全局状态（由真实 agentd API 填充） ── */
@@ -113,6 +115,53 @@ export const VIEW_LOADERS = {
   chat: () => loadSessions(m),
 };
 export const loadedViews = new Set();
+
+/* ── 实时事件流（SSE live tail）── */
+export const liveTailOn = ref(false);
+export const liveTailState = ref("idle"); // idle | live | reconnecting
+export const liveEvents = ref([]); // 规范化后的事件（最新在底部，上限 50 条）
+let liveTailClose = null;
+let liveTailSessionId = "";
+
+export function toggleLiveTail() {
+  if (liveTailOn.value) {
+    stopLiveTail();
+    return;
+  }
+  const sid = activeChatId.value || (currentSession.value && currentSession.value.id);
+  if (!sid) {
+    toast("没有可跟踪的会话：先发送消息或选择一个会话");
+    return;
+  }
+  startLiveTail(sid);
+}
+
+export function startLiveTail(sessionId) {
+  stopLiveTail();
+  liveTailSessionId = sessionId;
+  liveEvents.value = [];
+  liveTailClose = openEventStream(
+    sessionId,
+    (event) => {
+      liveEvents.value.push(event);
+      if (liveEvents.value.length > 50) liveEvents.value.shift();
+      // 目标完成/失败时刷新会话列表状态
+      if (event.raw && /GoalCompleted|GoalFailed/.test(String(event.raw.type || ""))) {
+        refreshChats();
+        loadSessions(m).catch(() => {});
+      }
+    },
+    { onState: (s) => (liveTailState.value = s) },
+  );
+  liveTailOn.value = true;
+}
+
+export function stopLiveTail() {
+  if (liveTailClose) liveTailClose();
+  liveTailClose = null;
+  liveTailOn.value = false;
+  liveTailState.value = "idle";
+}
 
 /* ── Profile 热切换 ──
  * 切换后清空已加载视图缓存并重载当前视图，目录/会话数据随即反映

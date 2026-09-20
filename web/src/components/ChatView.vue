@@ -1,6 +1,6 @@
 <script setup>
 // biome-ignore-all lint/correctness/noUnusedImports: shared store bindings
-import { m, view, OPS_VIEWS, opsOpen, apiHost, fatal, toastMsg, toastTimer, toast, MAIN_VIEWS, VIEW_LOADERS, loadedViews, switchView, reload, opsBtnLabel, statusCls, statusLabel, metricCards, sessionsError, loadingSessions, loadSessions, activity, doRefresh, currentSession, expanded, openSession, confirmPending, cancelSession, lifecycle, sessionSummary, chatFilter, activeChatId, chatSessions, chatEventCache, CHAT_PROFILES, activeChat, chatInput, chatQueue, pendingUserMsg, sending, chatMsgsEl, chatInputEl, filteredChats, scrollChat, newChat, selectChat, refreshChats, autoGrow, sendChat, apiGetEvents, onChatKeydown, onMsgsClick, profileModal, pmForm, MODEL_PROVIDERS, pmError, openProfileModal, saveProfile, delModal, profileWriteError, delDetail, askDelete, confirmDelete, domainModal, domainDetail, openDomainDetail, domainUsedBy, policies, togglePolicy, toggleDomain, evalByDataset, pct, memSearch, memList, addMemory, delMemory, costMax, openTraceSession, installPkg, auditQ, auditAct, auditActs, auditFiltered, topo, closeModal, onOverlayClick, pushFatal, initDashboard, API_BASE, createState, normStatus, STATUS_MAP, loadOverview, apiLoadSessions, loadMetrics, loadSessionDetail, loadConfig, loadEval, loadCluster, loadMemory, memoryAdd, memoryRemove, loadCost, loadLogs, loadK8sOps, loadEcosystem, loadAudit, loadMulti, loadHealth, loadModelInfo, loadRuntimeConfig, createSession, sendMessage, pauseSession, resumeSession, apiCancelSession, profileCreate, profilePatch, profileRemove, putConfig, runEval } from '../store.js'
+import { m, view, OPS_VIEWS, opsOpen, apiHost, fatal, toastMsg, toastTimer, toast, MAIN_VIEWS, VIEW_LOADERS, loadedViews, switchView, reload, opsBtnLabel, statusCls, statusLabel, metricCards, sessionsError, loadingSessions, loadSessions, activity, doRefresh, currentSession, expanded, openSession, confirmPending, cancelSession, lifecycle, sessionSummary, chatFilter, activeChatId, chatSessions, chatEventCache, CHAT_PROFILES, activeChat, chatInput, chatQueue, pendingUserMsg, sending, chatMsgsEl, chatInputEl, filteredChats, scrollChat, newChat, selectChat, refreshChats, autoGrow, sendChat, apiGetEvents, onChatKeydown, onMsgsClick, profileModal, pmForm, MODEL_PROVIDERS, pmError, openProfileModal, saveProfile, delModal, profileWriteError, delDetail, askDelete, confirmDelete, domainModal, domainDetail, openDomainDetail, domainUsedBy, policies, togglePolicy, toggleDomain, evalByDataset, pct, memSearch, memList, addMemory, delMemory, costMax, openTraceSession, installPkg, auditQ, auditAct, auditActs, auditFiltered, topo, closeModal, onOverlayClick, pushFatal, initDashboard, API_BASE, createState, normStatus, STATUS_MAP, loadOverview, apiLoadSessions, loadMetrics, loadSessionDetail, loadConfig, loadEval, loadCluster, loadMemory, memoryAdd, memoryRemove, loadCost, loadLogs, loadK8sOps, loadEcosystem, loadAudit, loadMulti, loadHealth, loadModelInfo, loadRuntimeConfig, createSession, sendMessage, pauseSession, resumeSession, apiCancelSession, profileCreate, profilePatch, profileRemove, putConfig, runEval, liveTailOn, liveTailState, liveEvents, toggleLiveTail } from '../store.js'
 
 // biome-ignore-all lint/style/noNonNullAssertion: generated
 defineOptions({ name: 'ChatView' })
@@ -15,6 +15,9 @@ defineOptions({ name: 'ChatView' })
               <div style="display:flex;gap:6px">
                 <button class="btn btn-secondary btn-sm" id="btn-refresh-chats" aria-label="刷新会话列表" title="刷新会话列表" @click="refreshChats">↻</button>
                 <button class="btn btn-primary btn-sm" id="btn-new-chat" data-od-id="btn-new-chat" @click="newChat">＋ 新建对话</button>
+                <button class="btn btn-secondary btn-sm" id="btn-live-tail" :class="{ active: liveTailOn }"
+                  :aria-pressed="String(liveTailOn)" aria-label="实时事件流"
+                  title="实时事件流：跟踪当前会话的运行事件（SSE）" @click="toggleLiveTail">⚡ 实时</button>
               </div>
               <div class="ch-filter" id="chat-profile-filter" role="group" aria-label="按 Profile 过滤">
                 <button v-for="p in CHAT_PROFILES" :key="p" :class="{ active: chatFilter === p }" @click="chatFilter = p">{{ p }}</button>
@@ -31,6 +34,22 @@ defineOptions({ name: 'ChatView' })
           </aside>
           <div class="chat-main" data-od-id="chat-main">
             <div class="chat-msgs" id="chat-msgs" ref="chatMsgsEl" data-od-id="chat-msgs" aria-live="polite" @click="onMsgsClick">
+              <!-- 实时事件流（SSE live tail） -->
+              <div v-if="liveTailOn" class="live-tail" data-od-id="live-tail">
+                <div class="lt-head">
+                  <span class="lt-dot" :class="liveTailState"></span>
+                  <span>实时事件 · {{ liveTailState === 'live' ? '已连接' : liveTailState === 'reconnecting' ? '重连中…' : '空闲' }}</span>
+                  <button class="btn btn-secondary btn-sm" @click="toggleLiveTail">关闭</button>
+                </div>
+                <div class="lt-list">
+                  <div v-for="(ev, li) in liveEvents" :key="li" class="lt-ev">
+                    <span class="meta">{{ ev.at }}</span>
+                    <span class="tl-type">{{ ev.t }}</span>
+                    <span>{{ ev.text }}</span>
+                  </div>
+                  <div v-if="!liveEvents.length" class="empty">等待事件…</div>
+                </div>
+              </div>
               <div v-if="!activeChat && !pendingUserMsg && !chatQueue.length" class="chat-empty" data-od-id="chat-empty">
                 <div class="ring" aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
@@ -78,3 +97,55 @@ defineOptions({ name: 'ChatView' })
 
       <!-- 视图一：总览 -->
 </template>
+
+<style scoped>
+.live-tail {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background: var(--bg);
+  max-height: 220px;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.live-tail .lt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.live-tail .lt-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted, #999);
+}
+.live-tail .lt-dot.live {
+  background: #22c55e;
+  box-shadow: 0 0 4px #22c55e;
+}
+.live-tail .lt-dot.reconnecting {
+  background: #f59e0b;
+}
+.live-tail .lt-head .btn {
+  margin-left: auto;
+}
+.live-tail .lt-list {
+  overflow-y: auto;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.live-tail .lt-ev {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  align-items: baseline;
+}
+.live-tail .lt-ev .tl-type {
+  font-weight: 600;
+  min-width: 140px;
+}
+</style>

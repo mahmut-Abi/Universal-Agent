@@ -107,6 +107,7 @@ export function createState() {
     runtimeConfig: { available: false, model: null, limits: null },
     activity: { values: [0, 0, 0, 0, 0, 0, 0], days: [], max: 0 },
     health: { checks: [], state: [] },
+    world: { facts: [], entities: [], relations: [] },
   };
 }
 
@@ -224,7 +225,68 @@ export async function loadOverview(state) {
   ]);
 }
 
+/* ── SSE 实时事件流 ──
+ * 连接 /v1/sessions/{id}/events/stream（服务端 watch_events 真流式）。
+ * EventSource 断线自动重连；按 event_id 去重防止重连后重放。
+ */
+export function openEventStream(sessionId, onEvent, { onState } = {}) {
+  const seen = new Set();
+  const source = new EventSource(
+    `${API_BASE}/v1/sessions/${encodeURIComponent(sessionId)}/events/stream`,
+  );
+  source.onopen = () => onState && onState("live");
+  source.onerror = () => onState && onState("reconnecting");
+  source.onmessage = (msg) => {
+    let e;
+    try {
+      e = JSON.parse(msg.data);
+    } catch {
+      return; // heartbeat/comment frames carry no data
+    }
+    const id = e.event_id || `${e.type}:${e.occurred_at}`;
+    if (seen.has(id)) return;
+    seen.add(id);
+    if (seen.size > 500) seen.delete(seen.values().next().value);
+    onEvent({
+      t: normEventType(e.type),
+      at: fmtTime(e.occurred_at),
+      text: eventText(e),
+      d: eventDetail(e),
+      raw: e,
+    });
+  };
+  return () => source.close();
+}
+
+/* ── 世界模型 ── */
+export async function loadSessionWorld(state, sid) {
+  const w = await apiGet(`/v1/sessions/${encodeURIComponent(sid)}/world`).catch(() => ({}));
+  state.world = {
+    facts: pick(w, "facts").map((f) => ({
+      key: `${f.subject} · ${f.claim}`,
+      subject: f.subject,
+      claim: f.claim,
+      value: JSON.stringify(f.value),
+      confidence: f.confidence,
+      observedAt: fmtTime(f.observed_at),
+      conflicting:
+        (w.fact_histories || []).some(
+          (h) => h.subject === f.subject && h.claim === f.claim && h.conflicting,
+        ) || false,
+    })),
+    entities: pick(w, "entities").map((e) => ({
+      id: e.entity_id,
+      kind: e.kind,
+      attributes: JSON.stringify(e.attributes || {}),
+    })),
+    relations: pick(w, "relations").map((r) => ({
+      text: `${r.source} -[${r.relation}]-> ${r.target}`,
+    })),
+  };
+}
+
 export async function loadSessionDetail(state, sid) {
+  void loadSessionWorld(state, sid);
   const [ev, evd] = await Promise.all([
     apiGet(`/v1/sessions/${sid}/events`).catch(() => ({})),
     apiGet(`/v1/sessions/${sid}/evidence`).catch(() => ({})),

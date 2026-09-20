@@ -81,6 +81,40 @@ const confirmRemember = ref(false)
                 </div>
               </div>
             </div>
+            <div class="card" data-od-id="world-card">
+              <div class="card-head">
+                <h3>世界模型</h3>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <span class="tag" title="World Model：由证据推导的当前事实、实体与关系">facts {{ m.world.facts.length }} · entities {{ m.world.entities.length }} · relations {{ m.world.relations.length }}</span>
+                  <button class="btn btn-secondary btn-sm" aria-label="刷新世界模型" @click="reload('session')">↻</button>
+                </div>
+              </div>
+              <div id="world-view">
+                <div v-if="!m.world.facts.length && !m.world.entities.length" class="empty">暂无世界模型事实（Agent 执行动作后由证据推导）</div>
+                <template v-if="m.world.facts.length">
+                  <div class="w-sec">事实</div>
+                  <div v-for="f in m.world.facts" :key="f.key" class="w-row">
+                    <span class="num w-subject">{{ f.subject }}</span>
+                    <span>{{ f.claim }}</span>
+                    <span class="num">= {{ f.value }}</span>
+                    <span class="meta">conf {{ f.confidence }}</span>
+                    <span v-if="f.conflicting" class="w-conflict" title="证据历史中存在相互矛盾的取值">⚠ 冲突</span>
+                  </div>
+                </template>
+                <template v-if="m.world.entities.length">
+                  <div class="w-sec">实体</div>
+                  <div v-for="e in m.world.entities" :key="e.id" class="w-row">
+                    <span class="num w-subject">{{ e.id }}</span>
+                    <span class="tag">{{ e.kind }}</span>
+                    <span class="meta num">{{ e.attributes }}</span>
+                  </div>
+                </template>
+                <template v-if="m.world.relations.length">
+                  <div class="w-sec">关系</div>
+                  <div v-for="(r, ri) in m.world.relations" :key="ri" class="w-row num">{{ r.text }}</div>
+                </template>
+              </div>
+            </div>
             <div class="card" data-od-id="session-controls-card">
               <h3 style="margin-bottom:12px">生命周期控制</h3>
               <div class="row" style="display:flex;gap:10px;flex-wrap:wrap">
@@ -95,3 +129,32 @@ const confirmRemember = ref(false)
 
       <!-- 视图三：配置与运行时 -->
 </template>
+
+<style scoped>
+.w-sec {
+  font-weight: 600;
+  font-size: 12px;
+  margin: 10px 0 4px;
+  color: var(--muted, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.w-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 0;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.w-subject {
+  font-weight: 600;
+}
+.w-conflict {
+  color: #f59e0b;
+  font-size: 12px;
+  border: 1px solid #f59e0b;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+</style>
