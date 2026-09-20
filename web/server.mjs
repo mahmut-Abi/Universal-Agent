@@ -105,7 +105,12 @@ async function proxy(req, res, url) {
   for (const [key, value] of Object.entries(req.headers)) {
     if (!HOP_HEADERS.has(key.toLowerCase())) headers[key] = value;
   }
-  if (AGENTD_TOKEN) headers.authorization = `Bearer ${AGENTD_TOKEN}`;
+  if (AGENTD_TOKEN && !headers.authorization) {
+    // Inject the server-side token only when the browser did not send its
+    // own: per-user credentials (admin plane / RBAC) must reach agentd
+    // verbatim, while deployments without browser-side auth still work.
+    headers.authorization = `Bearer ${AGENTD_TOKEN}`;
+  }
 
   let body;
   if (req.method !== "GET" && req.method !== "HEAD") {

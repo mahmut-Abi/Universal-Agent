@@ -1,5 +1,5 @@
 <script setup>
-// 用户与租户管理视图（Phase 2/3 admin plane）。
+// 用户与租户管理视图（admin plane 基础功能全量）。
 // 只消费 agentd 的 /v1/admin/* HTTP API —— 与 CLI / Web 共用同一套
 // RBAC 门禁，无旁路。admin plane 未启用时给出可操作的提示。
 import { onMounted, ref } from 'vue'
@@ -9,8 +9,14 @@ import { toast } from '../store.js'
 const ROLES = ['admin', 'operator', 'read_only']
 
 const auditEvents = ref([])
-const auditLoaded = ref(false)
 const planeError = ref('')
+const users = ref([])
+const tenants = ref([])
+const credentials = ref([])
+const members = ref([])
+const membersTenant = ref('')
+const credFilterUser = ref('')
+const credFilterTenant = ref('')
 
 // tenant form
 const tenantId = ref('')
@@ -29,9 +35,6 @@ const credTenant = ref('')
 const credRole = ref('operator')
 const issuedToken = ref('')
 const issuedId = ref('')
-// members
-const members = ref([])
-const membersTenant = ref('')
 
 function recordError(e) {
   planeError.value = e.message || String(e)
@@ -42,11 +45,46 @@ async function loadAudit() {
   try {
     const d = await apiGet('/v1/admin/audit')
     auditEvents.value = Array.isArray(d.events) ? d.events : []
-    auditLoaded.value = true
     planeError.value = ''
   } catch (e) {
     recordError(e)
   }
+}
+
+async function loadUsers() {
+  try {
+    const d = await apiGet('/v1/admin/users')
+    users.value = Array.isArray(d.users) ? d.users : []
+  } catch (e) {
+    recordError(e)
+  }
+}
+
+async function loadTenants() {
+  try {
+    const d = await apiGet('/v1/admin/tenants')
+    tenants.value = Array.isArray(d.tenants) ? d.tenants : []
+  } catch (e) {
+    recordError(e)
+  }
+}
+
+async function loadCredentials() {
+  try {
+    const params = new URLSearchParams()
+    if (credFilterUser.value) params.set('user_id', credFilterUser.value)
+    if (credFilterTenant.value) params.set('tenant_id', credFilterTenant.value)
+    const qs = params.toString() ? `?${params.toString()}` : ''
+    const d = await apiGet(`/v1/admin/credentials${qs}`)
+    credentials.value = Array.isArray(d.credentials) ? d.credentials : []
+  } catch (e) {
+    recordError(e)
+  }
+}
+
+async function refreshAll() {
+  await Promise.all([loadAudit(), loadUsers(), loadTenants(), loadCredentials()])
+  if (membersTenant.value) await listMembers()
 }
 
 async function createTenant() {
@@ -55,7 +93,7 @@ async function createTenant() {
     toast(`租户 ${tenantId.value} 已创建`)
     tenantId.value = ''
     tenantName.value = ''
-    loadAudit()
+    await refreshAll()
   } catch (e) {
     recordError(e)
   }
@@ -70,7 +108,7 @@ async function createUser() {
     userId.value = ''
     userEmail.value = ''
     userDisplay.value = ''
-    loadAudit()
+    await refreshAll()
   } catch (e) {
     recordError(e)
   }
@@ -81,8 +119,30 @@ async function setRole() {
     const path = `/v1/admin/tenants/${encodeURIComponent(roleTenant.value)}/members/${encodeURIComponent(roleUser.value)}`
     await apiPut(path, { role: roleValue.value })
     toast(`${roleUser.value} 在 ${roleTenant.value} 的角色已设为 ${roleValue.value}`)
-    loadAudit()
+    await refreshAll()
     if (membersTenant.value === roleTenant.value) await listMembers()
+  } catch (e) {
+    recordError(e)
+  }
+}
+
+async function setUserStatus(user) {
+  const next = user.status === 'active' ? 'disabled' : 'active'
+  try {
+    await apiPut(`/v1/admin/users/${encodeURIComponent(user.user_id)}/status`, { status: next })
+    toast(`用户 ${user.user_id} 已${next === 'disabled' ? '禁用' : '启用'}`)
+    await refreshAll()
+  } catch (e) {
+    recordError(e)
+  }
+}
+
+async function setTenantStatus(tenant) {
+  const next = tenant.status === 'active' ? 'disabled' : 'active'
+  try {
+    await apiPut(`/v1/admin/tenants/${encodeURIComponent(tenant.tenant_id)}/status`, { status: next })
+    toast(`租户 ${tenant.tenant_id} 已${next === 'disabled' ? '禁用' : '启用'}`)
+    await refreshAll()
   } catch (e) {
     recordError(e)
   }
@@ -94,6 +154,19 @@ async function listMembers() {
     members.value = Array.isArray(d.members) ? d.members : []
   } catch (e) {
     members.value = []
+    recordError(e)
+  }
+}
+
+async function removeMember(mem) {
+  try {
+    await apiDelete(
+      `/v1/admin/tenants/${encodeURIComponent(membersTenant.value)}/members/${encodeURIComponent(mem.user_id)}`
+    )
+    toast(`${mem.user_id} 已移出 ${membersTenant.value}，其凭证随即失效`)
+    await listMembers()
+    await refreshAll()
+  } catch (e) {
     recordError(e)
   }
 }
@@ -110,7 +183,7 @@ async function issueCredential() {
     issuedToken.value = d.token || ''
     issuedId.value = d.credential_id || ''
     toast('凭证已签发：token 仅显示一次，请立即保存')
-    loadAudit()
+    await refreshAll()
   } catch (e) {
     recordError(e)
   }
@@ -120,13 +193,13 @@ async function revokeCredential(id) {
   try {
     await apiDelete(`/v1/admin/credentials/${encodeURIComponent(id)}`)
     toast(`凭证 ${id} 已吊销`)
-    loadAudit()
+    await refreshAll()
   } catch (e) {
     recordError(e)
   }
 }
 
-onMounted(loadAudit)
+onMounted(refreshAll)
 </script>
 
 <template>
@@ -207,6 +280,47 @@ onMounted(loadAudit)
       </div>
     </div>
 
+    <!-- 用户列表 -->
+    <div class="card" style="margin-top: 12px">
+      <div class="card-head">
+        <span class="mt">用户（{{ users.length }}）</span>
+        <button class="btn btn-sm" @click="loadUsers">刷新</button>
+      </div>
+      <div v-if="!users.length" class="empty"><div class="empty-title">暂无用户</div></div>
+      <div v-for="u in users" :key="u.user_id" class="mem-row">
+        <div class="mt">{{ u.user_id }}
+          <div class="mm">
+            <span>{{ u.email }}</span>
+            <span v-if="u.display_name">{{ u.display_name }}</span>
+            <span :style="u.status !== 'active' ? 'color: var(--danger, #e5484d)' : ''">{{ u.status }}</span>
+          </div>
+        </div>
+        <button class="btn btn-sm" :class="{ 'btn-danger': u.status === 'active' }" @click="setUserStatus(u)">
+          {{ u.status === 'active' ? '禁用' : '启用' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 租户列表 -->
+    <div class="card" style="margin-top: 12px">
+      <div class="card-head">
+        <span class="mt">租户（{{ tenants.length }}）</span>
+        <button class="btn btn-sm" @click="loadTenants">刷新</button>
+      </div>
+      <div v-if="!tenants.length" class="empty"><div class="empty-title">暂无租户</div></div>
+      <div v-for="t in tenants" :key="t.tenant_id" class="mem-row">
+        <div class="mt">{{ t.tenant_id }}
+          <div class="mm">
+            <span>{{ t.name }}</span>
+            <span :style="t.status !== 'active' ? 'color: var(--danger, #e5484d)' : ''">{{ t.status }}</span>
+          </div>
+        </div>
+        <button class="btn btn-sm" :class="{ 'btn-danger': t.status === 'active' }" @click="setTenantStatus(t)">
+          {{ t.status === 'active' ? '禁用' : '启用' }}
+        </button>
+      </div>
+    </div>
+
     <!-- 成员列表 -->
     <div class="card" style="margin-top: 12px">
       <div class="card-head">
@@ -222,6 +336,33 @@ onMounted(loadAudit)
         <div class="mt">{{ mem.user_id }}
           <div class="mm"><span>{{ mem.role }}</span></div>
         </div>
+        <button class="btn btn-danger btn-sm" @click="removeMember(mem)">移出</button>
+      </div>
+    </div>
+
+    <!-- 凭证列表 -->
+    <div class="card" style="margin-top: 12px">
+      <div class="card-head">
+        <span class="mt">凭证（{{ credentials.length }}）</span>
+        <div style="display: flex; gap: 8px">
+          <input v-model="credFilterUser" placeholder="按用户过滤" aria-label="凭证用户过滤"
+            style="padding: 6px 10px; font: inherit; font-size: 13px; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius)">
+          <input v-model="credFilterTenant" placeholder="按租户过滤" aria-label="凭证租户过滤"
+            style="padding: 6px 10px; font: inherit; font-size: 13px; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius)">
+          <button class="btn btn-sm" @click="loadCredentials">查询</button>
+        </div>
+      </div>
+      <div v-if="!credentials.length" class="empty"><div class="empty-title">暂无凭证</div></div>
+      <div v-for="c in credentials" :key="c.credential_id" class="mem-row">
+        <div class="mt">{{ c.credential_id }}
+          <div class="mm">
+            <span>{{ c.user_id }}</span>
+            <span>{{ c.tenant_id }}</span>
+            <span>{{ c.scope }}</span>
+            <span :style="c.revoked ? 'color: var(--danger, #e5484d)' : ''">{{ c.revoked ? '已吊销' : '有效' }}</span>
+          </div>
+        </div>
+        <button v-if="!c.revoked" class="btn btn-danger btn-sm" @click="revokeCredential(c.credential_id)">吊销</button>
       </div>
     </div>
 
@@ -231,7 +372,7 @@ onMounted(loadAudit)
         <span class="mt">安全审计</span>
         <button class="btn btn-sm" @click="loadAudit">刷新</button>
       </div>
-      <div v-if="auditLoaded && !auditEvents.length" class="empty">
+      <div v-if="!auditEvents.length" class="empty">
         <div class="empty-title">暂无审计事件</div>管理面变更与认证拒绝会记录在这里
       </div>
       <div v-for="(e, i) in auditEvents" :key="i" class="mem-row">
