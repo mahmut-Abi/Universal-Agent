@@ -493,13 +493,30 @@ export const pmForm = reactive({
   name: "",
   desc: "",
   domains: [],
+  domainSettingsJson: "",
   model: {
     provider: "scripted",
     name: "",
     endpoint: "",
     api_key_env: "",
     timeout_seconds: 30,
+    response_format: "",
+    headers: "",
+    secret_required: true,
   },
+  advanced: false,
+  store_backend: "memory",
+  store_path: "",
+  dist_queue_backend: "memory",
+  dist_queue_path: "",
+  dist_locks_backend: "memory",
+  dist_locks_path: "",
+  dist_workers_backend: "memory",
+  dist_workers_path: "",
+  max_iterations: "",
+  max_recovery_steps: "",
+  max_total_cost_micros: "",
+  max_total_tokens: "",
 });
 export const MODEL_PROVIDERS = [
   "scripted",
@@ -524,6 +541,11 @@ export function openProfileModal(name) {
         endpoint: existing.endpoint || "",
         api_key_env: existing.api_key_secret || "",
         timeout_seconds: existing.timeout_seconds || 30,
+        response_format: existing.response_format || "",
+        headers: existing.headers
+          ? Object.entries(existing.headers).map(([k, v]) => `${k}: ${v}`).join("\n")
+          : "",
+        secret_required: true,
       }
     : {
         provider: "scripted",
@@ -531,7 +553,29 @@ export function openProfileModal(name) {
         endpoint: "",
         api_key_env: "",
         timeout_seconds: 30,
+        response_format: "",
+        headers: "",
+        secret_required: true,
       };
+  const rt = p && p.raw && p.raw.runtime ? p.raw.runtime : {};
+  pmForm.advanced = Boolean(rt.store || rt.distributed_queue || rt.distributed_locks || rt.distributed_workers || (rt.limits && Object.keys(rt.limits).length));
+  pmForm.store_backend = (rt.store && rt.store.backend) || "memory";
+  pmForm.store_path = (rt.store && rt.store.path) || "";
+  pmForm.dist_queue_backend = (rt.distributed_queue && rt.distributed_queue.backend) || "memory";
+  pmForm.dist_queue_path = (rt.distributed_queue && rt.distributed_queue.path) || "";
+  pmForm.dist_locks_backend = (rt.distributed_locks && rt.distributed_locks.backend) || "memory";
+  pmForm.dist_locks_path = (rt.distributed_locks && rt.distributed_locks.path) || "";
+  pmForm.dist_workers_backend = (rt.distributed_workers && rt.distributed_workers.backend) || "memory";
+  pmForm.dist_workers_path = (rt.distributed_workers && rt.distributed_workers.path) || "";
+  const lim = rt.limits || {};
+  pmForm.max_iterations = lim.max_iterations ?? "";
+  pmForm.max_recovery_steps = lim.max_recovery_steps ?? "";
+  pmForm.max_total_cost_micros = lim.max_total_cost_micros ?? "";
+  pmForm.max_total_tokens = lim.max_total_tokens ?? "";
+  const settings = (p && p.raw && p.raw.settings) || {};
+  pmForm.domainSettingsJson = Object.keys(settings).length
+    ? JSON.stringify(settings, null, 2)
+    : "";
   pmError.value = "";
   profileModal.open = true;
 }
@@ -559,11 +603,21 @@ export function saveProfile() {
     pmError.value = "非 scripted Provider 需要填写 API Key 环境变量名";
     return;
   }
+  if (pmForm.domainSettingsJson.trim()) {
+    try {
+      JSON.parse(pmForm.domainSettingsJson);
+    } catch {
+      pmError.value = "域设置必须是合法 JSON 对象";
+      return;
+    }
+  }
   const payload = {
     name,
     domains: domainObjs,
     desc: pmForm.desc.trim() || "自定义 Profile · " + pmForm.domains.join("/"),
     model: { ...pmForm.model },
+    advanced: pmForm.advanced ? pmForm : null,
+    domainSettingsJson: pmForm.domainSettingsJson.trim(),
   };
   const op = profileModal.editing
     ? profilePatch(profileModal.editing, payload)

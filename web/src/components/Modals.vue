@@ -22,6 +22,11 @@ defineOptions({ name: 'Modals' })
             <input v-model="pmForm.model.endpoint" class="input" placeholder="Endpoint（可选，如 https://api.openai.com/v1）" style="margin-bottom:6px" id="pm-model-endpoint">
             <input v-model="pmForm.model.api_key_env" class="input" placeholder="API Key 环境变量名，如 OPENAI_API_KEY" style="margin-bottom:6px" id="pm-model-key">
             <input v-model.number="pmForm.model.timeout_seconds" class="input" type="number" min="5" max="600" placeholder="超时秒数（默认 30）" id="pm-model-timeout">
+            <input v-model="pmForm.model.response_format" class="input" placeholder="response_format（可选，如 json_object）" id="pm-model-rf">
+            <textarea v-model="pmForm.model.headers" class="input" rows="2" placeholder='自定义 Header（每行一条，格式 Key: Value）' id="pm-model-headers"></textarea>
+            <label class="check-row" style="cursor:pointer">
+              <input type="checkbox" v-model="pmForm.model.secret_required"> <span class="c-name">API Key 必需（缺失时构建即失败，推荐）</span>
+            </label>
           </template>
           <div class="hint">写入 profile 的 runtime.model + runtime.secrets；scripted 表示使用部署默认模型。需重启/重载 agentd 生效。</div>
         </div>
@@ -31,6 +36,46 @@ defineOptions({ name: 'Modals' })
               <input type="checkbox" :value="d.name" v-model="pmForm.domains"> <span class="c-name">{{ d.name }}</span>
             </label>
           </div></div>
+        <div class="field">
+          <label class="check-row" style="cursor:pointer">
+            <input type="checkbox" v-model="pmForm.advanced"> <span class="c-name">高级设置（存储 / 分布式 / 预算 / 域设置）</span>
+          </label>
+          <div v-if="pmForm.advanced" class="adv-grid" id="pm-advanced" style="border:1px solid var(--border);border-radius:8px;padding:10px;display:grid;gap:10px">
+            <div>
+              <div class="adv-title">存储</div>
+              <select v-model="pmForm.store_backend" class="input" id="pm-store-backend" style="margin-bottom:4px">
+                <option value="memory">memory（会话不持久）</option>
+                <option value="file">file</option>
+                <option value="sqlite">sqlite（推荐）</option>
+              </select>
+              <input v-if="pmForm.store_backend !== 'memory'" v-model="pmForm.store_path" class="input" placeholder="路径（默认 /data/state.db）" id="pm-store-path">
+            </div>
+            <div>
+              <div class="adv-title">分布式运行时</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+                <select v-model="pmForm.dist_queue_backend" class="input" id="pm-dq-backend"><option value="memory">queue: memory</option><option value="file">queue: file</option><option value="sqlite">queue: sqlite</option></select>
+                <input v-if="pmForm.dist_queue_backend !== 'memory'" v-model="pmForm.dist_queue_path" class="input" placeholder="queue 路径" id="pm-dq-path">
+                <select v-model="pmForm.dist_locks_backend" class="input" id="pm-dl-backend"><option value="memory">locks: memory</option><option value="file">locks: file</option><option value="sqlite">locks: sqlite</option></select>
+                <input v-if="pmForm.dist_locks_backend !== 'memory'" v-model="pmForm.dist_locks_path" class="input" placeholder="locks 路径" id="pm-dl-path">
+                <select v-model="pmForm.dist_workers_backend" class="input" id="pm-dw-backend"><option value="memory">workers: memory</option><option value="file">workers: file</option><option value="sqlite">workers: sqlite</option></select>
+                <input v-if="pmForm.dist_workers_backend !== 'memory'" v-model="pmForm.dist_workers_path" class="input" placeholder="workers 路径" id="pm-dw-path">
+              </div>
+            </div>
+            <div>
+              <div class="adv-title">预算限制（留空 = 默认）</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+                <input v-model="pmForm.max_iterations" class="input" type="number" min="1" placeholder="最大迭代（默认 20）" id="pm-max-iter">
+                <input v-model="pmForm.max_recovery_steps" class="input" type="number" min="1" placeholder="最大恢复步数（默认 8）" id="pm-max-rec">
+                <input v-model="pmForm.max_total_cost_micros" class="input" type="number" min="0" placeholder="成本上限（micros）" id="pm-max-cost">
+                <input v-model="pmForm.max_total_tokens" class="input" type="number" min="0" placeholder="Token 上限" id="pm-max-tokens">
+              </div>
+            </div>
+            <div>
+              <div class="adv-title">域设置（JSON，如 {"workspace_path": "/data/workspace"}）</div>
+              <textarea v-model="pmForm.domainSettingsJson" class="input" rows="3" placeholder="{}" id="pm-domain-settings"></textarea>
+            </div>
+          </div>
+        </div>
         <div class="field"><label for="pf-desc">描述</label>
           <textarea id="pf-desc" v-model="pmForm.desc" rows="2" placeholder="Profile 用途说明"></textarea></div>
       </div>
@@ -80,3 +125,13 @@ defineOptions({ name: 'Modals' })
       </div>
     </AppModal>
 </template>
+<style scoped>
+.adv-title {
+  font-weight: 600;
+  font-size: 11.5px;
+  color: var(--muted, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+</style>
