@@ -68,9 +68,7 @@ def _finish() -> Decision:
 def build_service(workspace_root: str) -> RuntimeService:
     from pathlib import Path
 
-    components = RuntimeBuilder().build(
-        DomainLoader().load(WorkspaceDomain(Path(workspace_root)))
-    )
+    components = RuntimeBuilder().build(DomainLoader().load(WorkspaceDomain(Path(workspace_root))))
     store = InMemoryStateStore()
     events = InMemoryEventSink()
     runtime = AgentRuntime(

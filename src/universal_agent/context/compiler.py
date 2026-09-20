@@ -186,9 +186,7 @@ class BasicContextCompiler:
         return self._budget_fragments(fragments, state_tokens=state_tokens)
 
     @staticmethod
-    def _conflict_note(
-        fact: WorldFact, conflicting_keys: set[tuple[str, str]]
-    ) -> str:
+    def _conflict_note(fact: WorldFact, conflicting_keys: set[tuple[str, str]]) -> str:
         """Mark facts whose evidence history disagrees on the value.
 
         The snapshot reports the confidence-arbitrated current value only; the
