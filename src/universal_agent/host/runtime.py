@@ -465,9 +465,7 @@ def _postgres_store(store_config: StoreConfig) -> tuple[SessionStore, _EventStor
             "postgres store requires the optional 'postgres' extra: "
             "pip install 'universal-agent-runtime[postgres]'"
         ) from exc
-    pg_store = PostgresRuntimeStore(
-        url=url, tenant_id=store_config.effective_tenant_id
-    )
+    pg_store = PostgresRuntimeStore(url=url, tenant_id=store_config.effective_tenant_id)
     return pg_store, pg_store
 
 

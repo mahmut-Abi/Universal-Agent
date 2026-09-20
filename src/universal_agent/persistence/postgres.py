@@ -566,9 +566,7 @@ def apply_postgres_migrations(engine: Engine) -> PostgresMigrationReport:
         _METADATA.create_all(connection)
         existing = {
             _int_column(row._mapping["version"])
-            for row in connection.execute(
-                sql_select(_SCHEMA_MIGRATIONS.c.version)
-            ).all()
+            for row in connection.execute(sql_select(_SCHEMA_MIGRATIONS.c.version)).all()
         }
         for version in range(1, POSTGRES_SCHEMA_VERSION + 1):
             if version in existing:

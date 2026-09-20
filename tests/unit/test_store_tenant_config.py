@@ -31,16 +31,12 @@ def test_postgres_store_defaults_tenant_to_canonical_default() -> None:
 
 def test_postgres_store_rejects_blank_tenant_id() -> None:
     with pytest.raises(ValueError, match="tenant_id"):
-        StoreConfig.from_mapping(
-            {"backend": "postgres", "url_env": "PG_DSN", "tenant_id": ""}
-        )
+        StoreConfig.from_mapping({"backend": "postgres", "url_env": "PG_DSN", "tenant_id": ""})
 
 
 def test_postgres_store_rejects_whitespace_tenant_id() -> None:
     with pytest.raises(ValueError, match="tenant_id"):
-        StoreConfig.from_mapping(
-            {"backend": "postgres", "url_env": "PG_DSN", "tenant_id": "   "}
-        )
+        StoreConfig.from_mapping({"backend": "postgres", "url_env": "PG_DSN", "tenant_id": "   "})
 
 
 @pytest.mark.parametrize("backend", ["file", "sqlite", "memory"])
