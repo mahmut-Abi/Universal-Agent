@@ -81,6 +81,7 @@ async function api(path, opts = {}) {
 export const apiGet = (p) => api(p);
 export const apiPost = (p, body = {}) => api(p, { method: "POST", body });
 export const apiPatch = (p, body = {}) => api(p, { method: "PATCH", body });
+export const apiPut = (p, body = {}) => api(p, { method: "PUT", body });
 export const apiDelete = (p) => api(p, { method: "DELETE" });
 
 /* ── UI state shape（与 App.vue 模板绑定的字段一一对应） ── */

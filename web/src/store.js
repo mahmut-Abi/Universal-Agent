@@ -60,6 +60,7 @@ export const OPS_VIEWS = {
   audit: "审计中心",
   multiagent: "多智能体",
   health: "健康中心",
+  admin: "用户与租户",
 };
 export const opsOpen = ref(false);
 
@@ -97,6 +98,7 @@ export function toast(msg) {
 /* 视图切换：首次进入某视图时拉取真实数据 */
 export const MAIN_VIEWS = ["overview", "session", "config", "chat"];
 export const VIEW_LOADERS = {
+  admin: async () => {}, // AdminView 拉取自己的数据
   overview: () => loadOverview(m),
   config: () =>
     Promise.all([loadConfig(m), apiLoadSessions(m)]).then(() =>

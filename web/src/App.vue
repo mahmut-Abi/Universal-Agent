@@ -17,6 +17,7 @@ import EcosystemView from './components/EcosystemView.vue'
 import AuditView from './components/AuditView.vue'
 import MultiAgentView from './components/MultiAgentView.vue'
 import HealthView from './components/HealthView.vue'
+import AdminView from './components/AdminView.vue'
 import Modals from './components/Modals.vue'
 
 onMounted(() => {
@@ -56,6 +57,7 @@ onMounted(() => {
       <AuditView v-show="view === 'audit'" />
       <MultiAgentView v-show="view === 'multiagent'" />
       <HealthView v-show="view === 'health'" />
+      <AdminView v-show="view === 'admin'" />
       </main>
     </div>
   </div>
