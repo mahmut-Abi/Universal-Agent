@@ -1847,15 +1847,15 @@ h3 {
 .loadbar i {
   display: block;
   height: 100%;
-  border-radius: 3px;
-  background: var(--accent);
+  border-radius: 99px;
+  background: color-mix(in oklch, var(--accent) 42%, oklch(100% 0 0));
 }
 .loadbar i.off {
   background: var(--muted);
 }
 .scorebar {
-  height: 8px;
-  border-radius: 4px;
+  height: 6px;
+  border-radius: 99px;
   background: color-mix(in oklch, var(--border) 55%, transparent);
   overflow: hidden;
   min-width: 110px;
@@ -1865,7 +1865,11 @@ h3 {
 .scorebar i {
   display: block;
   height: 100%;
-  background: var(--ok);
+  border-radius: 99px;
+  background: color-mix(in oklch, var(--accent) 42%, oklch(100% 0 0));
+}
+.scorebar i.hot {
+  background: var(--accent);
 }
 .costbar-row {
   display: grid;
