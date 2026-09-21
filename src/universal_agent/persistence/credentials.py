@@ -275,9 +275,7 @@ class PostgresCredentialStore:
     def set_user_status(self, *, user_id: str, status: UserAccountStatus) -> UserAccount:
         with self._connect() as connection:
             result = connection.execute(
-                update(_USERS)
-                .where(_USERS.c.user_id == user_id)
-                .values(status=status.value)
+                update(_USERS).where(_USERS.c.user_id == user_id).values(status=status.value)
             )
             if int(result.rowcount or 0) != 1:
                 raise PrincipalNotFoundError(f"user not found: {user_id}")
@@ -347,9 +345,7 @@ class PostgresCredentialStore:
         if tenant_id is not None:
             statement = statement.where(_CREDENTIALS.c.tenant_id == tenant_id)
         with self._connect() as connection:
-            rows = connection.execute(
-                statement.order_by(_CREDENTIALS.c.credential_id)
-            ).all()
+            rows = connection.execute(statement.order_by(_CREDENTIALS.c.credential_id)).all()
         return tuple(
             Credential(
                 credential_id=str(row.credential_id),
@@ -374,6 +370,11 @@ class PostgresCredentialStore:
                 .where(_MEMBERSHIPS.c.user_id == user_id)
             )
             return int(result.rowcount or 0) == 1
+
+    def has_any_credential(self) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(select(_CREDENTIALS.c.credential_id).limit(1)).first()
+        return row is not None
 
     def has_any_admin(self) -> bool:
         with self._connect() as connection:

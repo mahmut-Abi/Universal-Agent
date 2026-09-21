@@ -39,6 +39,26 @@ def add_serve_parser(commands: argparse._SubParsersAction[argparse.ArgumentParse
     serve.add_argument("--read-only-auth-token")
     serve.add_argument("--read-only-auth-token-env")
     serve.add_argument("--evaluation-report-dir")
+    # Admin plane / audit sink parity with `python -m universal_agent.agentd`
+    # (UA-LIVE-2026-09-21 Q9): the multi-tenant admin surface must be
+    # reachable through the CLI launch path too.
+    serve.add_argument(
+        "--admin-store",
+        choices=("memory", "postgres"),
+        help="Enable the admin plane with this credential store backend.",
+    )
+    serve.add_argument(
+        "--admin-store-url-env",
+        help="Environment variable holding the Postgres DSN for --admin-store postgres.",
+    )
+    serve.add_argument(
+        "--audit-log",
+        help="Append security audit events to this JSONL file.",
+    )
+    serve.add_argument(
+        "--tenant-id",
+        help="Scope this agentd process to one tenant.",
+    )
 
 
 def add_tui_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

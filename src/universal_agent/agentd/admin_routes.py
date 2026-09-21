@@ -54,7 +54,6 @@ _ADMIN_ROUTE_DEFINITIONS = (
     ),
     AgentdRouteDefinition("admin_user_write", "/v1/admin/users", ("POST", "GET")),
     AgentdRouteDefinition("admin_user_status", "/v1/admin/users/{user}/status", ("PUT",)),
-
     AgentdRouteDefinition(
         "admin_members_list",
         "/v1/admin/tenants/{tenant}/members",
@@ -148,8 +147,12 @@ def handle_admin_route(
     actor = principal.subject if principal is not None else "bootstrap"
     try:
         response = _dispatch(
-            admin_store, match.name, request, match.path_params,
-            method=method, audit_recorder=audit,
+            admin_store,
+            match.name,
+            request,
+            match.path_params,
+            method=method,
+            audit_recorder=audit,
         )
     except PrincipalAlreadyExistsError as exc:
         return json_response(
@@ -246,9 +249,7 @@ def _dispatch(
         limit_raw = request.body.get("limit") if isinstance(request.body, Mapping) else None
         limit = int(limit_raw) if isinstance(limit_raw, (int, float)) and limit_raw >= 0 else None
         events = audit_recorder.events(limit=limit)
-        return json_response(
-            immutable_json({"events": [event.to_json() for event in events]})
-        )
+        return json_response(immutable_json({"events": [event.to_json() for event in events]}))
 
     if route == "admin_tenant_write" and method == "GET":
         tenants = store.list_tenants()
@@ -268,13 +269,9 @@ def _dispatch(
         status = _required_string(request.body, "status")
         if tenant_id is None or status not in ("active", "disabled"):
             raise ValueError("status is required and must be active or disabled")
-        tenant = store.set_tenant_status(
-            tenant_id=tenant_id, status=TenantStatus(status)
-        )
+        tenant = store.set_tenant_status(tenant_id=tenant_id, status=TenantStatus(status))
         return json_response(
-            immutable_json(
-                {"tenant_id": tenant.tenant_id, "status": tenant.status.value}
-            )
+            immutable_json({"tenant_id": tenant.tenant_id, "status": tenant.status.value})
         )
 
     if route == "admin_user_write" and method == "GET":
@@ -300,13 +297,9 @@ def _dispatch(
         status = _required_string(request.body, "status")
         if user_id is None or status not in ("active", "disabled"):
             raise ValueError("status is required and must be active or disabled")
-        updated_user = store.set_user_status(
-            user_id=user_id, status=UserAccountStatus(status)
-        )
+        updated_user = store.set_user_status(user_id=user_id, status=UserAccountStatus(status))
         return json_response(
-            immutable_json(
-                {"user_id": updated_user.user_id, "status": updated_user.status.value}
-            )
+            immutable_json({"user_id": updated_user.user_id, "status": updated_user.status.value})
         )
 
     if route == "admin_credential_write" and method == "GET":
@@ -338,9 +331,7 @@ def _dispatch(
             raise ValueError("tenant and user are required")
         removed = store.remove_member(tenant_id=tenant_id, user_id=user_id)
         return json_response(
-            immutable_json(
-                {"tenant_id": tenant_id, "user_id": user_id, "removed": removed}
-            )
+            immutable_json({"tenant_id": tenant_id, "user_id": user_id, "removed": removed})
         )
 
     if route == "admin_tenant_write" and method == "POST":

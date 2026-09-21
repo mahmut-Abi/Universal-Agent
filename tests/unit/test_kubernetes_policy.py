@@ -159,9 +159,7 @@ def test_kubernetes_scale_policy_derives_target_from_arguments_when_missing() ->
 @pytest.mark.behavior
 def test_kubernetes_scale_policy_normalizes_workload_container_target_form() -> None:
     """Models may encode workload+container as 'deployment/<name>:<container>'."""
-    normalized = KubernetesScalePolicy().evaluate(
-        scale_policy_context(target="deployment/api:api")
-    )
+    normalized = KubernetesScalePolicy().evaluate(scale_policy_context(target="deployment/api:api"))
     assert normalized is not None
     assert normalized.effect is PolicyEffect.ALLOW
 

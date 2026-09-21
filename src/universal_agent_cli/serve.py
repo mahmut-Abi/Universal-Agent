@@ -40,6 +40,19 @@ async def _dispatch_serve(
     )
     if _host_requires_auth(host) and auth_token is None and read_only_auth_token is None:
         raise ValueError("agentd auth token is required when binding to non-loopback host")
+    from universal_agent.agentd.bootstrap import build_admin_store, build_audit_recorder
+
+    admin_store = build_admin_store(
+        cast(str | None, getattr(args, "admin_store", None)),
+        cast(str | None, getattr(args, "admin_store_url_env", None)),
+    )
+    audit_recorder = build_audit_recorder(
+        cast(str | None, getattr(args, "audit_log", None)),
+        admin_store=admin_store,
+    )
+    tenant_id = cast(str | None, getattr(args, "tenant_id", None))
+    if tenant_id is not None:
+        tenant_id = parse_non_empty_string(tenant_id, "tenant_id")
     try:
         profile_store = _profiles_dir(args)
         server = AgentdHttpServer(
@@ -48,7 +61,11 @@ async def _dispatch_serve(
                 auth=AgentdAuthPolicy(
                     bearer_token=auth_token,
                     read_only_bearer_token=read_only_auth_token,
+                    credential_store=admin_store,
+                    tenant_id=tenant_id,
                 ),
+                admin_store=admin_store,
+                audit_recorder=audit_recorder,
                 evaluation_report_dir=cast(str | None, args.evaluation_report_dir),
                 profile_store=profile_store,
                 profile_service_factory=_profile_service_factory(profile_store),

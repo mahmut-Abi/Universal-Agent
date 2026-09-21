@@ -186,6 +186,16 @@ class CredentialAdminStore(CredentialStore, Protocol):
         as soon as an admin exists)."""
         ...
 
+    def has_any_credential(self) -> bool:
+        """Whether any credential (revoked or not) has ever been issued.
+
+        Bootstrap-window companion to :meth:`has_any_admin`: the shared-token
+        bootstrap window must stay open until the first credential exists,
+        otherwise provisioning an admin membership before issuing the
+        credential locks every authenticator out (UA-LIVE-2026-09-21 Q12).
+        """
+        ...
+
 
 class InMemoryCredentialStore:
     """Trivial in-memory credential registry for tests and embedded use.
@@ -328,6 +338,9 @@ class InMemoryCredentialStore:
 
     def has_any_admin(self) -> bool:
         return any(role is Role.ADMIN for role in self._memberships.values())
+
+    def has_any_credential(self) -> bool:
+        return bool(self._by_id)
 
     # -- registration helpers (convenience for tests/embedded use) ---------
 

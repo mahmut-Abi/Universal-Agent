@@ -119,12 +119,8 @@ def test_session_resume_gets_elevated_default_timeout() -> None:
 
     from universal_agent_cli.remote.client import _client_timeout_seconds
 
-    resume = Namespace(
-        api_timeout_seconds=None, command="session", session_command="resume"
-    )
+    resume = Namespace(api_timeout_seconds=None, command="session", session_command="resume")
     assert _client_timeout_seconds(resume) == 900.0
 
-    show = Namespace(
-        api_timeout_seconds=None, command="session", session_command="show"
-    )
+    show = Namespace(api_timeout_seconds=None, command="session", session_command="show")
     assert _client_timeout_seconds(show) == 30.0

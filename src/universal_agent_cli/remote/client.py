@@ -238,10 +238,7 @@ def _client_timeout_seconds(args: argparse.Namespace) -> float:
         return explicit
     if cast(str, args.command) in _BASE_LONG_RUN_COMMANDS | _contributed_long_run_commands():
         return _LONG_RUN_DEFAULT_TIMEOUT_SECONDS
-    if (
-        cast(str, args.command) == "session"
-        and getattr(args, "session_command", None) == "resume"
-    ):
+    if cast(str, args.command) == "session" and getattr(args, "session_command", None) == "resume":
         return _LONG_RUN_DEFAULT_TIMEOUT_SECONDS
     return 30.0
 

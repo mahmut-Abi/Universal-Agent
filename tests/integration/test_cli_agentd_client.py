@@ -587,6 +587,7 @@ async def test_cli_admin_provisions_tenant_user_credential_end_to_end() -> None:
     app, _ = build_app([], admin_store=admin_store)
 
     with running_server(app) as base_url:
+
         async def admin_call(*cli_args: str) -> dict[str, Any]:
             buffer = StringIO()
             status = await run_cli(["--api-url", base_url, *cli_args], stdout=buffer)
@@ -594,30 +595,56 @@ async def test_cli_admin_provisions_tenant_user_credential_end_to_end() -> None:
             return read_json(buffer)
 
         payload = await admin_call(
-            "admin", "tenant", "create",
-            "--tenant-id", "acme", "--name", "Acme Corp",
+            "admin",
+            "tenant",
+            "create",
+            "--tenant-id",
+            "acme",
+            "--name",
+            "Acme Corp",
         )
         assert payload["tenant_id"] == "acme"
 
         payload = await admin_call(
-            "admin", "user", "create",
-            "--user-id", "alice", "--email", "alice@acme.test",
-            "--display-name", "Alice",
+            "admin",
+            "user",
+            "create",
+            "--user-id",
+            "alice",
+            "--email",
+            "alice@acme.test",
+            "--display-name",
+            "Alice",
         )
         assert payload["user_id"] == "alice"
 
         payload = await admin_call(
-            "admin", "role", "set",
-            "--tenant", "acme", "--user", "alice", "--role", "read_only",
+            "admin",
+            "role",
+            "set",
+            "--tenant",
+            "acme",
+            "--user",
+            "alice",
+            "--role",
+            "read_only",
         )
         assert payload["role"] == "read_only"
 
         output = StringIO()
         status = await run_cli(
             [
-                "--api-url", base_url,
-                "admin", "credential", "create",
-                "--user", "alice", "--tenant", "acme", "--role", "read_only",
+                "--api-url",
+                base_url,
+                "admin",
+                "credential",
+                "create",
+                "--user",
+                "alice",
+                "--tenant",
+                "acme",
+                "--role",
+                "read_only",
             ],
             stdout=output,
         )
@@ -641,8 +668,13 @@ async def test_cli_admin_provisions_tenant_user_credential_end_to_end() -> None:
         output = StringIO()
         status = await run_cli(
             [
-                "--api-url", base_url,
-                "admin", "credential", "revoke", "--credential-id", credential_id_value,
+                "--api-url",
+                base_url,
+                "admin",
+                "credential",
+                "revoke",
+                "--credential-id",
+                credential_id_value,
             ],
             stdout=output,
         )
@@ -672,9 +704,16 @@ async def test_cli_admin_denied_for_non_admin_principal() -> None:
     with running_server(app) as base_url:
         status = await run_cli(
             [
-                "--api-url", base_url,
+                "--api-url",
+                base_url,
                 "--api-token=" + operator_token,
-                "admin", "tenant", "create", "--tenant-id", "beta", "--name", "Beta",
+                "admin",
+                "tenant",
+                "create",
+                "--tenant-id",
+                "beta",
+                "--name",
+                "Beta",
             ],
             stderr=error,
         )
@@ -705,9 +744,16 @@ async def test_cli_admin_cross_tenant_principal_is_refused() -> None:
     with running_server(app) as base_url:
         status = await run_cli(
             [
-                "--api-url", base_url,
+                "--api-url",
+                base_url,
                 "--api-token=" + intruder_token,
-                "admin", "tenant", "create", "--tenant-id", "beta", "--name", "Beta",
+                "admin",
+                "tenant",
+                "create",
+                "--tenant-id",
+                "beta",
+                "--name",
+                "Beta",
             ],
             stderr=error,
         )
@@ -737,6 +783,7 @@ async def test_cli_admin_user_disable_blocks_authentication() -> None:
     # further calls use that credential.
     admin_token = "bootstrap-admin-token"
     with running_server(app) as base_url:
+
         async def admin_call(*cli_args: str, token: str = admin_token) -> dict[str, Any]:
             buffer = StringIO()
             err = StringIO()
@@ -751,8 +798,15 @@ async def test_cli_admin_user_disable_blocks_authentication() -> None:
         await admin_call("admin", "tenant", "create", "--tenant-id", "acme", "--name", "Acme")
         await admin_call("admin", "user", "create", "--user-id", "alice", "--email", "a@acme.test")
         issued = await admin_call(
-            "admin", "credential", "create",
-            "--user", "alice", "--tenant", "acme", "--role", "admin",
+            "admin",
+            "credential",
+            "create",
+            "--user",
+            "alice",
+            "--tenant",
+            "acme",
+            "--role",
+            "admin",
         )
         alice_token = str(issued["token"])
 
@@ -760,12 +814,25 @@ async def test_cli_admin_user_disable_blocks_authentication() -> None:
         # disable / re-enable lifecycle. From here on the closed bootstrap
         # window no longer accepts the shared token: use alice's credential.
         await admin_call(
-            "admin", "user", "create", "--user-id", "root", "--email", "root@acme.test",
+            "admin",
+            "user",
+            "create",
+            "--user-id",
+            "root",
+            "--email",
+            "root@acme.test",
             token=alice_token,
         )
         issued_root = await admin_call(
-            "admin", "credential", "create",
-            "--user", "root", "--tenant", "acme", "--role", "admin",
+            "admin",
+            "credential",
+            "create",
+            "--user",
+            "root",
+            "--tenant",
+            "acme",
+            "--role",
+            "admin",
             token=alice_token,
         )
         root_token = str(issued_root["token"])
@@ -798,7 +865,5 @@ async def test_cli_admin_user_disable_blocks_authentication() -> None:
         assert status == 0
 
         # The credential listing reflects the still-active credential.
-        audit = await admin_call(
-            "admin", "credential", "list", "--user", "alice", token=root_token
-        )
+        audit = await admin_call("admin", "credential", "list", "--user", "alice", token=root_token)
         assert isinstance(audit["credentials"], list) and len(audit["credentials"]) == 1

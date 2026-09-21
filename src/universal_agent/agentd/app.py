@@ -307,14 +307,25 @@ class AgentdApp:
         method = request.method.upper()
         path = _normalize_path(request.path)
 
-        auth = _authenticate(
-            self._auth, request, path, method=method, audit=self._audit_recorder
-        )
+        auth = _authenticate(self._auth, request, path, method=method, audit=self._audit_recorder)
         if auth.response is not None:
             return auth.response
 
+        if path.startswith("/v1/admin") and self._admin_store is None:
+            # Explicit guidance instead of a generic 404 unknown-route: the
+            # server is running but the admin plane requires --admin-store
+            # (UA-LIVE-2026-09-21 Q8).
+            return not_found(
+                "admin plane is not configured on this server; "
+                "restart agentd with --admin-store to enable it"
+            )
+
         admin_response = handle_admin_route(
-            self._admin_store, auth.principal, request, method, path,
+            self._admin_store,
+            auth.principal,
+            request,
+            method,
+            path,
             audit=self._audit_recorder,
         )
         if admin_response is not None:

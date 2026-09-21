@@ -16,6 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from universal_agent.agentd.app import AgentdApp
+from universal_agent.agentd.bootstrap import build_admin_store, build_audit_recorder
 from universal_agent.agentd.http import AgentdAuthPolicy
 from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
 from universal_agent.core.config_validation import parse_non_empty_string
@@ -61,8 +62,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--admin-store-url-env",
         help=(
-            "Name of the environment variable holding the Postgres DSN "
-            "for --admin-store postgres."
+            "Name of the environment variable holding the Postgres DSN for --admin-store postgres."
         ),
     )
     parser.add_argument(
@@ -235,55 +235,19 @@ def _host_requires_auth(host: str) -> bool:
 
 
 def _build_admin_store(args: argparse.Namespace) -> CredentialAdminStore | None:
-    """Build the optional admin credential store from server flags.
-
-    memory: in-process, not durable (dev/test). postgres: durable schema v3
-    principal tables; the DSN is read from the environment variable named by
-    ``--admin-store-url-env`` (never from config files or argv).
-    """
-
-    admin_store = getattr(args, "admin_store", None)
-    url_env = getattr(args, "admin_store_url_env", None)
-    if admin_store is None:
-        if url_env is not None:
-            raise ValueError("--admin-store-url-env requires --admin-store postgres")
-        return None
-    if admin_store == "memory":
-        from universal_agent.security import InMemoryCredentialStore
-
-        return InMemoryCredentialStore()
-    if url_env is None:
-        raise ValueError("--admin-store postgres requires --admin-store-url-env")
-    url = os.environ.get(url_env)
-    if not url:
-        raise ValueError(
-            f"admin store url_env {url_env!r} is not set in the environment; "
-            "export the Postgres DSN"
-        )
-    try:
-        from universal_agent.persistence.credentials import PostgresCredentialStore
-    except ImportError as exc:
-        raise ValueError(
-            "--admin-store postgres requires the optional 'postgres' extra: "
-            "pip install 'universal-agent-runtime[postgres]'"
-        ) from exc
-    return PostgresCredentialStore(url)
+    return build_admin_store(
+        getattr(args, "admin_store", None),
+        getattr(args, "admin_store_url_env", None),
+    )
 
 
-def _build_audit_recorder(args: argparse.Namespace, *, admin_store: object) -> AuditRecorder | None:
-    """Build the security audit sink: JSONL file when configured, otherwise an
-    in-memory ring when the admin plane is enabled, else disabled."""
-
-    audit_log = getattr(args, "audit_log", None)
-    if audit_log is not None:
-        from universal_agent.security import FileAuditRecorder
-
-        return FileAuditRecorder(audit_log)
-    if admin_store is not None:
-        from universal_agent.security import InMemoryAuditRecorder
-
-        return InMemoryAuditRecorder()
-    return None
+def _build_audit_recorder(
+    args: argparse.Namespace, *, admin_store: CredentialAdminStore | None
+) -> AuditRecorder | None:
+    return build_audit_recorder(
+        getattr(args, "audit_log", None),
+        admin_store=admin_store,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

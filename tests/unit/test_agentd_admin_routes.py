@@ -253,21 +253,27 @@ def test_admin_mutations_are_audited() -> None:
     admin = _principal(Role.ADMIN)
 
     handle_admin_route(
-        store, admin,
+        store,
+        admin,
         _request("POST", "/v1/admin/tenants", {"tenant_id": "beta", "name": "Beta"}),
-        "POST", "/v1/admin/tenants",
+        "POST",
+        "/v1/admin/tenants",
         audit=audit,
     )
     handle_admin_route(
-        store, admin,
+        store,
+        admin,
         _request("PUT", "/v1/admin/tenants/acme/members/alice", {"role": "operator"}),
-        "PUT", "/v1/admin/tenants/acme/members/alice",
+        "PUT",
+        "/v1/admin/tenants/acme/members/alice",
         audit=audit,
     )
     handle_admin_route(
-        store, admin,
+        store,
+        admin,
         _request("GET", "/v1/admin/tenants/acme/members"),
-        "GET", "/v1/admin/tenants/acme/members",
+        "GET",
+        "/v1/admin/tenants/acme/members",
         audit=audit,
     )  # reads are not audited
 
@@ -287,15 +293,19 @@ def test_admin_audit_route_lists_events() -> None:
     admin = _principal(Role.ADMIN)
 
     handle_admin_route(
-        store, admin,
+        store,
+        admin,
         _request("POST", "/v1/admin/tenants", {"tenant_id": "beta", "name": "Beta"}),
-        "POST", "/v1/admin/tenants",
+        "POST",
+        "/v1/admin/tenants",
         audit=audit,
     )
     listed = handle_admin_route(
-        store, admin,
+        store,
+        admin,
         _request("GET", "/v1/admin/audit"),
-        "GET", "/v1/admin/audit",
+        "GET",
+        "/v1/admin/audit",
         audit=audit,
     )
     assert listed is not None
@@ -311,9 +321,11 @@ def test_bootstrap_mutations_record_anonymous_actor() -> None:
     store = _provisioned_store()
     audit = InMemoryAuditRecorder()
     handle_admin_route(
-        store, None,
+        store,
+        None,
         _request("POST", "/v1/admin/users", {"user_id": "bob", "email": "b@b.test"}),
-        "POST", "/v1/admin/users",
+        "POST",
+        "/v1/admin/users",
         audit=audit,
     )
     events = audit.events()
@@ -332,17 +344,21 @@ def test_user_disable_stops_authentication_and_enable_restores() -> None:
     assert store.resolve(raw) is not None
 
     disabled = handle_admin_route(
-        store, admin,
+        store,
+        admin,
         _request("PUT", "/v1/admin/users/alice/status", {"status": "disabled"}),
-        "PUT", "/v1/admin/users/alice/status",
+        "PUT",
+        "/v1/admin/users/alice/status",
     )
     assert disabled is not None and disabled.status_code == 200
     assert store.resolve(raw) is None  # disabled user stops authenticating
 
     enabled = handle_admin_route(
-        store, admin,
+        store,
+        admin,
         _request("PUT", "/v1/admin/users/alice/status", {"status": "active"}),
-        "PUT", "/v1/admin/users/alice/status",
+        "PUT",
+        "/v1/admin/users/alice/status",
     )
     assert enabled is not None
     assert store.resolve(raw) is not None  # re-enabled: same credential works
@@ -354,16 +370,20 @@ def test_tenant_disable_blocks_all_its_credentials() -> None:
     raw, _ = store.issue(user_id="alice", tenant_id="acme", role=Role.OPERATOR)
 
     handle_admin_route(
-        store, admin,
+        store,
+        admin,
         _request("PUT", "/v1/admin/tenants/acme/status", {"status": "disabled"}),
-        "PUT", "/v1/admin/tenants/acme/status",
+        "PUT",
+        "/v1/admin/tenants/acme/status",
     )
     assert store.resolve(raw) is None
 
     handle_admin_route(
-        store, admin,
+        store,
+        admin,
         _request("PUT", "/v1/admin/tenants/acme/status", {"status": "active"}),
-        "PUT", "/v1/admin/tenants/acme/status",
+        "PUT",
+        "/v1/admin/tenants/acme/status",
     )
     assert store.resolve(raw) is not None
 
@@ -375,9 +395,11 @@ def test_member_remove_revokes_tenant_access() -> None:
     assert store.resolve(raw) is not None
 
     removed = handle_admin_route(
-        store, admin,
+        store,
+        admin,
         _request("DELETE", "/v1/admin/tenants/acme/members/alice"),
-        "DELETE", "/v1/admin/tenants/acme/members/alice",
+        "DELETE",
+        "/v1/admin/tenants/acme/members/alice",
     )
     assert removed is not None and removed.body["removed"] is True
     assert store.resolve(raw) is None  # membership gone: credential stops resolving
@@ -403,9 +425,11 @@ def test_list_endpoints_return_stored_records() -> None:
 
     store.issue(user_id="alice", tenant_id="acme", role=Role.READ_ONLY)
     creds = handle_admin_route(
-        store, admin,
+        store,
+        admin,
         _request("GET", "/v1/admin/credentials?user_id=alice"),
-        "GET", "/v1/admin/credentials?user_id=alice",
+        "GET",
+        "/v1/admin/credentials?user_id=alice",
     )
     assert creds is not None
     listed = creds.body["credentials"]
@@ -425,15 +449,19 @@ def test_lifecycle_mutations_are_audited() -> None:
     admin = _principal(Role.ADMIN)
 
     handle_admin_route(
-        store, admin,
+        store,
+        admin,
         _request("PUT", "/v1/admin/users/alice/status", {"status": "disabled"}),
-        "PUT", "/v1/admin/users/alice/status",
+        "PUT",
+        "/v1/admin/users/alice/status",
         audit=audit,
     )
     handle_admin_route(
-        store, admin,
+        store,
+        admin,
         _request("DELETE", "/v1/admin/tenants/acme/members/alice"),
-        "DELETE", "/v1/admin/tenants/acme/members/alice",
+        "DELETE",
+        "/v1/admin/tenants/acme/members/alice",
         audit=audit,
     )
     assert [e.event for e in audit.events()] == ["user_status_changed", "member_removed"]
@@ -443,8 +471,10 @@ def test_status_validation_rejects_unknown_values() -> None:
     store = _provisioned_store()
     admin = _principal(Role.ADMIN)
     response = handle_admin_route(
-        store, admin,
+        store,
+        admin,
         _request("PUT", "/v1/admin/users/alice/status", {"status": "paused"}),
-        "PUT", "/v1/admin/users/alice/status",
+        "PUT",
+        "/v1/admin/users/alice/status",
     )
     assert response is not None and response.status_code == 400

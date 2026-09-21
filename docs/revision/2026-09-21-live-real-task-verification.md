@@ -251,6 +251,40 @@ S3 中模型诚实上报"I lack the capability to update the container image"并
 确认流 + 陈旧判据使变异从未发生。这也反证了安全边界有效（用户确认从未授予时
 集群不会被改），但确认流的语义正确性需要 P10b 的判据设计配合。
 
+## 四轮验证：CLI 高级面与 server 生命周期（纯 CLI）
+
+覆盖：observability（health/ready/version/cost/metrics/traces/logs）、memory、
+audit、repair、ecosystem、multi-agent、eval 生命周期、session pause/cancel、
+serve + thin-client + 认证。发现如下：
+
+| # | 严重度 | 问题 |
+|---|--------|------|
+| Q5 | 🔴 | `agent memory add/get/delete` 在生产路径（embedded/remote agentd）全部不可用："unknown memory command: add"——本地注入 dispatch 实现了四个子命令，remote dispatch（`_dispatch_remote_list_command`）只实现 list，而 server 端 POST/GET/DELETE /v1/memory 路由齐全。纯客户端缺口，已定位 |
+| Q6 | 🔴 | memory 无持久化：`MemoryStore` 仅有 `InMemoryMemoryStore`。`memory add` 返回 201，embedded agentd 进程退出后记录即丢失（list 里的记录只是 domain 启动种子）——用户视角是静默数据丢失 |
+| Q8 | 🟡 | 未配置 `--admin-store` 时，`/v1/admin/*` 静默 fall-through 为 404 "unknown route"，误导排障（应明确"admin plane 未配置"） |
+| Q9 | 🔴 | `agent serve` 不暴露 `--admin-store`/`--admin-store-url-env`/`--audit-log` 等 agentd 参数——admin/多租户面无法经 CLI 启用，只能 `python -m universal_agent.agentd` 直启。P3.5 admin 特性缺少 CLI 产品化入口 |
+| Q7 | 🟡 | `.universal-agent/config.json` 的 `"profile": "live-eval"` 键被 profile 发现顺序忽略（无 `--profile-config` 时回落 `./universal-agent/profile.json` 的 default）——init 写入的"活动 profile"设置不生效 |
+| Q11 | 🟢 | `session list` 文本视图状态用词 "success"，其余位置用 "completed"，术语不一致 |
+| Q10 | ❌误报 | ~~auth-token 未生效~~——探针误用公开路径 /health（设计上免认证）；受保护路由无 token 正确返回 401 |
+
+验证通过项：session pause/cancel、eval reports/recordings/datasets（参数完备）、
+cost/metrics/traces/logs、audit 哈希链（root_hash 输出）、repair state-events
+（dry-run 报 clean）、multi-agent 状态、ecosystem catalog/verify、
+thin-client 全套命令、401 认证、agentd 优雅启动。
+
+## 四轮修复明细（同日，全部完成）
+
+| # | 修复 | 验证 |
+|---|------|------|
+| Q5 | `_dispatch_remote_memory`：remote dispatch 补齐 add/get/delete（POST /v1/memory、GET/DELETE /v1/memory/{id}） | live roundtrip：add→get→delete→404 |
+| Q6 | 新增 `memory/file_store.py` `FileMemoryStore`（JSONL + FileLock），file backend 下经 `RuntimeBuilder(memory_store_factory=...)` 接线；builder 既有 seed 去重保证 domain 种子不重复落盘 | 跨进程 add/get/delete 实测；多次重启后 list 无重复种子 |
+| Q7 | `default_profile_config_path()` 增加 settings 链：`agent init` 在 config.json 写入绝对 `profile_config` 路径，发现顺序在固定名回落之前解析 | init 自定义 --output 后，裸 `agent config` 正确解析 Active profile |
+| Q8 | `AgentdApp.handle`：`/v1/admin/*` 在无 admin_store 时返回明确 404 "admin plane is not configured ... --admin-store"，不再伪装成 unknown route | 集成测试 + live |
+| Q9 | 新增 `agentd/bootstrap.py`（`build_admin_store`/`build_audit_recorder`，`__main__` 委托）；`agent serve` 补 `--admin-store/--admin-store-url-env/--audit-log/--tenant-id` 并接线 AgentdApp | serve --admin-store memory 启动 admin 面，tenant/user/role/credential 全流程可用 |
+| Q12 | bootstrap 窗口条件改为「无 admin membership 或无任何 credential」——role set 先行不再锁死 credential 签发；window 在第一个真实 credential 存在后关闭 | live：role set → credential create → alice token 可用 → bootstrap token 正确 401 |
+| Q11 | 撤销：`session list` 的 "success" 是有测试锁定的紧凑显示映射，非缺陷 | — |
+| — | 全仓 `ruff format` 漂移清理（多租户批次 commit 引入），格式门禁恢复绿 | format --check 0 |
+
 ## 建议后续（更新）
 
 1. 修 P1（只读命令离线可用）、P6（preflight 契约统一）、P8（check exit code）；

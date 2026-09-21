@@ -24,6 +24,47 @@ if TYPE_CHECKING:
 
 PROFILE_CONFIG_FILE = "profile.json"
 PROFILE_CONFIG_SUFFIX = ".profile.json"
+SETTINGS_CONFIG_FILE = "config.json"
+
+
+def _settings_config_candidates(environ: Mapping[str, str]) -> tuple[Path, ...]:
+    """`agent init` settings files that may pin the active profile config."""
+
+    candidates: list[Path] = []
+    config_dir = environ.get("AGENT_CONFIG_DIR", "").strip()
+    if config_dir:
+        candidates.append(Path(config_dir) / SETTINGS_CONFIG_FILE)
+    candidates.append(Path("universal-agent") / SETTINGS_CONFIG_FILE)
+    candidates.append(Path(".universal-agent") / SETTINGS_CONFIG_FILE)
+    home = environ.get("HOME", "").strip()
+    if home:
+        candidates.append(Path(home) / ".universal-agent" / SETTINGS_CONFIG_FILE)
+    return tuple(candidates)
+
+
+def _profile_config_from_settings(environ: Mapping[str, str]) -> Path | None:
+    """Resolve the `profile_config` path recorded by `agent init` in its
+    settings file, so a custom `--output` profile is discoverable without
+    repeating the flag on every command (UA-LIVE-2026-09-21 Q7)."""
+
+    for settings_path in _settings_config_candidates(environ):
+        if not settings_path.is_file():
+            continue
+        try:
+            payload = read_json_file(settings_path)
+        except (OSError, JsonCodecError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        reference = payload.get("profile_config")
+        if not isinstance(reference, str) or not reference.strip():
+            continue
+        path = Path(reference.strip())
+        if not path.is_absolute():
+            path = settings_path.parent / path
+        if path.is_file():
+            return path
+    return None
 
 
 def default_profile_config_path(environ: Mapping[str, str] | None = None) -> Path:
@@ -31,7 +72,9 @@ def default_profile_config_path(environ: Mapping[str, str] | None = None) -> Pat
 
     The Golden Path writes ``./universal-agent/profile.json`` by default; the
     user-level fallback keeps the container convention (``AGENT_CONFIG_DIR`` or
-    ``~/.universal-agent``).
+    ``~/.universal-agent``). A ``profile_config`` reference recorded by
+    ``agent init`` in its settings file takes precedence over the fixed-name
+    fallbacks so custom ``--output`` profiles stay discoverable (Q7).
     """
 
     if environ is None:
@@ -39,6 +82,9 @@ def default_profile_config_path(environ: Mapping[str, str] | None = None) -> Pat
     config_dir = environ.get("AGENT_CONFIG_DIR", "").strip()
     if config_dir:
         return Path(config_dir) / PROFILE_CONFIG_FILE
+    from_settings = _profile_config_from_settings(environ)
+    if from_settings is not None:
+        return from_settings
     local = Path("universal-agent") / PROFILE_CONFIG_FILE
     if local.is_file():
         return local

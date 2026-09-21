@@ -24,7 +24,46 @@ async def _dispatch_remote_list_command(
     if list_command == "list":
         _write_json(out, await client.get_json(_REMOTE_LIST_ROUTES[command]))
         return
+    if command == "memory":
+        await _dispatch_remote_memory(args, out, client, list_command)
+        return
     raise ValueError(f"unknown {command} command: {list_command}")
+
+
+async def _dispatch_remote_memory(
+    args: argparse.Namespace,
+    out: TextIO,
+    client: AgentdClient,
+    list_command: str,
+) -> None:
+    """memory add/get/delete against the agentd memory routes.
+
+    The agentd server implements POST /v1/memory, GET/DELETE
+    /v1/memory/{id}; the local injected dispatch implements the same
+    surface, so remote parity was missing (UA-LIVE-2026-09-21 Q5).
+    """
+
+    if list_command == "add":
+        body = {
+            "kind": cast(str, args.kind),
+            "subject": cast(str, args.subject),
+            "content": cast(str, args.content),
+            "scope": cast(str | None, getattr(args, "scope", None)) or "",
+            "confidence": cast(float, getattr(args, "confidence", 1.0)),
+        }
+        _write_json(out, await client.post_json("/v1/memory", body=body))
+        return
+    memory_id = cast(str, args.memory_id)
+    if list_command == "get":
+        _write_json(out, await client.get_json(f"/v1/memory/{quote_path_segment(memory_id)}"))
+        return
+    if list_command == "delete":
+        _write_json(
+            out,
+            await client.delete_json(f"/v1/memory/{quote_path_segment(memory_id)}"),
+        )
+        return
+    raise ValueError(f"unknown memory command: {list_command}")
 
 
 async def _dispatch_remote_profile(

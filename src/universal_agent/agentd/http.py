@@ -270,10 +270,13 @@ def _authenticate(
             # legacy shared bearer token keeps full access so the first admin
             # can be provisioned. As soon as an admin exists it is rejected
             # like any other unknown token.
-            if (
-                _token_matches(token, policy.bearer_token)
-                and not policy.credential_store.has_any_admin()
+            if _token_matches(token, policy.bearer_token) and not (
+                policy.credential_store.has_any_admin()
+                and policy.credential_store.has_any_credential()
             ):
+                # Bootstrap window: open while no usable admin credential
+                # exists, so issuing the credential AFTER a role assignment
+                # is still possible (UA-LIVE-2026-09-21 Q12).
                 return AuthOutcome()
             _record_denial("unauthorized")
             return AuthOutcome(response=unauthorized())

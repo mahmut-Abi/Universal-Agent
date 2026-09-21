@@ -165,6 +165,8 @@ def _user_config_payload(args: argparse.Namespace) -> dict[str, object]:
         "environment": cast(str, args.environment),
         "data_dir": str(_runtime_data_dir(args)),
         "profile": cast(str, args.profile),
+        # Absolute so profile discovery resolves it regardless of cwd (Q7).
+        "profile_config": str(_init_output_path(args).resolve()),
         "model": {
             "provider": model_settings.provider,
             "name": model_settings.model_name,

@@ -2787,3 +2787,21 @@ async def test_agentd_routes_return_404_and_405_errors() -> None:
         "code": "not_found",
         "message": "session not found: session-missing",
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_agentd_admin_routes_without_store_report_explicit_error() -> None:
+    """UA-LIVE-2026-09-21 Q8: /v1/admin/* on a server launched without
+    --admin-store must explain the missing configuration instead of a
+    generic unknown-route 404."""
+    service, _ = build_service([inspect_workload(), finish()])
+    app = AgentdApp(service)
+
+    response = await app.handle(
+        HttpRequest("POST", "/v1/admin/tenants", immutable_json({"name": "acme"}))
+    )
+
+    assert response.status_code == 404
+    body = response.body
+    assert "admin plane is not configured" in str(body["error"]["message"])

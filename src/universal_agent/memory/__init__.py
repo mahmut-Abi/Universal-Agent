@@ -3,6 +3,7 @@ from universal_agent.memory.consolidator import (
     ConsolidationResult,
     MemoryConsolidator,
 )
+from universal_agent.memory.file_store import FileMemoryStore
 from universal_agent.memory.models import (
     MemoryId,
     MemoryKind,
@@ -25,6 +26,7 @@ from universal_agent.memory.store import InMemoryMemoryStore, MemoryStore
 __all__ = [
     "ConsolidationAction",
     "ConsolidationResult",
+    "FileMemoryStore",
     "InMemoryMemoryStore",
     "KeywordRelevanceFilter",
     "MemoryConsolidator",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
@@ -44,6 +44,7 @@ from universal_agent.domain import (
     load_domain_package,
     load_domain_package_runtime,
 )
+from universal_agent.memory import MemoryStore as _MemoryStoreProtocol
 from universal_agent.model import (
     JsonHttpModelAdapter,
     JsonHttpModelError,
@@ -269,7 +270,9 @@ class RuntimeHost:
         _validate_domain_config(config, composition.identities)
         _validate_profile(profile, composition.identities)
         secret_resolution = resolve_secret_refs(config.secrets, provider=secret_provider)
-        components = RuntimeBuilder().build(composition, extra_policies=extra_policies)
+        components = RuntimeBuilder(memory_store_factory=_build_memory_store(config)).build(
+            composition, extra_policies=extra_policies
+        )
         session_store, event_store = _build_stores(config)
         runtime = AgentRuntime(
             model=model,
@@ -512,6 +515,19 @@ def _postgres_store(store_config: StoreConfig) -> tuple[SessionStore, _EventStor
         ) from exc
     pg_store = PostgresRuntimeStore(url=url, tenant_id=store_config.effective_tenant_id)
     return pg_store, pg_store
+
+
+def _build_memory_store(config: RuntimeConfig) -> Callable[[], _MemoryStoreProtocol]:
+    """Durable memories for the file backend (UA-LIVE-2026-09-21 Q6); other
+    backends keep the in-process store until SQLite/Postgres memory support."""
+
+    from universal_agent.memory import FileMemoryStore, InMemoryMemoryStore
+
+    if config.store.backend is StoreBackend.FILE:
+        assert config.store.path is not None
+        store_path = config.store.path
+        return lambda: FileMemoryStore(store_path)
+    return InMemoryMemoryStore
 
 
 def _build_stores(config: RuntimeConfig) -> tuple[SessionStore, _EventStore]:
