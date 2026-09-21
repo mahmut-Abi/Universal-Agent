@@ -109,3 +109,22 @@ def test_client_timeout_flag_overrides_elevated_default() -> None:
     args = Namespace(api_timeout_seconds=120.0, command="kubernetes")
 
     assert _client_timeout_seconds(args) == 120.0
+
+
+def test_session_resume_gets_elevated_default_timeout() -> None:
+    """UA-LIVE-2026-09-21 F6: confirmed resume executes a real run
+    continuation (confirmation → action → verification) and must not fall
+    back to the 30s interactive default."""
+    from argparse import Namespace
+
+    from universal_agent_cli.remote.client import _client_timeout_seconds
+
+    resume = Namespace(
+        api_timeout_seconds=None, command="session", session_command="resume"
+    )
+    assert _client_timeout_seconds(resume) == 900.0
+
+    show = Namespace(
+        api_timeout_seconds=None, command="session", session_command="show"
+    )
+    assert _client_timeout_seconds(show) == 30.0

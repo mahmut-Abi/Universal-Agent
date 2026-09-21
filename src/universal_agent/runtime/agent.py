@@ -310,6 +310,19 @@ class AgentRuntime:
                     "session is not waiting",
                     error_code=ErrorCode.INVALID_STATE,
                 )
+            if pending is None and confirmed is not None:
+                # A confirmation flag without a pending action is a caller
+                # error: silently re-entering the decision loop would discard
+                # the user's approval intent and can let the session complete
+                # on stale criteria without ever performing the approved
+                # mutation (UA-LIVE-2026-09-21 P10a).
+                return build_result(
+                    state,
+                    ExecutionStatus.FAILED,
+                    "no pending action to confirm; session is waiting for user "
+                    "input, not for action confirmation",
+                    error_code=ErrorCode.INVALID_STATE,
+                )
             if pending is not None and confirmed is None:
                 return await self._settle(
                     session,

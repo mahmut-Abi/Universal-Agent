@@ -229,12 +229,19 @@ def _client_timeout_seconds(args: argparse.Namespace) -> float:
     Long-running commands (goal execution with real model rounds) default to a
     900s request timeout so the client does not give up while the server-side
     session is still progressing; an explicit --api-timeout-seconds always
-    wins.
+    wins. Confirmed ``session resume`` also executes a real run continuation
+    (policy confirmation → action → verification), so it uses the same budget
+    instead of the default 30s (UA-LIVE-2026-09-21 F6).
     """
     explicit = cast(float | None, getattr(args, "api_timeout_seconds", None))
     if explicit is not None:
         return explicit
     if cast(str, args.command) in _BASE_LONG_RUN_COMMANDS | _contributed_long_run_commands():
+        return _LONG_RUN_DEFAULT_TIMEOUT_SECONDS
+    if (
+        cast(str, args.command) == "session"
+        and getattr(args, "session_command", None) == "resume"
+    ):
         return _LONG_RUN_DEFAULT_TIMEOUT_SECONDS
     return 30.0
 

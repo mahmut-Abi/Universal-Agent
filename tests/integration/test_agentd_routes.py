@@ -647,7 +647,7 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
     assert health.body["status"] == "ok"
     assert health.headers["content-type"] == "application/json"
     assert ready.body["ready"] is True
-    assert ready.body["capability_count"] == 8
+    assert ready.body["capability_count"] == 9
     assert domains.body["domains"] == [
         {
             "name": "kubernetes",
@@ -664,6 +664,7 @@ async def test_agentd_catalog_routes_expose_runtime_service_views() -> None:
                 "inspect_service",
                 "scale_workload",
                 "restart_workload",
+                "set_image",
             ],
             "evaluator_names": ["workload-health"],
         }
@@ -2395,6 +2396,37 @@ async def test_agentd_session_and_events_routes_are_json_safe() -> None:
     assert isinstance(last_event["occurred_at"], str)
     assert events.body["next_cursor"] == last_event["event_id"]
     assert backend.inspect_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_agentd_resume_route_rejects_confirmation_without_pending_action() -> None:
+    """UA-LIVE-2026-09-21 P10a: --confirmed true on a session that is waiting
+    for user input (no pending action) must fail explicitly instead of
+    silently re-entering the decision loop and completing on stale criteria."""
+    service, backend = build_service([wait(), inspect_workload(), finish()])
+    app = AgentdApp(service)
+    created = await app.handle(HttpRequest("POST", "/v1/sessions", goal_submission_body()))
+    result = created.body["result"]
+    assert isinstance(result, dict)
+    session_id = result["session_id"]
+    assert isinstance(session_id, str)
+
+    resumed = await app.handle(
+        HttpRequest(
+            "POST",
+            f"/v1/sessions/{session_id}/resume",
+            immutable_json({"confirmed": True}),
+        )
+    )
+
+    assert resumed.status_code == 422
+    resumed_result = resumed.body["result"]
+    assert isinstance(resumed_result, dict)
+    assert resumed_result["status"] == "failed"
+    assert resumed_result["error_code"] == "invalid_state"
+    assert "no pending action" in str(resumed_result["reason"])
+    assert backend.inspect_calls == 0
 
 
 @pytest.mark.asyncio
