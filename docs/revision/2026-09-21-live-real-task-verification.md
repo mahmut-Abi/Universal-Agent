@@ -342,6 +342,26 @@ alice 自己一切正常；legacy 旧会话（tenant_id=None）单租户模式�
 create/delete` 子命令 + `profile list` 合并 stored_profiles）、R5-8/R5-9
 撤销（ecosystem 包与 dataset manifest 是独立口径，非缺陷，属文档澄清）。
 
+## 六轮验证：compile-goal / eval suite-file / 修复闭环 / 错误质量
+
+### ✅ 验证通过
+
+- **--compile-goal**：复合目标（健康检查+诊断）正确编译为 2 个任务并全部完成——
+  动态任务扩展首次 live 验证
+- **eval --suite-file**：仓库自带 cross_domain_scenarios.json 可跑通全套
+  （2 场景 × 任务扩展 × 真模型）
+- **config validate** 正常；workspace 沙箱拒绝越界（复测）
+
+### 发现与修复
+
+| # | 严重度 | 问题 | 状态 |
+|---|--------|------|------|
+| R6-2 | 🔴→✅ | **repair 工具在其核心场景失效**：events.jsonl 出现坏行（崩溃残留/tampering）后，事件读取器对整条日志抛异常——repair 400、doctor 500，恢复闭环断裂。修复：追加型 JSONL 事件日志按行跳过损坏行（torn line 不应使整个历史不可读），repair/doctor/全部恢复可用；新增回归测试（坏行后 list_events 仍返回全部健康事件） | **✅ 已修复** |
+| R6-3 | 🔴→✅ | **OpenAI SDK transport 丢失 transient 分类**：HTTP 500 未标记 transient → 不重试、第一次即 model_failure（json_http transport 对 >=500 正确标记并重试，两个 transport 行为不一致）。修复：`_openai_status_error` 按 408/429/5xx 恢复 transient 分类；新增单测 | **✅ 已修复** |
+| R6-4 | 🟡→✅ | 坏 profile JSON 的报错不含文件名（多 profile 场景无法定位）→ `from_json_file` 在 JsonCodecError 上附加路径 | **✅ 已修复** |
+| R6-1 | 🟡 | `agent init --domain-backend` 无 observability 选项——observability 域只能编程组合，CLI Golden Path 不可达；cross_domain 场景（k8s+observability）无法经 CLI 端到端运行 | 记录待修 |
+| ⚠️ | 瞬时 | cross-domain suite 2 场景遇模型网关瞬时 500——R6-3 修复后此类失败将自动重试 | R6-3 覆盖 |
+
 ## 建议后续（更新）
 
 1. 修 P1（只读命令离线可用）、P6（preflight 契约统一）、P8（check exit code）；

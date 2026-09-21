@@ -153,3 +153,26 @@ async def test_runtime_stops_retrying_after_transient_limit() -> None:
 
     assert model.calls == 3
     assert result.status is ExecutionStatus.FAILED
+
+
+def test_openai_transport_marks_http_500_transient() -> None:
+    """UA-LIVE-2026-09-21 R6-3: the OpenAI SDK transport must preserve the
+    transient classification for 408/429/5xx so the runtime retries provider
+    hiccups instead of failing the goal on the first attempt."""
+    from unittest.mock import MagicMock
+
+    from universal_agent.model.openai_transport import _openai_status_error
+
+    error = MagicMock()
+    error.status_code = 500
+    error.response.text = '{"error":{"message":"Internal server error"}}'
+
+    raised = _openai_status_error(error)
+    assert raised.transient is True
+    assert "HTTP 500" in str(raised)
+
+    error.status_code = 429
+    assert _openai_status_error(error).transient is True
+
+    error.status_code = 400
+    assert _openai_status_error(error).transient is False

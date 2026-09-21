@@ -11,7 +11,6 @@ from filelock import FileLock
 from universal_agent.core import (
     AgentState,
     EventId,
-    JsonCodecError,
     JsonMapping,
     RuntimeEvent,
     SessionId,
@@ -366,11 +365,13 @@ def _load_runtime_events(path: Path) -> list[RuntimeEvent]:
 
 
 def _iter_runtime_events(path: Path) -> Iterator[RuntimeEvent]:
-    try:
-        with jsonlines.open(path, loads=loads_json) as reader:
-            for payload in reader.iter(allow_none=True, skip_empty=True):
-                yield decode_runtime_event(_loads_json_object(payload, "runtime event"))
-    except jsonlines.InvalidLineError as exc:
-        if isinstance(exc.__cause__, JsonCodecError):
-            raise exc.__cause__ from exc
-        raise ValueError(f"invalid runtime event JSON line: {exc}") from exc
+    # The event log is append-only JSONL. A torn or corrupt line (crash during
+    # append, manual tampering) must not make the whole history unreadable —
+    # skip the bad line and keep serving the healthy prefix/suffix. This is
+    # what keeps `agent repair state-events` usable after corruption
+    # (UA-LIVE-2026-09-21 R6-2).
+    with jsonlines.open(path, loads=loads_json) as reader:
+        # skip_invalid: a torn/garbage line (crash during append, tampering)
+        # is skipped so the event history stays readable and repairable.
+        for payload in reader.iter(allow_none=True, skip_empty=True, skip_invalid=True):
+            yield decode_runtime_event(_loads_json_object(payload, "runtime event"))

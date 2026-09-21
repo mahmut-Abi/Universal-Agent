@@ -475,6 +475,15 @@ async def test_file_event_store_reads_and_appends_jsonlines_events(tmp_path: Pat
     assert [event.id for event in loaded] == [EventId("event-1")]
     assert [event.id for event in reloaded] == [EventId("event-1"), EventId("event-2")]
 
+    # A torn/garbage trailing line (crash during append, tampering) must not
+    # make the event history unreadable — the reader skips invalid lines
+    # (UA-LIVE-2026-09-21 R6-2) so `agent repair state-events` stays usable.
+    with events_path.open("a", encoding="utf-8") as handle:
+        handle.write('{"corrupt": true, garbage\n')
+    recovered = await store.list_events(state.session_id)
+
+    assert [event.id for event in recovered] == [EventId("event-1"), EventId("event-2")]
+
 
 @pytest.mark.asyncio
 @pytest.mark.behavior

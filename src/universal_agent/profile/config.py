@@ -147,6 +147,10 @@ class ProfileConfig:
             loaded = read_json_file(path)
         except FileNotFoundError as exc:
             raise ProfileConfigNotFoundError(f"profile config not found: {path}") from exc
+        except JsonCodecError as exc:
+            # Name the offending file so operators can fix the right one
+            # (UA-LIVE-2026-09-21 R6-4).
+            raise JsonCodecError(f"{path}: {exc}") from exc
         return cls.from_mapping(parse_json_object(loaded, "profile config file"))
 
     @classmethod

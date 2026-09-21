@@ -121,9 +121,7 @@ class SessionRouteHandlers:
                     )
                     session_batch = RuntimeSessionBatch(
                         filtered,
-                        str(filtered[-1].session_id)
-                        if filtered
-                        else session_batch.next_cursor,
+                        str(filtered[-1].session_id) if filtered else session_batch.next_cursor,
                     )
                 return json_response(session_batch_body(session_batch))
             try:

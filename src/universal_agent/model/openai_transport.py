@@ -115,7 +115,7 @@ class OpenAISdkModelTransport:
         try:
             response = await client.responses.create(**_openai_kwargs(payload))
         except api_status_error as exc:
-            raise JsonHttpModelError(_openai_status_error_message(exc)) from exc
+            raise _openai_status_error(exc) from exc
         except api_timeout_error as exc:
             raise JsonHttpModelError(f"OpenAI provider request timed out: {exc}") from exc
         except api_connection_error as exc:
@@ -146,7 +146,7 @@ class OpenAISdkModelTransport:
         try:
             response = await client.chat.completions.create(**_openai_kwargs(payload))
         except api_status_error as exc:
-            raise JsonHttpModelError(_openai_status_error_message(exc)) from exc
+            raise _openai_status_error(exc) from exc
         except api_timeout_error as exc:
             raise JsonHttpModelError(f"OpenAI provider request timed out: {exc}") from exc
         except api_connection_error as exc:
@@ -222,6 +222,22 @@ def _openai_response_mapping(response: object, field_name: str) -> JsonMapping:
     if not callable(model_dump):
         raise JsonHttpModelError(f"{field_name} was not an OpenAI SDK model")
     return _json_mapping(model_dump(mode="json"), field_name)
+
+
+def _openai_status_error_is_transient(error: Exception) -> bool:
+    """Mirror the json_http transport classification: 408/429 and all 5xx are
+    retryable provider failures (UA-LIVE-2026-09-21 R6-3 — without this the
+    OpenAI SDK transport lost the transient flag and HTTP 500s failed the
+    goal on the first attempt instead of being retried)."""
+
+    return getattr(error, "status_code", 0) in {408, 429} or getattr(error, "status_code", 0) >= 500
+
+
+def _openai_status_error(error: Exception) -> JsonHttpModelError:
+    return JsonHttpModelError(
+        _openai_status_error_message(error),
+        transient=_openai_status_error_is_transient(error),
+    )
 
 
 def _openai_status_error_message(error: Exception) -> str:
