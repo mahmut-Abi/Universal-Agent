@@ -220,6 +220,7 @@ def session_summary_from_body(body: JsonMapping) -> SessionSummaryView:
         pending_action=bool(body.get("pending_action", False)),
         termination_reason=_optional_str(body, "termination_reason"),
         error_code=_optional_error_code(body, "error_code"),
+        tenant_id=_optional_str(body, "tenant_id"),
         domain_name=_as_str(body["domain_name"]),
         domain_version=_as_str(body["domain_version"]),
         created_at=_datetime(body["created_at"]),
@@ -288,6 +289,7 @@ def session_view_from_body(body: JsonMapping) -> SessionView:
         ),
         termination_reason=_optional_str(body, "termination_reason"),
         error_code=_optional_error_code(body, "error_code"),
+        tenant_id=_optional_str(body, "tenant_id"),
         domain_name=_as_str(body["domain_name"]),
         domain_version=_as_str(body["domain_version"]),
     )

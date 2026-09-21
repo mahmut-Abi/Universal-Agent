@@ -448,6 +448,11 @@ class AgentState:
     recovery_attempts: dict[str, int] = field(default_factory=dict)
     termination_reason: str | None = None
     error_code: ErrorCode | None = None
+    # Tenant scoping for multi-tenant agentd deployments (UA-LIVE-2026-09-21
+    # R5-7). None in single-tenant/embedded mode: every authenticated
+    # principal may access the session. When set, the API layer refuses
+    # principals from other tenants.
+    tenant_id: str | None = None
     cumulative_cost_micros: int = 0
     cumulative_tokens: int = 0
     is_continuation: bool = False

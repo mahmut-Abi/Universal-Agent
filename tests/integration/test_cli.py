@@ -1304,6 +1304,7 @@ async def test_cli_init_can_write_openai_chat_prompt_json_model_config(tmp_path:
         name="gpt-runtime",
         api_key_secret="model_api_key",
         response_format="prompt_json",
+        timeout_seconds=120.0,
     )
 
 

@@ -291,6 +291,9 @@ def _request_url(
 def _response_json(response: httpx.Response) -> JsonMapping:
     if response.status_code >= 400:
         _raise_http_error(response)
+    if not response.content.strip():
+        # 204 No Content (e.g. profile DELETE) — treat as an empty object.
+        return {}
     try:
         loaded = loads_json(response.content)
     except JsonCodecError as exc:

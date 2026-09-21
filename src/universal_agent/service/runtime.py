@@ -12,6 +12,7 @@ from universal_agent.core import (
     SessionId,
     Task,
     TaskId,
+    immutable_json,
 )
 from universal_agent.distributed import (
     DistributedCancellationResult,
@@ -203,6 +204,7 @@ class RuntimeService:
         content: str,
         scope: str = "",
         confidence: float = 1.0,
+        tenant_id: str | None = None,
     ) -> MemoryView:
         """Create an operator-managed memory record in the runtime memory store."""
 
@@ -213,6 +215,7 @@ class RuntimeService:
             scope=scope,
             confidence=confidence,
             source="user",
+            metadata=immutable_json({"tenant_id": tenant_id} if tenant_id else {}),
         )
         self._components.memory_store.add(record)
         return memory_view(record)
@@ -493,11 +496,13 @@ class RuntimeService:
         initial_state: JsonMapping | None = None,
         read_only: bool = False,
         timeout_seconds: float | None = None,
+        tenant_id: str | None = None,
     ) -> RuntimeRun:
         return await self._runtime_api.run_goal(
             goal,
             task,
             initial_state=initial_state,
+            tenant_id=tenant_id,
             read_only=read_only,
             timeout_seconds=timeout_seconds,
         )
@@ -509,12 +514,14 @@ class RuntimeService:
         initial_state: JsonMapping | None = None,
         read_only: bool = False,
         timeout_seconds: float | None = None,
+        tenant_id: str | None = None,
     ) -> RuntimeRun:
         return await self._runtime_api.run_compiled_goal(
             goal,
             initial_state=initial_state,
             read_only=read_only,
             timeout_seconds=timeout_seconds,
+            tenant_id=tenant_id,
         )
 
     async def resume_session(

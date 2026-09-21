@@ -81,6 +81,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
         None,
         "done",
         None,
+        None,
         "kubernetes",
         "0.2.0",
     )
@@ -276,6 +277,7 @@ def test_tui_renderer_projects_runtime_snapshot() -> None:
                 1,
                 False,
                 "done",
+                None,
                 None,
                 "kubernetes",
                 "0.2.0",
@@ -608,6 +610,7 @@ def test_tui_renders_conflicts_and_evidence_linkage_from_shared_projections() ->
         None,
         None,
         "done",
+        None,
         None,
         "kubernetes",
         "0.2.0",

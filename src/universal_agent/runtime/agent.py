@@ -171,6 +171,7 @@ class AgentRuntime:
         initial_state: JsonMapping | None = None,
         read_only: bool = False,
         timeout_seconds: float | None = None,
+        tenant_id: str | None = None,
     ) -> ExecutionResult:
         if self._goal_compiler is not None:
             compilation = await self._goal_compiler.compile(goal)
@@ -180,6 +181,7 @@ class AgentRuntime:
                 initial_state=initial_state,
                 read_only=read_only,
                 timeout_seconds=timeout_seconds,
+                tenant_id=tenant_id,
             )
         return await self._start_run(
             goal,
@@ -187,6 +189,7 @@ class AgentRuntime:
             initial_state=initial_state,
             read_only=read_only,
             timeout_seconds=timeout_seconds,
+            tenant_id=tenant_id,
         )
 
     async def run_compiled(
@@ -196,6 +199,7 @@ class AgentRuntime:
         initial_state: JsonMapping | None = None,
         read_only: bool = False,
         timeout_seconds: float | None = None,
+        tenant_id: str | None = None,
     ) -> ExecutionResult:
         compilation = await DefaultGoalCompiler().compile(goal)
         return await self._run_compilation(
@@ -204,6 +208,7 @@ class AgentRuntime:
             initial_state=initial_state,
             read_only=read_only,
             timeout_seconds=timeout_seconds,
+            tenant_id=tenant_id,
         )
 
     async def _run_compilation(
@@ -214,6 +219,7 @@ class AgentRuntime:
         initial_state: JsonMapping | None,
         read_only: bool,
         timeout_seconds: float | None,
+        tenant_id: str | None = None,
     ) -> ExecutionResult:
         tasks = TaskManager.from_specs(compilation.initial_tasks)
         return await self._start_run(
@@ -224,6 +230,7 @@ class AgentRuntime:
             tasks=tasks,
             compilation=compilation,
             timeout_seconds=timeout_seconds,
+            tenant_id=tenant_id,
         )
 
     async def _start_run(
@@ -236,12 +243,14 @@ class AgentRuntime:
         tasks: TaskManager | None = None,
         compilation: GoalCompilation | None = None,
         timeout_seconds: float | None = None,
+        tenant_id: str | None = None,
     ) -> ExecutionResult:
         state = AgentState(
             session_id=new_session_id(),
             goal=goal,
             current_task=task,
             read_only=read_only,
+            tenant_id=tenant_id,
         )
         state.tasks = list(tasks.all()) if tasks is not None else [task]
         session = start_session(state, self._components, tasks=tasks)

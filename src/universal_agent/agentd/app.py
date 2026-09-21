@@ -71,7 +71,7 @@ from universal_agent.agentd.routing import (
     _normalize_path,
     _optional_query_value,
 )
-from universal_agent.core import GoalStatus, JsonMapping, immutable_json
+from universal_agent.core import GoalStatus, JsonMapping, SessionId, immutable_json
 from universal_agent.domain import AmbiguousDomainPackageError, DomainPackageNotFoundError
 from universal_agent.host_contracts import DomainRouteContribution
 from universal_agent.memory import MemoryKind
@@ -79,6 +79,7 @@ from universal_agent.profile import ProfileConfigNotFoundError, ProfileNotFoundE
 from universal_agent.profile.store import ProfileStore
 from universal_agent.security import AuditRecorder, CredentialAdminStore
 from universal_agent.service import RuntimeService
+from universal_agent.state import StateNotFoundError
 
 _STATIC_GET_ROUTE_DEFINITIONS = (
     AgentdRouteDefinition("openapi", "/openapi.json"),
@@ -335,8 +336,28 @@ class AgentdApp:
         if bundle_error is not None:
             return bundle_error
         service = bundle.service
+        principal_tenant = auth.principal.tenant.tenant_id if auth.principal is not None else None
 
-        memory_response = self._memory_route_response(request, method, path, service)
+        # Tenant data-plane guard (UA-LIVE-2026-09-21 R5-7): a session stamped
+        # with a foreign tenant is indistinguishable from a missing one.
+        if principal_tenant is not None and path.startswith("/v1/sessions/"):
+            remainder = path[len("/v1/sessions/") :]
+            session_id = remainder.split("/", 1)[0]
+            if session_id:
+                try:
+                    existing = await service.get_session(SessionId(session_id))
+                except StateNotFoundError:
+                    existing = None
+                if (
+                    existing is not None
+                    and existing.tenant_id is not None
+                    and existing.tenant_id != principal_tenant
+                ):
+                    return not_found(f"session not found: {session_id}")
+
+        memory_response = self._memory_route_response(
+            request, method, path, service, tenant_id=principal_tenant
+        )
         if memory_response is not None:
             return memory_response
 
@@ -348,13 +369,27 @@ class AgentdApp:
         mutation_guard = await self._profile_mutation_guard(request, method, path)
         if mutation_guard is not None:
             return mutation_guard
+        # Profile/config mutations are admin-plane operations: gate them like
+        # /v1/admin/* (legacy shared-token bootstrap keeps None principal).
+        if (
+            method != "GET"
+            and path.startswith(("/v1/profiles", "/v1/config", "/v1/domains/"))
+            and not path.startswith("/v1/config/validate")
+        ):
+            from universal_agent.agentd.admin_routes import _admin_gate
+
+            gate = _admin_gate(auth.principal)
+            if gate is not None:
+                return gate
         config_admin_response = await handle_config_admin_route(
             self._profile_store, request, method, path
         )
         if config_admin_response is not None:
             return config_admin_response
 
-        static_response = await self._static_get_route_response(request, method, path, service)
+        static_response = await self._static_get_route_response(
+            request, method, path, service, tenant_id=principal_tenant
+        )
         if static_response is not None:
             return static_response
 
@@ -394,7 +429,9 @@ class AgentdApp:
         if distributed_response is not None:
             return distributed_response
 
-        session_response = await bundle.session.route_response(request, method, path)
+        session_response = await bundle.session.route_response(
+            request, method, path, tenant_id=principal_tenant
+        )
         if session_response is not None:
             return session_response
 
@@ -413,6 +450,8 @@ class AgentdApp:
         method: str,
         path: str,
         service: RuntimeService,
+        *,
+        tenant_id: str | None = None,
     ) -> HttpResponse | None:
         route = _MEMORY_ROUTES.match(path, method)
         if route is None or not route.method_allowed:
@@ -427,13 +466,18 @@ class AgentdApp:
                     content=payload.content,
                     scope=payload.scope,
                     confidence=payload.confidence,
+                    tenant_id=tenant_id,
                 )
             except ValueError as exc:
                 return bad_request(str(exc))
             return json_response(memory_body(view), status_code=201)
         assert memory_id is not None
         existing = service.get_memory(memory_id)
-        if existing is None:
+        if existing is None or (
+            tenant_id is not None and existing.metadata.get("tenant_id") not in (None, tenant_id)
+        ):
+            # Foreign-tenant memory records are indistinguishable from
+            # missing ones (UA-LIVE-2026-09-21 R5-7).
             return not_found(f"memory record not found: {memory_id}")
         if method == "DELETE":
             service.delete_memory(memory_id)
@@ -446,6 +490,8 @@ class AgentdApp:
         method: str,
         path: str,
         service: RuntimeService,
+        *,
+        tenant_id: str | None = None,
     ) -> HttpResponse | None:
         route = _STATIC_GET_ROUTES.match(path, method)
         if route is None:
@@ -480,7 +526,13 @@ class AgentdApp:
                 {"evaluators": [evaluator_body(item) for item in service.evaluators()]}
             ),
             "memory": lambda: immutable_json(
-                {"memories": [memory_body(item) for item in service.memories()]}
+                {
+                    "memories": [
+                        memory_body(item)
+                        for item in service.memories()
+                        if tenant_id is None or item.metadata.get("tenant_id") in (None, tenant_id)
+                    ]
+                }
             ),
             "profiles": lambda: immutable_json(
                 {"profiles": [profile_body(item) for item in service.profiles()]}

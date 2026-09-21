@@ -99,6 +99,7 @@ def _sample_session_view() -> SessionView:
         None,
         "done",
         ErrorCode.INVALID_STATE,
+        None,
         "kubernetes",
         "0.2.0",
     )
@@ -118,6 +119,7 @@ def _sample_summary() -> SessionSummaryView:
         pending_action=True,
         termination_reason="waiting for operator",
         error_code=None,
+        tenant_id=None,
         domain_name="kubernetes",
         domain_version="0.2.0",
         created_at=datetime(2026, 1, 1, tzinfo=UTC),

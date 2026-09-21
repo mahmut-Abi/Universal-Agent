@@ -153,6 +153,7 @@ class _AgentStatePayload(ConfigPayload):
     termination_reason: str | None
     error_code: _StateErrorCodePayload
     approved_fingerprints: list[str] = Field(default_factory=list)
+    tenant_id: str | None = None
 
 
 class _EvidencePayload(ConfigPayload):
@@ -282,6 +283,7 @@ def _encode_agent_state(state: AgentState) -> JsonObject:
         "termination_reason": state.termination_reason,
         "error_code": state.error_code.value if state.error_code is not None else None,
         "approved_fingerprints": list(state.approved_fingerprints),
+        "tenant_id": state.tenant_id,
     }
 
 
@@ -302,6 +304,7 @@ def _decode_agent_state(payload: _AgentStatePayload, tasks: Mapping[TaskId, Task
         termination_reason=payload.termination_reason,
         error_code=payload.error_code,
         approved_fingerprints=list(payload.approved_fingerprints),
+        tenant_id=payload.tenant_id,
     )
     return state
 

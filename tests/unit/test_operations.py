@@ -53,6 +53,7 @@ def session(
         pending_action=pending_action,
         termination_reason="done",
         error_code=None,
+        tenant_id=None,
         domain_name="kubernetes",
         domain_version="0.2.0",
         created_at=datetime(2026, 1, 1, tzinfo=UTC),

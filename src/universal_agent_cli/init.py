@@ -76,7 +76,7 @@ def _resolved_model_settings(args: argparse.Namespace) -> ModelProviderPreset:
         preset.provider,
         preset.model_name if model_name == "scripted" else model_name,
         preset.response_format if response_format is None else response_format,
-        timeout_seconds if timeout_seconds != 30.0 else preset.timeout_seconds,
+        timeout_seconds if timeout_seconds != 120.0 else preset.timeout_seconds,
     )
 
 

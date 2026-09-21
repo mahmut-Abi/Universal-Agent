@@ -187,6 +187,7 @@ def _summary(goal_status: GoalStatus) -> SessionSummaryView:
         pending_action=False,
         termination_reason=None,
         error_code=ErrorCode.TOOL_FAILURE if goal_status is GoalStatus.RUNNING else None,
+        tenant_id=None,
         domain_name="local",
         domain_version="0.1.0",
         created_at=_FIXED_AT,

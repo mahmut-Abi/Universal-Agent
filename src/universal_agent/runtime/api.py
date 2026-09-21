@@ -85,6 +85,7 @@ class SessionView:
     latest_evaluation: EvaluationView | None
     termination_reason: str | None
     error_code: ErrorCode | None
+    tenant_id: str | None
     domain_name: str
     domain_version: str
 
@@ -103,6 +104,7 @@ class SessionSummaryView:
     pending_action: bool
     termination_reason: str | None
     error_code: ErrorCode | None
+    tenant_id: str | None
     domain_name: str
     domain_version: str
     created_at: datetime
@@ -206,11 +208,13 @@ class RuntimeAPI:
         initial_state: JsonMapping | None = None,
         read_only: bool = False,
         timeout_seconds: float | None = None,
+        tenant_id: str | None = None,
     ) -> RuntimeRun:
         result = await self._runtime.run(
             goal,
             task,
             initial_state=initial_state,
+            tenant_id=tenant_id,
             read_only=read_only,
             timeout_seconds=timeout_seconds,
         )
@@ -223,12 +227,14 @@ class RuntimeAPI:
         initial_state: JsonMapping | None = None,
         read_only: bool = False,
         timeout_seconds: float | None = None,
+        tenant_id: str | None = None,
     ) -> RuntimeRun:
         result = await self._runtime.run_compiled(
             goal,
             initial_state=initial_state,
             read_only=read_only,
             timeout_seconds=timeout_seconds,
+            tenant_id=tenant_id,
         )
         return RuntimeRun(result, await self.get_session(result.session_id))
 
@@ -412,6 +418,7 @@ def session_view(snapshot: SessionSnapshot) -> SessionView:
         latest_evaluation=evaluation_view(state.latest_evaluation),
         termination_reason=state.termination_reason,
         error_code=state.error_code,
+        tenant_id=state.tenant_id,
         domain_name=snapshot.domain_name,
         domain_version=snapshot.domain_version,
     )
@@ -441,6 +448,7 @@ def session_summary_view(snapshot: SessionSnapshot) -> SessionSummaryView:
         pending_action=state.pending_action is not None,
         termination_reason=state.termination_reason,
         error_code=state.error_code,
+        tenant_id=state.tenant_id,
         domain_name=snapshot.domain_name,
         domain_version=snapshot.domain_version,
         created_at=state.goal.created_at,

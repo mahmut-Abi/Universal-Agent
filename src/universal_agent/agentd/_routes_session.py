@@ -41,6 +41,7 @@ from universal_agent.agentd.session_representations import (
 )
 from universal_agent.core import JsonValue, SessionId, immutable_json
 from universal_agent.operations.llm_calls import llm_calls_body
+from universal_agent.runtime import RuntimeSessionBatch
 from universal_agent.service import RuntimeService
 from universal_agent.state import StateNotFoundError
 
@@ -90,6 +91,8 @@ class SessionRouteHandlers:
         request: HttpRequest,
         method: str,
         path: str,
+        *,
+        tenant_id: str | None = None,
     ) -> HttpResponse | None:
         route = _SESSION_ROUTES.match(path, method)
         if route is None:
@@ -100,16 +103,29 @@ class SessionRouteHandlers:
         if route.name == "sessions":
             if method == "GET":
                 try:
-                    return json_response(
-                        session_batch_body(
-                            await self._service.stream_sessions(
-                                after_session_id=_optional_session_cursor(request.path),
-                                limit=_optional_positive_int_query(request.path, "limit"),
-                            )
-                        )
+                    session_batch = await self._service.stream_sessions(
+                        after_session_id=_optional_session_cursor(request.path),
+                        limit=_optional_positive_int_query(request.path, "limit"),
                     )
                 except ValueError as exc:
                     return bad_request(str(exc))
+                if tenant_id is not None:
+                    # Tenant data-plane isolation (UA-LIVE-2026-09-21 R5-7):
+                    # drop sessions stamped with a foreign tenant. Sessions
+                    # created before tenant scoping (tenant_id=None) predate
+                    # multi-tenancy and stay visible in legacy mode only.
+                    filtered = tuple(
+                        view
+                        for view in session_batch.sessions
+                        if view.tenant_id in (None, tenant_id)
+                    )
+                    session_batch = RuntimeSessionBatch(
+                        filtered,
+                        str(filtered[-1].session_id)
+                        if filtered
+                        else session_batch.next_cursor,
+                    )
+                return json_response(session_batch_body(session_batch))
             try:
                 submission = parse_goal_submission(request.body)
             except ValueError as exc:
@@ -122,6 +138,7 @@ class SessionRouteHandlers:
                 run = await self._service.run_compiled_goal(
                     submission.goal,
                     timeout_seconds=submission.timeout_seconds,
+                    tenant_id=tenant_id,
                 )
             else:
                 assert submission.task is not None
@@ -130,6 +147,7 @@ class SessionRouteHandlers:
                     submission.task,
                     timeout_seconds=submission.timeout_seconds,
                     read_only=submission.read_only,
+                    tenant_id=tenant_id,
                 )
             return json_response(
                 runtime_run_body(run),

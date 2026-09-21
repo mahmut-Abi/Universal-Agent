@@ -136,6 +136,7 @@ class MemoryView:
     confidence: float
     source_session_id: SessionId | None
     created_at: datetime
+    metadata: JsonMapping = field(default_factory=immutable_json)
 
 
 @dataclass(frozen=True, slots=True)

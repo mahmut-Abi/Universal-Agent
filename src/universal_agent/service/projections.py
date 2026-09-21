@@ -162,6 +162,7 @@ def memory_view(record: MemoryRecord) -> MemoryView:
         confidence=record.confidence,
         source_session_id=record.source_session_id,
         created_at=record.created_at,
+        metadata=immutable_json(dict(record.metadata)),
     )
 
 

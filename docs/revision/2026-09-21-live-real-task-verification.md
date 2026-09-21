@@ -317,6 +317,31 @@ thin-client 全套命令、401 认证、agentd 优雅启动。
 - 跨租户 deny（--tenant-id 进程级 scoping 路径存在）✅（admin 面）
 - provisioning 顺序灵活（Q12 修复后 role set / credential 任意顺序）✅
 
+## R5-7 修复：租户数据面隔离（同日）
+
+设计：`AgentState.tenant_id`（可选、向后兼容字段）+ agentd API 层强制执行，
+kernel 不引入租户逻辑；legacy 无凭据模式（principal=None）行为不变。
+
+- 会话创建：POST /v1/sessions 按请求 principal 的 tenant 打标（run_goal /
+  run_compiled_goal → AgentRuntime.run → AgentState.tenant_id）
+- 持久化：codec 编解码 tenant_id（旧快照缺字段 → None，向后兼容）
+- 读取守卫：/v1/sessions/{id}/* 对外租户会话一律 404（不存在即不可见，
+  无存在性泄露）
+- 列表过滤：GET /v1/sessions 过滤外租户会话
+- memory：create 按 principal 打标 metadata.tenant_id；list 过滤；
+  get/delete 对外租户记录 404
+- 附带：SessionSummaryView / SessionView / MemoryView 增加 tenant_id / metadata
+- 附带：config-admin 变更路由（POST/PATCH/DELETE profiles、PUT config）
+  加 admin 门禁（GET 与 /v1/config/validate 不受限）
+
+Live 验证（双租户 acme/globex）：bob 列表不含 alice 会话；按 id 读取 → 404；
+acme-secret memory 对 bob 不可见；bob 的 globex memory 对 alice 404；
+alice 自己一切正常；legacy 旧会话（tenant_id=None）单租户模式保持可见。
+
+其余修复：F5（init 默认 model timeout 30s→120s）、R5-1/R5-4（`profile
+create/delete` 子命令 + `profile list` 合并 stored_profiles）、R5-8/R5-9
+撤销（ecosystem 包与 dataset manifest 是独立口径，非缺陷，属文档澄清）。
+
 ## 建议后续（更新）
 
 1. 修 P1（只读命令离线可用）、P6（preflight 契约统一）、P8（check exit code）；

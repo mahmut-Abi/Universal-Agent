@@ -74,6 +74,18 @@ async def _dispatch_remote_profile(
     profile_command = cast(str, args.profile_command)
     if profile_command == "list":
         body = await client.get_json("/v1/profiles")
+        # Merge store-backed profiles (created via the config API, not yet
+        # loaded into the running service) so the full set is discoverable
+        # (UA-LIVE-2026-09-21 R5-4).
+        stored = await client.get_json("/v1/config/profiles")
+        stored_names = [item for item in stored.get("stored_profiles", []) if isinstance(item, str)]
+        loaded_names = [
+            item.get("name", "") for item in body.get("profiles", []) if isinstance(item, dict)
+        ]
+        extra = [name for name in stored_names if name not in loaded_names]
+        if extra:
+            for item in extra:
+                body["profiles"].append({"name": item, "stored_only": True})
         if cast(str, getattr(args, "output", "json")) == "text":
             _write_text(out, render_profile_list_text(body))
             return
@@ -93,6 +105,20 @@ async def _dispatch_remote_profile(
             )
             return
         _write_json(out, body)
+        return
+    if profile_command == "create":
+        from universal_agent.core import read_json_file
+
+        source = cast(str, args.from_file)
+        payload = read_json_file(source)
+        _write_json(out, await client.post_json("/v1/profiles", body=payload))
+        return
+    if profile_command == "delete":
+        profile = quote_path_segment(cast(str, args.profile))
+        _write_json(
+            out,
+            await client.delete_json(f"/v1/profiles/{profile}"),
+        )
         return
     raise ValueError("profile command does not support --api-url: " + profile_command)
 

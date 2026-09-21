@@ -130,7 +130,13 @@ def add_init_parser(
     advanced_model.add_argument("--model-endpoint")
     advanced_model.add_argument("--model-api-key-file")
     advanced_model.add_argument("--model-api-key-secret", default="model_api_key")
-    advanced_model.add_argument("--model-timeout-seconds", type=float, default=30.0)
+    advanced_model.add_argument(
+        "--model-timeout-seconds",
+        type=float,
+        # 120s default: reasoning models with json_object response formats
+        # routinely exceed 30s per call (UA-LIVE-2026-09-21 F5).
+        default=120.0,
+    )
     advanced_model.add_argument(
         "--model-response-format",
         choices=("json_schema", "json_object", "prompt_json"),
@@ -343,6 +349,21 @@ def add_profile_parser(commands: argparse._SubParsersAction[argparse.ArgumentPar
     )
     profile_verify = profile_commands.add_parser("verify")
     profile_verify.add_argument("--profile-dir", required=True)
+    profile_create = profile_commands.add_parser(
+        "create",
+        help="Create a stored profile from a profile JSON file (agentd profile store).",
+    )
+    profile_create.add_argument(
+        "--from",
+        dest="from_file",
+        required=True,
+        help="Path to the profile JSON payload to store.",
+    )
+    profile_delete = profile_commands.add_parser(
+        "delete",
+        help="Delete a stored profile from the agentd profile store.",
+    )
+    profile_delete.add_argument("profile")
 
 
 def add_doctor_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
