@@ -98,7 +98,10 @@ async def handle_kubernetes_route(
 
     skip_cluster = _flag(body, "skip_cluster")
     workload = _text(body, "workload")
-    if workload is None and (route.name != "kubernetes_preflight" or not skip_cluster):
+    # preflight treats the workload as optional (it adds a workload inspection
+    # check when present); every other operator route requires a target
+    # (UA-LIVE-2026-09-21 P6).
+    if workload is None and route.name != "kubernetes_preflight":
         return domain_bad_request("workload is required")
 
     args = argparse.Namespace(

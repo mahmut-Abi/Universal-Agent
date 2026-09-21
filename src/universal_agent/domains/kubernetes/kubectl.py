@@ -117,6 +117,8 @@ class KubectlBackend:
             return await self._scale_workload(arguments)
         if capability == "restart_workload":
             return await self._restart_workload(arguments)
+        if capability == "set_image":
+            return await self._set_image(arguments)
         raise ValueError(f"unsupported kubectl mutation capability: {capability}")
 
     async def _inspect_cluster(self) -> JsonMapping:
@@ -268,7 +270,28 @@ class KubectlBackend:
         container = k8s.optional_string(arguments.get("container"))
         if container is not None:
             command.extend(("--container", container))
-        result = await self._run(*command)
+        try:
+            result = await self._run(*command)
+        except KubectlCommandError as exc:
+            # kubectl logs exits non-zero when the target container has not
+            # started yet (BadRequest: "... is waiting to start: ...").
+            # That message is itself the diagnostic evidence, so surface it as
+            # a structured observation instead of a tool failure that would
+            # abort the diagnosis (UA-LIVE-2026-09-21 F1).
+            message = str(exc)
+            if "is waiting to start" in message or "is not valid" in message:
+                return immutable_json(
+                    {
+                        "resource": ref.resource,
+                        "namespace": ref.namespace,
+                        "line_count": 0,
+                        "recent_logs": "",
+                        "container": container or "",
+                        "logs_available": False,
+                        "container_wait_state": message.split(": ", 1)[-1].strip() or message,
+                    }
+                )
+            raise
         lines = result.stdout.splitlines()
         return immutable_json(
             {
@@ -277,6 +300,7 @@ class KubectlBackend:
                 "line_count": len(lines),
                 "recent_logs": result.stdout,
                 "container": container or "",
+                "logs_available": True,
             }
         )
 
@@ -397,6 +421,36 @@ class KubectlBackend:
             }
         )
 
+    async def _set_image(self, arguments: JsonMapping) -> JsonMapping:
+        ref = k8s.resource_ref(
+            arguments, default_kind="deployment", default_namespace=self._default_namespace
+        )
+        container = k8s.required_string(arguments, "container")
+        image = k8s.required_string(arguments, "image")
+        before = await self._run_json(
+            "get", ref.kind, ref.name, "--namespace", ref.namespace, "-o", "json"
+        )
+        previous = _container_image(before, container)
+        result = await self._run(
+            "set",
+            "image",
+            ref.resource,
+            f"{container}={image}",
+            "--namespace",
+            ref.namespace,
+        )
+        return immutable_json(
+            {
+                "resource": ref.resource,
+                "namespace": ref.namespace,
+                "mutation_applied": True,
+                "container": container,
+                "previous_image": previous,
+                "image": image,
+                "mutation_id": k8s.stable_mutation_id(result.stdout),
+            }
+        )
+
     async def _run_json(self, *args: str) -> dict[str, JsonValue]:
         result = await self._run(*args)
         try:
@@ -419,6 +473,19 @@ class KubectlBackend:
         if self._kubeconfig is not None:
             args.extend(("--kubeconfig", self._kubeconfig))
         return tuple(args)
+
+
+def _container_image(payload: dict[str, JsonValue], container: str) -> str:
+    spec = k8s.object_value(payload.get("spec"))
+    template = k8s.object_value(spec.get("template"))
+    pod_spec = k8s.object_value(template.get("spec"))
+    containers = pod_spec.get("containers")
+    for item in containers if isinstance(containers, list) else []:
+        if isinstance(item, dict) and item.get("name") == container:
+            image = item.get("image")
+            if isinstance(image, str):
+                return image
+    return ""
 
 
 def _command_error(result: KubectlResult) -> str:

@@ -98,16 +98,19 @@ def test_kubernetes_preflight_route_runs_read_only_checks() -> None:
 
 
 @pytest.mark.integration
-def test_kubernetes_preflight_route_requires_workload() -> None:
+def test_kubernetes_preflight_route_runs_without_workload() -> None:
+    """UA-LIVE-2026-09-21 P6: standalone preflight is cluster-scope; the
+    workload inspection check is only added when a workload is provided."""
     client = TestClient(build_agentd_asgi_app(build_app()))
 
     response = client.post("/v1/kubernetes/preflight", json={})
+    payload = response.json()
+    checks = {item["name"] for item in payload["checks"]}
 
-    assert response.status_code == 400
-    assert response.json()["error"] == {
-        "code": "bad_request",
-        "message": "workload is required",
-    }
+    assert response.status_code == 200
+    assert payload["status"] == "ok"
+    assert "kubernetes_domain" in checks
+    assert "workload_inspection" not in checks
 
 
 @pytest.mark.integration

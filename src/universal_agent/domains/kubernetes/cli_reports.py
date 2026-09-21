@@ -501,6 +501,20 @@ def kubernetes_model_probe_adapter(
     if profile_config is None:
         return ScriptedModelAdapter(scripted)
     profile = ProfileConfig.from_json_file(profile_config).to_profile()
+    # The probe invokes the model directly, so missing credentials must fail
+    # fast here at the command boundary (the runtime itself assembles lazily
+    # so read-only surfaces can serve without secrets — UA-LIVE-2026-09-21 P1).
+    from universal_agent.host import model_credentials_missing_reason
+
+    # Credential fail-fast applies only when the effective adapter is the real
+    # configured one. A caller-supplied adapter (e.g. tests injecting a fake
+    # model, or a transport-backed model) already takes responsibility for
+    # resolution, so the env-credential guard must not bypass it and spuriously
+    # fail the probe (UA-LIVE-2026-09-21 P1).
+    if model_adapter_builder is build_configured_model_adapter:
+        missing = model_credentials_missing_reason(profile.runtime, EnvSecretProvider())
+        if missing is not None:
+            raise ValueError(missing)
     return model_adapter_builder(
         profile.runtime,
         scripted_decisions=scripted,

@@ -26,6 +26,7 @@ from universal_agent.domains.kubernetes.evidence import KubernetesEvidenceExtrac
 from universal_agent.domains.kubernetes.policy import (
     KubernetesRestartPolicy,
     KubernetesScalePolicy,
+    KubernetesSetImagePolicy,
 )
 from universal_agent.domains.kubernetes.tools import KubernetesScaleTool
 from universal_agent.domains.kubernetes.workflow import KubernetesRemediationExpander
@@ -225,7 +226,7 @@ class KubernetesDomain:
                 RecoveryStrategy.RETRY_ACTION,
                 max_attempts=1,
                 priority=20,
-                match_capabilities=("scale_workload", "restart_workload"),
+                match_capabilities=("scale_workload", "restart_workload", "set_image"),
             ),
         )
 
@@ -258,7 +259,7 @@ class KubernetesRemediationContextProvider:
             ContextFragment(
                 "kubernetes.scope",
                 "Operate on Kubernetes resources using inspection and policy-gated "
-                "workload scaling.",
+                "workload scaling, restart and image updates.",
                 10,
             ),
         )
@@ -296,6 +297,40 @@ class KubernetesRestartTool:
         return immutable_json(result)
 
 
+class KubernetesSetImageTool:
+    def __init__(self, backend: KubernetesMutationBackend) -> None:
+        self.definition = ToolDefinition(
+            name="kubernetes_set_image",
+            description="Set the container image of a Kubernetes deployment. "
+            "Use decision target 'deployment/<name>' matching the name argument.",
+            capabilities=("set_image",),
+            required_arguments=("name", "namespace", "container", "image"),
+            side_effect=SideEffect.REVERSIBLE,
+            risk=RiskLevel.HIGH,
+            argument_schema=immutable_json(
+                {
+                    "required": ["name", "namespace", "container", "image"],
+                    "properties": {
+                        "name": {"type": "string", "minLength": 1},
+                        "namespace": {"type": "string", "minLength": 1},
+                        "container": {"type": "string", "minLength": 1},
+                        "image": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "Container image reference, e.g. nginx:1.27",
+                        },
+                    },
+                    "additionalProperties": False,
+                }
+            ),
+        )
+        self._backend = backend
+
+    async def execute(self, arguments: JsonMapping) -> JsonMapping:
+        result = await self._backend.mutate("set_image", arguments)
+        return immutable_json(result)
+
+
 class KubernetesScaleGuardArgumentProvider:
     name = "kubernetes-scale-guard-arguments"
     capability_names = ("scale_workload",)
@@ -323,6 +358,7 @@ class KubernetesRemediationDomain(KubernetesDomain):
         *KubernetesDomain._inspection_capability_names,
         "scale_workload",
         "restart_workload",
+        "set_image",
     )
 
     def __init__(
@@ -363,6 +399,12 @@ class KubernetesRemediationDomain(KubernetesDomain):
                 CapabilityCategory.MUTATION,
                 RiskLevel.LOW,
             ),
+            CapabilityDefinition(
+                "set_image",
+                "Set the container image of a deployment",
+                CapabilityCategory.MUTATION,
+                RiskLevel.HIGH,
+            ),
         )
 
     def tools(self) -> tuple[Tool, ...]:
@@ -370,10 +412,16 @@ class KubernetesRemediationDomain(KubernetesDomain):
             *super().tools(),
             KubernetesScaleTool(self._mutation_backend),
             KubernetesRestartTool(self._mutation_backend),
+            KubernetesSetImageTool(self._mutation_backend),
         )
 
     def policies(self) -> tuple[Policy, ...]:
-        return (*super().policies(), KubernetesScalePolicy(), KubernetesRestartPolicy())
+        return (
+            *super().policies(),
+            KubernetesScalePolicy(),
+            KubernetesRestartPolicy(),
+            KubernetesSetImagePolicy(),
+        )
 
     def context_providers(self) -> tuple[DomainContextProvider, ...]:
         return (KubernetesRemediationContextProvider(),)

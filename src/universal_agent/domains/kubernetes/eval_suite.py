@@ -27,8 +27,20 @@ from universal_agent.evaluation.harness import (
 def build_kubernetes_evaluation_suite(name: str) -> EvaluationSuite:
     """Entry-point factory: the kubernetes workload-health evaluation suite."""
 
-    goal = Goal("Evaluate workload health", (SuccessCriterion("healthy", True),))
-    task = Task("Inspect workload", ("healthy",))
+    goal = Goal(
+        "Evaluate workload health: inspect deployment 'example' in namespace "
+        "'default' and verify it is healthy",
+        (SuccessCriterion("healthy", True),),
+    )
+    # Task descriptions are self-contained so real models receive the target
+    # workload parameters in the compiled decision context (UA-LIVE-2026-09-21
+    # F2); scripted adapters ignore the text, so deterministic profiles are
+    # unaffected.
+    task = Task(
+        "Inspect the deployment named 'example' in namespace 'default' and "
+        "evaluate whether it is healthy",
+        ("healthy",),
+    )
     return EvaluationSuite(
         name,
         (
@@ -60,7 +72,10 @@ def build_kubernetes_evaluation_suite(name: str) -> EvaluationSuite:
                     max_actions=0,
                 ),
                 kind=EvaluationScenarioKind.POLICY,
-                tags=("policy", "kubernetes"),
+                # Scripted-model-only: the canned decision emits an invalid
+                # target that the real-model decision contract would not
+                # produce. Exclude via --exclude-tag scripted.
+                tags=("policy", "kubernetes", "scripted"),
             ),
         ),
         tags=("kubernetes",),

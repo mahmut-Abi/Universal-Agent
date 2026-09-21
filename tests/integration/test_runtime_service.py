@@ -1369,12 +1369,13 @@ def test_runtime_service_exposes_agentd_foundation_metadata() -> None:
     assert ready.ready
     assert ready.reason == "ready"
     assert ready.domain_count == 1
-    assert ready.capability_count == 8
-    assert ready.tool_count == 8
+    assert ready.capability_count == 9
+    assert ready.tool_count == 9
     assert domains[0].name == "kubernetes"
     assert domains[0].version == "0.2.0"
     assert domains[0].primary
     assert "scale_workload" in domains[0].capability_names
+    assert "set_image" in domains[0].capability_names
 
     scale = next(item for item in capabilities if item.name == "scale_workload")
     assert scale.domain_name == "kubernetes"

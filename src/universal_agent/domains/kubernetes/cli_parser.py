@@ -28,6 +28,9 @@ def add_kubernetes_command(
     kubernetes = commands.add_parser("kubernetes")
     kubernetes_commands = kubernetes.add_subparsers(dest="kubernetes_command", required=True)
     kubernetes_preflight = kubernetes_commands.add_parser("preflight")
+    # Optional profile positional keeps the signature aligned with the other
+    # operator commands, which all accept a profile name (P6).
+    kubernetes_preflight.add_argument("profile", nargs="?")
     kubernetes_preflight.add_argument("--workload")
     kubernetes_preflight.add_argument("--namespace")
     kubernetes_preflight.add_argument("--skip-cluster", action="store_true")

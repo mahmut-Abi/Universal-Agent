@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from pydantic import ValidationError as PydanticValidationError
 
 from universal_agent.core import PolicyContext, PolicyEffect, PolicyResult
@@ -28,6 +30,7 @@ class _RestartWorkloadArgumentsPayload(ConfigPayload):
 
 class KubernetesScalePolicy:
     name = "kubernetes-scale-safety"
+    description = "bounded workload scaling with environment and goal-scope checks"
     _allowed_environments = frozenset({"development", "staging", "production"})
     _protected_environments = frozenset({"production"})
     _max_replicas = 10
@@ -50,8 +53,8 @@ class KubernetesScalePolicy:
                 self.name,
             )
 
-        target = context.target
-        if not isinstance(target, str) or not target.startswith("deployment/"):
+        target = _workload_target(context)
+        if target is None:
             return PolicyResult(
                 PolicyEffect.DENY,
                 "scale_workload requires a deployment target",
@@ -109,6 +112,35 @@ class KubernetesScalePolicy:
         )
 
 
+def _workload_target(context: PolicyContext) -> str | None:
+    """Resolve the deployment target for a mutation decision.
+
+    Prefers the explicit decision target; falls back to the decision's
+    workload ``name`` argument so models that omit the optional ``target``
+    field are not spuriously denied (UA-LIVE-2026-09-21 F4). An explicitly
+    provided non-deployment target is returned unchanged and denied by the
+    callers' prefix/mismatch checks.
+    """
+    target = context.target
+    if isinstance(target, str) and target.strip():
+        normalized = target.strip()
+        name = context.arguments.get("name")
+        # Models sometimes encode workload+container as
+        # "deployment/<name>:<container>"; normalize that form when the
+        # workload part matches the decision's name argument.
+        head, sep, _suffix = normalized.partition(":")
+        if sep and isinstance(name, str) and head == f"deployment/{name.strip()}":
+            return head
+        return normalized
+    name = context.arguments.get("name")
+    if isinstance(name, str) and name.strip():
+        normalized = name.strip()
+        if "/" in normalized:
+            return normalized
+        return f"deployment/{normalized}"
+    return None
+
+
 def _environment_name(context: PolicyContext) -> str | None:
     try:
         payload = _KubernetesEnvironmentPayload.model_validate(dict(context.environment))
@@ -153,6 +185,7 @@ class KubernetesRestartPolicy:
     """
 
     name = "kubernetes-restart-safety"
+    description = "deployment rolling restarts with production confirmation"
     _allowed_environments = frozenset({"development", "staging", "production"})
     _protected_environments = frozenset({"production"})
 
@@ -174,8 +207,8 @@ class KubernetesRestartPolicy:
                 self.name,
             )
 
-        target = context.target
-        if not isinstance(target, str) or not target.startswith("deployment/"):
+        target = _workload_target(context)
+        if target is None:
             return PolicyResult(
                 PolicyEffect.DENY,
                 "restart_workload requires a deployment target",
@@ -234,6 +267,140 @@ def _restart_workload_arguments(
         return PolicyResult(
             PolicyEffect.DENY,
             "restart_workload requires a workload name",
+            policy_name,
+        )
+
+
+class _SetImageArgumentsPayload(ConfigPayload):
+    name: PydanticNonEmptyString
+    namespace: PydanticNonEmptyString
+    container: PydanticNonEmptyString
+    image: PydanticNonEmptyString
+
+
+class KubernetesSetImagePolicy:
+    """Guard for the set_image mutation capability.
+
+    Mirrors the scale/restart safety policies: identified environment,
+    deployment targets only, goal-scope criteria enforced, image reference
+    validated, and production image changes always require human confirmation
+    (UA-LIVE-2026-09-21 F3).
+    """
+
+    name = "kubernetes-set-image-safety"
+    description = "deployment image changes with validation and production confirmation"
+    _allowed_environments = frozenset({"development", "staging", "production"})
+    _protected_environments = frozenset({"production"})
+
+    def evaluate(self, context: PolicyContext) -> PolicyResult | None:
+        if context.capability.name != "set_image":
+            return None
+
+        environment = _environment_name(context)
+        if environment is None:
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "Kubernetes mutation requires an identified environment",
+                self.name,
+            )
+        if environment not in self._allowed_environments:
+            return PolicyResult(
+                PolicyEffect.DENY,
+                f"Kubernetes mutation is not allowed in environment: {environment}",
+                self.name,
+            )
+
+        target = _workload_target(context)
+        if target is None:
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "set_image requires a deployment target",
+                self.name,
+            )
+        arguments = _set_image_arguments(context, self.name)
+        if isinstance(arguments, PolicyResult):
+            return arguments
+        if target != f"deployment/{arguments.name}":
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "set_image target does not match the workload name",
+                self.name,
+            )
+        expected_resource = _expected_criterion(context, "resource")
+        if expected_resource is not None and target != expected_resource:
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "set_image target is outside the requested workload scope",
+                self.name,
+            )
+        expected_namespace = _expected_criterion(context, "namespace")
+        if expected_namespace is not None and arguments.namespace != expected_namespace:
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "set_image namespace is outside the requested workload scope",
+                self.name,
+            )
+        if not _image_reference_is_valid(arguments.image):
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "set_image image must be a fully-qualified container image reference",
+                self.name,
+            )
+        if environment in self._protected_environments:
+            return PolicyResult(
+                PolicyEffect.REQUIRE_CONFIRMATION,
+                "production workload image change requires confirmation",
+                self.name,
+            )
+        return PolicyResult(
+            PolicyEffect.ALLOW,
+            "bounded Kubernetes workload image change allowed",
+            self.name,
+        )
+
+
+def _image_reference_is_valid(image: str) -> bool:
+    """Accept a conservative container image reference shape: one optional
+    registry host with port, a name path, and an optional tag or digest."""
+    return (
+        re.fullmatch(
+            r"[a-z0-9]+((\.|:|-)[a-z0-9]+)*(/[a-z0-9]+((\.|:|-|_)[a-z0-9]+)*)*"
+            r"(:[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127})?(@sha256:[a-f0-9]{64})?",
+            image.strip(),
+        )
+        is not None
+    )
+
+
+def _set_image_arguments(
+    context: PolicyContext,
+    policy_name: str,
+) -> _SetImageArgumentsPayload | PolicyResult:
+    try:
+        return _SetImageArgumentsPayload.model_validate(dict(context.arguments))
+    except PydanticValidationError as exc:
+        field = pydantic_error_details(exc).path
+        if field == "namespace":
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "set_image requires a namespace",
+                policy_name,
+            )
+        if field == "container":
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "set_image requires a container name",
+                policy_name,
+            )
+        if field == "image":
+            return PolicyResult(
+                PolicyEffect.DENY,
+                "set_image requires an image reference",
+                policy_name,
+            )
+        return PolicyResult(
+            PolicyEffect.DENY,
+            "set_image requires a workload name",
             policy_name,
         )
 
