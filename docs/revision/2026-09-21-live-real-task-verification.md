@@ -285,6 +285,38 @@ thin-client 全套命令、401 认证、agentd 优雅启动。
 | Q11 | 撤销：`session list` 的 "success" 是有测试锁定的紧凑显示映射，非缺陷 | — |
 | — | 全仓 `ruff format` 漂移清理（多租户批次 commit 引入），格式门禁恢复绿 | format --check 0 |
 
+## 五轮验证：多 profile / 多 domain / 多用户 / 多租户（纯 CLI）
+
+### ✅ 验证通过
+
+- **多 profile 生命周期**：init 多实例、`--profile-config` 切换、ProfileStore 热切换
+  （X-Profile via AGENT_PROFILE env 或 run --profile）、**per-profile session/store
+  隔离正确**（各 profile 的 sessions/events/memory 落各自 store，互不可见）
+- **RBAC 角色门禁（admin 面）**：read_only 执行 run → 403（明确 rbac 消息）；
+  operator 访问 admin plane → 403；admin 全通
+- **用户生命周期**：disable → 401；enable → 恢复；credential revoke → 401 立即生效
+- **workspace domain 沙箱**：拒绝读取 workspace 外文件（correct ask_user 上报
+  "restricted to workspace paths"）；workspace 内写文件 completed
+- thin-client、multi-agent/ecosystem/domain-packages 状态面、audit/repair/cost/metrics
+
+### 🔴 发现
+
+| # | 问题 | 说明 |
+|---|------|------|
+| R5-7 | **业务数据零租户隔离** | admin 面有完整 RBAC，但业务数据面完全共享：bob（globex operator）可 list 并读取 acme 用户 alice 的全部 sessions（含 59 条 LLMCallRecorded——prompt/completion 内容跨租户泄露）、全部 memory、服务器模型端点配置。tenant_id 只作用于 admin gate 与 credential 校验。多租户宣称（P3.5）与数据面实现严重不符 |
+| R5-1 | profile 管理缺口 | 无 `profile delete`；client `profile list` 不枚举自定义 profile（只报启动 profile） |
+| R5-4 | server `profile list` 不枚举 profiles-dir 中的 profile（热切换可用但不可发现） |
+| R5-8 | `domain-packages list` 显示 0——entry-point 内置 domain（kubernetes）不计入 discovered packages，与 ecosystem verify 的口径矛盾 |
+| R5-9 | `eval datasets --dataset-dir examples/evaluation` 识别 0 数据集——仓库自带场景文件不被识别 |
+| R5-10 | argparse 前缀匹配坑：`--profile X` 在未定义该 flag 的命令上被静默缩写匹配为 `--profile-config X` |
+| ⚠️ | F5 复现：profile 默认 model timeout 30s 导致偶发 model_failure（ws1 列目录超时；ws2/ws3 同 profile 正常） |
+
+### 多租户正确的部分
+
+- credential 哈希存储（token 仅显示一次）✅
+- 跨租户 deny（--tenant-id 进程级 scoping 路径存在）✅（admin 面）
+- provisioning 顺序灵活（Q12 修复后 role set / credential 任意顺序）✅
+
 ## 建议后续（更新）
 
 1. 修 P1（只读命令离线可用）、P6（preflight 契约统一）、P8（check exit code）；
