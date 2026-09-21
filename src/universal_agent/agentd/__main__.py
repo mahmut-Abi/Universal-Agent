@@ -16,10 +16,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 from universal_agent.agentd.app import AgentdApp
-from universal_agent.agentd.bootstrap import build_admin_store, build_audit_recorder
+from universal_agent.agentd.bootstrap import (
+    build_admin_store,
+    build_audit_recorder,
+    host_requires_auth,
+    resolve_auth_token,
+)
 from universal_agent.agentd.http import AgentdAuthPolicy
 from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
-from universal_agent.core.config_validation import parse_non_empty_string
 from universal_agent.policy import Policy
 from universal_agent.profile.store import ProfileStore
 from universal_agent.security import AuditRecorder, CredentialAdminStore, EnvSecretProvider
@@ -120,7 +124,6 @@ def _build_service_from_profile(
     from universal_agent.domains.profile_service import build_configured_service
     from universal_agent.host import RuntimeHost, build_configured_model_adapter
     from universal_agent.profile import ProfileConfig
-    from universal_agent.security import EnvSecretProvider
 
     profile = ProfileConfig.from_json_file(profile_config).to_profile()
     secret_provider = EnvSecretProvider()
@@ -217,21 +220,11 @@ def _resolve_agentd_auth_token(
     env_key: str | None,
     label: str,
 ) -> str | None:
-    if explicit is not None and env_key is not None:
-        raise ValueError(f"agentd {label} accepts either a literal value or env key, not both")
-    if explicit is not None:
-        return explicit
-    if env_key is None:
-        return None
-    token = EnvSecretProvider().get_secret(env_key)
-    if token is None:
-        raise ValueError(f"agentd {label} env key is missing or empty: {env_key}")
-    return token
+    return resolve_auth_token(explicit=explicit, env_key=env_key, label=label)
 
 
 def _host_requires_auth(host: str) -> bool:
-    normalized = parse_non_empty_string(host, "agentd host").strip().lower()
-    return normalized not in {"127.0.0.1", "localhost", "::1"}
+    return host_requires_auth(host)
 
 
 def _build_admin_store(args: argparse.Namespace) -> CredentialAdminStore | None:

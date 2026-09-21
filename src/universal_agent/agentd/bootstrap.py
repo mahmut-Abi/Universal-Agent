@@ -9,7 +9,38 @@ from __future__ import annotations
 
 import os
 
-from universal_agent.security import AuditRecorder, CredentialAdminStore
+from universal_agent.core.config_validation import parse_non_empty_string
+from universal_agent.security import AuditRecorder, CredentialAdminStore, EnvSecretProvider
+
+
+def resolve_auth_token(
+    *,
+    explicit: str | None,
+    env_key: str | None,
+    label: str,
+) -> str | None:
+    """Resolve an agentd bearer token: literal, env key, or absent.
+
+    Shared by `python -m universal_agent.agentd` and `agent serve`.
+    """
+
+    if explicit is not None and env_key is not None:
+        raise ValueError(f"agentd {label} accepts either a literal value or env key, not both")
+    if explicit is not None:
+        return explicit
+    if env_key is None:
+        return None
+    token = EnvSecretProvider().get_secret(env_key)
+    if token is None:
+        raise ValueError(f"agentd {label} env key is missing or empty: {env_key}")
+    return token
+
+
+def host_requires_auth(host: str) -> bool:
+    """Whether binding to this host demands an auth token (non-loopback)."""
+
+    normalized = parse_non_empty_string(host, "agentd host").strip().lower()
+    return normalized not in {"127.0.0.1", "localhost", "::1"}
 
 
 def build_admin_store(

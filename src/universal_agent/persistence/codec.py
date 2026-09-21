@@ -289,7 +289,7 @@ def _encode_agent_state(state: AgentState) -> JsonObject:
 
 def _decode_agent_state(payload: _AgentStatePayload, tasks: Mapping[TaskId, Task]) -> AgentState:
     current_task = _task_by_id(tasks, TaskId(payload.current_task_id))
-    state = AgentState(
+    return AgentState(
         session_id=SessionId(payload.session_id),
         goal=_decode_goal(payload.goal),
         current_task=current_task,
@@ -306,7 +306,6 @@ def _decode_agent_state(payload: _AgentStatePayload, tasks: Mapping[TaskId, Task
         approved_fingerprints=list(payload.approved_fingerprints),
         tenant_id=payload.tenant_id,
     )
-    return state
 
 
 def _encode_goal(goal: Goal) -> JsonObject:

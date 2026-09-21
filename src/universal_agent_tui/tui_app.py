@@ -17,8 +17,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime  # noqa: F401  (re-exported typing aid for tests)
-from types import MappingProxyType  # noqa: F401
 from typing import Any, ClassVar
 
 from markupsafe import escape as escape_html

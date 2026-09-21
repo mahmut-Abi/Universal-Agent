@@ -170,17 +170,16 @@ class MemoryConsolidator:
                     continue
 
                 # Merge: keep higher confidence, merge metadata
-                merged = self._merge_records(records[i], candidate)
+                merged = self._merge_records(record, candidate)
                 self._store.add(merged)
                 processed.add(candidate.id)
 
                 actions.append(
                     ConsolidationAction(
                         action_type="deduplicate_fuzzy",
-                        target_ids=(records[i].id, candidate.id),
+                        target_ids=(record.id, candidate.id),
                         reason=(
-                            f"Fuzzy duplicate merged (score: {score / 100:.2f}): "
-                            f"{records[i].subject}"
+                            f"Fuzzy duplicate merged (score: {score / 100:.2f}): {record.subject}"
                         ),
                         metadata={"similarity_score": score / 100.0},
                     )

@@ -346,9 +346,8 @@ class KubernetesScaleGuardArgumentProvider:
                 additions["current_replicas"] = desired
         if "resource_version" not in context.decision.arguments:
             version = context.world.value_for("resource_version", subject=subject)
-            if isinstance(version, str) and version.strip():
-                additions["resource_version"] = version
-            elif isinstance(version, int) and not isinstance(version, bool):
+            is_valid_version = isinstance(version, str) and bool(version.strip())
+            if is_valid_version or (isinstance(version, int) and not isinstance(version, bool)):
                 additions["resource_version"] = version
         return immutable_json(additions)
 

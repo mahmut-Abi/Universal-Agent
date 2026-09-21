@@ -2803,5 +2803,6 @@ async def test_agentd_admin_routes_without_store_report_explicit_error() -> None
     )
 
     assert response.status_code == 404
-    body = response.body
-    assert "admin plane is not configured" in str(body["error"]["message"])
+    error = cast(dict[str, JsonValue], response.body)["error"]
+    message = cast(dict[str, JsonValue], error)["message"]
+    assert "admin plane is not configured" in str(message)

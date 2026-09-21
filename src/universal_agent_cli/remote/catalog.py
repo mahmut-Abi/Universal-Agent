@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 from typing import TextIO, cast
 
+from universal_agent.core import JsonValue
+from universal_agent.core.config_validation import parse_json_object
+from universal_agent.core.json_codec import read_json_file
 from universal_agent_api import AgentdClient, quote_path_segment
 from universal_agent_cli.io import _write_json, _write_text
 from universal_agent_cli.remote._shared import REMOTE_LIST_ROUTES as _REMOTE_LIST_ROUTES
@@ -44,7 +48,7 @@ async def _dispatch_remote_memory(
     """
 
     if list_command == "add":
-        body = {
+        body: dict[str, JsonValue] = {
             "kind": cast(str, args.kind),
             "subject": cast(str, args.subject),
             "content": cast(str, args.content),
@@ -73,32 +77,42 @@ async def _dispatch_remote_profile(
 ) -> None:
     profile_command = cast(str, args.profile_command)
     if profile_command == "list":
-        body = await client.get_json("/v1/profiles")
+        loaded = await client.get_json("/v1/profiles")
         # Merge store-backed profiles (created via the config API, not yet
         # loaded into the running service) so the full set is discoverable
         # (UA-LIVE-2026-09-21 R5-4).
         stored = await client.get_json("/v1/config/profiles")
-        stored_names = [item for item in stored.get("stored_profiles", []) if isinstance(item, str)]
-        loaded_names = [
-            item.get("name", "") for item in body.get("profiles", []) if isinstance(item, dict)
-        ]
-        extra = [name for name in stored_names if name not in loaded_names]
-        if extra:
-            for item in extra:
-                body["profiles"].append({"name": item, "stored_only": True})
+        raw_stored = stored.get("stored_profiles", [])
+        stored_names = (
+            {item for item in raw_stored if isinstance(item, str)}
+            if isinstance(raw_stored, list)
+            else set()
+        )
+        raw_loaded = loaded.get("profiles", [])
+        loaded_profiles = (
+            [item for item in raw_loaded if isinstance(item, dict)]
+            if isinstance(raw_loaded, list)
+            else []
+        )
+        loaded_names = {str(item.get("name", "")) for item in loaded_profiles}
+        profiles = [*loaded_profiles]
+        profiles.extend(
+            {"name": name, "stored_only": True} for name in sorted(stored_names - loaded_names)
+        )
+        body = {"profiles": profiles}
         if cast(str, getattr(args, "output", "json")) == "text":
-            _write_text(out, render_profile_list_text(body))
+            _write_text(out, render_profile_list_text(cast("Mapping[str, JsonValue]", body)))
             return
         _write_json(out, body)
         return
     if profile_command == "show":
         profile = quote_path_segment(cast(str, args.profile))
-        body = await client.get_json(f"/v1/profiles/{profile}")
+        show_body = await client.get_json(f"/v1/profiles/{profile}")
         if cast(str, getattr(args, "output", "json")) == "text":
             _write_text(
                 out,
                 render_profile_show_text(
-                    body,
+                    show_body,
                     runtime_body=await client.get_json("/v1/config"),
                     policies_body=await client.get_json("/v1/policies"),
                 ),
@@ -107,10 +121,10 @@ async def _dispatch_remote_profile(
         _write_json(out, body)
         return
     if profile_command == "create":
-        from universal_agent.core import read_json_file
-
         source = cast(str, args.from_file)
-        payload = read_json_file(source)
+        payload: dict[str, JsonValue] = dict(
+            parse_json_object(read_json_file(source), "profile payload")
+        )
         _write_json(out, await client.post_json("/v1/profiles", body=payload))
         return
     if profile_command == "delete":

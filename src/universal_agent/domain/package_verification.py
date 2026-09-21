@@ -190,10 +190,10 @@ def _dependency_cycles(
 ) -> tuple[str, ...]:
     known = frozenset(dependency_map)
     sorter: TopologicalSorter[DomainIdentity] = TopologicalSorter()
-    for identity in dependency_map:
+    for identity, dependencies in dependency_map.items():
         sorter.add(
             identity,
-            *(dependency for dependency in dependency_map[identity] if dependency in known),
+            *(dependency for dependency in dependencies if dependency in known),
         )
     try:
         tuple(sorter.static_order())

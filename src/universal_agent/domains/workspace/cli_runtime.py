@@ -121,8 +121,7 @@ def build_default_workspace_service() -> RuntimeService:
     rather than reading profile settings.
     """
 
-    service = build_workspace_service()
-    return service
+    return build_workspace_service()
 
 
 def workspace_domain_config(workspace_path: str = ".") -> dict[str, object]:

@@ -210,9 +210,7 @@ def _leased_work_owner_check(snapshot: DistributedRuntimeSnapshot) -> Distribute
             orphaned.append(str(item.work_item_id))
             continue
         worker = worker_by_id.get(item.worker_id)
-        if worker is None:
-            orphaned.append(str(item.work_item_id))
-        elif worker.status in {WorkerStatus.OFFLINE, WorkerStatus.LOST}:
+        if worker is None or worker.status in {WorkerStatus.OFFLINE, WorkerStatus.LOST}:
             orphaned.append(str(item.work_item_id))
         elif worker.status is WorkerStatus.DRAINING:
             draining.append(str(item.work_item_id))

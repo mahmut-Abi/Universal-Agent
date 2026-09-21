@@ -70,7 +70,7 @@ def config_admin_route_definitions() -> tuple[AgentdRouteDefinition, ...]:
 
 def _actor(request: HttpRequest) -> str:
     value = request.headers.get("x-acting-principal")
-    return value if value else "api"
+    return value or "api"
 
 
 def _validation_error_response(error: ProfileStoreValidationError) -> HttpResponse:

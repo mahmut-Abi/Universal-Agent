@@ -266,7 +266,7 @@ class KubernetesApiBackend:
             "conditions": k8s.condition_list(status.get("conditions")),
         }
         if selector_labels:
-            result["selector_labels"] = {key: value for key, value in selector_labels.items()}
+            result["selector_labels"] = dict(selector_labels)
             result["pod_count"] = len(pods)
             result["ready_pod_count"] = k8s.ready_pod_count(pods)
             result["pods"] = pods

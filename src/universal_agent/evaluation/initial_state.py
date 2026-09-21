@@ -21,7 +21,7 @@ class WorldEntitySeed:
 
     entity_id: str
     kind: str
-    attributes: JsonMapping = field(default_factory=lambda: immutable_json())
+    attributes: JsonMapping = field(default_factory=immutable_json)
 
 
 @dataclass(frozen=True, slots=True)

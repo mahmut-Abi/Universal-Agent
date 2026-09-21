@@ -12,7 +12,6 @@ from universal_agent.agentd.http import AgentdAuthPolicy
 from universal_agent.agentd.server import AgentdHttpServer, AgentdServerConfig
 from universal_agent.core.config_validation import parse_non_empty_string
 from universal_agent.profile.store import ProfileStore
-from universal_agent.security import EnvSecretProvider
 from universal_agent.service import RuntimeService
 from universal_agent_cli.io import _write_json
 
@@ -115,16 +114,9 @@ def _resolve_cli_auth_token(
     env_key: str | None,
     label: str,
 ) -> str | None:
-    if explicit is not None and env_key is not None:
-        raise ValueError(f"agentd {label} accepts either a literal value or env key, not both")
-    if explicit is not None:
-        return explicit
-    if env_key is None:
-        return None
-    token = EnvSecretProvider().get_secret(env_key)
-    if token is None:
-        raise ValueError(f"agentd {label} env key is missing or empty: {env_key}")
-    return token
+    from universal_agent.agentd.bootstrap import resolve_auth_token
+
+    return resolve_auth_token(explicit=explicit, env_key=env_key, label=label)
 
 
 def _profiles_dir(args: object) -> ProfileStore | None:
