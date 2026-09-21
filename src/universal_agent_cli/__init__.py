@@ -21,6 +21,7 @@ from universal_agent_cli.client_config import (
 from universal_agent_cli.io import (
     CliExit,
     _success_criteria,
+    _warn_mutation_goal_without_criteria,
     _write_error,
     _write_json,
     _write_text,
@@ -494,6 +495,7 @@ async def _dispatch_run(
 
     profile = _resolve_run_profile(args, service)
     criteria = _success_criteria(cast(list[str], args.success))
+    _warn_mutation_goal_without_criteria(cast(str, args.goal), cast(list[str], args.success))
     goal = Goal(cast(str, args.goal), criteria)
     timeout_seconds = _run_timeout_seconds(args)
     started = time.monotonic()

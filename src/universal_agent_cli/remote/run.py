@@ -9,7 +9,12 @@ from typing import TextIO, cast
 
 from universal_agent.core import JsonValue
 from universal_agent_api import AgentdClient
-from universal_agent_cli.io import _success_criteria, _write_json, _write_text
+from universal_agent_cli.io import (
+    _success_criteria,
+    _warn_mutation_goal_without_criteria,
+    _write_json,
+    _write_text,
+)
 from universal_agent_cli.remote._shared import success_criteria_body
 from universal_agent_cli.text_views import render_run_text
 
@@ -19,6 +24,7 @@ async def _dispatch_remote_run(
     out: TextIO,
     client: AgentdClient,
 ) -> None:
+    _warn_mutation_goal_without_criteria(cast(str, args.goal), cast(list[str], args.success))
     criteria = _success_criteria(cast(list[str], args.success))
     # The profile is optional in Golden Path runs; the runtime selects its
     # primary profile when the body omits it.

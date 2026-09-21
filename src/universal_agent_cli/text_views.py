@@ -221,8 +221,11 @@ def render_session_explain_text(
     raw_status = str(session_body.get("goal_status", ""))
     pending = session_body.get("pending_action")
     termination = str(session_body.get("termination_reason") or "")
+    error_code = str(session_body.get("error_code") or "")
     events = [item for item in _events_of(events_body) if isinstance(item, dict)]
-    reason, fix = _explain_session_reason(raw_status, termination, pending, events)
+    reason, fix = _explain_session_reason(
+        raw_status, termination, pending, events, error_code=error_code
+    )
     return (
         "\n".join(
             [
@@ -259,11 +262,52 @@ def render_session_not_found_explain_text(session_id: str) -> str:
     )
 
 
+_ERROR_CODE_EXPLANATIONS: dict[str, tuple[tuple[str, str], str]] = {
+    # Structured ErrorCode first: heuristics over event text must never
+    # override the runtime's own failure classification (UA-LIVE-2026-09-21 P3).
+    "policy_denied": (
+        ("Policy denied", "Runtime policy refused the proposed action."),
+        "Review the policy requirement in the reason, adjust the goal scope, or "
+        "confirm the action with `agent session resume <id> --confirmed true` "
+        "when the policy asks for confirmation.",
+    ),
+    "model_failure": (
+        ("Model failure", "The configured model call failed."),
+        "Verify the model endpoint/credentials with `agent doctor`, and consider "
+        "raising `model.timeout_seconds` in the profile for slow models.",
+    ),
+    "validation_error": (
+        ("Validation error", "The decision or action arguments failed runtime validation."),
+        "Inspect `agent session events <id>`; re-run with a clearer goal or a "
+        "model that follows the capability argument schema.",
+    ),
+    "invalid_state": (
+        ("Invalid state", "The requested transition does not match the session state."),
+        "Use `agent session show <id>` to check the current state, then pick the "
+        "matching resume/cancel/continue command.",
+    ),
+    "user_required": (
+        ("User input required", "The runtime paused and needs user input to continue."),
+        "Answer the session's question, then continue the session.",
+    ),
+    "permission_denied": (
+        ("Permission denied", "The environment refused the required access."),
+        "Grant the required cluster/credential permissions, then retry the goal.",
+    ),
+    "dependency_missing": (
+        ("Dependency missing", "A required external dependency is unavailable."),
+        "Run `agent doctor` to locate and fix the missing dependency.",
+    ),
+}
+
+
 def _explain_session_reason(
     raw_status: str,
     termination: str,
     pending: JsonValue,
     events: list[dict[str, JsonValue]],
+    *,
+    error_code: str = "",
 ) -> tuple[tuple[str, str], str]:
     lower = termination.lower()
     if isinstance(pending, dict) or "confirmation" in lower or raw_status == "waiting":
@@ -279,6 +323,9 @@ def _explain_session_reason(
             ),
             "Use `agent session show <id>` or `agent session events <id>` for details.",
         )
+    structured = _ERROR_CODE_EXPLANATIONS.get(error_code)
+    if structured is not None:
+        return structured
     event_text = " ".join(str(event.get("data", "")) for event in events).lower() + " " + lower
     if "api key" in event_text or "credential" in event_text or "secret" in event_text:
         return (
@@ -463,8 +510,10 @@ def render_config_text(
         for item in policies:
             if not isinstance(item, dict):
                 continue
-            effect = item.get("effect") or item.get("policy_type") or "policy"
-            lines.append(f"  {item.get('name', '')}: {effect}")
+            # Prefer the policy's own human-readable description; fall back to
+            # a static effect and never the Python class name (P4).
+            label = item.get("description") or item.get("effect") or "evaluation-time policy check"
+            lines.append(f"  {item.get('name', '')}: {label}")
     else:
         lines.append("  safe runtime policy")
     lines.extend(["", "Domains"])

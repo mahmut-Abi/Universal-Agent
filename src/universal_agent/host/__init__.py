@@ -9,7 +9,11 @@ from universal_agent.configuration import (
     StoreBackend,
     StoreConfig,
 )
-from universal_agent.host.runtime import RuntimeHost, build_configured_model_adapter
+from universal_agent.host.runtime import (
+    RuntimeHost,
+    build_configured_model_adapter,
+    model_credentials_missing_reason,
+)
 
 __all__ = [
     "DomainConfig",
@@ -23,4 +27,5 @@ __all__ = [
     "StoreBackend",
     "StoreConfig",
     "build_configured_model_adapter",
+    "model_credentials_missing_reason",
 ]

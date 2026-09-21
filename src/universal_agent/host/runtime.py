@@ -4,7 +4,7 @@ import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from universal_agent.configuration import (
     DomainConfig,
@@ -46,6 +46,7 @@ from universal_agent.domain import (
 )
 from universal_agent.model import (
     JsonHttpModelAdapter,
+    JsonHttpModelError,
     JsonHttpModelTransport,
     ModelAdapter,
     ModelUsage,
@@ -112,7 +113,7 @@ def build_configured_model_adapter(
     if config.model.provider is ModelProvider.OPENAI_RESPONSES:
         api_key = _configured_model_api_key(config, secret_provider)
         if api_key is None:
-            raise ValueError("openai_responses model requires resolved api_key_secret")
+            return _unresolved_credentials_adapter(config)
         return OpenAIResponsesModelAdapter(
             config.model.name,
             api_key=api_key,
@@ -124,7 +125,7 @@ def build_configured_model_adapter(
     if config.model.provider is ModelProvider.OPENAI_CHAT_COMPLETIONS:
         api_key = _configured_model_api_key(config, secret_provider)
         if api_key is None:
-            raise ValueError("openai_chat_completions model requires resolved api_key_secret")
+            return _unresolved_credentials_adapter(config)
         return OpenAIChatCompletionsModelAdapter(
             config.model.name,
             api_key=api_key,
@@ -135,6 +136,50 @@ def build_configured_model_adapter(
             transport=openai_transport or json_http_transport,
         )
     raise ValueError(f"unsupported model provider: {config.model.provider}")
+
+
+def _unresolved_credentials_adapter(config: RuntimeConfig) -> ModelAdapter:
+    """Placeholder adapter for profiles whose model credentials are absent.
+
+    Serving read-only surfaces (config projections, profile listings, session
+    inspection) must not require secret resolution, so the runtime assembles
+    successfully; any decision request fails fast with a targeted,
+    non-transient model error (UA-LIVE-2026-09-21 P1).
+    """
+
+    secret_name = config.model.api_key_secret or "<unnamed>"
+    env_keys = [secret.key for secret in config.secrets if secret.name == secret_name]
+    env_hint = f" (env {env_keys[0]!r})" if env_keys else ""
+    message = (
+        f"model credentials not configured: secret {secret_name!r}{env_hint} "
+        "is not resolvable in this environment; set the environment variable "
+        "or re-run `agent init`"
+    )
+
+    class _Adapter:
+        async def decide(self, context: object) -> Decision:
+            raise JsonHttpModelError(message, transient=False)
+
+    return cast(ModelAdapter, _Adapter())
+
+
+def model_credentials_missing_reason(
+    config: RuntimeConfig,
+    secret_provider: SecretProvider | None = None,
+) -> str | None:
+    """Human-readable reason when the configured model credentials cannot be
+    resolved, or ``None`` when they are present (or not required).
+
+    Callers that invoke the model directly (operator probes) use this to keep
+    the historical fail-fast ValueError at the command boundary instead of at
+    server startup (UA-LIVE-2026-09-21 P1).
+    """
+
+    if config.model.provider in (ModelProvider.SCRIPTED, ModelProvider.JSON_HTTP):
+        return None
+    if _configured_model_api_key(config, secret_provider) is not None:
+        return None
+    return f"{config.model.provider.value} model requires resolved api_key_secret"
 
 
 def _configured_model_api_key(

@@ -3149,7 +3149,16 @@ async def test_cli_run_rejects_unknown_profile() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.contract
-async def test_cli_run_rejects_invalid_success_criterion_json() -> None:
+async def test_cli_run_accepts_lenient_success_criterion_values() -> None:
+    """UA-LIVE-2026-09-21 F8: bare word values are accepted as JSON string
+    literals, so `--success root_cause=image_pull_back_off` parses without
+    shell quoting; malformed KEY=VALUE shapes are still rejected."""
+    from universal_agent_cli.io import _parse_success_json_value
+
+    assert _parse_success_json_value("image_pull_back_off", "root_cause") == ("image_pull_back_off")
+    assert _parse_success_json_value("3", "replicas") == 3
+    assert _parse_success_json_value("true", "healthy") is True
+
     service, _ = build_cli_service([])
     output = StringIO()
     error = StringIO()
@@ -3160,7 +3169,7 @@ async def test_cli_run_rejects_invalid_success_criterion_json() -> None:
             "production-operator",
             "Verify workload health",
             "--success",
-            "healthy=yes",
+            "healthy=",
         ],
         service=service,
         stdout=output,
@@ -3168,8 +3177,7 @@ async def test_cli_run_rejects_invalid_success_criterion_json() -> None:
     )
 
     assert status == 2
-    assert output.getvalue() == ""
-    assert "success criterion healthy must be valid JSON" in error.getvalue()
+    assert "success criterion must be KEY=JSON" in error.getvalue()
 
 
 @pytest.mark.asyncio

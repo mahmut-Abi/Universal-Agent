@@ -53,8 +53,13 @@ def _success_criteria(values: Sequence[str]) -> tuple[SuccessCriterion, ...]:
 def _parse_success_json_value(value: str, key: str) -> JsonValue:
     try:
         loaded = loads_json(value)
-    except JsonCodecError as exc:
-        raise ValueError(f"success criterion {key} must be valid JSON") from exc
+    except JsonCodecError:
+        # Lenient fallback (UA-LIVE-2026-09-21 F8): bare words, numbers and
+        # booleans are accepted as JSON string/number/bool literals so
+        # `--success root_cause=image_pull_back_off` works without shell
+        # quoting. Values that are only valid as strings fail validation
+        # downstream; explicitly quoted JSON still wins.
+        loaded = value
     return parse_json_value(loaded, f"success.{key}")
 
 
@@ -149,4 +154,38 @@ def _parse_optional_datetime(value: str | None) -> datetime | None:
         field="--before",
         description="an ISO 8601 datetime",
         require_timezone=True,
+    )
+
+
+_MUTATION_GOAL_HINTS = (
+    "scale ",
+    "restart ",
+    "set the container image",
+    "change the container image",
+    "update the image",
+    "set the image",
+    "fix it by setting",
+)
+
+
+def _warn_mutation_goal_without_criteria(
+    goal: str,
+    success_flags: list[str],
+) -> None:
+    """UA-LIVE-2026-09-21 P10b: a mutation-shaped goal without explicit
+    success criteria can complete on the default pre-mutation ``healthy``
+    criterion without ever performing the mutation. Warn the operator."""
+
+    import sys
+
+    if success_flags:
+        return
+    lowered = goal.lower()
+    if not any(hint in lowered for hint in _MUTATION_GOAL_HINTS):
+        return
+    sys.stderr.write(
+        "Warning: this goal looks like a mutation but no --success criteria were "
+        "given; the default 'healthy' criterion can be satisfied by the "
+        "pre-mutation state. Pass e.g. --success replicas=3 to verify the "
+        "mutation actually happened.\n"
     )
