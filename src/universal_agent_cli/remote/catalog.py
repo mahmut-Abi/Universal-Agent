@@ -134,6 +134,11 @@ async def _dispatch_remote_profile(
             await client.delete_json(f"/v1/profiles/{profile}"),
         )
         return
+    if profile_command == "add-domain":
+        from universal_agent_cli.profile_domains import dispatch_profile_add_domain
+
+        dispatch_profile_add_domain(args, out)
+        return
     raise ValueError("profile command does not support --api-url: " + profile_command)
 
 

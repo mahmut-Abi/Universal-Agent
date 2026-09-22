@@ -5912,3 +5912,65 @@ async def test_cli_eval_replay_can_fail_process_on_drift(tmp_path: Path) -> None
         "result_status",
         "event_types",
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_cli_run_rejects_mutation_goal_without_criteria() -> None:
+    """UA-LIVE-2026-09-21 P10b (②): mutation-shaped goals without explicit
+    success criteria are rejected at submission unless dry-run or the
+    explicit escape hatch is used."""
+    service, _ = build_cli_service([])
+    output = StringIO()
+    error = StringIO()
+
+    status = await run_cli(
+        ["run", "production-operator", "Scale deployment api to 3 replicas"],
+        service=service,
+        stdout=output,
+        stderr=error,
+    )
+
+    assert status == 2
+    assert "mutation-shaped goal requires explicit success criteria" in error.getvalue()
+
+    # Escape hatch: the flag lets the submission proceed.
+    escape_error = StringIO()
+    await run_cli(
+        [
+            "run",
+            "production-operator",
+            "Scale deployment api to 3 replicas",
+            "--allow-unverified-mutation",
+        ],
+        service=service,
+        stdout=StringIO(),
+        stderr=escape_error,
+    )
+    assert "mutation-shaped goal requires explicit success criteria" not in (
+        escape_error.getvalue()
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.contract
+async def test_cli_run_allows_dry_run_mutation_goal_without_criteria() -> None:
+    """Dry-run mode intentionally cannot mutate, so the P10b rejection does
+    not apply."""
+    service, _ = build_cli_service([])
+    output = StringIO()
+    error = StringIO()
+
+    await run_cli(
+        [
+            "run",
+            "production-operator",
+            "Scale deployment api to 3 replicas",
+            "--dry-run",
+        ],
+        service=service,
+        stdout=output,
+        stderr=error,
+    )
+
+    assert "mutation-shaped goal requires explicit success criteria" not in error.getvalue()

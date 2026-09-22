@@ -168,6 +168,37 @@ _MUTATION_GOAL_HINTS = (
 )
 
 
+def mutation_goal_criteria_error(
+    goal: str,
+    success_flags: list[str] | None,
+    *,
+    dry_run: bool = False,
+    allow_unverified: bool = False,
+) -> str | None:
+    """UA-LIVE-2026-09-21 P10b (②): a mutation-shaped goal without explicit
+    success criteria can complete on the pre-mutation ``healthy`` default
+    without performing the mutation. Such submissions are rejected unless the
+    caller runs dry (read-only) or passes --allow-unverified-mutation.
+
+    Returns the rejection message, or None when the submission may proceed.
+    """
+
+    if dry_run or allow_unverified:
+        return None
+    if success_flags:
+        return None
+    lowered = goal.lower()
+    if not any(hint in lowered for hint in _MUTATION_GOAL_HINTS):
+        return None
+    return (
+        "mutation-shaped goal requires explicit success criteria: the default "
+        "'healthy' criterion can be satisfied by the pre-mutation state, so the "
+        "mutation could be skipped while the goal still reports completed. "
+        "Re-run with --success (e.g. --success replicas=3) or pass "
+        "--allow-unverified-mutation to proceed without verification."
+    )
+
+
 def _warn_mutation_goal_without_criteria(
     goal: str,
     success_flags: list[str],

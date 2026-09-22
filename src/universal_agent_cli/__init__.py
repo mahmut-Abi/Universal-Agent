@@ -520,6 +520,16 @@ async def _dispatch_run(
     from universal_agent_cli.text_views import render_run_text
 
     profile = _resolve_run_profile(args, service)
+    from universal_agent_cli.io import mutation_goal_criteria_error
+
+    rejection = mutation_goal_criteria_error(
+        cast(str, args.goal),
+        cast(list[str], args.success),
+        dry_run=cast(bool, getattr(args, "dry_run", False)),
+        allow_unverified=cast(bool, getattr(args, "allow_unverified_mutation", False)),
+    )
+    if rejection is not None:
+        raise ValueError(rejection)
     criteria = _success_criteria(cast(list[str], args.success))
     _warn_mutation_goal_without_criteria(cast(str, args.goal), cast(list[str], args.success))
     goal = Goal(cast(str, args.goal), criteria)

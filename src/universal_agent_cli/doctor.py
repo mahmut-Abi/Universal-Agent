@@ -171,6 +171,20 @@ def _model_checks(report: Mapping[str, JsonValue] | None) -> list[DoctorCheck]:
         _check("Model", "provider configured", bool(provider), provider or "<missing>"),
         _check("Model", "model configured", bool(name), name or "<missing>"),
     ]
+    # F5 legacy detection: real models routinely exceed the old 30s default
+    # (reasoning + json_object), which surfaced as flaky model_failure.
+    timeout = model.get("timeout_seconds")
+    if provider not in {"", "scripted"} and isinstance(timeout, (int, float)) and timeout <= 30:
+        checks.append(
+            _check(
+                "Model",
+                "model timeout",
+                False,
+                f"model timeout_seconds={timeout} is the legacy default; real "
+                "models commonly need more",
+                "Raise `model.timeout_seconds` to >= 120 in the profile config.",
+            )
+        )
     if provider == "scripted":
         checks.append(
             _check(

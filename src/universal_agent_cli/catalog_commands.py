@@ -65,6 +65,11 @@ def _dispatch_profile(
         catalog = load_profile_catalog(cast(str, args.profile_dir))
         _write_json(out, profile_catalog_verification_body(catalog.verify()))
         return
+    if command == "add-domain":
+        from universal_agent_cli.profile_domains import dispatch_profile_add_domain
+
+        dispatch_profile_add_domain(args, out)
+        return
     raise ValueError(f"unknown profile command: {command}")
 
 

@@ -191,6 +191,15 @@ def add_run_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]
         help="Goal success criterion as KEY=JSON. Repeat for multiple criteria.",
     )
     run.add_argument(
+        "--allow-unverified-mutation",
+        action="store_true",
+        help=(
+            "Proceed with a mutation-shaped goal without explicit --success "
+            "criteria (the default healthy criterion can be satisfied "
+            "pre-mutation; P10b)."
+        ),
+    )
+    run.add_argument(
         "--dry-run",
         action="store_true",
         help=(
@@ -349,6 +358,13 @@ def add_profile_parser(commands: argparse._SubParsersAction[argparse.ArgumentPar
     )
     profile_verify = profile_commands.add_parser("verify")
     profile_verify.add_argument("--profile-dir", required=True)
+    profile_add_domain = profile_commands.add_parser(
+        "add-domain",
+        help="Add a secondary domain to an existing profile config.",
+    )
+    from universal_agent_cli.profile_domains import add_add_domain_arguments
+
+    add_add_domain_arguments(profile_add_domain)
     profile_create = profile_commands.add_parser(
         "create",
         help="Create a stored profile from a profile JSON file (agentd profile store).",

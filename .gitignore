@@ -31,3 +31,4 @@ docs/diagrams/
 
 # Node
 node_modules/
+store/.runtime-store.lock
