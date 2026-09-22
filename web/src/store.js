@@ -798,11 +798,24 @@ export function pct(x) {
 
 /* ── 记忆 ── */
 export const memSearch = ref("");
+export const memKind = ref("");
+export const memKinds = computed(() =>
+  [...new Set(m.memories.map((x) => x.kind).filter(Boolean))],
+);
 export const memList = computed(() =>
   m.memories.filter(
-    (x) => !memSearch.value || x.text.includes(memSearch.value),
+    (x) =>
+      (!memSearch.value || x.text.includes(memSearch.value)) &&
+      (!memKind.value || x.kind === memKind.value),
   ),
 );
+// 记忆概览：按类型计数，供记忆管理页顶部汇总条使用
+export const memStats = computed(() => {
+  const counts = {};
+  for (const x of m.memories)
+    counts[x.kind || "other"] = (counts[x.kind || "other"] || 0) + 1;
+  return counts;
+});
 export function addMemory() {
   memoryAdd("手动新增的记忆 · " + new Date().toLocaleTimeString())
     .then(() => loadMemory(m))

@@ -22,8 +22,38 @@ defineOptions({ name: 'MultiAgentView' })
           <div class="mono-row" style="border-top:1px solid var(--border);margin-top:8px;padding-top:12px">
             <span style="font-size:12.5px;color:var(--muted)" id="topo-summary">{{ topo.summary }}</span>
           </div>
+          <div class="agent-roster">
+            <div class="w-sec">Agent 名册</div>
+            <div v-for="b in topo.boxes" :key="b.label + ':' + b.sub" class="mono-row">
+              <span class="lbl">{{ b.label }}</span>
+              <span class="tag" :class="b.hub ? 'tag-hub' : ''">{{ b.hub ? 'coordinator' : 'worker' }}</span>
+              <span style="color:var(--muted)">{{ b.sub }}</span>
+            </div>
+            <div class="roster-note">
+              多智能体通过结构化 Task/Result/Evidence 契约通信；域组合由单 Agent 内多个 Domain 共享同一世界模型承担（参见架构文档 §4.9）。
+            </div>
+          </div>
         </div>
       </section>
-
-      <!-- 视图十三：健康中心 -->
 </template>
+
+<style scoped>
+.agent-roster { margin-top: 12px; }
+.w-sec {
+  font-weight: 600;
+  font-size: 12px;
+  margin: 6px 0 4px;
+  color: var(--muted, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tag-hub { color: var(--accent, #0071e3); border-color: var(--accent, #0071e3); }
+.roster-note {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted, #888);
+  border-top: 1px dashed var(--border, #eee);
+  padding-top: 8px;
+}
+</style>
