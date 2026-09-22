@@ -4,7 +4,7 @@ import { m, view, OPS_VIEWS, opsOpen, apiHost, fatal, toastMsg, toastTimer, toas
 
 // biome-ignore-all lint/style/noNonNullAssertion: generated
 defineOptions({ name: 'SessionView' })
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 const confirmRemember = ref(false)
 // 会话切换器：下拉选择即跳转详情（openSession 会拉取该会话事件/证据/世界模型）
 const pickSessionId = ref('')
@@ -17,6 +17,30 @@ function onPickSession(e) {
   const s = m.sessions.find((x) => x.id === e.target.value)
   if (s) openSession(s)
 }
+
+// 结果小结：把证据/世界模型/目标状态蒸馏成几条可读结论（纯客户端推导，无新接口）
+const conclusions = computed(() => {
+  const st = currentSession.value
+    ? currentSession.value.confirm
+      ? 'waiting'
+      : normStatus(currentSession.value.status)
+    : 'paused'
+  const facts = [...m.world.facts]
+    .sort((a, b) => (b.confidence || 0) - (a.confidence || 0))
+    .slice(0, 5)
+  const factLines = facts.map((f) => `${f.subject}：${f.claim} = ${f.value}`)
+  const evCount = m.evidence.length
+  const evOk = m.evidence.filter((x) => x.ok).length
+  const conflicts = m.world.facts.filter((f) => f.conflicting).length
+  const failedEv = m.evidence.filter((x) => !x.ok).slice(0, 3).map((x) => x.name)
+  let verdict
+  if (st === 'success') verdict = '目标已完成，证据充分'
+  else if (st === 'failed') verdict = '未完成——存在失败证据，建议排查'
+  else if (st === 'waiting') verdict = '等待人工确认决策'
+  else if (st === 'running') verdict = '执行中，世界模型持续更新'
+  else verdict = '会话已暂停/未开始'
+  return { st, verdict, factLines, evCount, evOk, conflicts, failedEv }
+})
 </script>
 <template>
 <!-- 视图二：会话详情 -->
@@ -80,6 +104,24 @@ function onPickSession(e) {
             </ul>
           </div>
           <div class="stack">
+            <div class="card" data-od-id="conclusions-card">
+              <div class="card-head"><h3>结果小结</h3><span class="status" :class="statusCls(conclusions.st)">{{ statusLabel(conclusions.st) }}</span></div>
+              <div class="conc-body">
+                <div class="conc-goal" v-if="currentSession">{{ currentSession.goal }}</div>
+                <div class="conc-line conc-verdict"><span class="conc-key">目标</span>{{ conclusions.verdict }}</div>
+                <div class="conc-line" v-if="conclusions.evCount"><span class="conc-key">证据</span>{{ conclusions.evOk }}/{{ conclusions.evCount }} 项检查通过</div>
+                <div class="conc-line conc-warn" v-if="conclusions.conflicts"><span class="conc-key">冲突</span>{{ conclusions.conflicts }} 处事实取值相互矛盾，需排查</div>
+                <template v-if="conclusions.failedEv.length">
+                  <div class="conc-sec">失败项</div>
+                  <div v-for="fn in conclusions.failedEv" :key="fn" class="conc-fact conc-fail">✗ {{ fn }}</div>
+                </template>
+                <template v-if="conclusions.factLines.length">
+                  <div class="conc-sec">关键事实</div>
+                  <div v-for="(fl, i) in conclusions.factLines" :key="i" class="conc-fact">· {{ fl }}</div>
+                </template>
+                <div v-if="!conclusions.evCount && !conclusions.factLines.length" class="empty">尚无结论——Agent 尚未产出足够证据</div>
+              </div>
+            </div>
             <div class="card" data-od-id="session-summary-card">
               <h3 style="margin-bottom:10px">会话摘要</h3>
               <div id="session-summary">
@@ -189,4 +231,37 @@ function onPickSession(e) {
   border-radius: 4px;
   padding: 0 4px;
 }
+.conc-body { display: grid; gap: 6px; }
+.conc-goal {
+  color: var(--text, #222);
+  font-weight: 600;
+  font-size: 14px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed var(--border, #eee);
+}
+.conc-line { display: flex; gap: 8px; font-size: 13px; align-items: baseline; }
+.conc-key {
+  flex: none;
+  min-width: 44px;
+  font-size: 12px;
+  color: var(--muted, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.conc-verdict { color: var(--text, #222); }
+.conc-warn { color: #b45309; }
+.conc-sec {
+  font-weight: 600;
+  font-size: 12px;
+  margin-top: 6px;
+  color: var(--muted, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.conc-fact {
+  font-size: 12.5px;
+  color: var(--text, #333);
+  padding-left: 4px;
+}
+.conc-fail { color: var(--danger, #c53); }
 </style>

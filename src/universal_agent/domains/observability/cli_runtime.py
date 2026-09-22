@@ -10,8 +10,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
+from universal_agent.configuration import DomainConfig
 from universal_agent.core import JsonMapping
-from universal_agent.host import RuntimeHost, build_configured_model_adapter
+from universal_agent.domains.observability import ObservabilityDomain
+from universal_agent.host import RuntimeHost
 from universal_agent.profile import ProfileConfig
 from universal_agent.security import (
     EnvSecretProvider,
@@ -51,27 +53,52 @@ def profile_domain_config(
 def build_observability_profile_service(profile_config_path: str | Path) -> RuntimeService:
     """Build a RuntimeService from an `agent init` observability profile."""
 
-    from universal_agent.domains.observability import ObservabilityDomain
-    from universal_agent.domains.observability.prometheus import PrometheusBackend
+    from universal_agent.host import build_configured_model_adapter as _build_model
 
     profile_config = ProfileConfig.from_json_file(profile_config_path)
     profile = profile_config.to_profile()
     secret_provider = EnvSecretProvider()
-    domain_settings = profile_config.domain.settings if profile_config.domain else {}
-    settings = _observability_settings(domain_settings)
-
-    backend = PrometheusBackend(
-        settings.base_url,
-        headers=_observability_headers(settings, profile.runtime, secret_provider),
-        timeout_seconds=settings.timeout_seconds,
-    )
+    domain = build_observability_domain(profile_config, secret_provider=secret_provider)
     host = RuntimeHost.from_profile(
         profile=profile,
-        model=build_configured_model_adapter(profile.runtime, secret_provider=secret_provider),
-        domain=ObservabilityDomain(backend),
+        model=_build_model(profile.runtime, secret_provider=secret_provider),
+        domain=domain,
         secret_provider=secret_provider,
     )
     return host.service
+
+
+def build_observability_domain(
+    profile_config: ProfileConfig,
+    *,
+    secret_provider: SecretProvider | None = None,
+    domain_config: DomainConfig | None = None,
+) -> ObservabilityDomain:
+    """Build the ObservabilityDomain from a profile's domain settings.
+
+    ``domain_config`` overrides the profile's primary domain — required for
+    combined profiles where observability is not the primary domain.
+    """
+
+    from universal_agent.domains.observability.prometheus import PrometheusBackend
+
+    resolved = domain_config
+    if resolved is None:
+        configured = profile_config.runtime.configured_domains()
+        resolved = next(
+            (config for config in configured if config.name == "observability"),
+            profile_config.domain,
+        )
+    settings = _observability_settings(resolved.settings if resolved else {})
+    runtime_config = profile_config.to_profile().runtime
+    backend = PrometheusBackend(
+        settings.base_url,
+        headers=_observability_headers(
+            settings, runtime_config, secret_provider or EnvSecretProvider()
+        ),
+        timeout_seconds=settings.timeout_seconds,
+    )
+    return ObservabilityDomain(backend)
 
 
 class _ObservabilitySettings:

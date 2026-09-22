@@ -388,13 +388,15 @@ class KubernetesRemediationDomain(KubernetesDomain):
             *super().capabilities(),
             CapabilityDefinition(
                 "scale_workload",
-                "Scale workload replicas",
+                "Scale workload replicas. Use decision target "
+                "'deployment/<name>' matching the name argument.",
                 CapabilityCategory.MUTATION,
                 RiskLevel.MEDIUM,
             ),
             CapabilityDefinition(
                 "restart_workload",
-                "Restart a deployment with a rolling restart",
+                "Restart a deployment with a rolling restart. Use decision "
+                "target 'deployment/<name>' matching the name argument.",
                 CapabilityCategory.MUTATION,
                 RiskLevel.LOW,
             ),

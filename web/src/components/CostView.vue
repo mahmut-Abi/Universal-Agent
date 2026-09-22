@@ -4,6 +4,19 @@ import { m, view, OPS_VIEWS, opsOpen, apiHost, fatal, toastMsg, toastTimer, toas
 
 // biome-ignore-all lint/style/noNonNullAssertion: generated
 defineOptions({ name: 'CostView' })
+import { computed } from 'vue'
+// 按 Profile 汇总（来源于 /v1/cost 的 top_sessions，标注“Top 会话累计”）
+const costByProfile = computed(() => {
+  const map = new Map()
+  for (const t of m.cost.top) {
+    const k = t.profile || '—'
+    map.set(k, (map.get(k) || 0) + t.cost)
+  }
+  return [...map.entries()].sort((a, b) => b[1] - a[1])
+})
+const costByProfileMax = computed(() =>
+  Math.max(0, ...costByProfile.value.map((x) => x[1])),
+)
 </script>
 <template>
 <!-- 视图七：成本分析 -->
@@ -18,13 +31,26 @@ defineOptions({ name: 'CostView' })
               </div>
             </div>
           </div>
-          <div class="card" data-od-id="cost-top-card">
-            <div class="card-head"><h3>成本 Top 会话</h3></div>
-            <div id="cost-top">
-              <div v-for="t in m.cost.top" :key="t.sid" class="mono-row">
-                <span class="lbl">{{ t.sid }}</span>
-                <span style="color:var(--muted)">{{ t.profile }} · {{ t.tokens }} tokens</span>
-                <span class="num" style="font-weight:600">${{ t.cost.toFixed(2) }}</span>
+          <div class="stack">
+            <div class="card" data-od-id="cost-top-card">
+              <div class="card-head"><h3>成本 Top 会话</h3></div>
+              <div id="cost-top">
+                <div v-for="t in m.cost.top" :key="t.sid" class="mono-row">
+                  <span class="lbl">{{ t.sid }}</span>
+                  <span style="color:var(--muted)">{{ t.profile }} · {{ t.tokens }} tokens</span>
+                  <span class="num" style="font-weight:600">${{ t.cost.toFixed(2) }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="card" data-od-id="cost-profiles-card">
+              <div class="card-head"><h3>按 Profile 汇总</h3><span class="tag">Top 会话累计</span></div>
+              <div id="cost-profiles">
+                <div v-if="!costByProfile.length" class="empty">暂无成本数据</div>
+                <div v-for="[n, v] in costByProfile" :key="n" class="costbar-row">
+                  <span class="cn">{{ n }}</span>
+                  <span class="scorebar" role="img" :aria-label="n + '：$' + v.toFixed(2)"><i :style="{ width: Math.round(v / (costByProfileMax || 1) * 100) + '%' }"></i></span>
+                  <span class="cv num">${{ v.toFixed(2) }}</span>
+                </div>
               </div>
             </div>
           </div>

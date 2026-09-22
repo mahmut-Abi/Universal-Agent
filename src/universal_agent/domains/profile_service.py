@@ -16,6 +16,7 @@ Dispatch contract (shared by the SDK facade, the CLI and agentd):
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from universal_agent.host import RuntimeHost, build_configured_model_adapter
 from universal_agent.host_contracts import build_default_domain_service
@@ -61,11 +62,66 @@ def build_configured_service(config_path: str | Path) -> RuntimeService:
         )
 
         return build_observability_profile_service(config_path)
+    domain_names = {domain.name for domain in configured_domains}
+    if {"kubernetes", "observability"} <= domain_names:
+        return _build_composed_kubernetes_observability_service(config_path)
     from universal_agent.domains.kubernetes.cli_runtime import (
         build_configured_service as build_kubernetes_service,
     )
 
     return build_kubernetes_service(config_path)
+
+
+def _build_composed_kubernetes_observability_service(config_path: str | Path) -> RuntimeService:
+    """Compose the kubernetes and observability domains into one runtime
+    (UA-LIVE-2026-09-21 R6-1 follow-up: cross-domain scenarios)."""
+
+    from universal_agent.domains.kubernetes.cli_runtime import (
+        configured_kubernetes_backend,
+    )
+    from universal_agent.domains.kubernetes.domain import KubernetesRemediationDomain
+    from universal_agent.domains.observability.cli_runtime import (
+        build_observability_domain,
+    )
+    from universal_agent.host import RuntimeHost, build_configured_model_adapter
+
+    profile_config = ProfileConfig.from_json_file(config_path)
+    profile = profile_config.to_profile()
+    secret_provider = EnvSecretProvider()
+    configured_domains = profile.runtime.configured_domains()
+    kubernetes_config = next(
+        (domain for domain in configured_domains if domain.name == "kubernetes"),
+        None,
+    )
+    kubernetes_backend = configured_kubernetes_backend(
+        (kubernetes_config,) if kubernetes_config is not None else (),
+        config=profile.runtime,
+        secret_provider=secret_provider,
+    )
+    from universal_agent.domains.kubernetes.backend import (
+        KubernetesBackend,
+        KubernetesMutationBackend,
+    )
+
+    inspection_backend = cast(KubernetesBackend, kubernetes_backend)
+    mutation_backend = cast(KubernetesMutationBackend, kubernetes_backend)
+    kubernetes_domain = KubernetesRemediationDomain(inspection_backend, mutation_backend)
+    observability_domain = build_observability_domain(
+        profile_config,
+        secret_provider=secret_provider,
+        domain_config=next(
+            (domain for domain in configured_domains if domain.name == "observability"),
+            None,
+        ),
+    )
+    model = build_configured_model_adapter(profile.runtime, secret_provider=secret_provider)
+    host = RuntimeHost.from_profile_composed(
+        profile=profile,
+        model=model,
+        domains=(kubernetes_domain, observability_domain),
+        secret_provider=secret_provider,
+    )
+    return host.service
 
 
 def build_default_service(*, kubernetes_default: bool = False) -> RuntimeService:

@@ -59,18 +59,69 @@ defineOptions({ name: 'OverviewView' })
               </div>
             </div>
           </div>
-          <div class="card" data-od-id="runs-chart-card">
-            <div class="card-head"><h3>近 7 日任务量</h3></div>
-            <div class="bars" id="runs-bars">
-              <div v-for="(v, i) in activity.values" :key="i" class="bar" :class="{ hot: v === activity.max && v > 0 }" tabindex="0" role="img"
-                :aria-label="activity.days[i] + '：' + v + ' 个任务'" :style="{ height: Math.round(v / (activity.max || 1) * 100) + '%' }">
-                <span class="tip">{{ v }} 个任务</span>
+          <div class="stack">
+            <div class="card" data-od-id="runs-chart-card">
+              <div class="card-head"><h3>近 7 日任务量</h3></div>
+              <div class="bars" id="runs-bars">
+                <div v-for="(v, i) in activity.values" :key="i" class="bar" :class="{ hot: v === activity.max && v > 0 }" tabindex="0" role="img"
+                  :aria-label="activity.days[i] + '：' + v + ' 个任务'" :style="{ height: Math.round(v / (activity.max || 1) * 100) + '%' }">
+                  <span class="tip">{{ v }} 个任务</span>
+                </div>
+              </div>
+              <div class="bars-x" id="runs-x"><span v-for="d in activity.days" :key="d">{{ d }}</span></div>
+            </div>
+            <div class="card" data-od-id="ov-events-card">
+              <div class="card-head"><h3>最近系统事件</h3><button class="btn btn-secondary btn-sm" @click="reload('overview')">↻刷新</button></div>
+              <div v-if="!m.logs.length" class="empty">暂无事件记录</div>
+              <div v-for="l in m.logs.slice(0, 10)" :key="l.at + l.src + l.text" class="log-line">
+                <span class="lt">{{ l.at }}</span>
+                <span class="lvl" :class="'lvl-' + l.level">{{ l.level }}</span>
+                <span class="lx"><code>{{ l.src }}</code> · {{ l.text }}</span>
               </div>
             </div>
-            <div class="bars-x" id="runs-x"><span v-for="d in activity.days" :key="d">{{ d }}</span></div>
           </div>
         </div>
       </section>
 
       <!-- 视图二：会话详情 -->
 </template>
+
+<style scoped>
+.status-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 14px 0 0;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-card, #fff);
+  border: 1px solid var(--border, #e6e6e6);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12.5px;
+  color: var(--text, #222);
+}
+.pill b {
+  font-variant-numeric: tabular-nums;
+  margin-left: 2px;
+}
+.pill .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted, #999);
+}
+.strip-empty {
+  color: var(--muted, #888);
+  font-size: 12.5px;
+}
+.pill-running .dot, .dot-running { background: var(--accent); }
+.pill-success .dot, .dot-success { background: var(--ok); }
+.pill-failed .dot, .dot-failed { background: var(--danger); }
+.pill-waiting .dot, .dot-waiting { background: var(--warn); }
+.pill-paused .dot, .dot-paused { background: var(--muted); }
+</style>

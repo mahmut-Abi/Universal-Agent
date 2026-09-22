@@ -394,6 +394,22 @@ create/delete` 子命令 + `profile list` 合并 stored_profiles）、R5-8/R5-9
 新增单测 5 个（init resolve/非目标 backend 忽略/缺 endpoint 报错/服务构建/缺
 base_url 报错）。mypy --strict（481 文件）、ruff、全量测试绿。
 
+## 组合 profile：kubernetes + observability 跨域（R6-1 完结）
+
+实现：`profile_service.build_configured_service` 增加 kubernetes+observability
+组合分派——`RuntimeHost.from_profile_composed` 组合两域（组合式 profile 要求
+顶层 `domains` 与 `runtime.domains` 同时列出两域）。observability 域构建抽为
+`build_observability_domain(profile_config, domain_config=...)`。
+
+**Live 验证（跨域单会话）**：目标"Check deployment health, then query the
+metric up and report"→ 3 迭代完成；同一会话内跨域执行
+`inspect_workload`（kubernetes）+ `query_metrics`（observability），
+39 条 Evidence 共享世界模型——AGENTS.md §4.9 "One Agent + Multiple Active
+Domains → Shared World Model" 首次 live 证明。
+
+已知边界：`agent init` 仍为单域（组合 profile 需手写 JSON，两处 domains
+列表必须一致）；跨域目标完成于默认 healthy 判据（P10b 语义同前）。
+
 ## 建议后续（更新）
 
 1. 修 P1（只读命令离线可用）、P6（preflight 契约统一）、P8（check exit code）；

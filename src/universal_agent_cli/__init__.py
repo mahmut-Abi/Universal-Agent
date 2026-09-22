@@ -12,7 +12,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, TextIO, cast
 
-from universal_agent.core import Goal, SessionId, Task
+from universal_agent.core import Goal, JsonMapping, SessionId, Task
 from universal_agent_cli.client_config import (
     SERVER_ENV_TOKEN,
     resolve_client_server_target,
@@ -485,6 +485,32 @@ async def _dispatch(
     raise ValueError(f"unknown command: {command}")
 
 
+def _warn_mutation_goal_unfulfilled_local(goal: str, events_body: JsonMapping) -> None:
+    """Injected-service variant of the post-run P10b check (see io.py)."""
+
+    import sys
+
+    from universal_agent_cli.io import mutation_without_action_warning
+
+    events = events_body.get("events", [])
+    if not isinstance(events, list):
+        return
+    side_effects = {
+        str(item.get("side_effect"))
+        for item in events
+        if isinstance(item, dict)
+        and item.get("type") == "ActionStarted"
+        and isinstance(item.get("data"), dict)
+    }
+    warning = mutation_without_action_warning(
+        goal,
+        session_completed=True,
+        side_effects=side_effects,
+    )
+    if warning is not None:
+        sys.stderr.write(warning + "\n")
+
+
 async def _dispatch_run(
     args: argparse.Namespace,
     service: RuntimeService,
@@ -514,10 +540,11 @@ async def _dispatch_run(
         )
     duration_seconds = time.monotonic() - started
     body = runtime_run_body(run)
+    events_body = event_batch_body(await service.stream_events(run.result.session_id, limit=500))
+    _warn_mutation_goal_unfulfilled_local(cast(str, args.goal), events_body)
     if cast(str, args.output) == "json":
         _write_json(out, body)
         return
-    events_body = event_batch_body(await service.stream_events(run.result.session_id, limit=500))
     _write_text(
         out,
         render_run_text(

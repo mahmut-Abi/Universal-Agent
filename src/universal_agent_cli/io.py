@@ -189,3 +189,38 @@ def _warn_mutation_goal_without_criteria(
         "pre-mutation state. Pass e.g. --success replicas=3 to verify the "
         "mutation actually happened.\n"
     )
+
+
+def mutation_without_action_warning(
+    goal: str,
+    *,
+    session_completed: bool,
+    side_effects: set[str] | None,
+) -> str | None:
+    """Post-run P10b check: a mutation-shaped goal that COMPLETED without any
+    side-effecting action was satisfied by the pre-mutation state — the user's
+    intent was not carried out. Returns the warning text or None."""
+
+    if not session_completed:
+        return None
+    if side_effects is None:
+        return None
+    if any(effect not in ("", "none") for effect in side_effects):
+        return None
+    return _mutation_intent_without_action(goal)
+
+
+def _mutation_intent_without_action(goal: str) -> str | None:
+    import sys
+
+    del sys
+    lowered = goal.lower()
+    if not any(hint in lowered for hint in _MUTATION_GOAL_HINTS):
+        return None
+    return (
+        "WARNING: goal completed but NO side-effecting action was executed. "
+        "The mutation implied by this goal was not performed — the default "
+        "'healthy' criterion can be satisfied by the pre-mutation state. "
+        "Re-run with explicit --success criteria (e.g. --success replicas=3) "
+        "to force verification of the mutation."
+    )

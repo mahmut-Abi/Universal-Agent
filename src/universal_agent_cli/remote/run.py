@@ -19,6 +19,48 @@ from universal_agent_cli.remote._shared import success_criteria_body
 from universal_agent_cli.text_views import render_run_text
 
 
+async def _warn_if_mutation_goal_unfulfilled(
+    args: argparse.Namespace,
+    out: TextIO,
+    client: AgentdClient,
+    payload: Mapping[str, JsonValue],
+) -> None:
+    """UA-LIVE-2026-09-21 P10b hardening: after a completed run on a
+    mutation-shaped goal, verify at least one side-effecting action ran."""
+
+    import sys
+
+    from universal_agent_cli.io import mutation_without_action_warning
+
+    result = payload.get("result")
+    session = payload.get("session")
+    if not isinstance(result, dict) or not isinstance(session, dict):
+        return
+    if str(result.get("status")) != "completed":
+        return
+    session_id = str(session.get("session_id", ""))
+    if not session_id:
+        return
+    events = await client.get_json(f"/v1/sessions/{session_id}/events", query={"limit": 500})
+    event_items = events.get("events", [])
+    if not isinstance(event_items, list):
+        return
+    side_effects = {
+        str(item.get("side_effect"))
+        for item in event_items
+        if isinstance(item, dict)
+        and item.get("type") == "ActionStarted"
+        and isinstance(item.get("data"), dict)
+    }
+    warning = mutation_without_action_warning(
+        cast(str, args.goal),
+        session_completed=True,
+        side_effects=side_effects,
+    )
+    if warning is not None:
+        sys.stderr.write(warning + "\n")
+
+
 async def _dispatch_remote_run(
     args: argparse.Namespace,
     out: TextIO,
@@ -55,6 +97,7 @@ async def _dispatch_remote_run(
         body["read_only"] = True
     started = time.monotonic()
     payload = await client.post_json("/v1/sessions", body=body)
+    await _warn_if_mutation_goal_unfulfilled(args, out, client, payload)
     duration_seconds = time.monotonic() - started
     if cast(str, args.output) == "text":
         events_body = await _remote_run_events(payload, client)

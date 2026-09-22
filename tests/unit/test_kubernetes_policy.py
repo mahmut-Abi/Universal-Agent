@@ -173,15 +173,11 @@ def test_kubernetes_scale_policy_normalizes_workload_container_target_form() -> 
 @pytest.mark.behavior
 def test_kubernetes_scale_policy_normalizes_namespace_name_target_form() -> None:
     """Baseline S3 regression: models emit 'namespace/name' targets."""
-    normalized = KubernetesScalePolicy().evaluate(
-        scale_policy_context(target="prod/api")
-    )
+    normalized = KubernetesScalePolicy().evaluate(scale_policy_context(target="prod/api"))
     assert normalized is not None
     assert normalized.effect is PolicyEffect.ALLOW
 
-    foreign = KubernetesScalePolicy().evaluate(
-        scale_policy_context(target="other-ns/api")
-    )
+    foreign = KubernetesScalePolicy().evaluate(scale_policy_context(target="other-ns/api"))
     assert foreign is not None
     assert foreign.effect is PolicyEffect.DENY
     assert foreign.reason == "scale_workload target does not match the workload name"
