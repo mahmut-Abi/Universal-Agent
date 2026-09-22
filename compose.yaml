@@ -48,6 +48,12 @@ services:
     environment:
       AGENTD_URL: http://agentd:8765
       AGENTD_TOKEN: ${AGENTD_AUTH_TOKEN:?set AGENTD_AUTH_TOKEN before starting agentd}
+      # Security: the web server fails closed without a password (see
+      # server.mjs). For production set WEB_PASSWORD=<strong password>; the
+      # ALLOW_NO_AUTH=1 below is only the local-dev default so plain
+      # `docker compose up` keeps working on a host-local port.
+      WEB_PASSWORD: ${WEB_PASSWORD:-}
+      ALLOW_NO_AUTH: ${ALLOW_NO_AUTH:-1}
     depends_on:
       - agentd
     cap_drop:

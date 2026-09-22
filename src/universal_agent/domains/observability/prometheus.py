@@ -44,9 +44,11 @@ class HttpxPrometheusTransport:
         base_url: str,
         *,
         client: httpx.AsyncClient | None = None,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
         self._base_url = _base_url(base_url)
         self._client = client
+        self._headers = dict(headers or {})
 
     async def request(
         self,
@@ -62,7 +64,7 @@ class HttpxPrometheusTransport:
                 query=query,
                 timeout_seconds=timeout_seconds,
             )
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(headers=self._headers) as client:
             return await self._request_with_client(
                 client,
                 path,
@@ -113,9 +115,10 @@ class PrometheusBackend:
         *,
         transport: PrometheusTransport | None = None,
         timeout_seconds: float = 10.0,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
         parse_positive_float(timeout_seconds, "timeout_seconds")
-        self._transport = transport or HttpxPrometheusTransport(base_url)
+        self._transport = transport or HttpxPrometheusTransport(base_url, headers=headers)
         self._timeout_seconds = timeout_seconds
 
     async def query(self, arguments: JsonMapping) -> JsonMapping:

@@ -55,6 +55,12 @@ def build_configured_service(config_path: str | Path) -> RuntimeService:
         )
 
         return build_workspace_profile_service(config_path)
+    if first_domain == "observability":
+        from universal_agent.domains.observability.cli_runtime import (
+            build_observability_profile_service,
+        )
+
+        return build_observability_profile_service(config_path)
     from universal_agent.domains.kubernetes.cli_runtime import (
         build_configured_service as build_kubernetes_service,
     )

@@ -362,6 +362,38 @@ create/delete` 子命令 + `profile list` 合并 stored_profiles）、R5-8/R5-9
 | R6-1 | 🟡 | `agent init --domain-backend` 无 observability 选项——observability 域只能编程组合，CLI Golden Path 不可达；cross_domain 场景（k8s+observability）无法经 CLI 端到端运行 | 记录待修 |
 | ⚠️ | 瞬时 | cross-domain suite 2 场景遇模型网关瞬时 500——R6-3 修复后此类失败将自动重试 | R6-3 覆盖 |
 
+## R6-1 修复：observability 域接入 CLI Golden Path（同日）
+
+环境事实：集群观测栈为 **VictoriaMetrics**（monitoring ns vmagent），其
+`/api/v1/query*` 与 Prometheus 完全兼容——observability 域的 PrometheusBackend
+无需改动即可对接。
+
+实现（全部经 entry-point 贡献制，零 kernel 改动）：
+
+- `domains/observability/prometheus.py`：HttpxPrometheusTransport/PrometheusBackend
+  支持自定义 headers（Bearer token 认证）
+- 新增 `domains/observability/cli_runtime.py`：`profile_domain_config` +
+  `build_observability_profile_service`（settings: base_url/timeout_seconds/
+  bearer_token_secret）
+- 新增 `domains/observability/registration.py`：`init_backends=("prometheus",)`
+  的 CLI 贡献（--observability-endpoint/--observability-token-env/
+  --observability-timeout-seconds）
+- `profile_service.build_configured_service` 增加 observability 分派分支；
+  pyproject 注册 cli_contributions entry point
+
+**Live 验证（真实 VictoriaMetrics @ victoria-metrics.kubernetes.com）**：
+
+- `agent init --domain-backend prometheus` 创建 profile，doctor 全绿（1 域 3 能力，
+  observability-read-only policy）
+- 真模型目标"Query the metric up and report..."：5 次迭代、4 次 ActionCompleted
+  —— 真实查询 `up`（14 序列）、内存用量表达式（node_memory_*）、告警规则检查，
+  16 条 Evidence、完整事件链，策略 read-only 放行
+- 会话以 ask_user 上报结束（默认 healthy 判据与观测上报语义不匹配——已知语义，
+  见 Round 2 的判据化结论）
+
+新增单测 5 个（init resolve/非目标 backend 忽略/缺 endpoint 报错/服务构建/缺
+base_url 报错）。mypy --strict（481 文件）、ruff、全量测试绿。
+
 ## 建议后续（更新）
 
 1. 修 P1（只读命令离线可用）、P6（preflight 契约统一）、P8（check exit code）；
