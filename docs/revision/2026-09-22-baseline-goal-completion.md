@@ -84,6 +84,18 @@ mutation 全类型（set_image/scale/restart）、双故障根因诊断与策略
 - **R5-9 完结**：`examples/evaluation/dataset.json` manifest 示例 +
   README（suite vs dataset 口径），`eval datasets --verify` 通过。
 
+## 追加（2026-09-22 续 2）：observability live 回归套件
+
+`examples/evaluation/observability_live_suite.json`——2 场景（up 查询 +
+alert/rules 检查），稳定判据（result_type/query/alert_count/rule_count）。
+live gate 全绿（真 VictoriaMetrics + 真模型，7.3K tokens，0 人工干预）。
+运行：`agent eval run <obs-profile> --suite-file
+examples/evaluation/observability_live_suite.json`。
+
+外部依赖阻塞记录：① Postgres memory/admin store 实测——本机无 docker/PG；
+② kubernetes_api 后端实测——集群 kubeconfig 为 client-cert 认证而 backend
+仅支持 bearer token（如需可经 API 签发 SA token，生产集群暂缓）。
+
 ## 遗留
 
 - P10b 设计待办：变异目标显式判据

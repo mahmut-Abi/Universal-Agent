@@ -1,0 +1,51 @@
+{
+  "name": "observability-live-regression",
+  "scenarios": [
+    {
+      "name": "obs-up-instances-query",
+      "goal": {
+        "description": "Query the metric up and report the sample count",
+        "success_criteria": [
+          {"key": "query", "expected": "up"},
+          {"key": "result_type", "expected": "vector"}
+        ]
+      },
+      "task": {
+        "description": "Query the up metric against the configured metrics backend",
+        "required_criteria": ["query", "result_type"]
+      },
+      "expectations": {
+        "expected_status": "completed",
+        "required_capabilities": ["query_metrics"],
+        "required_evidence_claims": ["query", "result_type"],
+        "max_actions": 2
+      },
+      "tags": ["observability", "live"]
+    },
+    {
+      "name": "obs-alert-rules-inspection",
+      "goal": {
+        "description": "Inspect the configured alert rules and firing alerts, then report the counts",
+        "success_criteria": [
+          {"key": "alert_count", "expected": 0},
+          {"key": "rule_count", "expected": 0}
+        ]
+      },
+      "task": {
+        "description": "Inspect alert rules and firing alerts on the metrics backend",
+        "required_criteria": ["alert_count", "rule_count"]
+      },
+      "expectations": {
+        "expected_status": "completed",
+        "required_capabilities": ["inspect_alert_rules"],
+        "required_evidence_claims": ["alert_count", "rule_count"],
+        "max_actions": 3
+      },
+      "tags": ["observability", "alerts", "live"]
+    }
+  ],
+  "tags": ["observability", "live"],
+  "quality_gate": {
+    "min_goal_completion_rate": 0.5
+  }
+}
