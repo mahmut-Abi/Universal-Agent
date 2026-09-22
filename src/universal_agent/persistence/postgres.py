@@ -12,17 +12,20 @@ from sqlalchemy import (
     Column,
     DateTime,
     Engine,
+    Float,
     Index,
     Integer,
     MetaData,
     PrimaryKeyConstraint,
     String,
     Table,
+    Text,
     UniqueConstraint,
     create_engine,
     text,
     tuple_,
 )
+from sqlalchemy import delete as sql_delete
 from sqlalchemy import insert as sql_insert
 from sqlalchemy import select as sql_select
 from sqlalchemy import update as sql_update
@@ -39,6 +42,9 @@ from universal_agent.core import (
     JsonMapping,
     RuntimeEvent,
     SessionId,
+    dumps_json,
+    immutable_json,
+    loads_json,
     utc_now,
 )
 from universal_agent.core.config_validation import (
@@ -48,6 +54,7 @@ from universal_agent.core.config_validation import (
     parse_positive_int,
 )
 from universal_agent.eventstream import filter_events, poll_event_reader
+from universal_agent.memory import MemoryId, MemoryKind, MemoryQuery, MemoryRecord
 from universal_agent.persistence.codec import (
     decode_runtime_event,
     decode_session_snapshot,
@@ -63,7 +70,7 @@ from universal_agent.state import (
 from universal_agent.state.event_store import SESSION_STATE_EVENT
 from universal_agent.state.session import with_state
 
-POSTGRES_SCHEMA_VERSION = 3
+POSTGRES_SCHEMA_VERSION = 4
 POSTGRES_DEFAULT_TENANT_ID = DEFAULT_TENANT_ID
 POSTGRES_OUTBOX_PENDING = "pending"
 POSTGRES_OUTBOX_PUBLISHING = "publishing"
@@ -182,6 +189,32 @@ _UA_CREDENTIALS = Table(
     Column("scope", String, nullable=False, server_default="read_write"),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("revoked_at", DateTime(timezone=True)),
+)
+
+# Operator/domain memories (schema v4): tenant-scoped like every ua_* table.
+# The tenant comes from the record metadata stamped by the agentd data-plane
+# layer; records without one land in the default tenant.
+_UA_MEMORIES = Table(
+    "ua_memories",
+    _METADATA,
+    Column("tenant_id", String, nullable=False, server_default="default"),
+    Column("memory_id", String, primary_key=True),
+    Column("kind", String, nullable=False),
+    Column("subject", String, nullable=False),
+    Column("content", Text, nullable=False),
+    Column("scope", String, nullable=False, server_default=""),
+    Column("confidence", Float, nullable=False),
+    Column("source_session_id", String, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("version", Integer, nullable=False, server_default="1"),
+    Column("tags", Text, nullable=False, server_default="[]"),
+    Column("source", String, nullable=False, server_default=""),
+    Column("metadata", Text, nullable=False, server_default="{}"),
+)
+Index(
+    "idx_ua_memories_tenant_created",
+    _UA_MEMORIES.c.tenant_id,
+    _UA_MEMORIES.c.created_at,
 )
 
 
@@ -599,6 +632,87 @@ class PostgresRuntimeStore:
             yield connection
 
 
+class PostgresMemoryStore:
+    """Tenant-scoped Postgres adapter for operator/domain memories.
+
+    The tenant comes from the record metadata stamped by the agentd
+    data-plane layer; records without one land in the default tenant.
+    """
+
+    def __init__(
+        self,
+        url: str | None = None,
+        *,
+        engine: Engine | None = None,
+    ) -> None:
+        if url is None and engine is None:
+            raise ValueError("postgres memory store requires a URL or engine")
+        self._engine = engine if engine is not None else create_engine(url)  # type: ignore[arg-type]
+        apply_postgres_migrations(self._engine)
+
+    @contextmanager
+    def _connect(self) -> Iterator[Connection]:
+        with self._engine.begin() as connection:
+            yield connection
+
+    def add(self, record: MemoryRecord) -> bool:
+        tenant = _memory_tenant(record)
+        with self._connect() as connection:
+            existing = connection.execute(
+                sql_select(_UA_MEMORIES.c.memory_id)
+                .where(_UA_MEMORIES.c.tenant_id == tenant)
+                .where(_UA_MEMORIES.c.memory_id == str(record.id))
+            ).first()
+            if existing is not None:
+                return False
+            connection.execute(
+                sql_insert(_UA_MEMORIES).values(_memory_row(record, tenant)),
+            )
+            return True
+
+    def get(self, memory_id: MemoryId) -> MemoryRecord | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                sql_select(_UA_MEMORIES).where(_UA_MEMORIES.c.memory_id == str(memory_id))
+            ).first()
+        if row is None:
+            return None
+        return _memory_record(dict(row._mapping))
+
+    def delete(self, memory_id: MemoryId) -> bool:
+        with self._connect() as connection:
+            result = connection.execute(
+                sql_delete(_UA_MEMORIES).where(_UA_MEMORIES.c.memory_id == str(memory_id))
+            )
+        return result.rowcount > 0
+
+    def export(self) -> tuple[MemoryRecord, ...]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                sql_select(_UA_MEMORIES).order_by(
+                    _UA_MEMORIES.c.created_at, _UA_MEMORIES.c.memory_id
+                )
+            ).mappings()
+            records = tuple(_memory_record(dict(row)) for row in rows)
+        return records
+
+    def query(self, query: MemoryQuery) -> tuple[MemoryRecord, ...]:
+        matches = [
+            record
+            for record in self.export()
+            if not query.kinds or record.kind in query.kinds
+            if not query.subjects or record.subject in query.subjects
+            if query.scope is None or record.scope == query.scope or record.scope == ""
+        ]
+        matches.sort(
+            key=lambda item: (item.created_at, str(item.id)),
+            reverse=query.limit is not None,
+        )
+        if query.limit is not None:
+            matches = matches[: query.limit]
+        return tuple(matches)
+
+
 def apply_postgres_migrations(engine: Engine) -> PostgresMigrationReport:
     """Apply pending schema migrations in version order and report what ran.
 
@@ -660,10 +774,18 @@ def _apply_migration_step(connection: Connection, version: int) -> None:
     # v3 adds brand-new principal tables (ua_users, ua_tenants,
     # ua_tenant_memberships, ua_credentials). They are constructed by
     # create_all, so step 3 needs no extra DDL here.
+    # v4 adds ua_memories (operator/domain memories, tenant-scoped) — also
+    # constructed by create_all; step 4 only records the version.
 
 
 def postgres_schema_table_names() -> tuple[str, ...]:
     return tuple(table.name for table in _METADATA.sorted_tables)
+
+
+def postgres_memory_tables() -> tuple[Table, ...]:
+    """The (memories) operator-memory table for the memory store implementation."""
+
+    return (_UA_MEMORIES,)
 
 
 def postgres_principal_tables() -> tuple[Table, Table, Table, Table]:
@@ -780,6 +902,60 @@ def _reclaim_expired_outbox_leases(
             locked_until=None,
             last_error="outbox lease expired",
         )
+    )
+
+
+def _memory_tenant(record: MemoryRecord) -> str:
+    tenant = record.metadata.get("tenant_id")
+    return (
+        str(tenant) if isinstance(tenant, str) and tenant.strip() else (POSTGRES_DEFAULT_TENANT_ID)
+    )
+
+
+def _memory_row(record: MemoryRecord, tenant_id: str) -> dict[str, object]:
+    return {
+        "tenant_id": tenant_id,
+        "memory_id": str(record.id),
+        "kind": record.kind.value,
+        "subject": record.subject,
+        "content": record.content,
+        "scope": record.scope,
+        "confidence": record.confidence,
+        "source_session_id": (
+            None if record.source_session_id is None else str(record.source_session_id)
+        ),
+        "created_at": record.created_at,
+        "version": record.version,
+        "tags": dumps_json(list(record.tags)),
+        "source": record.source,
+        "metadata": dumps_json(dict(record.metadata)),
+    }
+
+
+def _memory_record(row: Mapping[str, Any]) -> MemoryRecord:
+    created_at = row.get("created_at")
+    parsed_created_at = created_at if isinstance(created_at, datetime) else utc_now()
+    tags_value = row.get("tags")
+    tags = loads_json(str(tags_value)) if isinstance(tags_value, str) else []
+    metadata_value = row.get("metadata")
+    metadata = loads_json(str(metadata_value)) if isinstance(metadata_value, str) else {}
+    kind = row.get("kind")
+    del metadata_value
+    source_session = row.get("source_session_id")
+    tenant_id_row = row.get("tenant_id")
+    return MemoryRecord(
+        kind=MemoryKind(str(kind)) if isinstance(kind, str) else MemoryKind.SEMANTIC,
+        subject=str(row.get("subject", "")),
+        content=str(row.get("content", "")),
+        scope=str(row.get("scope", "")),
+        confidence=float(row.get("confidence", 1.0)),
+        source_session_id=SessionId(str(source_session)) if source_session is not None else None,
+        id=MemoryId(str(row.get("memory_id", ""))),
+        created_at=parsed_created_at,
+        version=int(row.get("version", 1)),
+        tags=tuple(str(item) for item in tags) if isinstance(tags, list) else (),
+        source=str(row.get("source", "")),
+        metadata=immutable_json(metadata if isinstance(metadata, dict) else {}),
     )
 
 

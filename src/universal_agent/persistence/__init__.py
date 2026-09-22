@@ -15,6 +15,7 @@ from universal_agent.persistence.outbox import (
 )
 from universal_agent.persistence.postgres import (
     POSTGRES_SCHEMA_VERSION,
+    PostgresMemoryStore,
     PostgresMigrationReport,
     PostgresOutboxEvent,
     PostgresRuntimeStore,
@@ -40,6 +41,7 @@ __all__ = [
     "OutboxPublishFailure",
     "OutboxPublishResult",
     "OutboxStore",
+    "PostgresMemoryStore",
     "PostgresMigrationReport",
     "PostgresOutboxEvent",
     "PostgresRuntimeStore",

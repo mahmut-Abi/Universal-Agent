@@ -12,9 +12,10 @@ from universal_agent.persistence.postgres import PostgresRuntimeStore
 
 @pytest.mark.contract
 def test_postgres_schema_declares_runtime_tables_and_migration_version() -> None:
-    assert POSTGRES_SCHEMA_VERSION == 3
+    assert POSTGRES_SCHEMA_VERSION == 4
     assert set(postgres_schema_table_names()) == {
         "ua_credentials",
+        "ua_memories",
         "ua_runtime_event_outbox",
         "ua_runtime_events",
         "ua_schema_migrations",
@@ -79,3 +80,13 @@ def test_postgres_outbox_schema_supports_publisher_leasing() -> None:
 def test_postgres_runtime_store_requires_url_or_engine() -> None:
     with pytest.raises(ValueError, match="postgres runtime store requires a URL or engine"):
         PostgresRuntimeStore()
+
+
+@pytest.mark.contract
+def test_postgres_memory_schema_declares_tenant_scoped_memories() -> None:
+    """UA-LIVE-2026-09-21 Q6: operator memories persist per tenant."""
+    memories = next(item for item in postgres_schema_ddl() if "ua_memories" in item)
+
+    assert "PRIMARY KEY (memory_id)" in memories
+    assert "tenant_id" in memories
+    assert "content TEXT NOT NULL" in memories

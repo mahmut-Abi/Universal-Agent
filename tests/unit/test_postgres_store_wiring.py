@@ -8,6 +8,7 @@ Live-connection behavior requires a real Postgres and stays out of unit CI.
 
 from __future__ import annotations
 
+import pathlib
 import sys
 import types
 
@@ -20,7 +21,7 @@ from universal_agent.configuration import (
     StoreConfig,
 )
 from universal_agent.core import immutable_json
-from universal_agent.host.runtime import _build_stores
+from universal_agent.host.runtime import _build_memory_store, _build_stores
 
 pytestmark = pytest.mark.unit
 
@@ -120,3 +121,27 @@ def test_build_stores_postgres_defaults_tenant_when_unset(
     _build_stores(config)
 
     assert captured == [{"tenant_id": "default"}]
+
+
+@pytest.mark.unit
+def test_memory_store_postgres_missing_env_fails_before_connecting(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Q6: the postgres memory factory resolves url_env and fails with a
+    clear error before any driver import or connection attempt."""
+    monkeypatch.delenv("AGENTD_PG_URL", raising=False)
+    config = _runtime_config(
+        StoreConfig.from_mapping({"backend": "postgres", "url_env": "AGENTD_PG_URL"})
+    )
+    factory = _build_memory_store(config)
+
+    with pytest.raises(ValueError, match="AGENTD_PG_URL"):
+        factory()
+
+
+@pytest.mark.unit
+def test_memory_store_file_backend_unchanged(tmp_path: pathlib.Path) -> None:
+    config = _runtime_config(StoreConfig.from_mapping({"backend": "file", "path": str(tmp_path)}))
+    store = _build_memory_store(config)()
+    assert type(store).__name__ == "FileMemoryStore"

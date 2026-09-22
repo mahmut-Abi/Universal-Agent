@@ -533,6 +533,23 @@ def _build_memory_store(config: RuntimeConfig) -> Callable[[], _MemoryStoreProto
         assert config.store.path is not None
         store_path = config.store.path
         return lambda: SQLiteMemoryStore(store_path)
+    if config.store.backend is StoreBackend.POSTGRES:
+        assert config.store.url_env is not None
+        url_env = config.store.url_env
+
+        def _postgres_memory_factory() -> _MemoryStoreProtocol:
+            import os
+
+            from universal_agent.persistence import PostgresMemoryStore
+
+            url = os.environ.get(url_env)
+            if not url:
+                raise ValueError(
+                    f"postgres memory store url_env {url_env!r} is not set in the environment"
+                )
+            return PostgresMemoryStore(url)
+
+        return _postgres_memory_factory
     return InMemoryMemoryStore
 
 
