@@ -122,22 +122,35 @@ def _workload_target(context: PolicyContext) -> str | None:
     callers' prefix/mismatch checks.
     """
     target = context.target
+    name = context.arguments.get("name")
+    name_str = name.strip() if isinstance(name, str) else None
     if isinstance(target, str) and target.strip():
         normalized = target.strip()
-        name = context.arguments.get("name")
-        # Models sometimes encode workload+container as
-        # "deployment/<name>:<container>"; normalize that form when the
-        # workload part matches the decision's name argument.
+        # Model target encodings seen in the wild (UA-LIVE-2026-09-21 F4,
+        # baseline S3): "deployment/<name>:<container>" and
+        # "<namespace>/<name>". Both normalize to "deployment/<name>" only
+        # when the workload part matches the decision's name argument;
+        # anything else is returned unchanged and denied by the callers'
+        # prefix/mismatch checks.
         head, sep, _suffix = normalized.partition(":")
-        if sep and isinstance(name, str) and head == f"deployment/{name.strip()}":
+        if sep and name_str and head == f"deployment/{name_str}":
             return head
+        ns_head, ns_sep, ns_name = normalized.partition("/")
+        namespace = context.arguments.get("namespace")
+        if (
+            ns_sep
+            and ns_head != "deployment"
+            and name_str
+            and ns_name.strip() == name_str
+            and isinstance(namespace, str)
+            and ns_head.strip() == namespace.strip()
+        ):
+            return f"deployment/{name_str}"
         return normalized
-    name = context.arguments.get("name")
-    if isinstance(name, str) and name.strip():
-        normalized = name.strip()
-        if "/" in normalized:
-            return normalized
-        return f"deployment/{normalized}"
+    if name_str:
+        if "/" in name_str:
+            return name_str
+        return f"deployment/{name_str}"
     return None
 
 

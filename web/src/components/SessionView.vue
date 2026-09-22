@@ -4,14 +4,34 @@ import { m, view, OPS_VIEWS, opsOpen, apiHost, fatal, toastMsg, toastTimer, toas
 
 // biome-ignore-all lint/style/noNonNullAssertion: generated
 defineOptions({ name: 'SessionView' })
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 const confirmRemember = ref(false)
+// 会话切换器：下拉选择即跳转详情（openSession 会拉取该会话事件/证据/世界模型）
+const pickSessionId = ref('')
+watch(
+  () => currentSession && currentSession.id,
+  (id) => { pickSessionId.value = id || '' },
+  { immediate: true },
+)
+function onPickSession(e) {
+  const s = m.sessions.find((x) => x.id === e.target.value)
+  if (s) openSession(s)
+}
 </script>
 <template>
 <!-- 视图二：会话详情 -->
       <section v-show="view === 'session'" class="view" :class="{ active: view === 'session' }" id="view-session" role="tabpanel">
-        <div class="card-head" style="margin-bottom:4px">
+        <div class="card-head sess-switch" style="margin-bottom:4px">
+          <select class="input sess-picker" v-model="pickSessionId" aria-label="切换会话" title="在下拉中切换到此会话的详情" @change="onPickSession($event)">
+            <option v-if="currentSession && !m.sessions.some(s => s.id === currentSession.id)" :value="currentSession.id">
+              {{ (currentSession.goal || '').slice(0, 36) }} · 当前
+            </option>
+            <option v-for="s in m.sessions" :key="s.id" :value="s.id">
+              {{ (s.goal || '').slice(0, 36) }} · {{ s.profile }} · {{ statusLabel(s.confirm ? 'waiting' : s.status) }}
+            </option>
+          </select>
           <span class="meta num" id="session-id-label">{{ currentSession && currentSession.id }}</span>
+          <button class="btn btn-secondary btn-sm" aria-label="刷新会话详情" @click="reload('session')">↻</button>
         </div>
         <div id="confirm-slot" data-od-id="confirm-banner">
           <div v-if="currentSession && currentSession.confirm" class="confirm-banner">
@@ -131,6 +151,18 @@ const confirmRemember = ref(false)
 </template>
 
 <style scoped>
+.sess-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sess-picker {
+  max-width: 480px;
+  min-width: 200px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+}
 .w-sec {
   font-weight: 600;
   font-size: 12px;

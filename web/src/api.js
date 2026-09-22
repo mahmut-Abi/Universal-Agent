@@ -223,6 +223,7 @@ export async function loadOverview(state) {
     loadSessions(state),
     loadMetrics(state),
     loadActivity(state),
+    loadLogs(state), // 供总览页“最近系统事件”feed 使用
   ]);
 }
 

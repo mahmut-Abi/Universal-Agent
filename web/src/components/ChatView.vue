@@ -45,7 +45,8 @@ defineOptions({ name: 'ChatView' })
                   <div v-for="(ev, li) in liveEvents" :key="li" class="lt-ev">
                     <span class="meta">{{ ev.at }}</span>
                     <span class="tl-type">{{ ev.t }}</span>
-                    <span>{{ ev.text }}</span>
+                    <!-- ev.text 来自 eventText()（内部 escapeHtml 后再拼装），用 v-html 安全渲染 -->
+                    <span class="lt-text" v-html="ev.text"></span>
                   </div>
                   <div v-if="!liveEvents.length" class="empty">等待事件…</div>
                 </div>
@@ -147,5 +148,8 @@ defineOptions({ name: 'ChatView' })
 .live-tail .lt-ev .tl-type {
   font-weight: 600;
   min-width: 140px;
+}
+.live-tail .lt-ev .lt-text :deep(code) {
+  font-size: 11px;
 }
 </style>

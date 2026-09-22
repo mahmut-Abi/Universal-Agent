@@ -1,6 +1,6 @@
 <script setup>
 // biome-ignore-all lint/correctness/noUnusedImports: shared store bindings
-import { m, view, OPS_VIEWS, opsOpen, apiHost, fatal, toastMsg, toastTimer, toast, MAIN_VIEWS, VIEW_LOADERS, loadedViews, switchView, reload, opsBtnLabel, statusCls, statusLabel, metricCards, sessionsError, loadingSessions, loadSessions, activity, doRefresh, currentSession, expanded, openSession, confirmPending, cancelSession, lifecycle, sessionSummary, chatFilter, activeChatId, chatSessions, chatEventCache, CHAT_PROFILES, activeChat, chatInput, sending, chatMsgsEl, chatInputEl, filteredChats, scrollChat, newChat, autoGrow, sendChat, apiGetEvents, onChatKeydown, profileModal, pmForm, MODEL_PROVIDERS, pmError, openProfileModal, saveProfile, delModal, profileWriteError, delDetail, askDelete, confirmDelete, domainModal, domainDetail, openDomainDetail, domainUsedBy, policies, togglePolicy, toggleDomain, evalByDataset, pct, memSearch, memList, addMemory, delMemory, costMax, openTraceSession, installPkg, auditQ, auditAct, auditActs, auditFiltered, topo, closeModal, onOverlayClick, pushFatal, initDashboard, API_BASE, createState, normStatus, STATUS_MAP, loadOverview, apiLoadSessions, loadMetrics, loadSessionDetail, loadConfig, loadEval, loadCluster, loadMemory, memoryAdd, memoryRemove, loadCost, loadLogs, loadK8sOps, loadEcosystem, loadAudit, loadMulti, loadHealth, loadModelInfo, loadRuntimeConfig, createSession, sendMessage, pauseSession, resumeSession, apiCancelSession, profileCreate, profilePatch, profileRemove, putConfig, runEval } from '../store.js'
+import { m, view, OPS_VIEWS, opsOpen, apiHost, fatal, toastMsg, toastTimer, toast, MAIN_VIEWS, VIEW_LOADERS, loadedViews, switchView, reload, opsBtnLabel, statusCls, statusLabel, metricCards, sessionsError, loadingSessions, loadSessions, activity, doRefresh, currentSession, expanded, openSession, confirmPending, cancelSession, lifecycle, sessionSummary, chatFilter, activeChatId, chatSessions, chatEventCache, CHAT_PROFILES, activeChat, chatInput, sending, chatMsgsEl, chatInputEl, filteredChats, scrollChat, newChat, autoGrow, sendChat, apiGetEvents, onChatKeydown, profileModal, pmForm, MODEL_PROVIDERS, pmError, openProfileModal, saveProfile, delModal, profileWriteError, delDetail, askDelete, confirmDelete, domainModal, domainDetail, openDomainDetail, domainUsedBy, policies, togglePolicy, toggleDomain, evalByDataset, pct, memSearch, memList, addMemory, delMemory, costMax, openTraceSession, installPkg, auditQ, auditAct, auditActs, auditFiltered, topo, closeModal, onOverlayClick, pushFatal, initDashboard, API_BASE, createState, normStatus, STATUS_MAP, loadOverview, apiLoadSessions, loadMetrics, loadSessionDetail, loadConfig, loadEval, loadCluster, loadMemory, memoryAdd, memoryRemove, loadCost, loadLogs, loadK8sOps, loadEcosystem, loadAudit, loadMulti, loadHealth, loadModelInfo, loadRuntimeConfig, createSession, sendMessage, pauseSession, resumeSession, apiCancelSession, profileCreate, profilePatch, profileRemove, putConfig, runEval, statusBreakdown, waitingSessions } from '../store.js'
 
 // biome-ignore-all lint/style/noNonNullAssertion: generated
 defineOptions({ name: 'OverviewView' })
@@ -16,6 +16,19 @@ defineOptions({ name: 'OverviewView' })
               <span v-else-if="c.trend === 'down'" class="trend-down">↓</span>{{ c.sub }}
             </div>
           </div>
+        </div>
+        <div v-if="waitingSessions.length" class="confirm-banner" data-od-id="waiting-banner" role="alert">
+          <div class="cb-text">
+            <span class="cb-title">⏸ {{ waitingSessions.length }} 个会话等待人工确认</span>
+            <span class="cb-sub">需要你在「会话详情」中批准或取消操作后再继续</span>
+          </div>
+          <button class="btn btn-primary btn-sm" data-od-id="waiting-go" @click="openSession(waitingSessions[0])">前往处理</button>
+        </div>
+        <div class="status-strip" data-od-id="status-strip" aria-label="会话状态分布">
+          <span v-for="(v, k) in statusBreakdown" :key="k" class="pill" :class="'pill-' + k">
+            <span class="dot" :class="'dot-' + k"></span>{{ (STATUS_MAP[k] && STATUS_MAP[k][1]) || k }} <b>{{ v }}</b>
+          </span>
+          <span v-if="!m.sessions.length" class="strip-empty">暂无会话数据</span>
         </div>
         <div class="grid g-main" style="margin-top:16px">
           <div class="card" data-od-id="sessions-card">

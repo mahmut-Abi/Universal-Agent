@@ -8,9 +8,10 @@ defineOptions({ name: 'MemoryView' })
 <template>
 <!-- 视图六：记忆管理 -->
       <section v-show="view === 'memory'" class="view" :class="{ active: view === 'memory' }" id="view-memory" role="tabpanel">
-        <div class="card-head" style="margin-bottom:4px">
-        </div>
         <div class="card" data-od-id="memory-card">
+          <div class="card-head"><h3>记忆管理</h3>
+            <span class="tag">{{ memList.length }} 条</span>
+          </div>
           <div style="display:flex;gap:10px;margin-bottom:8px">
             <input type="text" id="mem-search" v-model="memSearch" placeholder="搜索记忆内容…" aria-label="搜索记忆"
               style="flex:1;padding:8px 10px;font:inherit;font-size:13px;color:var(--fg);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);outline:none">

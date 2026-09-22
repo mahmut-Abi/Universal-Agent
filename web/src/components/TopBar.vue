@@ -11,6 +11,9 @@ import {
   hotSwapAvailable,
   setActiveProfile,
   toast,
+  busy,
+  autoRefreshOn,
+  toggleAutoRefresh,
 } from "../store.js";
 import { apiGet, pick } from "../api.js";
 
@@ -62,6 +65,18 @@ function onChange(event) {
       </option>
     </select>
     <button type="button" class="btn btn-secondary btn-sm" aria-label="刷新数据" @click="doRefresh">刷新</button>
+    <button
+      type="button"
+      class="btn btn-secondary btn-sm"
+      :class="{ active: autoRefreshOn }"
+      :aria-pressed="String(autoRefreshOn)"
+      aria-label="自动刷新"
+      title="自动刷新总览（30s，标签页隐藏时暂停）"
+      @click="toggleAutoRefresh"
+    >
+      {{ autoRefreshOn ? '⏱ 自动开' : '⏱ 自动关' }}
+    </button>
+    <span v-if="busy" class="spinner" role="status" aria-label="加载中"></span>
     <span class="env-pill"><span class="dot"></span>agentd · <span class="num">{{ apiHost }}</span></span>
   </header>
 </template>
@@ -70,5 +85,23 @@ function onChange(event) {
 .profile-select {
   max-width: 260px;
   text-overflow: ellipsis;
+}
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border, #ccc);
+  border-top-color: var(--accent, #0071e3);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex: none;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.btn.active {
+  border-color: var(--accent, #0071e3);
+  color: var(--accent, #0071e3);
 }
 </style>

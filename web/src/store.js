@@ -113,10 +113,43 @@ export const VIEW_LOADERS = {
   ecosystem: () => loadEcosystem(m),
   audit: () => loadAudit(m),
   multiagent: () => loadMulti(m),
-  health: () => loadHealth(m),
+  // health 需要 doctor 检查项（loadConfig 填充）+ 存储概览（loadHealth）
+  health: () => Promise.all([loadHealth(m), loadConfig(m)]),
   chat: () => loadSessions(m),
 };
 export const loadedViews = new Set();
+
+/* ── 全局加载指示：任意视图加载进行中时 busy=true（TopBar 显示忙态指示） ── */
+export const busy = ref(false);
+let busyCount = 0;
+function tracked(promise) {
+  busyCount += 1;
+  busy.value = true;
+  return Promise.resolve(promise).finally(() => {
+    busyCount = Math.max(0, busyCount - 1);
+    if (busyCount === 0) busy.value = false;
+  });
+}
+
+/* ── 自动刷新（live dashboard）：仅刷新 overview，标签页隐藏时暂停 ── */
+export const autoRefreshOn = ref(localStorage.getItem("ua-autorefresh") !== "0");
+const AUTO_REFRESH_MS = 30_000;
+let autoRefreshTimer = null;
+function armAutoRefresh() {
+  clearInterval(autoRefreshTimer);
+  autoRefreshTimer = null;
+  if (!autoRefreshOn.value) return;
+  autoRefreshTimer = setInterval(() => {
+    if (document.hidden) return;
+    if (view.value === "overview") reload("overview");
+  }, AUTO_REFRESH_MS);
+}
+export function toggleAutoRefresh() {
+  autoRefreshOn.value = !autoRefreshOn.value;
+  localStorage.setItem("ua-autorefresh", autoRefreshOn.value ? "1" : "0");
+  armAutoRefresh();
+  toast(autoRefreshOn.value ? "自动刷新已开启（30s）" : "自动刷新已关闭");
+}
 
 /* ── 实时事件流（SSE live tail）── */
 export const liveTailOn = ref(false);
@@ -185,13 +218,13 @@ export function switchView(name) {
   localStorage.setItem("ua-view", name);
   if (VIEW_LOADERS[name] && !loadedViews.has(name)) {
     loadedViews.add(name);
-    VIEW_LOADERS[name]().catch((e) => toast("加载失败：" + e.message));
+    tracked(VIEW_LOADERS[name]()).catch((e) => toast("加载失败：" + e.message));
   }
   if (name === "chat") nextTick(scrollChat);
 }
 export function reload(name) {
   if (VIEW_LOADERS[name])
-    VIEW_LOADERS[name]().catch((e) => toast("加载失败：" + e.message));
+    tracked(VIEW_LOADERS[name]()).catch((e) => toast("加载失败：" + e.message));
 }
 export const opsBtnLabel = computed(() => OPS_VIEWS[view.value] || "运维中心");
 
@@ -230,6 +263,17 @@ export const metricCards = computed(() => [
     trend: "",
   },
 ]);
+
+/* 总览：会话状态分布 + 待确认会话 */
+export const statusBreakdown = computed(() => {
+  const counts = { running: 0, success: 0, failed: 0, waiting: 0, paused: 0 };
+  for (const s of m.sessions) {
+    const key = s.confirm ? "waiting" : normStatus(s.status);
+    if (key in counts) counts[key] += 1;
+  }
+  return counts;
+});
+export const waitingSessions = computed(() => m.sessions.filter((s) => s.confirm));
 export const sessionsError = ref("");
 export const loadingSessions = ref(false);
 export async function loadSessions() {
@@ -886,9 +930,14 @@ export function initDashboard() {
   loadedViews.add(view.value);
   const loader = VIEW_LOADERS[view.value];
   const run = loader ? loader() : loadOverview(m);
-  run.catch((e) => {
+  tracked(run).catch((e) => {
     sessionsError.value = e.message;
   });
+  // 标签页重新可见时重启节流的自动刷新；离开页面时由 document.hidden 跳过
+  window.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") armAutoRefresh();
+  });
+  armAutoRefresh();
 }
 
 export const chatEventCache = reactive({});
