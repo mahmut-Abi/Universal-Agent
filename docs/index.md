@@ -18,7 +18,7 @@ across the roadmap layers below:
 | --- | --- |
 | P0-P3 | Typed Agent loop, Domain Runtime, Evidence, World Model, Recovery, Memory, Multi-Domain composition, Agent Profiles |
 | P3.5 | Runtime API, RuntimeService, embedding SDK facade, agentd route adapter, ASGI-backed HTTP bridge, CLI, persistence, cursor Event reads, bounded wait polling |
-| P3.6-P3.7 | Metrics, cost, structured logs, traces, OTLP-shaped export, audit, doctor, evaluation harness, replay, deterministic runtime mode |
+| P3.6-P3.7 | Metrics, cost, structured logs, traces, OTLP-shaped export, audit, doctor, evaluation harness + dataset manifests, replay, deterministic runtime mode; tenant-scoped session/memory data plane on agentd |
 | P4 | Structured Multi-Agent task/result contracts, registry, delegation, conflict resolution, merge/evaluation foundations |
 | P5 | Read-only TUI, Web Console, Session/Evidence/World/Domain/Doctor/Distributed/Evaluation views |
 | P6 | Local queue, worker registry, worker, leased locks, scheduler, coordinator, health, snapshot and retention maintenance primitives |

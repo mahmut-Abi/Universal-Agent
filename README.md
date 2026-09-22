@@ -184,7 +184,13 @@ uses, which stores and limits the Runtime gets. `agent init` creates the generic
 ```bash
 agent profile list
 agent profile show default
+agent profile add-domain --profile-config <path> --domain-backend prometheus \
+  --observability-endpoint https://victoria-metrics.example.com   # add a 2nd domain
+agent profile delete <name>                        # remove a stored profile
 ```
+
+A profile may compose multiple domains: after `add-domain`, the runtime
+activates both (e.g. Kubernetes + Observability share one World Model).
 
 ## Sessions
 
@@ -205,15 +211,37 @@ A `waiting` session means the Runtime is holding a mutation for human
 confirmation (Policy = REQUIRE_CONFIRMATION). Resume it with `--confirmed true`;
 without confirmation the action never executes.
 
+Mutation-shaped goals require explicit success criteria
+(`--success replicas=3`): the default `healthy` criterion can be satisfied by
+the pre-mutation state, so the mutation could be skipped while the goal still
+reports completed. Override with `--allow-unverified-mutation` if you accept
+that risk; dry-run goals are exempt.
+
 ## Domains
 
 A Domain is the world an Agent can operate on: ontology, capabilities, tools,
 policies, evaluators. The first serious Domain is Kubernetes
 (`inspect_workload`, `inspect_pod`, `inspect_logs`, policy-gated
-`scale_workload`, health verification and recovery). A read-only Observability
-(Prometheus) Domain and a Domain Package SDK for authoring more are included.
+`scale_workload`/`set_image`, health verification and recovery). A read-only
+Observability Domain (`query_metrics`, `inspect_alert_rules` — Prometheus/
+VictoriaMetrics-compatible) and a Domain Package SDK for authoring more are
+included.
+
+```bash
+agent init --output obs/profile.json --profile obs \
+  --domain-backend prometheus \
+  --observability-endpoint http://victoria-metrics.internal:8428 \
+  --model-provider openai_chat_completions --model-name <model> \
+  --model-api-key-env OPENAI_API_KEY --model-response-format json_object
+agent eval run obs --suite-file examples/evaluation/observability_live_suite.json
+```
+
 Domains compose inside one Runtime and one shared World Model — adding a Domain
 never requires Kernel changes.
+
+Model profiles accept provider-specific request extensions via
+`model.extra_body` (merged into the request body — reasoning switches,
+temperature, etc.; unknown keys are the provider's responsibility).
 
 ## Policy
 
