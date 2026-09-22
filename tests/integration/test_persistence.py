@@ -709,3 +709,34 @@ async def test_sqlite_persistence_resumes_confirmation_after_runtime_rebuild(
 
     assert reloaded.goal_status is GoalStatus.COMPLETED
     assert [item.session_id for item in reloaded_sessions] == [waiting.result.session_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.behavior
+async def test_sqlite_memory_store_persists_across_instances(tmp_path: Path) -> None:
+    """UA-LIVE-2026-09-21 Q6: sqlite-backend profiles keep operator memories
+    durable across process restarts."""
+    from universal_agent.memory import MemoryId, MemoryKind, MemoryQuery, MemoryRecord
+    from universal_agent.persistence import SQLiteMemoryStore
+
+    store = SQLiteMemoryStore(tmp_path / "memories.db")
+    record = MemoryRecord(
+        kind=MemoryKind.SEMANTIC,
+        subject="sqlite-memory",
+        content="durable note",
+        scope="kubernetes",
+        confidence=0.8,
+    )
+    assert store.add(record) is True
+    assert store.add(record) is False  # idempotent by id
+
+    reloaded = SQLiteMemoryStore(tmp_path / "memories.db")
+    fetched = reloaded.get(MemoryId(str(record.id)))
+    assert fetched is not None
+    assert fetched.content == "durable note"
+    assert fetched.kind is MemoryKind.SEMANTIC
+
+    matches = reloaded.query(MemoryQuery(kinds=(MemoryKind.SEMANTIC,)))
+    assert any(item.id == record.id for item in matches)
+    assert reloaded.delete(MemoryId(str(record.id))) is True
+    assert SQLiteMemoryStore(tmp_path / "memories.db").get(MemoryId(str(record.id))) is None

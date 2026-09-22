@@ -24,6 +24,7 @@ from universal_agent.persistence.postgres import (
 )
 from universal_agent.persistence.sqlite import (
     SQLiteEventStore,
+    SQLiteMemoryStore,
     SQLiteOutboxEvent,
     SQLiteRuntimeStore,
     SQLiteSessionStore,
@@ -43,6 +44,7 @@ __all__ = [
     "PostgresOutboxEvent",
     "PostgresRuntimeStore",
     "SQLiteEventStore",
+    "SQLiteMemoryStore",
     "SQLiteOutboxEvent",
     "SQLiteRuntimeStore",
     "SQLiteSessionStore",

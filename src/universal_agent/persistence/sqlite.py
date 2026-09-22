@@ -3,15 +3,17 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 import threading
-from collections.abc import AsyncGenerator, Iterator
+from collections.abc import AsyncGenerator, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import NoReturn
 
 from sqlalchemy import (
     Column,
     Engine,
+    Float,
     Index,
     Integer,
     MetaData,
@@ -20,6 +22,7 @@ from sqlalchemy import (
     Text,
     tuple_,
 )
+from sqlalchemy import delete as sql_delete
 from sqlalchemy import insert as sql_insert
 from sqlalchemy import select as sql_select
 from sqlalchemy import update as sql_update
@@ -38,6 +41,7 @@ from universal_agent.core import (
 )
 from universal_agent.core.config_validation import parse_json_object, parse_positive_int
 from universal_agent.eventstream import EventCursorError, poll_event_reader
+from universal_agent.memory import MemoryId, MemoryKind, MemoryQuery, MemoryRecord
 from universal_agent.persistence.codec import (
     decode_runtime_event,
     decode_session_snapshot,
@@ -94,6 +98,22 @@ Index(
     "idx_runtime_event_outbox_pending_sequence",
     _RUNTIME_EVENT_OUTBOX.c.published_at,
     _RUNTIME_EVENT_OUTBOX.c.sequence,
+)
+_MEMORIES = Table(
+    "memories",
+    _METADATA,
+    Column("memory_id", String, primary_key=True),
+    Column("kind", String, nullable=False),
+    Column("subject", String, nullable=False),
+    Column("content", Text, nullable=False),
+    Column("scope", String, nullable=False, default=""),
+    Column("confidence", Float, nullable=False),
+    Column("source_session_id", String, nullable=True),
+    Column("created_at", String, nullable=False),
+    Column("version", Integer, nullable=False, default=1),
+    Column("tags", Text, nullable=False, default="[]"),
+    Column("source", String, nullable=False, default=""),
+    Column("metadata", Text, nullable=False, default="{}"),
 )
 
 
@@ -435,6 +455,87 @@ class SQLiteEventStore:
         return self._engine
 
 
+class SQLiteMemoryStore:
+    """SQLite-backed MemoryStore adapter for durable operator/domain memories.
+
+    Shares the runtime SQLite database (same path/engine DDL conventions);
+    operations are synchronous like the protocol requires — SQLite work here
+    is small, indexed, and local.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        # `path` is the SQLite database file — the same file the runtime
+        # stores use, so memories share one durable artifact per profile.
+        self._path = Path(path)
+        self._engine: Engine | None = None
+        self._engine_lock = threading.Lock()
+
+    def add(self, record: MemoryRecord) -> bool:
+        with self._locked() as connection:
+            existing = connection.execute(
+                sql_select(_MEMORIES.c.memory_id).where(_MEMORIES.c.memory_id == str(record.id))
+            ).first()
+            if existing is not None:
+                return False
+            connection.execute(
+                sql_insert(_MEMORIES).values(_memory_row(record)),
+            )
+            return True
+
+    def get(self, memory_id: MemoryId) -> MemoryRecord | None:
+        with self._locked() as connection:
+            row = connection.execute(
+                sql_select(_MEMORIES).where(_MEMORIES.c.memory_id == str(memory_id))
+            ).first()
+        return _memory_record(dict(row._mapping)) if row is not None else None
+
+    def delete(self, memory_id: MemoryId) -> bool:
+        with self._locked() as connection:
+            result = connection.execute(
+                sql_delete(_MEMORIES).where(_MEMORIES.c.memory_id == str(memory_id))
+            )
+        return result.rowcount > 0
+
+    def export(self) -> tuple[MemoryRecord, ...]:
+        with self._locked() as connection:
+            rows = connection.execute(
+                sql_select(_MEMORIES).order_by(_MEMORIES.c.created_at, _MEMORIES.c.memory_id)
+            ).mappings()
+            records = tuple(_memory_record(dict(row)) for row in rows)
+        return records
+
+    def query(self, query: MemoryQuery) -> tuple[MemoryRecord, ...]:
+        matches = [
+            record
+            for record in self.export()
+            if not query.kinds or record.kind in query.kinds
+            if not query.subjects or record.subject in query.subjects
+            if query.scope is None or record.scope == query.scope or record.scope == ""
+        ]
+        matches.sort(
+            key=lambda item: (item.created_at, str(item.id)),
+            reverse=query.limit is not None,
+        )
+        if query.limit is not None:
+            matches = matches[: query.limit]
+        return tuple(matches)
+
+    @contextmanager
+    def _locked(self) -> Iterator[Connection]:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with self._sqlite_engine().begin() as connection:
+            yield connection
+
+    def _sqlite_engine(self) -> Engine:
+        if self._engine is None:
+            with self._engine_lock:
+                if self._engine is None:
+                    engine = create_configured_sqlite_engine(self._path)
+                    _METADATA.create_all(engine)
+                    self._engine = engine
+        return self._engine
+
+
 class SQLiteRuntimeStore(SQLiteSessionStore, SQLiteEventStore):
     """SQLite adapter that can commit a SessionSnapshot and RuntimeEvent atomically."""
 
@@ -488,6 +589,52 @@ class SQLiteRuntimeStore(SQLiteSessionStore, SQLiteEventStore):
                 # failure rolls the in-memory version back before propagating.
                 snapshot.version = original_version
                 raise
+
+
+def _memory_row(record: MemoryRecord) -> dict[str, object]:
+    return {
+        "memory_id": str(record.id),
+        "kind": record.kind.value,
+        "subject": record.subject,
+        "content": record.content,
+        "scope": record.scope,
+        "confidence": record.confidence,
+        "source_session_id": (
+            None if record.source_session_id is None else str(record.source_session_id)
+        ),
+        "created_at": record.created_at.isoformat(),
+        "version": record.version,
+        "tags": dumps_json(list(record.tags)),
+        "source": record.source,
+        "metadata": dumps_json(dict(record.metadata)),
+    }
+
+
+def _memory_record(row: Mapping[str, object]) -> MemoryRecord:
+    created_at = row.get("created_at")
+    parsed_created_at = (
+        datetime.fromisoformat(str(created_at)) if isinstance(created_at, str) else utc_now()
+    )
+    tags_value = row.get("tags")
+    tags = loads_json(str(tags_value)) if isinstance(tags_value, str) else []
+    metadata_value = row.get("metadata")
+    metadata = loads_json(str(metadata_value)) if isinstance(metadata_value, str) else {}
+    kind = row.get("kind")
+    source_session = row.get("source_session_id")
+    return MemoryRecord(
+        kind=MemoryKind(str(kind)) if isinstance(kind, str) else MemoryKind.SEMANTIC,
+        subject=str(row.get("subject", "")),
+        content=str(row.get("content", "")),
+        scope=str(row.get("scope", "")),
+        confidence=float(row.get("confidence", 1.0)),  # type: ignore[arg-type]
+        source_session_id=SessionId(str(source_session)) if source_session is not None else None,
+        id=MemoryId(str(row.get("memory_id", ""))),
+        created_at=parsed_created_at,
+        version=int(row.get("version", 1)),  # type: ignore[call-overload]
+        tags=tuple(str(item) for item in tags) if isinstance(tags, list) else (),
+        source=str(row.get("source", "")),
+        metadata=parse_json_object(metadata, "memory metadata"),
+    )
 
 
 def _decode_outbox_sequence(value: object) -> int:

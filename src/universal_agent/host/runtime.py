@@ -519,15 +519,20 @@ def _postgres_store(store_config: StoreConfig) -> tuple[SessionStore, _EventStor
 
 
 def _build_memory_store(config: RuntimeConfig) -> Callable[[], _MemoryStoreProtocol]:
-    """Durable memories for the file backend (UA-LIVE-2026-09-21 Q6); other
-    backends keep the in-process store until SQLite/Postgres memory support."""
+    """Durable memories for the file and sqlite backends (UA-LIVE-2026-09-21
+    Q6); postgres keeps the in-process store until memory support lands."""
 
     from universal_agent.memory import FileMemoryStore, InMemoryMemoryStore
+    from universal_agent.persistence import SQLiteMemoryStore
 
     if config.store.backend is StoreBackend.FILE:
         assert config.store.path is not None
         store_path = config.store.path
         return lambda: FileMemoryStore(store_path)
+    if config.store.backend is StoreBackend.SQLITE:
+        assert config.store.path is not None
+        store_path = config.store.path
+        return lambda: SQLiteMemoryStore(store_path)
     return InMemoryMemoryStore
 
 

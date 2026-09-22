@@ -73,6 +73,17 @@ scale-to-0 目标在默认 `healthy=true` 判据下：模型 inspect 发现 heal
 首轮 5 场景（100%）为本基线的子集；本轮扩展至 12 场景并首次覆盖
 mutation 全类型（set_image/scale/restart）、双故障根因诊断与策略测试。
 
+## 追加修复（2026-09-22 续）
+
+- **Q6 完结**：SQLite memory 持久化落地——`SQLiteMemoryStore`（memories 表，
+  与 runtime store 共享同一 db 文件），sqlite 后端 profile 的 operator memory
+  跨进程持久；新增跨实例回归测试。live 验证：memory add → 新进程 list 可见。
+- **R6-3 附加**：`model.extra_body` 透传（provider 专属请求字段，如 reasoning
+  开关/temperature）——配置校验 + OpenAI chat adapter 合并 + 单测 + live 验证
+  （网关接受合并字段）。
+- **R5-9 完结**：`examples/evaluation/dataset.json` manifest 示例 +
+  README（suite vs dataset 口径），`eval datasets --verify` 通过。
+
 ## 遗留
 
 - P10b 设计待办：变异目标显式判据
