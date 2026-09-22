@@ -239,6 +239,27 @@ def _domain_settings(
     return "local", {"name": "local", "version": "0.1.0"}, {}
 
 
+def _secondary_domains(
+    args: argparse.Namespace, primary_name: str
+) -> list[tuple[str, dict[str, object], dict[str, dict[str, object]]]]:
+    """Resolve `--with-domain` secondary domains via the same contribution
+    machinery as the primary domain (UA-LIVE-2026-09-21 R6-1)."""
+
+    backends = list(getattr(args, "with_domain", []) or [])
+    results: list[tuple[str, dict[str, object], dict[str, dict[str, object]]]] = []
+    for backend in backends:
+        secondary_values = dict(vars(args))
+        secondary_values["domain_backend"] = backend
+        secondary_args = argparse.Namespace(**secondary_values)
+        name, config, secrets = _domain_settings(secondary_args)
+        if name == primary_name:
+            raise ValueError(f"--with-domain {backend} resolves to the primary domain: {name}")
+        if any(existing[0] == name for existing in results):
+            raise ValueError(f"duplicate --with-domain: {name}")
+        results.append((name, config, secrets))
+    return results
+
+
 def _runtime_payload(args: argparse.Namespace) -> dict[str, object]:
     model_settings = _resolved_model_settings(args)
     model_secret_source = _single_secret_source(
@@ -247,6 +268,7 @@ def _runtime_payload(args: argparse.Namespace) -> dict[str, object]:
         file_path=cast(str | None, args.model_api_key_file),
     )
     _domain_name, domain, domain_secrets = _domain_settings(args)
+    secondary_domains = _secondary_domains(args, _domain_name)
     model_secret_name = cast(str, args.model_api_key_secret)
     store: dict[str, str] = {"backend": cast(str, args.store_backend)}
     if cast(str, args.store_backend) != "memory":
@@ -285,6 +307,11 @@ def _runtime_payload(args: argparse.Namespace) -> dict[str, object]:
         },
         "domain": domain,
     }
+    if secondary_domains:
+        domain_list: list[dict[str, object]] = [domain]
+        for _name, config, _secrets in secondary_domains:
+            domain_list.append(config)
+        runtime["domains"] = domain_list
     if cast(float | None, args.distributed_terminal_retention_seconds) is not None:
         runtime["distributed_terminal_retention_seconds"] = cast(
             float, args.distributed_terminal_retention_seconds
@@ -296,6 +323,11 @@ def _runtime_payload(args: argparse.Namespace) -> dict[str, object]:
         if secret_name in secrets:
             raise ValueError(f"duplicate runtime secret: {secret_name}")
         secrets[secret_name] = secret_spec
+    for _name, _config, secondary_secrets in secondary_domains:
+        for secret_name, secret_spec in secondary_secrets.items():
+            if secret_name in secrets:
+                raise ValueError(f"duplicate runtime secret: {secret_name}")
+            secrets[secret_name] = secret_spec
     if secrets:
         runtime["secrets"] = secrets
     return runtime
@@ -314,13 +346,19 @@ def _profile_config_payload(
         if domain_name == "local"
         else f"{domain_name.capitalize()} Agent profile created by `agent init`."
     )
-    return {
+    payload: dict[str, object] = {
         "name": profile_name,
         "version": "0.1.0",
         "description": description,
         "domain": domain_payload,
         "runtime": runtime_payload,
     }
+    # Multi-domain: mirror the runtime domains list at the top level so the
+    # profile validator sees identical sets (UA-LIVE-2026-09-21 R6-1).
+    runtime_domains = runtime_payload.get("domains")
+    if isinstance(runtime_domains, list) and runtime_domains:
+        payload["domains"] = runtime_domains
+    return payload
 
 
 def _single_secret_source(

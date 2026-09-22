@@ -66,6 +66,16 @@ def add_init_parser(
         default="default",
         help="Profile name to generate (default: default).",
     )
+    first_day.add_argument(
+        "--with-domain",
+        action="append",
+        default=[],
+        help=(
+            "Additional domain backend to compose into the profile "
+            "(repeatable; e.g. --with-domain prometheus with the matching "
+            "--observability-* flags)."
+        ),
+    )
     advanced_runtime.add_argument("--environment", default="local")
     advanced_runtime.add_argument(
         "--store-backend",

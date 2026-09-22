@@ -189,8 +189,16 @@ agent profile add-domain --profile-config <path> --domain-backend prometheus \
 agent profile delete <name>                        # remove a stored profile
 ```
 
-A profile may compose multiple domains: after `add-domain`, the runtime
-activates both (e.g. Kubernetes + Observability share one World Model).
+A profile may compose multiple domains — either at init time or after:
+
+```bash
+agent init ... --domain-backend kubectl --with-domain prometheus \
+  --observability-endpoint http://victoria-metrics.internal:8428
+# or later: agent profile add-domain --profile-config <path> --domain-backend prometheus ...
+```
+
+The composed runtime activates both domains (e.g. Kubernetes + Observability
+share one World Model).
 
 ## Sessions
 

@@ -940,7 +940,6 @@ def _memory_record(row: Mapping[str, Any]) -> MemoryRecord:
     metadata_value = row.get("metadata")
     metadata = loads_json(str(metadata_value)) if isinstance(metadata_value, str) else {}
     kind = row.get("kind")
-    del metadata_value
     source_session = row.get("source_session_id")
     tenant_id_row = row.get("tenant_id")
     return MemoryRecord(
@@ -955,7 +954,12 @@ def _memory_record(row: Mapping[str, Any]) -> MemoryRecord:
         version=int(row.get("version", 1)),
         tags=tuple(str(item) for item in tags) if isinstance(tags, list) else (),
         source=str(row.get("source", "")),
-        metadata=immutable_json(metadata if isinstance(metadata, dict) else {}),
+        metadata=immutable_json(
+            {
+                **(metadata if isinstance(metadata, dict) else {}),
+                "tenant_id": str(tenant_id_row),
+            }
+        ),
     )
 
 

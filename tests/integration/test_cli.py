@@ -5974,3 +5974,38 @@ async def test_cli_run_allows_dry_run_mutation_goal_without_criteria() -> None:
     )
 
     assert "mutation-shaped goal requires explicit success criteria" not in error.getvalue()
+
+
+@pytest.mark.unit
+def test_init_secondary_domains_rejects_primary_and_duplicates() -> None:
+    """R6-1: --with-domain rejects a backend resolving to the primary domain
+    and duplicate secondary domains."""
+    import argparse
+
+    from universal_agent_cli.init import _secondary_domains
+
+    args = argparse.Namespace(
+        domain_backend="kubernetes",
+        with_domain=["prometheus", "prometheus"],
+        observability_endpoint="http://vm.test",
+        observability_token_env=None,
+        observability_token_secret=None,
+        observability_timeout_seconds=15.0,
+        kubectl_namespace="default",
+        kubectl_context=None,
+        kubectl_kubeconfig=None,
+        kubectl_timeout_seconds=10.0,
+        kubernetes_api_server=None,
+        kubernetes_api_namespace="default",
+        kubernetes_api_token_env=None,
+        kubernetes_api_token_file=None,
+        kubernetes_api_token_secret="kubernetes_api_token",
+        kubernetes_api_timeout_seconds=10.0,
+    )
+
+    with pytest.raises(ValueError, match="duplicate --with-domain"):
+        _secondary_domains(args, primary_name="kubernetes")
+
+    args.with_domain = ["kubectl"]
+    with pytest.raises(ValueError, match="resolves to the primary domain"):
+        _secondary_domains(args, primary_name="kubernetes")
