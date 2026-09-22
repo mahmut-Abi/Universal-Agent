@@ -240,6 +240,7 @@ class OpenAIChatCompletionsModelAdapter:
         response_format: str = "json_schema",
         transport: OpenAIModelTransport | JsonHttpModelTransport | None = None,
         max_repair_retries: int = 2,
+        extra_body: JsonMapping | None = None,
     ) -> None:
         parsed_model = parse_non_empty_string(model, "model name")
         parsed_api_key = parse_non_empty_string(api_key, "OpenAI API key")
@@ -258,6 +259,7 @@ class OpenAIChatCompletionsModelAdapter:
         self._extra_headers = dict(extra_headers or {})
         self._timeout_seconds = timeout_seconds
         self._response_format = response_format
+        self._extra_body = immutable_json(extra_body or {})
         self._transport = _openai_model_transport(transport)
         self._max_repair_retries = max_repair_retries
         self._last_usage: ModelUsage | None = None
@@ -273,6 +275,10 @@ class OpenAIChatCompletionsModelAdapter:
             }
             if response_format is not None:
                 payload["response_format"] = response_format
+            # Provider-specific extensions (reasoning switches etc.) win over
+            # standard fields so deployments can tune gateway behaviour
+            # (UA-LIVE-2026-09-21 R6 model extra_body passthrough).
+            payload.update(dict(self._extra_body))
             request_payload = immutable_json(payload)
             response = await self._transport.create_chat_completion(
                 self._endpoint,

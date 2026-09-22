@@ -135,6 +135,7 @@ def build_configured_model_adapter(
             timeout_seconds=config.model.timeout_seconds,
             response_format=config.model.response_format or "json_schema",
             transport=openai_transport or json_http_transport,
+            extra_body=dict(config.model.extra_body) or None,
         )
     raise ValueError(f"unsupported model provider: {config.model.provider}")
 

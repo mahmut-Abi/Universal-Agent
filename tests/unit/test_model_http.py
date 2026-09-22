@@ -1229,3 +1229,53 @@ def json_text(payload: Mapping[str, object]) -> str:
     import json
 
     return json.dumps(payload, sort_keys=True)
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_extra_body_merged_into_payload() -> None:
+    """R6 model extra_body passthrough: provider-specific fields (reasoning
+    switches etc.) are merged into the request payload."""
+    captured: dict[str, object] = {}
+
+    class CaptureTransport:
+        async def post_json(
+            self,
+            endpoint: str,
+            *,
+            headers: Mapping[str, str],
+            payload: Mapping[str, JsonValue],
+            timeout_seconds: float,
+        ) -> Mapping[str, JsonValue]:
+            captured.update(dict(payload))
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "type": "finish",
+                                    "reason": "done",
+                                }
+                            )
+                        }
+                    }
+                ],
+                "usage": {},
+            }
+
+    from universal_agent.model import OpenAIChatCompletionsModelAdapter
+
+    adapter = OpenAIChatCompletionsModelAdapter(
+        "test-model",
+        api_key="sk-test",
+        endpoint="https://gw.test/v1/chat/completions",
+        response_format="json_object",
+        transport=CaptureTransport(),
+        extra_body={"reasoning": {"enabled": False}, "temperature": 0.2},
+    )
+    decision = await adapter.decide(context())
+
+    assert captured["reasoning"] == {"enabled": False}
+    assert captured["temperature"] == 0.2
+    assert captured["model"] == "test-model"
+    assert decision.type.value == "finish"

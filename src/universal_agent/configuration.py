@@ -97,6 +97,7 @@ class _ModelConfigPayload(ConfigPayload):
     timeout_seconds: float = 30.0
     headers: dict[str, str] = Field(default_factory=dict)
     response_format: str | None = None
+    extra_body: dict[str, PydanticJsonValue] = Field(default_factory=dict)
 
 
 class _RuntimeConfigPayload(ConfigPayload):
@@ -296,6 +297,11 @@ class ModelConfig:
     timeout_seconds: float = 30.0
     headers: JsonMapping = field(default_factory=immutable_json)
     response_format: str | None = None
+    # Provider-specific request payload extensions (e.g. reasoning effort /
+    # thinking-mode switches on OpenAI-compatible gateways). Merged into the
+    # request body after the standard fields; unknown keys are the provider's
+    # responsibility.
+    extra_body: JsonMapping = field(default_factory=immutable_json)
 
     @classmethod
     def scripted(cls, name: str = "scripted") -> ModelConfig:
@@ -373,6 +379,7 @@ class ModelConfig:
             timeout_seconds=payload.timeout_seconds,
             headers=immutable_json(payload.headers),
             response_format=payload.response_format,
+            extra_body=immutable_json(payload.extra_body),
         )
         config.validate()
         return config
@@ -381,9 +388,12 @@ class ModelConfig:
         parse_non_empty_string(self.name, "model name")
         parse_positive_float(self.timeout_seconds, "model timeout_seconds")
         string_mapping(self.headers, "model headers")
+        parse_json_object(dict(self.extra_body), "model extra_body")
         if self.provider is ModelProvider.SCRIPTED:
             if self.endpoint is not None:
                 raise ValueError("scripted model does not accept endpoint")
+            if self.extra_body:
+                raise ValueError("scripted model does not accept extra_body")
             if self.api_key_secret is not None:
                 raise ValueError("scripted model does not accept api_key_secret")
             if self.response_format is not None:

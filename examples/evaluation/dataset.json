@@ -1,0 +1,22 @@
+{
+  "apiVersion": "agent.nantian.dev/v1alpha1",
+  "kind": "EvaluationDataset",
+  "metadata": {
+    "name": "universal-agent-core",
+    "version": "0.1.0",
+    "description": "Shipped scenario suites for the Universal Agent core domains",
+    "tags": ["kubernetes", "observability", "cross-domain", "shipped"]
+  },
+  "domains": [
+    {"name": "kubernetes", "version": "0.2.0"},
+    {"name": "observability", "version": "0.2.0"}
+  ],
+  "suites": [
+    {
+      "name": "cross-domain-k8s-observability",
+      "path": "cross_domain_scenarios.json",
+      "description": "Kubernetes + observability cross-domain scenarios",
+      "tags": ["cross_domain", "kubernetes", "observability"]
+    }
+  ]
+}
