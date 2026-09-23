@@ -5,8 +5,6 @@ from __future__ import annotations
 
 import pytest
 
-pytestmark = pytest.mark.asyncio
-
 from universal_agent.core import (
     ErrorCode,
     RiskLevel,
@@ -14,6 +12,8 @@ from universal_agent.core import (
     ToolDefinition,
 )
 from universal_agent.tools.runtime import ToolPermissionError, ToolRuntime
+
+pytestmark = pytest.mark.asyncio
 
 
 class DenyingTool:
@@ -27,11 +27,11 @@ class DenyingTool:
         argument_schema={},
     )
 
-    async def execute(self, arguments):
+    async def execute(self, arguments: dict[str, object]) -> dict[str, object]:
         raise ToolPermissionError("403 forbidden by remote system")
 
 
-def _runtime_with_denying_tool():
+def _runtime_with_denying_tool() -> ToolRuntime:
     from universal_agent.tools.runtime import ToolRegistry
 
     registry = ToolRegistry()
