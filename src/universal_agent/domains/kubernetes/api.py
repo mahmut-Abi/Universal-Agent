@@ -24,6 +24,7 @@ from universal_agent.core.config_validation import (
     parse_positive_float,
 )
 from universal_agent.domains.kubernetes import resources as k8s
+from universal_agent.tools.runtime import ToolPermissionError
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +37,13 @@ class KubernetesApiResponse:
 
 class KubernetesApiError(RuntimeError):
     pass
+
+
+class KubernetesApiForbiddenError(KubernetesApiError, ToolPermissionError):
+    """HTTP 403 from the API server: the credential is authenticated but not
+    authorized for the requested resource. Subclasses the domain error and the
+    kernel ToolPermissionError so the runtime maps it to PERMISSION_DENIED
+    (UA-LIVE-2026-09-21 baseline S3 finding)."""
 
 
 class KubernetesApiConflictError(KubernetesApiError):
@@ -64,10 +72,14 @@ class HttpxKubernetesApiTransport:
         *,
         bearer_token: str | None = None,
         client: httpx.AsyncClient | None = None,
+        verify: bool | str = True,
     ) -> None:
         self._api_server = _api_server_url(api_server, "Kubernetes API server")
         self._bearer_token = bearer_token
         self._client = client
+        # verify: True (system CAs), False (skip — testing only), or a CA
+        # bundle path for self-signed API servers (UA-LIVE-2026-09-21 R6-4).
+        self._verify = verify
 
     async def request(
         self,
@@ -89,7 +101,7 @@ class HttpxKubernetesApiTransport:
                 headers=dict(headers or {}),
                 timeout_seconds=timeout_seconds,
             )
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=self._verify) as client:
             return await self._request_with_client(
                 client,
                 method,
@@ -150,6 +162,7 @@ class KubernetesApiBackend:
         transport: KubernetesApiTransport | None = None,
         default_namespace: str = "default",
         timeout_seconds: float = 10.0,
+        verify: bool | str = True,
     ) -> None:
         _api_server_url(api_server, "api_server")
         parse_non_empty_string(default_namespace, "default_namespace")
@@ -157,6 +170,7 @@ class KubernetesApiBackend:
         self._transport = transport or HttpxKubernetesApiTransport(
             api_server,
             bearer_token=bearer_token,
+            verify=verify,
         )
         self._default_namespace = default_namespace
         self._timeout_seconds = timeout_seconds
@@ -519,6 +533,8 @@ class KubernetesApiBackend:
         )
         if response.status_code < 200 or response.status_code >= 300:
             message = response.text.strip() or f"HTTP {response.status_code}"
+            if response.status_code == 403:
+                raise KubernetesApiForbiddenError(f"Kubernetes API request denied: {message}")
             raise KubernetesApiError(f"Kubernetes API request failed: {message}")
         return response
 

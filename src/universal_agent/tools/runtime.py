@@ -40,6 +40,17 @@ class UnknownToolError(LookupError):
     pass
 
 
+class ToolPermissionError(RuntimeError):
+    """A tool was denied by the target system's authorization boundary.
+
+    Raised by domain backends on HTTP 403-style denials. Mapped to
+    ErrorCode.PERMISSION_DENIED (FailureCategory.PERMISSION_DENIED) instead
+    of the generic TOOL_FAILURE so recovery stops/asks rather than retries
+    (UA-LIVE-2026-09-21 baseline S3 finding: view-only RBAC + inspect_cluster
+    → nodes 403 was classified tool_failure).
+    """
+
+
 class UncertainToolExecutionError(RuntimeError):
     """Raised by tools when the external action outcome cannot be known."""
 
@@ -168,6 +179,12 @@ class ToolRuntime:
                 status=ObservationStatus.UNKNOWN,
                 error=f"tool outcome unknown: {exc}",
                 error_code=ErrorCode.UNKNOWN_EXECUTION,
+            )
+        except ToolPermissionError as exc:
+            return ToolResult(
+                status=ObservationStatus.FAILED,
+                error=f"tool denied: {exc}",
+                error_code=ErrorCode.PERMISSION_DENIED,
             )
         except Exception as exc:
             return ToolResult(

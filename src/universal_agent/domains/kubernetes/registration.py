@@ -48,6 +48,15 @@ def _add_init_arguments(group: argparse._ArgumentGroup) -> None:
     group.add_argument("--kubernetes-api-token-file")
     group.add_argument("--kubernetes-api-token-secret", default="kubernetes_api_token")
     group.add_argument("--kubernetes-api-timeout-seconds", type=float, default=10.0)
+    group.add_argument(
+        "--kubernetes-api-ca-bundle",
+        help="Path to a CA bundle for the API server TLS certificate.",
+    )
+    group.add_argument(
+        "--kubernetes-api-insecure-skip-tls-verify",
+        action="store_true",
+        help="Skip API server TLS verification (testing only).",
+    )
 
 
 def _resolve_init_domain(args: argparse.Namespace) -> InitDomainOutcome | None:
@@ -83,6 +92,12 @@ def _resolve_init_domain(args: argparse.Namespace) -> InitDomainOutcome | None:
                 "str | None", getattr(args, "kubernetes_api_token_secret", None)
             ),
             kubernetes_api_timeout_seconds=cast(float, args.kubernetes_api_timeout_seconds),
+            kubernetes_api_ca_bundle=cast(
+                "str | None", getattr(args, "kubernetes_api_ca_bundle", None)
+            ),
+            kubernetes_api_insecure_skip_tls_verify=cast(
+                bool, getattr(args, "kubernetes_api_insecure_skip_tls_verify", False)
+            ),
         ),
         secrets=secrets,
     )

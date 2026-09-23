@@ -58,6 +58,10 @@ class _KubernetesBackendSettingsPayload(ConfigPayload):
     timeout_seconds: PositiveFloat = 10.0
     api_server: PydanticNonEmptyString | None = None
     bearer_token_secret: PydanticNonEmptyString | None = None
+    # kubernetes_api TLS options: a CA bundle path for self-signed API
+    # servers, or an explicit skip (testing only).
+    ca_bundle: PydanticNonEmptyString | None = None
+    insecure_skip_tls_verify: bool = False
 
 
 def local_domain() -> DomainConfig:
@@ -455,6 +459,7 @@ def configured_kubernetes_backend(
     if backend == "kubernetes_api":
         if settings.api_server is None:
             raise ValueError("domain setting api_server must be a non-empty string")
+        verify = settings.ca_bundle or (False if settings.insecure_skip_tls_verify else True)
         return KubernetesApiBackend(
             api_server=settings.api_server,
             bearer_token=configured_kubernetes_api_token(
@@ -464,6 +469,7 @@ def configured_kubernetes_backend(
             ),
             default_namespace=settings.default_namespace,
             timeout_seconds=settings.timeout_seconds,
+            verify=verify,
         )
     raise ValueError(f"unsupported Kubernetes domain backend: {backend}")
 
@@ -479,6 +485,8 @@ def profile_domain_config(
     kubernetes_api_namespace: str,
     kubernetes_api_token_secret: str | None,
     kubernetes_api_timeout_seconds: float,
+    kubernetes_api_ca_bundle: str | None = None,
+    kubernetes_api_insecure_skip_tls_verify: bool = False,
 ) -> dict[str, object]:
     domain: dict[str, object] = {"name": "kubernetes", "version": "0.2.0"}
     if domain_backend == "fake":
@@ -505,6 +513,10 @@ def profile_domain_config(
         }
         if kubernetes_api_token_secret is not None:
             settings["bearer_token_secret"] = kubernetes_api_token_secret
+        if kubernetes_api_ca_bundle is not None:
+            settings["ca_bundle"] = kubernetes_api_ca_bundle
+        if kubernetes_api_insecure_skip_tls_verify:
+            settings["insecure_skip_tls_verify"] = True
         domain["backend"] = "kubernetes_api"
         domain["settings"] = settings
         return domain
