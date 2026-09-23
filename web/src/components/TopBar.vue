@@ -1,20 +1,7 @@
 <script setup>
 // 顶栏：页面标题 + profile 热切换选择器 + 环境（导航已移至分组侧边栏）
 import { computed, onMounted, ref } from "vue";
-import {
-  m,
-  view,
-  VIEW_TITLES,
-  apiHost,
-  doRefresh,
-  activeProfile,
-  hotSwapAvailable,
-  setActiveProfile,
-  toast,
-  busy,
-  autoRefreshOn,
-  toggleAutoRefresh,
-} from "../store.js";
+import { view, VIEW_TITLES, apiHost, doRefresh, activeProfile, hotSwapAvailable, setActiveProfile, toast, busy, autoRefreshOn, toggleAutoRefresh } from "../store.js";
 import { apiGet, pick } from "../api.js";
 
 defineOptions({ name: "TopBar" });
