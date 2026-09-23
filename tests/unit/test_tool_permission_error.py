@@ -9,6 +9,7 @@ import pytest
 
 from universal_agent.core import (
     ErrorCode,
+    JsonValue,
     RiskLevel,
     SideEffect,
     ToolDefinition,
@@ -29,7 +30,7 @@ class DenyingTool:
         argument_schema={},
     )
 
-    async def execute(self, arguments: Mapping[str, object]) -> Mapping[str, object]:
+    async def execute(self, arguments: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
         raise ToolPermissionError("403 forbidden by remote system")
 
 

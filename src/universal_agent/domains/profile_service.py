@@ -56,6 +56,12 @@ def build_configured_service(config_path: str | Path) -> RuntimeService:
         )
 
         return build_workspace_profile_service(config_path)
+    if first_domain == "sqldb":
+        from universal_agent.domains.sqldb.cli_runtime import (
+            build_sqldb_profile_service,
+        )
+
+        return build_sqldb_profile_service(config_path)
     if first_domain == "observability":
         from universal_agent.domains.observability.cli_runtime import (
             build_observability_profile_service,
@@ -65,6 +71,8 @@ def build_configured_service(config_path: str | Path) -> RuntimeService:
     domain_names = {domain.name for domain in configured_domains}
     if {"kubernetes", "observability"} <= domain_names:
         return _build_composed_kubernetes_observability_service(config_path)
+    if {"kubernetes", "sqldb"} <= domain_names:
+        return _build_composed_kubernetes_sqldb_service(config_path)
     from universal_agent.domains.kubernetes.cli_runtime import (
         build_configured_service as build_kubernetes_service,
     )
@@ -119,6 +127,48 @@ def _build_composed_kubernetes_observability_service(config_path: str | Path) ->
         profile=profile,
         model=model,
         domains=(kubernetes_domain, observability_domain),
+        secret_provider=secret_provider,
+    )
+    return host.service
+
+
+def _build_composed_kubernetes_sqldb_service(config_path: str | Path) -> RuntimeService:
+    """Compose the kubernetes and sqldb domains into one runtime."""
+
+    from universal_agent.domains.kubernetes.cli_runtime import (
+        configured_kubernetes_backend,
+    )
+    from universal_agent.domains.kubernetes.domain import KubernetesRemediationDomain
+    from universal_agent.domains.sqldb.cli_runtime import build_sqldb_domain
+    from universal_agent.host import RuntimeHost, build_configured_model_adapter
+
+    profile_config = ProfileConfig.from_json_file(config_path)
+    profile = profile_config.to_profile()
+    secret_provider = EnvSecretProvider()
+    configured_domains = profile.runtime.configured_domains()
+    kubernetes_config = next(
+        (domain for domain in configured_domains if domain.name == "kubernetes"),
+        None,
+    )
+    kubernetes_backend = configured_kubernetes_backend(
+        (kubernetes_config,) if kubernetes_config is not None else (),
+        config=profile.runtime,
+        secret_provider=secret_provider,
+    )
+    from universal_agent.domains.kubernetes.backend import (
+        KubernetesBackend,
+        KubernetesMutationBackend,
+    )
+
+    inspection_backend = cast(KubernetesBackend, kubernetes_backend)
+    mutation_backend = cast(KubernetesMutationBackend, kubernetes_backend)
+    kubernetes_domain = KubernetesRemediationDomain(inspection_backend, mutation_backend)
+    sqldb_domain = build_sqldb_domain(profile_config, secret_provider=secret_provider)
+    model = build_configured_model_adapter(profile.runtime, secret_provider=secret_provider)
+    host = RuntimeHost.from_profile_composed(
+        profile=profile,
+        model=model,
+        domains=(kubernetes_domain, sqldb_domain),
         secret_provider=secret_provider,
     )
     return host.service
