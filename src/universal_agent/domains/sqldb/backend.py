@@ -122,14 +122,17 @@ class SqliteSqlBackend:
             cursor = connection.execute(
                 "SELECT name, type FROM sqlite_master WHERE type IN ('table','view') ORDER BY name"
             )
-            tables = [(row[0], row[1]) for row in cursor.fetchall()]
+            tables = []
+            for name, kind in cursor.fetchall():
+                columns = [col[1] for col in connection.execute(f"PRAGMA table_info({name})")]
+                tables.append({"name": name, "type": kind, "columns": columns})
         except sqlite3.Error as exc:
             raise SqlValidationError(f"sqlite introspection failed: {exc}") from exc
         finally:
             connection.close()
         return immutable_json(
             {
-                "tables": [{"name": name, "type": kind} for name, kind in tables],
+                "tables": tables,
                 "table_count": len(tables),
             }
         )
