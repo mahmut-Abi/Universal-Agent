@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import pytest
 
 from universal_agent.core import (
@@ -27,7 +29,7 @@ class DenyingTool:
         argument_schema={},
     )
 
-    async def execute(self, arguments: dict[str, object]) -> dict[str, object]:
+    async def execute(self, arguments: Mapping[str, object]) -> Mapping[str, object]:
         raise ToolPermissionError("403 forbidden by remote system")
 
 
