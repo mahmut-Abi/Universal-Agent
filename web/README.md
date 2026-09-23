@@ -83,3 +83,15 @@ up` keeps working; set `WEB_PASSWORD` for an authenticated control plane.
 
 All data comes from the real agentd API via the `/api` proxy (or
 `UA_API_BASE` when the SPA is served from a different origin).
+
+## Known tech debt (frontend)
+
+- Each view imports the full store surface in one line with a
+  `biome-ignore-all noUnusedImports` marker. Most bindings are unused in a
+  given view; cleaning this up needs vue-tsc/biome template-reference
+  analysis (script-unused imports may still be template-referenced), so it
+  is deferred rather than hand-pruned.
+- `store.js` (~1000 lines) is a cohesive module-level singleton; splitting
+  into per-domain stores is churn without functional gain today.
+- `server.mjs` UPSTREAM_TIMEOUT_MS (300s) also applies to SSE GET streams;
+  the live tail relies on its own auto-reconnect between timeouts.
