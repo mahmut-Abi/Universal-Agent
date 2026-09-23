@@ -31,6 +31,7 @@ import {
   createSession,
   sendMessage,
   pauseSession,
+  apiPost,
   resumeSession,
   cancelSession as apiCancelSession,
   profileCreate,
@@ -839,8 +840,7 @@ export function openTraceSession(sid) {
   else toast("该会话不存在或已过期");
 }
 export function installPkg(name) {
-  import("./api.js")
-    .then((mod) => mod.apiPost("/v1/ecosystem/install", { name }))
+  apiPost("/v1/ecosystem/install", { name })
     .then(() => toast("安装任务已创建 · " + name))
     .catch((e) => toast("安装失败：" + e.message));
 }
@@ -984,6 +984,7 @@ export {
   createSession,
   sendMessage,
   pauseSession,
+  apiPost,
   resumeSession,
   apiCancelSession,
   profileCreate,

@@ -17,9 +17,9 @@ defineOptions({ name: 'MemoryView' })
             <span v-for="(n, k) in memStats" :key="k" class="mem-kind-count">{{ k }} <b>{{ n }}</b></span>
             <span v-if="memSearch || memKind" class="mem-filtered">筛选后 {{ memList.length }} 条</span>
           </div>
-          <div style="display:flex;gap:10px;margin-bottom:8px">
+          <div class="mem-toolbar">
             <input type="text" id="mem-search" v-model="memSearch" placeholder="搜索记忆内容…" aria-label="搜索记忆"
-              style="flex:1;padding:8px 10px;font:inherit;font-size:13px;color:var(--fg);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);outline:none">
+              class="mem-search">
             <button class="btn btn-primary btn-sm" id="btn-mem-add" @click="addMemory">＋ 新增记忆</button>
           </div>
           <div class="filter-pills" role="group" aria-label="按类型筛选记忆" style="margin-bottom:8px">
@@ -43,6 +43,22 @@ defineOptions({ name: 'MemoryView' })
 </template>
 
 <style scoped>
+.mem-toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.mem-search {
+  flex: 1;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: none;
+}
 .mem-summary {
   display: flex;
   align-items: center;

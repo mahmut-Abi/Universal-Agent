@@ -37,7 +37,7 @@ browser ──HTTP──▶ web (this app) ──HTTP + Bearer token──▶ ag
 | `MAX_LOGIN_FAILURES`| no       | brute-force cap per IP per window (default 5)             |
 | `LOGIN_WINDOW_MS`   | no       | reset window for login limit (default 15m)                |
 | `MAX_BODY_BYTES`    | no       | max proxied request body (default 2 MiB)                  |
-| `UPSTREAM_TIMEOUT_MS`| no      | agentd request timeout (default 30s)                      |
+| `UPSTREAM_TIMEOUT_MS`| no      | agentd request timeout (default 300s — goal runs are synchronous and real-model rounds routinely exceed 30s) |
 
 > **Security**: require HTTPS + `WEB_PASSWORD` (and set `COOKIE_SECURE=1`)
 > for anything beyond local development. Unauthenticated runs are only

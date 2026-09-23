@@ -19,7 +19,7 @@
  *   MAX_LOGIN_FAILURES    login brute-force cap per IP per window (default 5)
  *   LOGIN_WINDOW_MS       reset window for login limit    (default 15m)
  *   MAX_BODY_BYTES        max proxied request body bytes  (default 2 MiB)
- *   UPSTREAM_TIMEOUT_MS   agentd request timeout          (default 30s)
+ *   UPSTREAM_TIMEOUT_MS   agentd request timeout          (default 300s)
  *
  * API surface (proxied):  /api/<agentd path>  →  <AGENTD_URL>/<agentd path>
  *   e.g. /api/v1/sessions → http://agentd:8765/v1/sessions
@@ -68,7 +68,11 @@ const LOGIN_WINDOW_MS = Number(process.env.LOGIN_WINDOW_MS || 15 * 60 * 1000);
 
 // M2 / L1: bounds for the proxy.
 const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES || 2 * 1024 * 1024);
-const UPSTREAM_TIMEOUT_MS = Number(process.env.UPSTREAM_TIMEOUT_MS || 30 * 1000);
+// 300s default matches the CLI long-run budget: POST /v1/sessions runs the
+// goal synchronously and real-model rounds routinely exceed 30s
+// (UA-LIVE-2026-09-21: 22-442s per goal). SSE tail relies on its own
+// auto-reconnect, so long-lived streams survive this timeout too.
+const UPSTREAM_TIMEOUT_MS = Number(process.env.UPSTREAM_TIMEOUT_MS || 300 * 1000);
 
 if (!WEB_PASSWORD) {
   if (!ALLOW_NO_AUTH) {
