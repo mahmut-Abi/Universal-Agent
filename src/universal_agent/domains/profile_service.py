@@ -56,6 +56,12 @@ def build_configured_service(config_path: str | Path) -> RuntimeService:
         )
 
         return build_workspace_profile_service(config_path)
+    if first_domain == "code":
+        from universal_agent.domains.code.cli_runtime import (
+            build_code_profile_service,
+        )
+
+        return build_code_profile_service(config_path)
     if first_domain == "sqldb":
         from universal_agent.domains.sqldb.cli_runtime import (
             build_sqldb_profile_service,
