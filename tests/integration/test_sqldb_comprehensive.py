@@ -436,7 +436,7 @@ async def test_sqldb_backend_empty_database_query_fails(tmp_path: Path) -> None:
 async def test_sqldb_backend_invalid_sql_syntax(db_path: str) -> None:
     backend = SqliteSqlBackend(db_path)
 
-    with pytest.raises(SqlValidationError, match="syntax error|no such"):
+    with pytest.raises(SqlValidationError, match=r"syntax error|no such"):
         await backend.query_rows(immutable_json({"sql": "SELECT not_a_column FROM deployments"}))
 
 
