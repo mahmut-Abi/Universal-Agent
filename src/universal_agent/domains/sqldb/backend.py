@@ -8,7 +8,7 @@ cannot mutate its target (defense in depth on top of the domain policy).
 from __future__ import annotations
 
 import sqlite3
-from typing import Protocol
+from typing import Any, Protocol
 
 from universal_agent.core import JsonMapping, JsonValue, immutable_json
 
@@ -122,7 +122,7 @@ class SqliteSqlBackend:
             cursor = connection.execute(
                 "SELECT name, type FROM sqlite_master WHERE type IN ('table','view') ORDER BY name"
             )
-            tables = []
+            tables: list[dict[str, Any]] = []
             for name, kind in cursor.fetchall():
                 columns = [col[1] for col in connection.execute(f"PRAGMA table_info({name})")]
                 tables.append({"name": name, "type": kind, "columns": columns})
@@ -132,7 +132,7 @@ class SqliteSqlBackend:
             connection.close()
         return immutable_json(
             {
-                "tables": tables,
+                "tables": tables,  # type: ignore[dict-item]
                 "table_count": len(tables),
             }
         )

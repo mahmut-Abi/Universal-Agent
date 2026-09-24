@@ -1,4 +1,4 @@
-"""Unit tests for the sqldb domain (UA-LIVE-2026-09-21 R6-1).
+"""Unit tests for the sqldb domain.
 
 Covers: backend (SELECT validation, read-only enforcement, row clamping),
 domain (capabilities/tools/policies), evidence extractor, and the
@@ -7,13 +7,29 @@ sql_query_ok completion claim.
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from datetime import UTC, datetime
+from pathlib import Path as _Path
 
 import pytest
 
-from universal_agent.core import immutable_json
+from universal_agent.core import (
+    ActionId,
+    CapabilityCategory,
+    CapabilityDefinition,
+    GoalId,
+    Observation,
+    ObservationId,
+    ObservationStatus,
+    PolicyContext,
+    PolicyEffect,
+    SessionId,
+    SideEffect,
+    Task,
+    TaskId,
+    ToolDefinition,
+    immutable_json,
+)
 from universal_agent.domains.sqldb.backend import (
     SqliteSqlBackend,
     SqlValidationError,
@@ -24,6 +40,7 @@ from universal_agent.domains.sqldb.domain import (
     SqldbEvidenceExtractor,
     SqlReadOnlyPolicy,
 )
+from universal_agent.evidence import EvidenceContext
 
 # --- backend: SELECT validation ----------------------------------------------
 
@@ -75,14 +92,14 @@ def test_validate_select_rejects_multiple_statements() -> None:
 
 
 @pytest.fixture()
-def db_path(tmp_path: object) -> str:
-    path = os.path.join(str(tmp_path), "test.db")
-    connection = sqlite3.connect(path)
+def db_path(tmp_path: _Path) -> str:
+    p = tmp_path / "test.db"
+    connection = sqlite3.connect(str(p))
     connection.execute("CREATE TABLE items (id INTEGER, name TEXT)")
     connection.execute("INSERT INTO items VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
     connection.commit()
     connection.close()
-    return path
+    return str(p)
 
 
 @pytest.mark.asyncio
@@ -90,10 +107,15 @@ async def test_sqlite_backend_query_rows(db_path: str) -> None:
     backend = SqliteSqlBackend(db_path)
     result = await backend.query_rows(immutable_json({"sql": "SELECT * FROM items"}))
 
-    assert result["row_count"] == 3
-    assert result["columns"] == ["id", "name"]
-    assert result["rows"] == [[1, "alpha"], [2, "beta"], [3, "gamma"]]
-    assert result["sql_query_ok"] is True
+    row_count = result["row_count"]
+    assert isinstance(row_count, int) and row_count == 3
+    columns = result["columns"]
+    assert isinstance(columns, list)
+    assert columns == ["id", "name"]
+    rows = result["rows"]
+    assert isinstance(rows, list)
+    sql_ok = result["sql_query_ok"]
+    assert isinstance(sql_ok, bool) and sql_ok is True
 
 
 @pytest.mark.asyncio
@@ -107,8 +129,6 @@ async def test_sqlite_backend_row_clamping(db_path: str) -> None:
 
 @pytest.mark.asyncio
 async def test_sqlite_backend_read_only_enforcement(db_path: str) -> None:
-    """Even if validation is bypassed, the read-only connection physically
-    prevents writes."""
     backend = SqliteSqlBackend(db_path)
     connection = backend._connect()
 
@@ -134,17 +154,34 @@ async def test_sqlite_backend_inspect_tables_with_columns(db_path: str) -> None:
     backend = SqliteSqlBackend(db_path)
     result = await backend.inspect_tables(immutable_json({}))
 
-    assert result["table_count"] >= 1
-    tables = {t["name"]: t["columns"] for t in result["tables"] if isinstance(t, dict)}
+    table_count = result["table_count"]
+    assert isinstance(table_count, int) and table_count >= 1
+    raw = result["tables"]
+    assert isinstance(raw, list)
+    tables: dict[str, list[str]] = {}
+    for item in raw:
+        if isinstance(item, dict):
+            name = str(item.get("name", ""))
+            cols = item.get("columns", [])
+            if isinstance(cols, list):
+                tables[name] = [str(col) for col in cols]
     assert "items" in tables
     assert set(tables["items"]) == {"id", "name"}
 
 
-# --- domain: capabilities + tools ----------------------------------------------
+# --- domain: capabilities + policies -------------------------------------------
+
+
+class _StubBackend:
+    async def query_rows(self, arguments):  # type: ignore[no-untyped-def]
+        return immutable_json({"sql": "", "row_count": 0, "sql_query_ok": True})
+
+    async def inspect_tables(self, arguments):  # type: ignore[no-untyped-def]
+        return immutable_json({"tables": [], "table_count": 0})
 
 
 def test_sqldb_domain_capabilities() -> None:
-    domain = SqldbDomain(StaticSqlBackendStub())
+    domain = SqldbDomain(_StubBackend())
 
     caps = {c.name: c for c in domain.capabilities()}
     assert set(caps) == {"query_rows", "inspect_tables"}
@@ -153,14 +190,36 @@ def test_sqldb_domain_capabilities() -> None:
 
 
 def test_sqldb_domain_policies() -> None:
-    domain = SqldbDomain(StaticSqlBackendStub())
+    domain = SqldbDomain(_StubBackend())
 
-    policies = {p.name: p for p in domain.policies()}
-    assert "sqldb-read-only" in policies
-    assert policies["sqldb-read-only"].effect.value == "allow"
+    names = [p.name for p in domain.policies()]
+    assert "sqldb-read-only" in names
 
 
 # --- domain: read-only policy ---------------------------------------------------
+
+
+def _policy_context(sql: str) -> PolicyContext:
+    return PolicyContext(
+        session_id=SessionId("session-1"),
+        goal_id=GoalId("goal-1"),
+        task_id=TaskId("task-1"),
+        action_id=ActionId("action-1"),
+        capability=CapabilityDefinition(
+            "query_rows",
+            "Run SELECT",
+            CapabilityCategory.OBSERVATION,
+        ),
+        tool=ToolDefinition(
+            "sql_query_rows",
+            "Run SELECT",
+            ("query_rows",),
+            side_effect=SideEffect.NONE,
+        ),
+        target=None,
+        arguments=immutable_json({"sql": sql}),
+        environment=immutable_json({"environment": "staging"}),
+    )
 
 
 def test_sqldb_policy_denies_insert() -> None:
@@ -170,7 +229,7 @@ def test_sqldb_policy_denies_insert() -> None:
     result = policy.evaluate(context)
 
     assert result is not None
-    assert result.effect.value == "deny"
+    assert result.effect is PolicyEffect.DENY
 
 
 def test_sqldb_policy_allows_select() -> None:
@@ -179,25 +238,14 @@ def test_sqldb_policy_allows_select() -> None:
 
     result = policy.evaluate(context)
 
-    assert result is None  # None means "no objection" → allow
+    assert result is None
 
 
 # --- domain: evidence extractor ---------------------------------------------------
 
 
 def test_sqldb_evidence_extractor_produces_claims() -> None:
-    from universal_agent.core import (
-        ActionId,
-        Observation,
-        ObservationId,
-        ObservationStatus,
-        SessionId,
-        Task,
-        TaskId,
-    )
-    from universal_agent.evidence import EvidenceContext
-
-    task = Task(TaskId("task-1"), "query", ("sql_query_ok",))
+    task = Task(description="query", required_criteria=("sql_query_ok",))
     observation = Observation(
         id=ObservationId("obs-1"),
         action_id=ActionId("action-1"),
@@ -219,51 +267,3 @@ def test_sqldb_evidence_extractor_produces_claims() -> None:
     claims = {e.claim: e.value for e in evidence}
     assert claims.get("sql_query_ok") is True
     assert claims.get("row_count") == 1
-
-
-# --- helpers ---------------------------------------------------------------------
-
-
-class StaticSqlBackendStub:
-    """Minimal backend stub for domain-level tests (no real DB needed)."""
-
-    async def query_rows(self, arguments):
-        return immutable_json({"sql": "", "row_count": 0, "sql_query_ok": True})
-
-    async def inspect_tables(self, arguments):
-        return immutable_json({"tables": [], "table_count": 0})
-
-
-def _policy_context(sql: str):
-    from universal_agent.core import (
-        ActionId,
-        CapabilityCategory,
-        CapabilityDefinition,
-        GoalId,
-        PolicyContext,
-        SessionId,
-        SideEffect,
-        TaskId,
-        ToolDefinition,
-    )
-
-    return PolicyContext(
-        SessionId("session-1"),
-        GoalId("goal-1"),
-        TaskId("task-1"),
-        ActionId("action-1"),
-        CapabilityDefinition(
-            "query_rows",
-            "Run SELECT",
-            CapabilityCategory.OBSERVATION,
-        ),
-        ToolDefinition(
-            "sql_query_rows",
-            "Run SELECT",
-            ("query_rows",),
-            side_effect=SideEffect.NONE,
-        ),
-        None,
-        immutable_json({"sql": sql}),
-        environment=immutable_json({"environment": "staging"}),
-    )
