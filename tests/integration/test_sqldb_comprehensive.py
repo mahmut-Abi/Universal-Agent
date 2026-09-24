@@ -16,6 +16,7 @@ import pytest
 
 from universal_agent.core import (
     ActionId,
+    ObservationId,
     ObservationStatus,
     SessionId,
     TaskId,
@@ -239,7 +240,8 @@ async def test_sql_inspect_tables_tool_executes(db_path: str) -> None:
     assert tool.definition.side_effect.value == "none"
 
     result = await tool.execute(immutable_json({}))
-    assert result["table_count"] >= 1
+    table_count = result["table_count"]
+    assert isinstance(table_count, int) and table_count >= 1
 
 
 # --- domain: context provider -------------------------------------------------------
@@ -276,7 +278,7 @@ def test_sqldb_evidence_extractor_empty_on_failure() -> None:
 
     task = Task(description="query", required_criteria=("sql_query_ok",))
     observation = Observation(
-        id=TaskId("obs-1"),
+        id=ObservationId("obs-1"),
         action_id=ActionId("action-1"),
         task_id=TaskId("task-1"),
         source="sqldb-evidence",
