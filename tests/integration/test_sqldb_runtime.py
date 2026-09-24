@@ -85,7 +85,7 @@ def _sql_query_decision() -> Decision:
         capability="query_rows",
         target="sqldb/deployments",
         arguments=immutable_json({"sql": "SELECT * FROM deployments"}),
-        expected_observations=["rows", "row_count", "sql_query_ok"],
+        expected_observations=("rows", "row_count", "sql_query_ok"),
     )
 
 
@@ -180,7 +180,7 @@ async def test_sqldb_multi_iteration_inspect_then_query(db_path: str) -> None:
         capability="inspect_tables",
         target="sqldb/tables",
         arguments=immutable_json({}),
-        expected_observations=["tables", "table_count"],
+        expected_observations=("tables", "table_count"),
     )
     service = _build_service(
         db_path,
